@@ -107,6 +107,8 @@ pub(super) fn succeeded_task(
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();
@@ -165,6 +167,8 @@ pub(super) fn failed_pr_task(api: &DaemonApi, id: &str, project: &str) {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

@@ -1,7 +1,12 @@
 import type { ReactNode } from "react";
 import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import type { WakeRecord } from "../../../sources/surfaces/types";
-import { WAKE_LABEL, isQuiet, quietLine, skipText } from "./monitoringModel";
+import type { Route } from "../../router";
+import { NavLink } from "../../shell/NavLink";
+import { WAKE_LABEL, isQuiet, isTaskEvent, quietLine, skipText } from "./monitoringModel";
+
+/** The page of a task, or null when the app does not hold that task. */
+export type TaskRoute = (taskId: string) => Route | null;
 
 /** The agent an automatic turn ran with, named in the label when the turn is known. */
 export interface WakeRuntime {
@@ -32,17 +37,29 @@ export function WakeLines({ text, runtime }: { text: string; runtime?: WakeRunti
 function stateNote(record: WakeRecord): string | null {
   if (record.state === "skipped") return skipText(record.skipReason);
   if (record.state === "failed") return "The automatic reply failed.";
+  if (record.state === "handled" && record.outcome === "unanswered") return "No automatic explanation was given. Open the task.";
   return null;
 }
 
-/** One deterministic notice. It is written before any model turn starts, so a failed or skipped turn never hides it. */
-export function WakeNotice({ record }: { record: WakeRecord }) {
+/**
+ * One deterministic notice. It is written before any model turn starts, so a failed or skipped turn never hides it.
+ * A task event also links to its task, when the app holds that task.
+ */
+export function WakeNotice({ record, taskRoute }: { record: WakeRecord; taskRoute?: TaskRoute }) {
   const note = stateNote(record);
+  const route = taskRoute && isTaskEvent(record) ? taskRoute(record.subject) : null;
   return (
     <div role="status" className="ws-wake" data-state={record.state}>
       <WakeLabel />
       <p className="ws-wake-lines">{record.notice}</p>
       {note && <p className="ws-wake-note">{note}</p>}
+      {route && (
+        <p className="ws-wake-link">
+          <NavLink to={route} className="ws-chip-link">
+            Open task
+          </NavLink>
+        </p>
+      )}
     </div>
   );
 }
@@ -56,7 +73,7 @@ export function QuietLine({ count }: { count: number }) {
 }
 
 /** Records in order; a run of quiet ones becomes one collapsed line. */
-export function WakeRecords({ records }: { records: readonly WakeRecord[] }) {
+export function WakeRecords({ records, taskRoute }: { records: readonly WakeRecord[]; taskRoute?: TaskRoute }) {
   const out: ReactNode[] = [];
   let quiet = 0;
   const flush = (key: string) => {
@@ -69,7 +86,7 @@ export function WakeRecords({ records }: { records: readonly WakeRecord[] }) {
       continue;
     }
     flush(record.id);
-    out.push(<WakeNotice key={record.id} record={record} />);
+    out.push(<WakeNotice key={record.id} record={record} taskRoute={taskRoute} />);
   }
   flush("end");
   return <>{out}</>;

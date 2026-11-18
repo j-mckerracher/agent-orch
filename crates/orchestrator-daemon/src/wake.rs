@@ -30,7 +30,7 @@ use orchestrator_store::{
 };
 use sha2::{Digest, Sha256};
 
-use super::conversation_runtime::{ConversationService, WakeBrief, QUIET_TOKEN};
+use super::conversation_runtime::{ConversationService, Evidence, WakeBrief, QUIET_TOKEN};
 use super::load::LoadHandle;
 
 /// The daemon's wall clock, in Unix milliseconds. Core defines the `Clock` trait and a manual clock
@@ -46,7 +46,9 @@ impl Clock for SystemClock {
             })
     }
 }
-use super::wake_events::{classify, proposal_notice, stall_candidate, Candidate};
+use super::wake_events::{
+    classify, proposal_notice, report_relay_failed_notice, stall_candidate, Candidate,
+};
 use crate::executor::SessionPulse;
 
 const LOG: &str = "wake";
@@ -62,6 +64,9 @@ const PROPOSAL_WAIT_MS: u64 = 30 * 60 * 1000;
 const LEDGER_KEEP_MS: u64 = 48 * HOUR_MS;
 /// Bytes of a reply read to recognize the quiet token.
 const QUIET_PROBE_BYTES: usize = 64;
+/// Tries a scout report's relay gets before its notice says to read it: the first turn that
+/// offers it and one retry. A quiet or failed turn uses one try.
+const REPORT_RELAY_TRIES: u32 = 2;
 /// Consecutive failed wake turns of the default agent that pause automatic updates.
 const WAKE_FAIL_PAUSE_AFTER: u32 = 3;
 /// How long a pause holds after the newest failed wake turn started, in seconds.
@@ -104,6 +109,13 @@ fn skip_reason(reason: PauseReason) -> SkipReason {
         PauseReason::Daily => SkipReason::LimitDaily,
         PauseReason::Tokens => SkipReason::LimitTokens,
     }
+}
+
+/// The transcript line of a work check. The instruction to the model lives in the wake block of
+/// the prompt, so this line reads as a status the user can see, not as a request to answer.
+fn work_check_notice(units: u32) -> String {
+    let noun = if units == 1 { "unit" } else { "units" };
+    format!("Checking on {units} active work {noun}.")
 }
 
 #[derive(Default)]
@@ -358,37 +370,114 @@ impl WakeService {
     }
 
     fn settle(&self, batch_id: &str, settle: Settle) -> Result<usize, String> {
-        if matches!(settle, Settle::Handled(WakeOutcome::Replied)) {
-            let records = self
-                .store
-                .running_wake_records()
-                .map_err(|_| "cannot read wake records".to_owned())?;
-            for record in records.iter().filter(|record| {
-                record.batch_id.as_deref() == Some(batch_id)
-                    && record.kind == WakeKind::ScoutReportReady
-            }) {
-                let turn_id = record
-                    .turn_id
-                    .as_deref()
-                    .ok_or_else(|| "report wake has no turn".to_owned())?;
-                let reply = self
+        match settle {
+            Settle::Handled(WakeOutcome::Replied) => {
+                let records = self
                     .store
-                    .turn_reply_text(turn_id, QUIET_PROBE_BYTES)
-                    .map_err(|_| "cannot read report wake reply".to_owned())?;
-                if reply.trim().is_empty() {
-                    continue;
+                    .running_wake_records()
+                    .map_err(|_| "cannot read wake records".to_owned())?;
+                for record in records.iter().filter(|record| {
+                    record.batch_id.as_deref() == Some(batch_id)
+                        && record.kind == WakeKind::ScoutReportReady
+                }) {
+                    let turn_id = record
+                        .turn_id
+                        .as_deref()
+                        .ok_or_else(|| "report wake has no turn".to_owned())?;
+                    let reply = self
+                        .store
+                        .turn_reply_text(turn_id, QUIET_PROBE_BYTES)
+                        .map_err(|_| "cannot read report wake reply".to_owned())?;
+                    if reply.trim().is_empty() {
+                        continue;
+                    }
+                    self.store
+                        .mark_task_report_relayed(
+                            &record.subject,
+                            &super::report::utc_text(self.clock.now_ms()),
+                        )
+                        .map_err(|_| "cannot mark relayed report".to_owned())?;
                 }
                 self.store
-                    .mark_task_report_relayed(
-                        &record.subject,
-                        &super::report::utc_text(self.clock.now_ms()),
-                    )
-                    .map_err(|_| "cannot mark relayed report".to_owned())?;
+                    .settle_wake_batch(batch_id, settle)
+                    .map_err(|_| "cannot settle wake batch".to_owned())
             }
+            // A quiet reply answers heartbeats only; see `settle_partly`.
+            Settle::Handled(WakeOutcome::Quiet) => self.settle_partly(
+                batch_id,
+                Settle::Handled(WakeOutcome::Quiet),
+                Settle::Handled(WakeOutcome::Unanswered),
+            ),
+            // A failed turn fails everything except a report, which keeps its relay.
+            Settle::Failed => self.settle_partly(batch_id, Settle::Failed, Settle::Failed),
+            other => self
+                .store
+                .settle_wake_batch(batch_id, other)
+                .map_err(|_| "cannot settle wake batch".to_owned()),
+        }
+    }
+
+    /// Settles a batch whose turn did not relay its reports. Heartbeats close with `heartbeats`,
+    /// every other record with `outcomes`, and a scout report is retried or noticed. A quiet reply
+    /// is passed as heartbeats only, so an outcome it does not answer stays visible.
+    fn settle_partly(
+        &self,
+        batch_id: &str,
+        heartbeats: Settle,
+        outcomes: Settle,
+    ) -> Result<usize, String> {
+        let running = self
+            .store
+            .running_wake_records()
+            .map_err(|_| "cannot read wake records".to_owned())?;
+        let batch: Vec<&WakeRecord> = running
+            .iter()
+            .filter(|record| record.batch_id.as_deref() == Some(batch_id))
+            .collect();
+        let (reports, rest): (Vec<&WakeRecord>, Vec<&WakeRecord>) = batch
+            .into_iter()
+            .partition(|record| record.kind == WakeKind::ScoutReportReady);
+        let (beats, others): (Vec<&WakeRecord>, Vec<&WakeRecord>) = rest
+            .into_iter()
+            .partition(|record| matches!(record.kind, WakeKind::WorkCheck | WakeKind::DaemonStart));
+        let mut settled = self.settle_records(&beats, heartbeats)?;
+        settled += self.settle_records(&others, outcomes)?;
+        for report in reports {
+            settled += self.retry_or_notice_report(report)?;
+        }
+        Ok(settled)
+    }
+
+    fn settle_records(&self, records: &[&WakeRecord], settle: Settle) -> Result<usize, String> {
+        let ids: Vec<String> = records.iter().map(|record| record.id.clone()).collect();
+        self.store
+            .settle_wake_records(&ids, settle)
+            .map_err(|_| "cannot settle wake batch".to_owned())
+    }
+
+    /// A scout report whose turn did not relay it gets another try while one remains. After that
+    /// its notice says where to read it. `relayed_at` stays unset either way.
+    fn retry_or_notice_report(&self, report: &WakeRecord) -> Result<usize, String> {
+        // `attempts` counts the tries that already ended, so this record's next try is number
+        // `attempts + 1`.
+        if report.attempts + 1 < REPORT_RELAY_TRIES {
+            let settled = self.settle_records(
+                &[report],
+                Settle::Requeue {
+                    count_attempt: true,
+                },
+            )?;
+            // The window restarts, as it does for any requeued batch.
+            let now = self.clock.now_ms();
+            self.state().debounce.offer(&report.scope, &report.id, now);
+            return Ok(settled);
         }
         self.store
-            .settle_wake_batch(batch_id, settle)
-            .map_err(|_| "cannot settle wake batch".to_owned())
+            .fail_wake_records_with_notice(
+                std::slice::from_ref(&report.id),
+                &report_relay_failed_notice(&report.subject),
+            )
+            .map_err(|_| "cannot fail wake record".to_owned())
     }
 
     /// For a batch whose turn is completed: `Some(Ok(settle))`. Failed or cancelled or missing
@@ -405,7 +494,10 @@ impl WakeService {
                     .store
                     .turn_reply_text(&batch.turn_id, QUIET_PROBE_BYTES)
                     .unwrap_or_default();
-                let outcome = if reply.trim() == QUIET_TOKEN {
+                // An empty reply answers nothing either, so it counts as quiet. A report it leaves
+                // unrelayed is retried, and an outcome it leaves unanswered stays visible.
+                let trimmed = reply.trim();
+                let outcome = if trimmed.is_empty() || trimmed == QUIET_TOKEN {
                     WakeOutcome::Quiet
                 } else {
                     WakeOutcome::Replied
@@ -625,10 +717,7 @@ impl WakeService {
                         kind: WakeKind::WorkCheck,
                         subject: "work".to_owned(),
                         dedupe_key: format!("check:{now}"),
-                        notice: format!(
-                            "Check on {} active work units. Report progress, failures and decisions that need attention.",
-                            load.work_units
-                        ),
+                        notice: work_check_notice(load.work_units),
                         needs_model: true,
                     });
                 }
@@ -700,6 +789,44 @@ impl WakeService {
         self.record(settings, &records, now)
     }
 
+    /// The one block of agent text a wake turn is handed: the first scout report's relay, else the
+    /// first candidate's summary and file count. A report wins, since its findings are what the
+    /// user waits for. A candidate that gets no block still has its notice.
+    fn evidence(&self, records: &[&WakeRecord]) -> Result<Option<Evidence>, String> {
+        if let Some(record) = records
+            .iter()
+            .find(|record| record.kind == WakeKind::ScoutReportReady)
+        {
+            let report = self
+                .store
+                .task_report(&record.subject)
+                .map_err(|_| "cannot read task report".to_owned())?
+                .ok_or_else(|| "wake report is missing".to_owned())?;
+            return Ok(Some(Evidence {
+                block: super::report::relay_block(&report.task_id, &report.body, report.truncated),
+                is_report: true,
+            }));
+        }
+        let Some(record) = records
+            .iter()
+            .find(|record| record.kind == WakeKind::CandidateReady)
+        else {
+            return Ok(None);
+        };
+        let facts = self
+            .store
+            .task_wake_facts(&record.subject)
+            .map_err(|_| "cannot read task facts".to_owned())?;
+        Ok(facts.map(|facts| Evidence {
+            block: super::report::candidate_block(
+                &record.subject,
+                facts.changed_files,
+                facts.summary.as_deref(),
+            ),
+            is_report: false,
+        }))
+    }
+
     /// Start the batches whose window is due. The settings are read again for each
     /// batch, just before the claim, so a mode set to Off or a lowered cap after the top of the
     /// pass is honored.
@@ -742,8 +869,9 @@ impl WakeService {
                 Ok(Some(_)) | Err(_) => continue,
             }
             let ids = self.state().debounce.take(&scope);
-            // One report per turn keeps the existing relay prompt bound. Other reports stay
-            // pending rather than being marked handled without their text reaching the model.
+            // One report per turn keeps the relay prompt bound. Other reports stay pending rather
+            // than being marked handled without their text reaching the model. Candidates are not
+            // deferred: their notices always go in the batch.
             let mut has_report = false;
             let mut deferred = Vec::new();
             let records: Vec<&WakeRecord> = ids
@@ -785,27 +913,7 @@ impl WakeService {
                     self.or_offer(self.skip(&ids, skip_reason(reason)), &scope, &ids, now)?;
                 continue;
             }
-            let relay = self.or_offer(
-                records
-                    .iter()
-                    .find(|record| record.kind == WakeKind::ScoutReportReady)
-                    .map(|record| {
-                        let report = self
-                            .store
-                            .task_report(&record.subject)
-                            .map_err(|_| "cannot read task report".to_owned())?
-                            .ok_or_else(|| "wake report is missing".to_owned())?;
-                        Ok(super::report::relay_block(
-                            &report.task_id,
-                            &report.body,
-                            report.truncated,
-                        ))
-                    })
-                    .transpose(),
-                &scope,
-                &ids,
-                now,
-            )?;
+            let evidence = self.or_offer(self.evidence(&records), &scope, &ids, now)?;
             // The turn count in the ledger joins the seed, so a batch that a user message
             // cancelled and that is requeued unchanged still gets a new turn id. A replayed
             // claim sees the same count, so a restart never makes a second turn for a record.
@@ -835,10 +943,13 @@ impl WakeService {
             }
             let brief = WakeBrief {
                 events: claimed.iter().map(|record| record.notice.clone()).collect(),
+                may_be_quiet: claimed.iter().all(|record| {
+                    matches!(record.kind, WakeKind::WorkCheck | WakeKind::DaemonStart)
+                }),
             };
             match self
                 .conversations
-                .start_wake(&target, &turn_id, &brief, relay.as_deref())
+                .start_wake(&target, &turn_id, &brief, evidence.as_ref())
             {
                 Ok(_) => {
                     report.started += 1;

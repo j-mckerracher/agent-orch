@@ -90,8 +90,28 @@ export function skipText(reason: string | null): string {
   }
 }
 
-/** True for a record that handled quietly: it shows one collapsed line and its turn's entries stay hidden. */
-export const isQuiet = (record: WakeRecord): boolean => record.state === "handled" && record.outcome === "quiet";
+/** Heartbeat events. A quiet reply may stand for these, and for no other event. */
+const HEARTBEAT_EVENTS: readonly string[] = ["work_check", "daemon_start"];
+
+/** Events whose subject is a task id. Their notice links to that task. */
+const TASK_EVENTS: readonly string[] = [
+  "task_failed",
+  "task_stalled",
+  "delivery_waiting",
+  "sign_in_needed",
+  "scout_report_ready",
+  "candidate_ready",
+];
+
+/**
+ * True for a heartbeat record handled quietly: it shows one collapsed line and its turn's entries stay hidden.
+ * An outcome event is never folded, whatever its reply says.
+ */
+export const isQuiet = (record: WakeRecord): boolean =>
+  record.state === "handled" && record.outcome === "quiet" && HEARTBEAT_EVENTS.includes(record.event);
+
+/** True for a record whose subject is a task, so its notice can link to that task. */
+export const isTaskEvent = (record: WakeRecord): boolean => TASK_EVENTS.includes(record.event);
 
 /** How many records count toward the badge and the live region. */
 export const notifyingCount = (wake: readonly WakeRecord[]): number => wake.filter((record) => record.notify).length;

@@ -61,6 +61,8 @@ fn run(api: &DaemonApi, task_id: &str, project_id: &str) {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

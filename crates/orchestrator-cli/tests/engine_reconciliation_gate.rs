@@ -401,6 +401,8 @@ fn seed_running_session_in(
         attempt_number: 1,
         state: AttemptState::Pending,
         failure_reason: None,
+        summary: None,
+        changed_files: None,
     };
     store.add_attempt(task_id, &attempt).unwrap();
     store
@@ -935,6 +937,8 @@ fn pending_attempt_without_any_session_refuses_scheduling() {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

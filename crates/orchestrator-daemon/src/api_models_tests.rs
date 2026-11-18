@@ -41,6 +41,7 @@ fn agents(fixture: &Fixture) -> Agents {
              debug) cat '{models}'; exit 0;;\n\
              esac\n\
              printf '%s\\n' \"$@\" > '{argv}'\n\
+             echo produced > agent-output.txt\n\
              {THREAD_STARTED}{TURN_COMPLETED}",
             signed_out = signed_out.display(),
             models = models.display(),

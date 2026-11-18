@@ -7,6 +7,7 @@ UI parts used here, all on the **Workspace** page:
 - **Monitoring chip.** A chip in the Global header reading `Monitoring: <mode>`. Its accessible name is "Monitoring mode". Click it to open the mode menu.
 - **Wake badge.** A count on the Global entry in the target picker, such as "1 update".
 - **Wake notice.** A block in the Global conversation labelled "Update, not a reply to you".
+- **Open task.** A link inside a task notice that opens that task.
 
 Wake turns always run at Restricted permission. They run only when the Global conversation is not busy with a user turn.
 
@@ -80,17 +81,19 @@ Set it back to **On** afterward.
 
 **Expected:** A deterministic notice says the task is stalled. It was not written by the model. No new assistant reply was generated for it. Confirm the fake agent log shows no conversation turn for it, or that `next-reply.txt` was not consumed.
 
-Repeat with `task-mode` set to `succeed` and a delivery that waits for review. Expected: a notice says a delivery is waiting.
+Repeat with `task-mode` set to `write`, so the task changes a file and a delivery waits for review. Expected: a notice says a delivery is waiting. **BLOCKED until supported:** the fake agent has no `write` mode yet (`00-setup.md` section 2). Mark this repeat `BLOCKED` until it does.
 
-## TC-W-06 Quiet answer
+## TC-W-06 Quiet answer to a work check
 
-**Source:** `orchestrator-actions.md` "Wake" (quiet token stores "Checked 3 updates. Nothing needs you.").
-**Preconditions:** Mode **On**. The fake agent answers wake turns with the quiet token. Check your fake agent for how the model signals quiet; if it cannot, mark `BLOCKED`.
+**Source:** `orchestrator-actions.md` "Output" (only heartbeat batches, work check and daemon start, may be answered quietly).
+**Preconditions:** Mode **On**. `next-reply.txt` contains `MCAO_QUIET`. Settings, **Checks on running work**: base interval `1` minute. Approve the standard task as in TC-W-04 step 1, with `task-mode` set to `hang`. If the fake agent cannot print `MCAO_QUIET`, mark `BLOCKED`.
 
-1. Cause a wake event (failed task).
+1. Wait about two minutes while the task runs. A work check runs about every minute.
 2. Open Global.
 
-**Expected:** The wake notice reads "Checked 1 update. Nothing needs you." (the number matches the updates handled). No normal reply text.
+**Expected:** One collapsed line reads "Checked N updates. Nothing needs you." N is the number of checks so far, at least 1; "Checked 1 update. Nothing needs you." is correct after one check. The token `MCAO_QUIET` is not shown. A stalled-task notice may also appear. It is a separate notice and does not change this result.
+
+Cancel the task and set the base interval back to `10` minutes afterward.
 
 ## TC-W-07 A user message cancels a running wake
 
@@ -196,3 +199,69 @@ Reset the cap afterward.
 3. Open Global.
 
 **Expected:** A deterministic notice for the failure exists. No model reply. The skip text reads "Monitoring was off".
+
+## TC-W-15 An empty change set fails with a reason
+
+**Source:** `orchestrator-actions.md` "Output" (an Implement run that exits 0 and changes no files fails with a reason).
+**Preconditions:** Mode **On**. `task-mode` is `succeed`, which exits 0 and changes no file. Clear `next-reply.txt`.
+
+1. Approve the standard task as in TC-W-04 step 1.
+2. Stay on `manual-test-project` and wait up to two minutes. Read the Global badge.
+3. Choose **Global** and read the notice.
+4. Click **Open task** in the notice.
+
+**Expected:**
+
+- Step 2: the Global entry has the badge "1 update".
+- Step 3: a notice says the task failed and gives the reason. It contains "The agent exited without changing any files." (It may continue with "Last message:" text.)
+- Step 4: the task is `Failed`. The task page reads "Failure reason: The agent exited without changing any files." It does not read "unavailable".
+
+**Screenshot** after steps 3 and 4.
+
+## TC-W-16 A candidate-ready update says what was done
+
+**Source:** `orchestrator-actions.md` event table ("Candidate ready": model turn, waits for review).
+**Preconditions:** Mode **On**. `task-mode` is `write`, which changes one file and exits 0. `next-reply.txt` contains `The change is ready. It waits for your review.` **BLOCKED until supported:** the fake agent has no `write` mode yet (`00-setup.md` section 2). Mark TC-W-16 `BLOCKED` until it does.
+
+1. Approve the standard task as in TC-W-04 step 1.
+2. Stay on `manual-test-project` and wait up to two minutes. Read the Global badge.
+3. Choose **Global** and read the notice and the reply.
+4. Click **Open task** in the notice.
+
+**Expected:**
+
+- Step 2: the Global entry has the badge "1 update".
+- Step 3: a notice says the task finished with a candidate and gives its file count. Then the reply reads "The change is ready. It waits for your review."
+- Step 3: "No automatic explanation was given" does not appear.
+- Step 4: the task is `Verifying`, not `Failed`.
+
+## TC-W-17 A quiet reply does not hide a failure
+
+**Source:** `orchestrator-actions.md` "Output" (an outcome record a quiet reply does not cover stays visible as unanswered, with its notify flag).
+**Preconditions:** Mode **On**. `task-mode` is `fail`. `next-reply.txt` contains `MCAO_QUIET`.
+
+1. Approve the standard task as in TC-W-04 step 1.
+2. Stay on `manual-test-project` and wait up to two minutes. Read the Global badge.
+3. Choose **Global** and read the notice.
+
+**Expected:**
+
+- Step 2: the Global entry has the badge "1 update".
+- Step 3: the failure notice stays visible. Directly under it reads "No automatic explanation was given. Open the task."
+- Step 3: no line reads "Checked 1 update. Nothing needs you." for this failure. The token `MCAO_QUIET` is not shown.
+- Step 3: the notice has an **Open task** link.
+
+## TC-W-18 A report relay that gets quiet replies twice
+
+**Source:** `orchestrator-actions.md` "Output" (a report relay that gets a quiet or failed reply is retried once, then a deterministic notice); `docs/m7-08-conversation-service.md` "Relay".
+**Preconditions:** Mode **On**. `next-reply.txt` contains `MCAO_QUIET`. Approve a scout as in `00-setup.md` section 6 (`Investigate`, `ReportOnly`), with `task-mode` set to `succeed`.
+
+1. Approve the scout task. Stay on `manual-test-project`.
+2. Wait up to four minutes. The first relay gets a quiet reply. The app retries once after about a minute and gets another quiet reply.
+3. Choose **Global** and read the notice.
+
+**Expected:**
+
+- Step 3: a notice reads "Report from task `<task id>` is ready; automatic relay failed. Open the task to read it." Under it reads "The automatic reply failed." The notice has an **Open task** link.
+- Step 3: the Global entry had the badge "1 update" in step 2.
+- Only two wake turns ran for this report. If the fake agent keeps a log, it shows two turns for this report and no third.

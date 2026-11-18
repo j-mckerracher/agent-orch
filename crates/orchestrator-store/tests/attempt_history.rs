@@ -46,6 +46,8 @@ fn attempt(id: &str, attempt_number: u32, state: AttemptState) -> Attempt {
         attempt_number,
         state,
         failure_reason: None,
+        summary: None,
+        changed_files: None,
     }
 }
 
@@ -102,5 +104,55 @@ fn attempt_history_rejects_unknown_task() {
     assert!(matches!(
         store.attempts_for_task("missing"),
         Err(StoreError::NotFound(task_id)) if task_id == "missing"
+    ));
+}
+
+#[test]
+fn attempt_summary_and_changed_files_round_trip_and_clear() {
+    let directory = tempfile::tempdir().unwrap();
+    let database_path = directory.path().join("attempts.sqlite");
+    {
+        let store = SqliteStore::new(&database_path).unwrap();
+        prepare_task(&store);
+        store
+            .add_attempt("task-1", &attempt("attempt-1", 1, AttemptState::Pending))
+            .unwrap();
+        store
+            .update_attempt_state("task-1", "attempt-1", AttemptState::Running)
+            .unwrap();
+        store
+            .record_attempt_summary("task-1", "attempt-1", Some("Changed the parser."), Some(3))
+            .unwrap();
+    }
+
+    let store = SqliteStore::new(&database_path).unwrap();
+    let recorded = Attempt {
+        id: "attempt-1".into(),
+        task_id: "task-1".into(),
+        attempt_number: 1,
+        state: AttemptState::Running,
+        failure_reason: None,
+        summary: Some("Changed the parser.".into()),
+        changed_files: Some(3),
+    };
+    assert_eq!(
+        store.attempts_for_task("task-1").unwrap(),
+        vec![recorded.clone()]
+    );
+    assert_eq!(store.get("task-1").unwrap().attempts, vec![recorded]);
+
+    // Recording None clears both values.
+    store
+        .record_attempt_summary("task-1", "attempt-1", None, None)
+        .unwrap();
+    let cleared = store.attempts_for_task("task-1").unwrap();
+    assert_eq!(
+        (cleared[0].summary.clone(), cleared[0].changed_files),
+        (None, None)
+    );
+
+    assert!(matches!(
+        store.record_attempt_summary("task-1", "missing", Some("text"), None),
+        Err(StoreError::NoAttempt { .. })
     ));
 }

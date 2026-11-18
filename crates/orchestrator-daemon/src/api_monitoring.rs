@@ -175,12 +175,16 @@ fn target_wire(scope: &str) -> Value {
 /// A wake record as `conversations.get` carries it. `notify` is true when the record counts
 /// toward the badge, the same rule as `unseen_wake_counts`.
 pub(super) fn wake_record_wire(record: &WakeRecord) -> Value {
+    // An outcome that a quiet reply did not answer always notifies: its notice is the only word
+    // the user gets about it.
     let notify = matches!(
         record.state,
         WakeState::Noticed | WakeState::Skipped | WakeState::Failed
     ) || (record.state == WakeState::Handled
-        && record.outcome == Some(WakeOutcome::Replied)
-        && record.notify_reply);
+        && record.outcome == Some(WakeOutcome::Unanswered))
+        || (record.state == WakeState::Handled
+            && record.outcome == Some(WakeOutcome::Replied)
+            && record.notify_reply);
     json!({
         "id": record.id,
         "event": record.kind.as_str(),
@@ -197,12 +201,17 @@ pub(super) fn wake_record_wire(record: &WakeRecord) -> Value {
     })
 }
 
-/// The turns whose whole reply was the quiet token.
+/// The turns whose whole reply was the quiet token. An unanswered record came from a quiet
+/// reply too, so its turn's reply entries stay out of the wire as well.
 pub(super) fn quiet_turn_ids(records: &[WakeRecord]) -> HashSet<&str> {
     records
         .iter()
         .filter(|record| {
-            record.state == WakeState::Handled && record.outcome == Some(WakeOutcome::Quiet)
+            record.state == WakeState::Handled
+                && matches!(
+                    record.outcome,
+                    Some(WakeOutcome::Quiet | WakeOutcome::Unanswered)
+                )
         })
         .filter_map(|record| record.turn_id.as_deref())
         .collect()

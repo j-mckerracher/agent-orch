@@ -671,6 +671,8 @@ impl Inner {
                     attempt_number: number,
                     state: AttemptState::Pending,
                     failure_reason: None,
+                    summary: None,
+                    changed_files: None,
                 },
             )
             .map_err(|error| format!("cannot record attempt: {error}"))?;
@@ -1152,7 +1154,12 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     };
     if let Err(error) = store.register_cancellation_owner(&owner) {
         reap(&mut *handle, job).await;
-        fail_after_agent_exit(store, job);
+        fail_after_agent_exit(
+            store,
+            job,
+            &format!("Supervision error: cannot register cancellation owner: {error}"),
+            None,
+        );
         return Err(format!("cannot register cancellation owner: {error}"));
     }
 
@@ -1456,6 +1463,7 @@ fn finish(
     monitored: MonitorOutcome,
 ) -> Result<(), String> {
     let (outcome, code, reason) = describe_exit(&monitored.exit);
+    let final_message = last_message_of(&monitored.exit);
     job.diag.info(
         LOG,
         "agent_exited",
@@ -1501,15 +1509,25 @@ fn finish(
             }
             return confirmed;
         }
-        fail_after_agent_exit(store, job);
+        fail_after_agent_exit(
+            store,
+            job,
+            &exit_reason(outcome, &code, &reason),
+            final_message,
+        );
         return close(if monitored.cancellation_requested {
             CancellationStatus::Failed
         } else {
             CancellationStatus::Rejected
         });
     }
-    if monitored.supervision_error.is_some() {
-        fail_after_agent_exit(store, job);
+    if let Some(supervision) = &monitored.supervision_error {
+        fail_after_agent_exit(
+            store,
+            job,
+            &format!("Supervision error: {supervision}"),
+            final_message,
+        );
         return close(resolution);
     }
     match monitored.exit {
@@ -1522,34 +1540,51 @@ fn finish(
                 .map_err(|error| format!("cannot mark session exited: {error}"))?;
             // An in-place task changed its project directory itself: nothing to commit.
             let committed = if job.in_place {
-                Ok(())
+                Ok(None)
             } else {
                 commit_candidate(&job.worktree, &job.task_id)
             };
-            if let Err(error) = committed {
-                store
-                    .update_attempt_state(&job.task_id, &job.attempt_id, AttemptState::Failed)
-                    .map_err(|e| format!("cannot fail attempt: {e}"))?;
-                store
-                    .transition(&job.task_id, TaskEvent::ExecutionFailed)
-                    .map_err(|e| format!("cannot fail task: {e}"))?;
-                let (worktree, uncommitted) = preserved_work(job);
-                job.diag.error(
-                    LOG,
-                    "candidate_commit_failed",
-                    &job.event_fields(&[
-                        ("error", &error),
-                        ("worktree", &worktree),
-                        ("uncommitted_paths", &uncommitted),
-                        (
-                            "recovery",
-                            "worktree kept with the agent's changes; retry the task",
-                        ),
-                    ]),
-                );
-                close(resolution)?;
-                return Err(format!("cannot record candidate commit: {error}"));
+            let changed = match committed {
+                Ok(changed) => changed,
+                Err(error) => {
+                    record_summary(store, job, final_message, None);
+                    store
+                        .update_attempt_state(&job.task_id, &job.attempt_id, AttemptState::Failed)
+                        .map_err(|e| format!("cannot fail attempt: {e}"))?;
+                    store
+                        .transition(&job.task_id, TaskEvent::ExecutionFailed)
+                        .map_err(|e| format!("cannot fail task: {e}"))?;
+                    let (worktree, uncommitted) = preserved_work(job);
+                    job.diag.error(
+                        LOG,
+                        "candidate_commit_failed",
+                        &job.event_fields(&[
+                            ("error", &error),
+                            ("worktree", &worktree),
+                            ("uncommitted_paths", &uncommitted),
+                            (
+                                "recovery",
+                                "worktree kept with the agent's changes; retry the task",
+                            ),
+                        ]),
+                    );
+                    close(resolution)?;
+                    return Err(format!("cannot record candidate commit: {error}"));
+                }
+            };
+            // Only an investigation may end with nothing changed: its finding is the product. An
+            // in-place task has no commit to check, so it is exempt too.
+            let investigates = store
+                .get(&job.task_id)
+                .is_ok_and(|task| task.contract.kind == TaskKind::Investigate);
+            if changed.is_none() && !job.in_place && !investigates {
+                record_summary(store, job, final_message, Some(0));
+                let reason = no_change_reason(final_message);
+                fail_records(store, job, SessionState::Exited, Some(reason.as_str()));
+                return close(resolution);
             }
+            let changed_files = changed.map_or(0, |count| u32::try_from(count).unwrap_or(u32::MAX));
+            record_summary(store, job, final_message, Some(changed_files));
             store
                 .update_attempt_state(&job.task_id, &job.attempt_id, AttemptState::CandidateReady)
                 .map_err(|error| format!("cannot mark attempt candidate-ready: {error}"))?;
@@ -1562,7 +1597,12 @@ fn finish(
             close(resolution)
         }
         _ => {
-            fail_after_agent_exit(store, job);
+            fail_after_agent_exit(
+                store,
+                job,
+                &exit_reason(outcome, &code, &reason),
+                final_message,
+            );
             close(resolution)
         }
     }
@@ -1625,8 +1665,99 @@ fn fail_before_agent_exit(store: &SqliteStore, job: &Job, failure_reason: Option
     fail_records(store, job, SessionState::Aborted, failure_reason);
 }
 
-fn fail_after_agent_exit(store: &SqliteStore, job: &Job) {
-    fail_records(store, job, SessionState::Exited, None);
+/// Records a run that ended without a candidate: why its attempt failed, and the agent's last
+/// message as the attempt's summary when it wrote one.
+fn fail_after_agent_exit(store: &SqliteStore, job: &Job, reason: &str, last_message: Option<&str>) {
+    record_summary(store, job, last_message, None);
+    let reason = one_line(&bounded_text(reason, FAILURE_REASON_BYTES));
+    fail_records(store, job, SessionState::Exited, Some(reason.as_str()));
+}
+
+/// Why a run that produced no candidate ended, in words a person can read. Built from the exit
+/// facts; the agent's own text reaches it only through the reason of a protocol failure.
+fn exit_reason(outcome: &str, code: &str, reason: &str) -> String {
+    match outcome {
+        "cancelled" => "The agent was cancelled.".to_owned(),
+        // The protocol's reason may already end with a full stop; one is enough.
+        "failed" if !reason.is_empty() => {
+            format!("The agent failed: {}.", reason.trim_end_matches('.'))
+        }
+        _ if code == "none" => "The agent exited without an exit code.".to_owned(),
+        _ => format!("The agent exited with code {code}."),
+    }
+}
+
+/// The final message of a run that ended with one. A run that failed has none.
+fn last_message_of(exit: &AgentExit) -> Option<&str> {
+    match exit {
+        AgentExit::Completed { last_message, .. } | AgentExit::Cancelled { last_message, .. } => {
+            last_message.as_deref()
+        }
+        AgentExit::Failed { .. } => None,
+    }
+}
+
+/// The reason an implement task that changed no files fails with. The agent's last message, when
+/// it wrote one, says what it concluded in place of a change.
+fn no_change_reason(last_message: Option<&str>) -> String {
+    const HEAD: &str = "The agent exited without changing any files.";
+    let excerpt = last_message.map(|text| one_line(&bounded_text(text, EXCERPT_BYTES)));
+    match excerpt.filter(|excerpt| !excerpt.is_empty()) {
+        Some(excerpt) => format!("{HEAD} Last message: {excerpt}"),
+        None => HEAD.to_owned(),
+    }
+}
+
+/// Most bytes of an agent's last message kept as its attempt's summary.
+const SUMMARY_BYTES: usize = 4 * 1024;
+/// Most bytes of a stored failure reason.
+const FAILURE_REASON_BYTES: usize = 512;
+/// Most bytes of a last message quoted inside a failure reason.
+const EXCERPT_BYTES: usize = 200;
+
+/// Stores the agent's last message as the attempt's summary, with the changed-file count when it
+/// is known. It is written before the attempt changes state, so the wake that reports the outcome
+/// can read it. A failure to store is logged without the text and never changes the outcome.
+fn record_summary(
+    store: &SqliteStore,
+    job: &Job,
+    last_message: Option<&str>,
+    changed_files: Option<u32>,
+) {
+    let summary = last_message
+        .map(|text| bounded_text(text, SUMMARY_BYTES))
+        .filter(|summary| !summary.trim().is_empty());
+    if store
+        .record_attempt_summary(
+            &job.task_id,
+            &job.attempt_id,
+            summary.as_deref(),
+            changed_files,
+        )
+        .is_err()
+    {
+        job.diag
+            .error(LOG, "attempt_summary_not_recorded", &job.event_fields(&[]));
+    }
+}
+
+/// `text` redacted the way wake text is, then cut to `max_bytes` on a character boundary. The
+/// cut comes last: redaction can lengthen the text, and a cut first could leave half of a
+/// credential unmasked.
+fn bounded_text(text: &str, max_bytes: usize) -> String {
+    let (body, _) = crate::api::report::report_body(text);
+    let mut redacted = crate::api::wake_events::redact(&body);
+    let mut end = max_bytes.min(redacted.len());
+    while !redacted.is_char_boundary(end) {
+        end -= 1;
+    }
+    redacted.truncate(end);
+    redacted
+}
+
+/// `text` on one line, for a reason shown in a notice.
+fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
 /// Ends the session, attempt and task of a launch that produced no candidate.
@@ -1706,21 +1837,29 @@ fn git_checked(cwd: &Path, args: &[&str]) -> Result<std::process::Output, String
 
 /// Commits whatever the agent left in the worktree so the candidate is a
 /// stable commit on the task branch. Never touches the primary checkout.
-fn commit_candidate(worktree: &Path, task_id: &str) -> Result<(), String> {
+/// Returns how many files the commit holds, or `None` when the agent changed nothing.
+fn commit_candidate(worktree: &Path, task_id: &str) -> Result<Option<usize>, String> {
     let status = git_checked(
         worktree,
         &["status", "--porcelain", "--untracked-files=all"],
     )?;
     if status.stdout.is_empty() {
-        return Ok(());
+        return Ok(None);
     }
     git_checked(worktree, &["add", "--all", "--"])?;
     if git(worktree, &["diff", "--cached", "--quiet"])?
         .status
         .success()
     {
-        return Ok(());
+        return Ok(None);
     }
+    // NUL-terminated names, so a file name that contains a newline still counts as one file.
+    let staged = git_checked(worktree, &["diff", "--cached", "--name-only", "-z"])?;
+    let files = staged
+        .stdout
+        .split(|byte| *byte == 0)
+        .filter(|name| !name.is_empty())
+        .count();
     let message = format!("agent-orch candidate {task_id}");
     git_checked(
         worktree,
@@ -1733,8 +1872,8 @@ fn commit_candidate(worktree: &Path, task_id: &str) -> Result<(), String> {
             "-m",
             &message,
         ],
-    )
-    .map(|_| ())
+    )?;
+    Ok(Some(files))
 }
 
 /// Terminates agents whose owner daemon is gone, using only an exact identity

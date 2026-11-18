@@ -882,6 +882,8 @@ needs a per-action approval.
   words become `[redacted]`. The model receives it as labelled data, with at most one
   report per wake turn. Automatic relay sets `relayed_at` only after a successful,
   non-quiet reply. Failure, cancellation and a quiet reply do not mark it relayed.
+  A failed or quiet relay is retried once. After the second failed or quiet reply, the
+  notice reads that the automatic relay failed, and the report stays unrelayed.
 - **Methods.** `reports.get` and `reports.relay` are user-only. `reports.list` returns
   metadata only and is open.
 - **Promotion.** A scout promotes to a ship only after its report has been relayed,

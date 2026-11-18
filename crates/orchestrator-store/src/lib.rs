@@ -349,6 +349,17 @@ pub trait Store {
         failure_reason: &str,
     ) -> Result<(), StoreError>;
 
+    /// Store what an attempt's agent reported and how many files it changed. Either may be
+    /// `None`, which clears it. The caller bounds and redacts the text. This never touches the
+    /// attempt's state or the task's state.
+    fn record_attempt_summary(
+        &self,
+        task_id: &str,
+        attempt_id: &str,
+        summary: Option<&str>,
+        changed_files: Option<u32>,
+    ) -> Result<(), StoreError>;
+
     /// Append a new agent session. The attempt must already be recorded on
     /// the task. This never touches task state.
     fn add_session(&self, task_id: &str, session: &Session) -> Result<(), StoreError>;
@@ -640,6 +651,29 @@ impl Store for FileStore {
         Ok(())
     }
 
+    fn record_attempt_summary(
+        &self,
+        task_id: &str,
+        attempt_id: &str,
+        summary: Option<&str>,
+        changed_files: Option<u32>,
+    ) -> Result<(), StoreError> {
+        self.mutate(task_id, |r| {
+            let attempt = r
+                .attempts
+                .iter_mut()
+                .find(|attempt| attempt.id == attempt_id)
+                .ok_or_else(|| StoreError::NoAttempt {
+                    attempt_id: attempt_id.to_owned(),
+                    task_id: task_id.to_owned(),
+                })?;
+            attempt.summary = summary.map(str::to_owned);
+            attempt.changed_files = changed_files;
+            Ok(())
+        })?;
+        Ok(())
+    }
+
     fn add_session(&self, task_id: &str, session: &Session) -> Result<(), StoreError> {
         self.mutate(task_id, |r| {
             if r.sessions.iter().any(|s| s.id == session.id) {
@@ -754,6 +788,8 @@ mod tests {
             attempt_number: n,
             state: AttemptState::Pending,
             failure_reason: None,
+            summary: None,
+            changed_files: None,
         }
     }
 

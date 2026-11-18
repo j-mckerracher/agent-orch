@@ -189,7 +189,7 @@ fn waiting_agent(fixture: &Fixture, release: &Path) -> PathBuf {
     fixture.script(
         "waiting-agent",
         &format!(
-            "{THREAD_STARTED}while [ ! -f '{}' ]; do sleep 0.05; done\n{TURN_COMPLETED}",
+            "{THREAD_STARTED}while [ ! -f '{}' ]; do sleep 0.05; done\necho produced > agent-output.txt\n{TURN_COMPLETED}",
             release.display()
         ),
     )
@@ -329,9 +329,115 @@ fn a_finished_scout_leaves_its_last_message_as_a_redacted_report_and_a_ship_leav
     assert!(!report.body.contains(secret), "{}", report.body);
     assert!(!report.truncated && report.relayed_at.is_none());
 
+    // This agent changes nothing, so an implement task ends Failed; it still leaves no report.
     let ship = submit_kind(&fixture, &api, "ship-1", "Implement");
-    wait_state(&api, &ship, "Verifying");
+    wait_state(&api, &ship, "Failed");
     assert_eq!(store.task_report(&ship).unwrap(), None);
+    api.shutdown();
+}
+
+#[test]
+fn an_implement_agent_that_changes_nothing_fails_with_the_empty_change_set_reason() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&messaging_agent(
+        &fixture,
+        "I read the loader and found nothing to change.",
+    ));
+    let task_id = fixture.submit(&api, "no-op-1", 0);
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["state"], "Failed");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(
+        attempt.failure_reason.as_deref(),
+        Some("The agent exited without changing any files. Last message: I read the loader and found nothing to change.")
+    );
+    assert_eq!(
+        attempt.summary.as_deref(),
+        Some("I read the loader and found nothing to change.")
+    );
+    assert_eq!(attempt.changed_files, Some(0));
+    api.shutdown();
+}
+
+#[test]
+fn an_investigate_agent_that_changes_nothing_still_produces_a_candidate() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&messaging_agent(&fixture, "The loader is the slow part."));
+    let scout = submit_kind(&fixture, &api, "scout-no-change", "Investigate");
+
+    let done = wait_state(&api, &scout, "Verifying");
+    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&scout).unwrap()[0];
+    assert_eq!(attempt.failure_reason, None);
+    assert_eq!(attempt.changed_files, Some(0));
+    assert_eq!(
+        attempt.summary.as_deref(),
+        Some("The loader is the slow part.")
+    );
+    api.shutdown();
+}
+
+#[test]
+fn every_agent_exit_failure_stores_a_reason() {
+    // The agent exits without ever completing a turn.
+    let fixture = Fixture::new();
+    let agent = fixture.script("silent-agent", &format!("{THREAD_STARTED}exit 3\n"));
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "silent-1", 0);
+    wait_state(&api, &task_id, "Failed");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(
+        attempt.failure_reason.as_deref(),
+        Some("The agent failed: agent exited with code 3.")
+    );
+    assert_eq!(attempt.summary, None);
+    api.shutdown();
+
+    // The agent completes a turn with a message, then exits non-zero: the message is kept.
+    let fixture = Fixture::new();
+    let event = r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Stopped halfway."}}"#;
+    let agent = fixture.script(
+        "stops-after-turn",
+        &format!("{THREAD_STARTED}printf '%s\\n' '{event}'\n{TURN_COMPLETED}exit 3\n"),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "stopped-1", 0);
+    wait_state(&api, &task_id, "Failed");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    // A non-zero exit reaches the store as a protocol failure, which carries the message only
+    // inside its reason, so the attempt has no separate summary.
+    assert_eq!(
+        attempt.failure_reason.as_deref(),
+        Some("The agent failed: agent exited with code 3; last message: Stopped halfway.")
+    );
+    assert_eq!(attempt.summary, None);
+    assert_eq!(attempt.changed_files, None);
+    api.shutdown();
+}
+
+#[test]
+fn a_candidate_records_its_changed_file_count_and_last_message() {
+    let fixture = Fixture::new();
+    let event = r#"{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"Added both files."}}"#;
+    let agent = fixture.script(
+        "two-file-agent",
+        &format!(
+            "{THREAD_STARTED}echo one > one.txt\necho two > two.txt\nprintf '%s\\n' '{event}'\n{TURN_COMPLETED}"
+        ),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "two-files-1", 0);
+
+    wait_state(&api, &task_id, "Verifying");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(attempt.changed_files, Some(2));
+    assert_eq!(attempt.summary.as_deref(), Some("Added both files."));
     api.shutdown();
 }
 
@@ -340,7 +446,10 @@ fn usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown() {
     let fixture = Fixture::new();
     let usage_turn = r#"printf '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":50,"reasoning_output_tokens":20}}\n'
 "#;
-    let reporting = fixture.script("usage-agent", &format!("{THREAD_STARTED}{usage_turn}"));
+    let reporting = fixture.script(
+        "usage-agent",
+        &format!("{THREAD_STARTED}echo produced > agent-output.txt\n{usage_turn}"),
+    );
     let api = fixture.api(&reporting);
     let task_id = fixture.submit(&api, "usage-1", 0);
     wait_state(&api, &task_id, "Verifying");
@@ -382,7 +491,7 @@ fn failed_agent_fails_the_task_and_retry_appends_a_second_attempt() {
     let agent = fixture.script(
         "flaky-agent",
         &format!(
-            "{THREAD_STARTED}if [ -f '{0}' ]; then {TURN_COMPLETED} exit 0; fi\ntouch '{0}'\nexit 3\n",
+            "{THREAD_STARTED}if [ -f '{0}' ]; then echo produced > agent-output.txt; {TURN_COMPLETED} exit 0; fi\ntouch '{0}'\nexit 3\n",
             first_ran.display()
         ),
     );
@@ -612,7 +721,7 @@ fn output_tail_is_read_only_and_leaves_a_running_agent_and_its_exit_untouched() 
     let agent = fixture.script(
         "chatty-agent",
         &format!(
-            "{THREAD_STARTED}{}while [ ! -f '{}' ]; do sleep 0.05; done\n{}{TURN_COMPLETED}",
+            "{THREAD_STARTED}{}while [ ! -f '{}' ]; do sleep 0.05; done\n{}echo produced > agent-output.txt\n{TURN_COMPLETED}",
             message_line("before"),
             release.display(),
             message_line("after"),
@@ -658,7 +767,7 @@ fn output_tail_flood_stays_within_the_ring_and_line_caps_and_the_run_still_succe
     let agent = fixture.script(
         "flood-agent",
         &format!(
-            "{THREAD_STARTED}pad=$(head -c {} /dev/zero | tr '\\0' x)\ni=0\nwhile [ $i -lt {} ]; do\nprintf '{{\"type\":\"item.completed\",\"item\":{{\"id\":\"i\",\"type\":\"agent_message\",\"text\":\"%s %s\\\\n\"}}}}\\n' $i \"$pad\"\ni=$((i+1))\ndone\n{TURN_COMPLETED}",
+            "{THREAD_STARTED}pad=$(head -c {} /dev/zero | tr '\\0' x)\ni=0\nwhile [ $i -lt {} ]; do\nprintf '{{\"type\":\"item.completed\",\"item\":{{\"id\":\"i\",\"type\":\"agent_message\",\"text\":\"%s %s\\\\n\"}}}}\\n' $i \"$pad\"\ni=$((i+1))\ndone\necho produced > agent-output.txt\n{TURN_COMPLETED}",
             MAX_LINE_BYTES * 2,
             RING_LINES * 3,
         ),
@@ -693,7 +802,7 @@ fn output_tail_defaults_clamps_and_rejects_bad_input_and_unknown_sessions() {
         .collect();
     let agent = fixture.script(
         "rows-agent",
-        &format!("{THREAD_STARTED}{body}{TURN_COMPLETED}"),
+        &format!("{THREAD_STARTED}{body}echo produced > agent-output.txt\n{TURN_COMPLETED}"),
     );
     let api = fixture.api(&agent);
     let task_id = fixture.submit(&api, "rows-1", 0);
@@ -1255,6 +1364,8 @@ fn seed_interrupted_run(store: &SqliteStore, fixture: &Fixture, task_id: &str, p
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

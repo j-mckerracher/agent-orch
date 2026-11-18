@@ -73,6 +73,8 @@ fn create_running_task(api: &DaemonApi, task_id: &str) {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();
@@ -364,6 +366,8 @@ fn session_events_replay_task_and_only_selected_session_events() {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

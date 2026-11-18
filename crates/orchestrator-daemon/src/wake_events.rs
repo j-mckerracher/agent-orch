@@ -1,13 +1,15 @@
 //! Classifies durable events into wake candidates (DPES-1105 phase 3c).
 //!
 //! Pure: no store, no clock. Every notice is written here from a fixed template out of a task
-//! id, a short objective, a state word and a stable code. Nothing an agent wrote reaches a
-//! notice: the classifier reads event kinds and a few id and state fields, and the objective
-//! goes through [`redact`] so a path or a token typed into a task title cannot leave this file.
+//! id, a short objective, a state word, a file count and a stable code. Agent-written text
+//! reaches a notice in two places only: the objective and a failure reason. Both go through
+//! [`redact`], and the reason also through `sanitize`, so a path or a token cannot leave this file.
 
 use orchestrator_core::supervision::Stall;
 use orchestrator_store::{StreamEvent, TaskWakeFacts, WakeKind};
 use serde_json::Value;
+
+use super::conversation_agent::sanitize;
 
 /// Longest id kept in a notice or a dedupe key, in bytes.
 const ID_BYTES: usize = 64;
@@ -125,20 +127,26 @@ pub(crate) fn classify(event: &StreamEvent, facts: Option<&TaskWakeFacts>) -> Op
             task_id,
             kind: WakeKind::ScoutReportReady,
         }),
-        "task.transition" => {
-            let words = match event.payload.get("state")?.as_str()? {
-                "Failed" => "failed.",
-                "VerificationFailed" => "failed verification.",
-                _ => return None,
-            };
-            Some(Candidate {
-                subject: task_id.clone(),
-                dedupe_key: format!("failed:{task_id}:{}", event.sequence),
-                notice: format!("{task} {words}"),
+        "task.transition" => match event.payload.get("state")?.as_str()? {
+            "Failed" => Some(failure(event, &task, task_id, "failed", facts)),
+            "VerificationFailed" => {
+                Some(failure(event, &task, task_id, "failed verification", facts))
+            }
+            // A report-only task (an investigation) has no candidate to review: its report already
+            // wakes the model, so it gets no second wake.
+            "Verifying" if facts.is_some_and(|facts| facts.report_only) => None,
+            // The agent left a candidate. It waits for review, and the wake turn reads its
+            // summary. The subject is the raw id, as a report's is, so the turn can read the
+            // task's facts.
+            "Verifying" => Some(Candidate {
+                subject: event.task_id.clone(),
+                dedupe_key: format!("candidate:{task_id}:{}", event.sequence),
+                notice: candidate_notice(&task, facts),
                 task_id,
-                kind: WakeKind::TaskFailed,
-            })
-        }
+                kind: WakeKind::CandidateReady,
+            }),
+            _ => None,
+        },
         "approval.requested" => {
             if event.payload.get("event")?.get("event")?.as_str()? != "requested" {
                 return None;
@@ -172,6 +180,58 @@ pub(crate) fn classify(event: &StreamEvent, facts: Option<&TaskWakeFacts>) -> Op
         }
         _ => None,
     }
+}
+
+/// A task that failed. The stored reason, when there is one, is named in the notice.
+fn failure(
+    event: &StreamEvent,
+    task: &str,
+    task_id: String,
+    words: &str,
+    facts: Option<&TaskWakeFacts>,
+) -> Candidate {
+    let reason = facts
+        .and_then(|facts| facts.failure_reason.as_deref())
+        .map(reason_text)
+        .filter(|reason| !reason.is_empty());
+    let notice = match reason {
+        Some(reason) => format!("{task} {words}: {reason}"),
+        None => format!("{task} {words}."),
+    };
+    Candidate {
+        subject: task_id.clone(),
+        dedupe_key: format!("failed:{task_id}:{}", event.sequence),
+        notice,
+        task_id,
+        kind: WakeKind::TaskFailed,
+    }
+}
+
+/// A stored failure reason as one line of notice text: sanitized, redacted and with runs of
+/// whitespace collapsed. The store caps the reason, so the notice stays short.
+fn reason_text(reason: &str) -> String {
+    redact(&sanitize(reason))
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// "Task t-1 (…) finished with a candidate (3 files changed) and waits for review." The count
+/// is left out when the store holds none.
+fn candidate_notice(task: &str, facts: Option<&TaskWakeFacts>) -> String {
+    let files = facts
+        .and_then(|facts| facts.changed_files)
+        .map_or(String::new(), |count| format!(" ({count} files changed)"));
+    format!("{task} finished with a candidate{files} and waits for review.")
+}
+
+/// The notice a scout report leaves when its automatic relay failed twice. The report stays in
+/// its task, and the notice says where to read it.
+pub(crate) fn report_relay_failed_notice(task_id: &str) -> String {
+    format!(
+        "Report from task {} is ready; automatic relay failed. Open the task to read it.",
+        safe_id(task_id)
+    )
 }
 
 /// The candidate for one stall finding. One per attempt and rule, by its dedupe key.
@@ -237,6 +297,10 @@ mod tests {
         TaskWakeFacts {
             scope: "conversation:global".into(),
             objective: objective.into(),
+            failure_reason: None,
+            changed_files: None,
+            summary: None,
+            report_only: false,
         }
     }
 
@@ -390,6 +454,91 @@ mod tests {
             redact_snapshot(&format!("- Ship {token} [id {id}] state open")),
             format!("- Ship [redacted] [id {id}] state open")
         );
+    }
+
+    #[test]
+    fn a_failed_task_notice_names_the_stored_reason() {
+        let with_reason = TaskWakeFacts {
+            failure_reason: Some(
+                "The agent failed: build broke in /Users/me/app/src/main.rs".into(),
+            ),
+            ..facts("Fix the login bug")
+        };
+        let failed = classify(
+            &event("task.transition", json!({"state": "Failed"})),
+            Some(&with_reason),
+        )
+        .unwrap();
+        assert_eq!(
+            failed.notice,
+            "Task t-12ab (Fix the login bug) failed: The agent failed: build broke in [path]"
+        );
+        assert_eq!(failed.dedupe_key, "failed:t-12ab:41");
+
+        let verification = classify(
+            &event("task.transition", json!({"state": "VerificationFailed"})),
+            Some(&with_reason),
+        )
+        .unwrap();
+        assert!(
+            verification
+                .notice
+                .starts_with("Task t-12ab (Fix the login bug) failed verification: The agent"),
+            "{}",
+            verification.notice
+        );
+
+        // A blank reason reads like no reason at all.
+        let blank = TaskWakeFacts {
+            failure_reason: Some("  \n ".into()),
+            ..facts("Fix the login bug")
+        };
+        let plain = classify(
+            &event("task.transition", json!({"state": "Failed"})),
+            Some(&blank),
+        )
+        .unwrap();
+        assert_eq!(plain.notice, "Task t-12ab (Fix the login bug) failed.");
+    }
+
+    #[test]
+    fn a_candidate_notice_counts_its_files_or_leaves_the_count_out() {
+        let counted = TaskWakeFacts {
+            changed_files: Some(3),
+            ..facts("Fix the login bug")
+        };
+        let candidate = classify(
+            &event("task.transition", json!({"state": "Verifying"})),
+            Some(&counted),
+        )
+        .unwrap();
+        assert_eq!(candidate.kind, WakeKind::CandidateReady);
+        assert_eq!(candidate.subject, "t-12ab");
+        assert_eq!(candidate.dedupe_key, "candidate:t-12ab:41");
+        assert_eq!(
+            candidate.notice,
+            "Task t-12ab (Fix the login bug) finished with a candidate (3 files changed) and waits for review."
+        );
+        assert!(WakeKind::CandidateReady.needs_model());
+
+        let uncounted = classify(
+            &event("task.transition", json!({"state": "Verifying"})),
+            Some(&facts("Fix the login bug")),
+        )
+        .unwrap();
+        assert_eq!(
+            uncounted.notice,
+            "Task t-12ab (Fix the login bug) finished with a candidate and waits for review."
+        );
+    }
+
+    #[test]
+    fn the_relay_failure_notice_names_the_report_and_keeps_the_id_plain() {
+        assert_eq!(
+            report_relay_failed_notice("scout-1"),
+            "Report from task scout-1 is ready; automatic relay failed. Open the task to read it."
+        );
+        assert!(!report_relay_failed_notice("a/b c").contains('/'));
     }
 
     #[test]

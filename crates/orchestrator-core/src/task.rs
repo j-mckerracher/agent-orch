@@ -243,6 +243,13 @@ pub struct Attempt {
     /// records may not carry one; callers must represent that as unavailable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub failure_reason: Option<String>,
+    /// What the attempt's agent reported when it ended, as the daemon recorded it. `None` until
+    /// recorded, and for attempts that ended before summaries existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    /// How many files the attempt's change set touched when it ended. `None` until recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub changed_files: Option<u32>,
 }
 
 /// Lifecycle state of one execution attempt.
@@ -589,6 +596,8 @@ mod tests {
             attempt_number: 1,
             state: AttemptState::Failed,
             failure_reason: None,
+            summary: None,
+            changed_files: None,
         };
         let retried = Attempt {
             id: "a2".into(),
@@ -596,6 +605,8 @@ mod tests {
             attempt_number: 2,
             state: AttemptState::Pending,
             failure_reason: None,
+            summary: None,
+            changed_files: None,
         };
         assert_eq!(failed.attempt_number, 1);
         assert_eq!(retried.attempt_number, 2);

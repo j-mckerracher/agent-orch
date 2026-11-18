@@ -13,9 +13,10 @@ use orchestrator_core::task::{
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
-use sqlx::sqlite::Sqlite;
+use sqlx::sqlite::{Sqlite, SqliteRow};
 use sqlx::{Row, Transaction};
 
+use crate::sqlite_attempts::attempt_from_row;
 use crate::sqlite_events::append_durable_event;
 use crate::{SqliteStore, Store, StoreError, TaskRecord};
 
@@ -45,7 +46,7 @@ pub struct TaskOverview {
 /// The states [`TaskState::is_terminal`] names, for SQL that must skip them.
 const TERMINAL_TASK_STATES: [TaskState; 2] = [TaskState::Succeeded, TaskState::Cancelled];
 
-/// The list fields of one non-terminal task.
+/// The list fields of one non-terminal task, and the facts a wake turn reads about it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OpenTask {
     pub id: String,
@@ -55,6 +56,46 @@ pub struct OpenTask {
     pub objective: String,
     /// Workstream the task serves, when it is linked to one.
     pub workstream_id: Option<String>,
+    /// Failure reason of the task's latest attempt. `None` when it has none recorded.
+    pub failure_reason: Option<String>,
+    /// Files the task's latest attempt changed. `None` until recorded.
+    pub changed_files: Option<u32>,
+    /// Whole minutes since the task last changed state, on the database clock. `None` when the
+    /// task has no state event.
+    pub minutes_in_state: Option<u64>,
+    /// `None` when the task has no report. Otherwise whether that report was relayed.
+    pub report_relayed: Option<bool>,
+}
+
+/// Decodes one open-task row. The select must name `id, project_id, state, objective,
+/// workstream_id, failure_reason, changed_files, minutes_in_state, report_relayed`.
+pub(crate) fn open_task_from_row(row: &SqliteRow) -> Result<OpenTask, StoreError> {
+    let id: String = row.try_get("id")?;
+    let corrupt = |detail: &str| StoreError::Corrupt {
+        task_id: id.clone(),
+        detail: detail.to_owned(),
+    };
+    let changed_files = row
+        .try_get::<Option<i64>, _>("changed_files")?
+        .map(|count| u32::try_from(count).map_err(|_| corrupt("changed file count exceeds u32")))
+        .transpose()?;
+    let minutes_in_state = row
+        .try_get::<Option<i64>, _>("minutes_in_state")?
+        .map(|minutes| u64::try_from(minutes).map_err(|_| corrupt("negative minutes in state")))
+        .transpose()?;
+    Ok(OpenTask {
+        project_id: row.try_get("project_id")?,
+        state: decode(&row.try_get::<String, _>("state")?)?,
+        objective: row.try_get("objective")?,
+        workstream_id: row.try_get("workstream_id")?,
+        failure_reason: row.try_get("failure_reason")?,
+        changed_files,
+        minutes_in_state,
+        report_relayed: row
+            .try_get::<Option<i64>, _>("report_relayed")?
+            .map(|relayed| relayed != 0),
+        id,
+    })
 }
 
 /// Identity of the process that owns a running session's [`AgentHandle`].
@@ -216,11 +257,19 @@ impl SqliteStore {
             let [first, second] = TERMINAL_TASK_STATES;
             let mut open = Vec::new();
             for row in sqlx::query(
-                "SELECT tasks.id, tasks.project_id, tasks.state, \
-                 COALESCE(json_extract(tasks.contract_json, '$.objective'), '') AS objective, \
-                 workstream_tasks.workstream_id \
-                 FROM tasks LEFT JOIN workstream_tasks ON workstream_tasks.task_id = tasks.id \
-                 WHERE tasks.state NOT IN (?, ?) ORDER BY tasks.rowid DESC LIMIT ?",
+                "SELECT t.id, t.project_id, t.state, \
+                 COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective, \
+                 ws.workstream_id, latest.failure_reason, latest.changed_files, \
+                 CAST(MAX(0, (julianday('now') - julianday((SELECT e.created_at FROM durable_events e \
+                 WHERE e.task_id = t.id AND e.kind IN ('task.created', 'task.transition') \
+                 ORDER BY e.sequence DESC LIMIT 1))) * 1440) AS INTEGER) AS minutes_in_state, \
+                 CASE WHEN r.task_id IS NULL THEN NULL ELSE r.relayed_at IS NOT NULL END AS report_relayed \
+                 FROM tasks t \
+                 LEFT JOIN workstream_tasks ws ON ws.task_id = t.id \
+                 LEFT JOIN attempts latest ON latest.task_id = t.id \
+                 AND latest.attempt_number = (SELECT MAX(a.attempt_number) FROM attempts a WHERE a.task_id = t.id) \
+                 LEFT JOIN task_reports r ON r.task_id = t.id \
+                 WHERE t.state NOT IN (?, ?) ORDER BY t.rowid DESC LIMIT ?",
             )
             .bind(encode(&first)?)
             .bind(encode(&second)?)
@@ -228,13 +277,7 @@ impl SqliteStore {
             .fetch_all(&pool)
             .await?
             {
-                open.push(OpenTask {
-                    id: row.try_get("id")?,
-                    project_id: row.try_get("project_id")?,
-                    state: decode(&row.try_get::<String, _>("state")?)?,
-                    objective: row.try_get("objective")?,
-                    workstream_id: row.try_get("workstream_id")?,
-                });
+                open.push(open_task_from_row(&row)?);
             }
             Ok(TaskOverview { counts, open })
         })
@@ -2079,6 +2122,43 @@ impl Store for SqliteStore {
         })
     }
 
+    fn record_attempt_summary(
+        &self,
+        task_id: &str,
+        attempt_id: &str,
+        summary: Option<&str>,
+        changed_files: Option<u32>,
+    ) -> Result<(), StoreError> {
+        validate_task_id(task_id)?;
+        let task_id = task_id.to_owned();
+        let attempt_id = attempt_id.to_owned();
+        let summary = summary.map(str::to_owned);
+        let changed_files = changed_files.map(i64::from);
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            current_task_state(&mut transaction, &task_id).await?;
+            let updated = sqlx::query(
+                "UPDATE attempts SET summary = ?, changed_files = ? WHERE task_id = ? AND id = ?",
+            )
+            .bind(&summary)
+            .bind(changed_files)
+            .bind(&task_id)
+            .bind(&attempt_id)
+            .execute(&mut *transaction)
+            .await?
+            .rows_affected();
+            if updated != 1 {
+                return Err(StoreError::NoAttempt {
+                    attempt_id,
+                    task_id,
+                });
+            }
+            bump_task_version(&mut transaction, &task_id).await?;
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
     fn add_session(&self, task_id: &str, session: &Session) -> Result<(), StoreError> {
         validate_task_id(task_id)?;
         let task_id = task_id.to_owned();
@@ -2216,29 +2296,16 @@ async fn load_record(
         })?;
 
     let attempt_rows = sqlx::query(
-        "SELECT id, attempt_number, state, failure_reason FROM attempts WHERE task_id = ? ORDER BY attempt_number",
+        "SELECT id, attempt_number, state, failure_reason, summary, changed_files \
+         FROM attempts WHERE task_id = ? ORDER BY attempt_number",
     )
     .bind(task_id)
     .fetch_all(&mut **transaction)
     .await?;
-    let attempts =
-        attempt_rows
-            .into_iter()
-            .map(|row| {
-                let attempt_number = u32::try_from(row.try_get::<i64, _>("attempt_number")?)
-                    .map_err(|_| StoreError::Corrupt {
-                        task_id: task_id.to_owned(),
-                        detail: "attempt number exceeds u32".to_owned(),
-                    })?;
-                Ok(Attempt {
-                    id: row.try_get("id")?,
-                    task_id: task_id.to_owned(),
-                    attempt_number,
-                    state: decode(&row.try_get::<String, _>("state")?)?,
-                    failure_reason: row.try_get("failure_reason")?,
-                })
-            })
-            .collect::<Result<Vec<_>, StoreError>>()?;
+    let attempts = attempt_rows
+        .iter()
+        .map(|row| attempt_from_row(task_id, row))
+        .collect::<Result<Vec<_>, StoreError>>()?;
 
     let session_rows = sqlx::query(
         "SELECT id, attempt_id, adapter, state FROM sessions WHERE task_id = ? ORDER BY sequence",
@@ -2374,6 +2441,8 @@ mod tests {
             attempt_number: 1,
             state: AttemptState::Pending,
             failure_reason: None,
+            summary: None,
+            changed_files: None,
         }
     }
 
@@ -2579,6 +2648,10 @@ mod tests {
             state,
             objective: "Implement the thing".into(),
             workstream_id: workstream_id.map(Into::into),
+            failure_reason: None,
+            changed_files: None,
+            minutes_in_state: Some(0),
+            report_relayed: None,
         };
         assert_eq!(
             store.task_overview(2).unwrap(),

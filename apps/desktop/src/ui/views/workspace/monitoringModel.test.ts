@@ -4,6 +4,8 @@ import {
   MODE_OPTIONS,
   badgeLabel,
   chipLabel,
+  isQuiet,
+  isTaskEvent,
   notifyingCount,
   pausedFor,
   pausedText,
@@ -98,11 +100,31 @@ describe("monitoring model", () => {
     expect(quietLine(3)).toBe("Checked 3 updates. Nothing needs you.");
     expect(quietLine(1)).toBe("Checked 1 update. Nothing needs you.");
     const records = [
-      record("q", 1, { state: "handled", outcome: "quiet", turnId: "turn-q", notify: false }),
+      record("q", 1, { event: "work_check", state: "handled", outcome: "quiet", turnId: "turn-q", notify: false }),
       record("r", 1, { state: "handled", outcome: "replied", turnId: "turn-r" }),
     ];
     expect([...quietTurnIds(records)]).toEqual(["turn-q"]);
     expect(notifyingCount(records)).toBe(1);
+  });
+
+  it("monitoring_model_an_outcome_kind_is_never_quiet_even_when_its_reply_is_quiet", () => {
+    const quiet = { state: "handled", outcome: "quiet", turnId: "turn-x", notify: false };
+    expect(isQuiet(record("f", 1, quiet))).toBe(false);
+    expect(isQuiet(record("s", 1, { ...quiet, event: "scout_report_ready" }))).toBe(false);
+    expect(isQuiet(record("c", 1, { ...quiet, event: "candidate_ready" }))).toBe(false);
+    expect(isQuiet(record("u", 1, { event: "work_check", state: "handled", outcome: "unanswered" }))).toBe(false);
+    expect(isQuiet(record("w", 1, { ...quiet, event: "work_check" }))).toBe(true);
+    expect(isQuiet(record("d", 1, { ...quiet, event: "daemon_start" }))).toBe(true);
+    expect([...quietTurnIds([record("f", 1, quiet)])]).toEqual([]);
+  });
+
+  it("monitoring_model_a_task_event_is_linked_to_its_task_and_a_heartbeat_is_not", () => {
+    expect(isTaskEvent(record("f", 1, { event: "task_failed" }))).toBe(true);
+    expect(isTaskEvent(record("c", 1, { event: "candidate_ready" }))).toBe(true);
+    expect(isTaskEvent(record("s", 1, { event: "scout_report_ready" }))).toBe(true);
+    expect(isTaskEvent(record("d", 1, { event: "delivery_waiting" }))).toBe(true);
+    expect(isTaskEvent(record("w", 1, { event: "work_check" }))).toBe(false);
+    expect(isTaskEvent(record("p", 1, { event: "proposal_waiting" }))).toBe(false);
   });
 
   it("monitoring_model_skip_text_names_the_reason_in_words", () => {

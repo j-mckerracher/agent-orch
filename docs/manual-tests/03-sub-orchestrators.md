@@ -65,7 +65,7 @@ How to make Global propose a workstream: put one `workstream.create` action in `
 3. Send `Give the post-MVP stream a task`.
 4. Approve the card.
 
-**Expected:** The task starts. The card names the workstream.
+**Expected:** The task starts. The card names the workstream. Under `succeed` the task then ends `Failed` with "The agent exited without changing any files.", because it changes no file. That outcome does not fail this test.
 
 ## TC-S-06 The workstream shows the routed task
 

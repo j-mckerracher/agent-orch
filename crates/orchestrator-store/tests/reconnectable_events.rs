@@ -47,6 +47,8 @@ fn add_session_history(store: &SqliteStore) {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

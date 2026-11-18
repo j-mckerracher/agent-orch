@@ -258,6 +258,8 @@ fn run_contract(f: &Fixture, contract: TaskContract) {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();
@@ -280,6 +282,10 @@ fn run_contract(f: &Fixture, contract: TaskContract) {
 
 fn fail_task(f: &Fixture, id: &str, objective: &str) {
     run_task(f, id, objective);
+    f.api
+        .store
+        .record_attempt_failure(id, &format!("{id}-a1"), "boom")
+        .unwrap();
     f.api
         .store
         .transition(id, TaskEvent::ExecutionFailed)
@@ -575,8 +581,22 @@ fn report_wakes_recover_and_relay_one_bounded_report_per_turn() {
     tick(&f);
     assert_eq!(records_of(&f, WakeKind::ScoutReportReady).len(), 2);
     start_batch(&f);
-    assert_eq!(f.probe.started(), 1);
-    assert_eq!(f.probe.last().context.matches("BEGIN REPORT").count(), 1);
+    let turns = f.probe.seen.lock().unwrap().clone();
+    assert!(
+        turns
+            .iter()
+            .all(|turn| turn.context.matches("BEGIN REPORT").count() <= 1),
+        "one report per turn"
+    );
+    // A candidate's block shares the delimiters, so count the report header only.
+    assert_eq!(
+        turns
+            .iter()
+            .filter(|turn| turn.context.contains("may have read untrusted text"))
+            .count(),
+        1,
+        "the second report waits for the next turn"
+    );
     let again = restarted(&f);
     f.probe.replying(Some("Here are the findings."));
     advance(&f, DEBOUNCE_MS);
@@ -637,7 +657,10 @@ fn a_failed_task_writes_a_notice_before_any_wake_turn() {
 
     let records = records_of(&f, WakeKind::TaskFailed);
     assert_eq!(records.len(), 1);
-    assert_eq!(records[0].notice, "Task t-1 (Fix the login bug) failed.");
+    assert_eq!(
+        records[0].notice,
+        "Task t-1 (Fix the login bug) failed: boom"
+    );
     assert_eq!(records[0].state, WakeState::Pending);
     assert_eq!(f.probe.started(), 0, "no turn before the window ends");
     let anchor = records[0].anchor_sequence;
@@ -649,7 +672,10 @@ fn a_failed_task_writes_a_notice_before_any_wake_turn() {
         .conversation_page(&ConversationTarget::Global, 0, 10)
         .unwrap();
     assert!(page.entries[0].sequence > anchor);
-    assert_eq!(page.entries[0].body, "Task t-1 (Fix the login bug) failed.");
+    assert_eq!(
+        page.entries[0].body,
+        "Task t-1 (Fix the login bug) failed: boom"
+    );
 }
 
 #[test]
@@ -902,8 +928,11 @@ fn the_wake_turn_is_marked_and_labelled_as_an_update() {
     let opening = &page["entries"][0];
     assert_eq!(opening["kind"], "user_message");
     assert_eq!(opening["origin"], "wake");
-    assert_eq!(opening["body"], "Task t-1 (one) failed.");
-    assert_eq!(page["wake_records"][0]["notice"], "Task t-1 (one) failed.");
+    assert_eq!(opening["body"], "Task t-1 (one) failed: boom");
+    assert_eq!(
+        page["wake_records"][0]["notice"],
+        "Task t-1 (one) failed: boom"
+    );
     assert_eq!(page["wake_records"][0]["event"], "task_failed");
     assert_eq!(page["wake_records"][0]["state"], "running");
     // A user message carries no origin.
@@ -933,25 +962,41 @@ fn the_wake_block_is_short_and_outside_the_preamble() {
     let user = f.probe.last().prompt;
 
     assert!(wake.contains("automatic update from the app"));
-    assert!(wake.contains("MCAO_QUIET"));
     assert!(!user.contains("automatic update from the app"));
-    let block_start = wake.find("This is an automatic update").unwrap();
-    let block_end = wake[block_start..]
-        .find("MCAO_QUIET and nothing else.")
-        .unwrap();
-    assert!(block_end + "MCAO_QUIET and nothing else.".len() < 600);
+
+    // A work check is the batch that is offered the quiet token. The block with the offer stays
+    // under 600 bytes.
+    let check = fixture();
+    run_task(&check, "t-1", "working");
+    tick(&check);
+    advance(&check, 600 * 1_000 - 1);
+    tick(&check);
+    advance(&check, 1);
+    check.pulse.touch_at("t-1-s1", check.clock.now_ms());
+    tick(&check);
+    start_batch(&check);
+    let heartbeat = check.probe.last().prompt;
+    let block_start = heartbeat.find("This is an automatic update").unwrap();
+    let anchor = "MCAO_QUIET and nothing else.";
+    let block_end = heartbeat[block_start..].find(anchor).unwrap() + anchor.len();
+    assert!(block_end < 600, "{block_end}");
 }
 
 #[test]
-fn the_quiet_token_closes_the_record_as_quiet() {
+fn the_quiet_token_closes_a_heartbeat_as_quiet() {
     let f = fixture();
-    f.probe.replying(Some("MCAO_QUIET"));
-    fail_task(&f, "t-1", "one");
+    f.probe.replying(Some(QUIET_TOKEN));
+    run_task(&f, "t-1", "working");
+    tick(&f);
+    advance(&f, 600 * 1_000 - 1);
+    tick(&f);
+    advance(&f, 1);
+    f.pulse.touch_at("t-1-s1", f.clock.now_ms());
     tick(&f);
     start_batch(&f);
     tick(&f);
 
-    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    let record = &records_of(&f, WakeKind::WorkCheck)[0];
     assert_eq!(record.state, WakeState::Handled);
     assert_eq!(record.outcome, Some(WakeOutcome::Quiet));
     let page = get(&f);
@@ -969,8 +1014,251 @@ fn the_quiet_token_closes_the_record_as_quiet() {
     tick(&f);
     start_batch(&f);
     tick(&f);
-    let second = &records_of(&f, WakeKind::TaskFailed)[1];
+    let second = &records_of(&f, WakeKind::TaskFailed)[0];
     assert_eq!(second.outcome, Some(WakeOutcome::Replied));
+}
+
+/// Runs one work check of a single running task, so the batch is a heartbeat.
+fn work_check(f: &Fixture) {
+    run_task(f, "t-1", "working");
+    tick(f);
+    advance(f, 600 * 1_000 - 1);
+    tick(f);
+    advance(f, 1);
+    f.pulse.touch_at("t-1-s1", f.clock.now_ms());
+    tick(f);
+}
+
+#[test]
+fn a_candidate_ready_task_writes_a_notice_and_wakes_with_its_summary_as_evidence() {
+    let f = fixture();
+    run_task(&f, "t-1", "Fix the login bug");
+    f.api
+        .store
+        .record_attempt_summary("t-1", "t-1-a1", Some("Changed the login check."), Some(2))
+        .unwrap();
+    f.api
+        .store
+        .update_attempt_state("t-1", "t-1-a1", AttemptState::CandidateReady)
+        .unwrap();
+    f.api
+        .store
+        .transition("t-1", TaskEvent::CandidateReady)
+        .unwrap();
+
+    tick(&f);
+
+    let records = records_of(&f, WakeKind::CandidateReady);
+    assert_eq!(records.len(), 1);
+    assert_eq!(
+        records[0].notice,
+        "Task t-1 (Fix the login bug) finished with a candidate (2 files changed) and waits for review."
+    );
+    assert_eq!(records[0].state, WakeState::Pending);
+    assert_eq!(f.probe.started(), 0, "no turn before the window ends");
+
+    assert_eq!(start_batch(&f).started, 1);
+    let seen = f.probe.last();
+    assert!(seen.wake);
+    assert_eq!(seen.level, PermissionLevel::Restricted);
+    assert!(
+        seen.context.contains("Changed the login check."),
+        "{}",
+        seen.context
+    );
+    assert_eq!(seen.context.matches("BEGIN REPORT").count(), 1);
+    assert!(
+        seen.context.contains("Files changed: 2"),
+        "{}",
+        seen.context
+    );
+    // A candidate is not a report: the turn is not marked as one that read a report.
+    let turn = running_turn(&f).unwrap();
+    assert!(!f.api.store.turn_read_report(&turn.id).unwrap());
+}
+
+#[test]
+fn a_candidate_and_a_report_in_one_batch_relay_only_the_report() {
+    let f = fixture();
+    finish_scout(&f, "scout-1", "The loader is slow.");
+    run_task(&f, "t-1", "Fix the login bug");
+    f.api
+        .store
+        .record_attempt_summary("t-1", "t-1-a1", Some("Changed the login check."), Some(2))
+        .unwrap();
+    f.api
+        .store
+        .update_attempt_state("t-1", "t-1-a1", AttemptState::CandidateReady)
+        .unwrap();
+    f.api
+        .store
+        .transition("t-1", TaskEvent::CandidateReady)
+        .unwrap();
+    f.probe.replying(Some("Here are the findings."));
+    tick(&f);
+
+    assert_eq!(start_batch(&f).started, 1);
+    tick(&f);
+
+    let seen = f.probe.last();
+    assert_eq!(
+        seen.context.matches("BEGIN REPORT").count(),
+        1,
+        "{}",
+        seen.context
+    );
+    assert!(
+        seen.context.contains("The loader is slow."),
+        "{}",
+        seen.context
+    );
+    assert!(
+        !seen.context.contains("Changed the login check."),
+        "{}",
+        seen.context
+    );
+    assert!(f
+        .api
+        .store
+        .task_report("scout-1")
+        .unwrap()
+        .unwrap()
+        .relayed_at
+        .is_some());
+}
+
+#[test]
+fn a_report_only_task_reaching_verifying_gets_no_candidate_wake() {
+    let f = fixture();
+    finish_scout(&f, "scout-1", "A finding.");
+    tick(&f);
+
+    assert!(records_of(&f, WakeKind::CandidateReady).is_empty());
+    assert_eq!(records_of(&f, WakeKind::ScoutReportReady).len(), 1);
+    assert_eq!(start_batch(&f).started, 1);
+    let turns = f.probe.seen.lock().unwrap().clone();
+    assert_eq!(turns.len(), 1, "one turn, for the report");
+    assert!(turns[0].context.contains("may have read untrusted text"));
+    assert!(!turns[0].context.contains("Files changed"));
+}
+
+#[test]
+fn a_quiet_reply_leaves_an_outcome_record_unanswered_and_notifying() {
+    let f = fixture();
+    f.probe.replying(Some(QUIET_TOKEN));
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+    tick(&f);
+
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Handled);
+    assert_eq!(record.outcome, Some(WakeOutcome::Unanswered));
+    let page = get(&f);
+    assert_eq!(page["wake_records"][0]["outcome"], "unanswered");
+    assert_eq!(page["wake_records"][0]["notify"], true);
+    assert_eq!(
+        page["wake_records"][0]["notice"],
+        "Task t-1 (one) failed: boom"
+    );
+    assert!(
+        page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|entry| entry["kind"] != "reply_chunk"),
+        "{page}"
+    );
+    assert_eq!(
+        monitoring(&f)["unseen"],
+        json!([{"target": global(), "count": 1}])
+    );
+}
+
+#[test]
+fn the_quiet_offer_is_absent_when_the_batch_holds_an_outcome() {
+    let f = fixture();
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+    start_batch(&f);
+
+    let prompt = f.probe.last().prompt;
+
+    assert!(prompt.contains("automatic update from the app"), "{prompt}");
+    assert!(!prompt.contains("MCAO_QUIET"), "{prompt}");
+}
+
+#[test]
+fn the_quiet_offer_is_present_for_a_pure_work_check() {
+    let f = fixture();
+    work_check(&f);
+    start_batch(&f);
+
+    let prompt = f.probe.last().prompt;
+
+    assert!(prompt.contains("MCAO_QUIET"), "{prompt}");
+}
+
+#[test]
+fn a_quiet_or_failed_report_wake_requeues_then_fails_with_a_deterministic_notice() {
+    for quiet in [true, false] {
+        let f = fixture();
+        finish_scout(&f, "scout-1", "A finding.");
+        tick(&f);
+        for try_number in 1..=2 {
+            start_batch(&f);
+            // The held turn ends the way this case says: quiet, or failed.
+            if quiet {
+                f.probe.finish(f.probe.started() - 1, QUIET_TOKEN);
+                tick(&f);
+            } else {
+                fail_newest_turn(&f);
+            }
+            assert!(
+                f.api
+                    .store
+                    .task_report("scout-1")
+                    .unwrap()
+                    .unwrap()
+                    .relayed_at
+                    .is_none(),
+                "try {try_number}, quiet={quiet}"
+            );
+        }
+
+        let record = &records_of(&f, WakeKind::ScoutReportReady)[0];
+        assert_eq!(record.state, WakeState::Failed, "quiet={quiet}");
+        assert_eq!(
+            record.notice,
+            "Report from task scout-1 is ready; automatic relay failed. Open the task to read it.",
+            "quiet={quiet}"
+        );
+        assert_eq!(
+            f.probe.started(),
+            2,
+            "two tries, then no third: quiet={quiet}"
+        );
+    }
+}
+
+#[test]
+fn a_work_check_notice_reads_as_a_user_line() {
+    let f = fixture();
+    work_check(&f);
+
+    let record = &records_of(&f, WakeKind::WorkCheck)[0];
+    assert_eq!(record.notice, "Checking on 1 active work unit.");
+    start_batch(&f);
+
+    let page = get(&f);
+    assert_eq!(
+        page["entries"][0]["body"],
+        "Checking on 1 active work unit."
+    );
+    assert!(
+        f.probe.last().prompt.contains("name anything failed"),
+        "the instruction is in the prompt"
+    );
 }
 
 #[test]
@@ -1146,6 +1434,8 @@ fn a_workstream_event_also_notices_global() {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

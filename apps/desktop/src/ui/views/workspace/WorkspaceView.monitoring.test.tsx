@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ConversationWireEntry, ConversationWireTurn, MonitoringWire, WakeRecordWire } from "../../../daemon/types";
@@ -181,6 +181,21 @@ describe("Workspace monitoring", () => {
     await user.click(send());
     expect(await screen.findByText("New update from the orchestrator")).toBeInTheDocument();
     expect(screen.getAllByText("New update from the orchestrator")).toHaveLength(1);
+  });
+
+  it("wake_notice_links_a_task_event_to_its_task", async () => {
+    const { fake } = daemon({
+      wake: [
+        wakeRecord("wake-task", { event: "task_failed", subject: "t-run", notice: "Task t-run failed." }),
+        wakeRecord("wake-check", { event: "work_check", subject: "t-run", notice: "Checking on 1 active work units.", outcome: "replied" }),
+      ],
+    });
+    await mount(fake);
+    const failed = (await screen.findByText("Task t-run failed.")).closest(".ws-wake") as HTMLElement;
+    const link = await within(failed).findByRole("link", { name: "Open task" });
+    expect(link.getAttribute("href")).toBe("#/project/%2Frepos%2Falpha/task/t-run");
+    const check = screen.getByText("Checking on 1 active work units.").closest(".ws-wake") as HTMLElement;
+    expect(within(check).queryByRole("link")).toBeNull();
   });
 
   it("workspace_monitoring_acks_once_when_the_conversation_is_visible_with_unseen_updates", async () => {

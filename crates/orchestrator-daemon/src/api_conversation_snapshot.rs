@@ -3,8 +3,10 @@
 //! Plan: `docs/design/orchestrator-actions.md`, "Snapshot content" and "Size".
 //! The text lists only the fields that design names: projects, workstream
 //! and objective text with gate counts, open tasks, and a pending-approval
-//! count. It never holds a project root path, settings, tokens, environment,
-//! diffs, session output or attempts. A project id is its root path, so a
+//! count. A task line adds only bounded facts about its latest attempt: the stored failure
+//! reason, a candidate's file count and time waiting for review, and whether its report was
+//! relayed. It never holds a project root path, settings, tokens, environment, diffs, session
+//! output or an attempt summary. A project id is its root path, so a
 //! project is named by its folder name and a short hash of the id instead.
 //! Every free-text field is flattened to one bounded line, so no field can
 //! start a line of its own.
@@ -39,6 +41,8 @@ const GATE_LINES: usize = 20;
 const TEXT_BYTES: usize = 120;
 /// Bytes kept from a task objective.
 const TASK_OBJECTIVE_BYTES: usize = 80;
+/// Bytes kept from a stored failure reason. The store already caps it at this size.
+const REASON_BYTES: usize = 160;
 const UNAVAILABLE: &str = "- unavailable";
 
 /// Keep rank for the target workstream's objectives. They are fitted first,
@@ -745,18 +749,55 @@ pub(super) fn task_title(objective: &str) -> String {
     redacted_field(objective, TASK_OBJECTIVE_BYTES)
 }
 
+/// One open task. A failed task names its stored reason, a candidate names its file count and the
+/// minutes it has waited for review, and a task with a report says whether it was relayed. Each
+/// fact is bounded and redacted. None is a path or a diff.
 fn task_line(task: &OpenTask) -> String {
     let workstream = task
         .workstream_id
         .as_deref()
         .map_or("none".to_owned(), |id| field(id, TEXT_BYTES));
-    format!(
+    let mut line = format!(
         "- {} {} project {} workstream {workstream}: {}",
         field(&task.id, TEXT_BYTES),
         state_tag(task.state),
         project_label(&task.project_id),
         task_title(&task.objective),
-    )
+    );
+    match task.state {
+        TaskState::Failed | TaskState::VerificationFailed => {
+            let reason = task
+                .failure_reason
+                .as_deref()
+                .map(|reason| redacted_field(reason, REASON_BYTES))
+                .unwrap_or_default();
+            if !reason.is_empty() {
+                line.push_str("; reason: ");
+                line.push_str(&reason);
+            }
+        }
+        TaskState::Verifying => {
+            let files = task.changed_files.map(|count| format!("{count} files"));
+            let waited = task
+                .minutes_in_state
+                .map(|minutes| format!("waiting for review {minutes} min"));
+            let detail: Vec<String> = [files, waited].into_iter().flatten().collect();
+            line.push_str("; candidate");
+            if !detail.is_empty() {
+                line.push(' ');
+                line.push_str(&detail.join(", "));
+            }
+        }
+        _ => {}
+    }
+    if let Some(relayed) = task.report_relayed {
+        line.push_str(if relayed {
+            "; report relayed yes"
+        } else {
+            "; report relayed no"
+        });
+    }
+    line
 }
 
 /// "Tasks: 3 total; running 2, queued 1" with states in declaration order.
@@ -859,6 +900,7 @@ mod tests {
     };
     use orchestrator_core::orchestrator_action::{parse_block, BlockScope};
     use orchestrator_core::records::Project;
+    use orchestrator_core::task::{Attempt, AttemptState, TaskEvent};
     use orchestrator_core::task_envelope::chat_task_envelope;
     use orchestrator_core::workstream::{WorkstreamState, INITIAL_REVISION};
     use orchestrator_store::{Store, TurnBlock};
@@ -1039,6 +1081,31 @@ mod tests {
         build_snapshot(store, &ConversationTarget::Global, false, &open_load())
     }
 
+    /// The task's one attempt, running, as the executor leaves it after it starts the agent.
+    fn run_attempt(store: &SqliteStore, task_id: &str) {
+        let attempt = format!("{task_id}-a1");
+        store
+            .add_attempt(
+                task_id,
+                &Attempt {
+                    id: attempt.clone(),
+                    task_id: task_id.into(),
+                    attempt_number: 1,
+                    state: AttemptState::Pending,
+                    failure_reason: None,
+                    summary: None,
+                    changed_files: None,
+                },
+            )
+            .unwrap();
+        store
+            .update_attempt_state(task_id, &attempt, AttemptState::Running)
+            .unwrap();
+        store
+            .transition(task_id, TaskEvent::ExecutionStarted)
+            .unwrap();
+    }
+
     #[test]
     fn empty_store_has_frame_and_fits() {
         let (_directory, store) = store();
@@ -1174,6 +1241,73 @@ mod tests {
         )));
         assert!(!snapshot.contains("task-000"));
         assert!(snapshot.contains("\n- and 180 more\n"));
+    }
+
+    #[test]
+    fn the_snapshot_adds_bounded_facts_for_failed_and_verifying_tasks() {
+        let (_directory, store) = store();
+        make_project(&store, "alpha", "/work/alpha", json!({}));
+        // A failed task whose stored reason names a path and a token-like word.
+        make_task(&store, "t-failed", "Fix the build");
+        store.transition("t-failed", TaskEvent::Admit).unwrap();
+        run_attempt(&store, "t-failed");
+        store
+            .record_attempt_failure(
+                "t-failed",
+                "t-failed-a1",
+                &format!(
+                    "build broke in /Users/me/app/main.rs key {}",
+                    "k".repeat(40)
+                ),
+            )
+            .unwrap();
+        store
+            .transition("t-failed", TaskEvent::ExecutionFailed)
+            .unwrap();
+        // A candidate whose summary must never reach the snapshot.
+        make_task(&store, "t-candidate", "Add the export");
+        store.transition("t-candidate", TaskEvent::Admit).unwrap();
+        run_attempt(&store, "t-candidate");
+        store
+            .record_attempt_summary(
+                "t-candidate",
+                "t-candidate-a1",
+                Some("Wrote the export in /private/repo/src/export.rs"),
+                Some(3),
+            )
+            .unwrap();
+        store
+            .update_attempt_state(
+                "t-candidate",
+                "t-candidate-a1",
+                AttemptState::CandidateReady,
+            )
+            .unwrap();
+        store
+            .transition("t-candidate", TaskEvent::CandidateReady)
+            .unwrap();
+
+        let snapshot = snapshot_for_global(&store);
+
+        assert!(
+            snapshot.contains(&format!(
+                "- t-failed failed project {} workstream none: Fix the build; reason: ",
+                project_label("alpha")
+            )),
+            "{snapshot}"
+        );
+        assert!(
+            snapshot.contains("; reason: build broke in [path] key [redacted]"),
+            "{snapshot}"
+        );
+        assert!(
+            snapshot.contains("; candidate 3 files, waiting for review 0 min"),
+            "{snapshot}"
+        );
+        assert!(!snapshot.contains("/Users/me"), "{snapshot}");
+        assert!(!snapshot.contains("/private/repo"), "{snapshot}");
+        assert!(!snapshot.contains("Wrote the export"), "{snapshot}");
+        assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
     }
 
     #[test]

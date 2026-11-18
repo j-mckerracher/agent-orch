@@ -54,6 +54,8 @@ fn attempt(id: &str, task_id: &str, number: u32) -> Attempt {
         attempt_number: number,
         state: AttemptState::Pending,
         failure_reason: None,
+        summary: None,
+        changed_files: None,
     }
 }
 
