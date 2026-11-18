@@ -5,6 +5,18 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.13](https://github.com/mc-innersource/motif-mcao/compare/v0.1.12...v0.1.13) (2026-11-18)
+
+
+### Bug Fixes
+
+* **desktop:** DPES-1106 - Fix the TopBar workstream count type so the release build compiles ([7a46856](https://github.com/mc-innersource/motif-mcao/commit/7a468568dcb7e199d394c8dc6bfae2fc877ae9d5))
+
+
+### CI
+
+* **gates:** DPES-1106 - Update the pinned vitest counts for the archived workstreams box ([d14f3aa](https://github.com/mc-innersource/motif-mcao/commit/d14f3aa05455f78a8149825449c31492e3faaac0))
+
 ## [0.1.12](https://github.com/mc-innersource/motif-mcao/compare/v0.1.11...v0.1.12) (2026-11-18)
 
 
