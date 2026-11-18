@@ -155,18 +155,17 @@ export interface WorkstreamSource {
   readonly provenance: Provenance;
   /** Lists daemon workstreams and linked tasks; unread details keep an explicit unknown reason. */
   workstreams(): Promise<SurfaceResult<Workstream[]>>;
-  /** Fixture only. Derived adapters reject: use `create`. */
-  simulateCreate(title: string): Promise<SurfaceReceipt>;
   /*
    * Real mutations (`workstreams.*`). Fixture adapters reject them and derived adapters refuse
    * `fixture:` ids before any request. Every mutation carries an idempotency key; writes carry
    * the revision the caller last read, and a stale one is a `conflict` the caller resolves by re-reading.
    */
-  create(title: string, summary?: string): Promise<WorkstreamMutation>;
   update(
     target: { id: string; revision: number },
     change: { title?: string; summary?: string; state?: WorkstreamLifecycle },
   ): Promise<WorkstreamMutation>;
+  /** Moves a workstream to the top of the daemon's list order. Advisory: the scheduler does not consult it. */
+  prioritize(workstreamId: string): Promise<WorkstreamMutation>;
   addObjective(workstreamId: string, objective: { title: string; description?: string; gates?: string[] }): Promise<WorkstreamMutation>;
   reviseObjective(
     target: { id: string; revision: number },

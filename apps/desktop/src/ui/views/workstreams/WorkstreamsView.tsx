@@ -1,14 +1,13 @@
-import { useEffect, useId, useState, type FormEvent } from "react";
+import { useEffect, useId, useState } from "react";
 import type { ReactNode } from "react";
-import type { Provenance } from "../../../sources/types";
 import type { QueueWait } from "../../../sources/surfaces/types";
 import { TASK_STATES, basename, stateLabel } from "../../format";
 import { QueueWaitNote, useQueueWaits } from "../../QueueWaitNote";
-import { useGate, useServices, useStore } from "../../services";
+import { useServices, useStore } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Button, EmptyState, Panel, Pill } from "../../theme";
-import { PlaceholderBadge, SimulatedReceipts } from "../../widgets";
+import { PlaceholderBadge } from "../../widgets";
 import { DependencyGraph } from "./DependencyGraph";
 import { useReviewEvidence } from "./evidence";
 import {
@@ -16,6 +15,7 @@ import {
   AddObjectiveForm,
   LifecycleControls,
   LinkTaskForm,
+  ListActions,
   ObjectiveCard,
   OutcomeNotice,
   UnlinkButton,
@@ -36,22 +36,11 @@ import { STATE_TONE } from "./tone";
 import { WsTabs } from "./WsTabs";
 import "./workstreams.css";
 
-interface Receipt {
-  provenance: Provenance;
-  notice: string;
-}
-
 const FIXTURE_REASON = "Disabled: this preview is not wired to anything. It would change nothing.";
 const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
 const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
-const CREATE_REASON = "Disabled: this daemon does not offer workstream creation (post-release, M7-07).";
-const OFFLINE_CREATE_REASON = "Disabled: the daemon is not connected. Create is offered once this connection is live.";
-// While the first connection is still opening, "not connected" would read as a failure; the answer may still arrive.
-const SETTLING_CREATE_REASON = "Disabled: the daemon connection is still being established. Create is offered once it is live.";
 const DEPENDENCY_REASON =
   "Disabled: the daemon has no task-edit, resource-lease or regenerate method. This panel is read-only; a draft can be validated, never applied.";
-const LIST_REASON =
-  "Disabled: no daemon method orders initiatives, so Prioritize has nothing to call. Archive here is not in this release; archive the selected initiative from its detail panel.";
 const LIFECYCLE_TONE = { active: "ok", suspended: "warn", archived: "neutral" } as const;
 
 function assignment(task: WsGroup["tasks"][number]): string {
@@ -75,81 +64,6 @@ export function WorkstreamsView() {
     if (route.name === "global" && route.workstreamId !== undefined) setSelected(route.workstreamId);
   }, [route]);
   const [filter, setFilter] = useState("");
-  const [title, setTitle] = useState("");
-  const [receipts, setReceipts] = useState<Receipt[]>([]);
-  const [createError, setCreateError] = useState<string | null>(null);
-  const gate = useGate();
-  const fixtureSource = surfaces.workstreams.provenance.kind === "fixture";
-  // Live create is `workstreams.create`, offered only when this connection negotiated the `workstreams`
-  // capability (the same `gate.can` check the other daemon writes use). Fixture mode simulates instead.
-  const createOffered = !fixtureSource && gate.can("workstreams");
-  const stale = model.status === "ready" && model.stale;
-  const writeOff = mutations.busy || stale;
-
-  const create = async (event: FormEvent) => {
-    event.preventDefault();
-    if (title.trim() === "") return;
-    if (!fixtureSource) {
-      const made = await mutations.run(`Create workstream "${title.trim()}"`, () =>
-        surfaces.workstreams.create(title.trim()),
-      );
-      if (made) {
-        setTitle("");
-        setSelected(made.id);
-        setFilter("");
-      }
-      return;
-    }
-    setCreateError(null);
-    try {
-      const receipt = await surfaces.workstreams.simulateCreate(title.trim());
-      setReceipts((all) => [{ provenance: receipt.provenance, notice: receipt.notice }, ...all]);
-      setTitle("");
-    } catch (error) {
-      setCreateError(error instanceof Error ? error.message : "Simulation failed.");
-    }
-  };
-
-  const createForm = (
-    <form className="ws-create" onSubmit={create} aria-label="Create workstream">
-      <label>
-        New workstream title
-        <input
-          type="text"
-          value={title}
-          disabled={writeOff}
-          onChange={(event) => setTitle(event.target.value)}
-          aria-describedby={stale ? reasonId : undefined}
-        />
-      </label>
-      <Button
-        type="submit"
-        variant="primary"
-        disabled={writeOff || title.trim() === ""}
-        aria-describedby={stale ? reasonId : undefined}
-      >
-        {fixtureSource ? "Create workstream (simulated)" : "Create workstream"}
-      </Button>
-      {stale && (
-        <span className="ws-reason" id={reasonId}>
-          {STALE_REASON}
-        </span>
-      )}
-    </form>
-  );
-  const createDisabled = (
-    <div className="ws-head-reason">
-      <Button disabled aria-describedby={`${reasonId}-create`}>
-        Create workstream
-      </Button>
-      <p className="ws-reason" id={`${reasonId}-create`}>
-        {gate.connected ? CREATE_REASON : gate.settling ? SETTLING_CREATE_REASON : OFFLINE_CREATE_REASON}
-      </p>
-    </div>
-  );
-  // Fixture mode shows its simulated form once the list is ready, as before. Live mode always shows the action.
-  const showAction = model.status === "ready" || !fixtureSource;
-  const headerAction: ReactNode = !showAction ? null : fixtureSource || createOffered ? createForm : createDisabled;
 
   let body;
   if (model.status === "loading") {
@@ -184,6 +98,19 @@ export function WorkstreamsView() {
     const current = groups.find((group) => group.id === selected) ?? visible[0] ?? groups[0];
     const marker = fixture ? <PlaceholderBadge provenance={model.provenance} compact /> : null;
     const live = !fixture;
+    const controls: Controls | null = current
+      ? {
+          run: mutations.run,
+          busy: mutations.busy,
+          locked: model.stale
+            ? STALE_REASON
+            : current.unreadReason !== null
+              ? UNREAD_REASON
+              : current.state === "archived"
+                ? ARCHIVED_REASON
+                : null,
+        }
+      : null;
 
     body = (
       <>
@@ -202,12 +129,6 @@ export function WorkstreamsView() {
             {taskListNotice(model.taskList)}
           </p>
         )}
-        {createError && (
-          <p role="alert" className="notice notice-error">
-            {createError}
-          </p>
-        )}
-        {receipts.length > 0 && <SimulatedReceipts label="Simulated workstream creations" receipts={receipts} />}
         {live && <OutcomeNotice outcome={mutations.outcome} />}
 
         {groups.length === 0 ? (
@@ -216,7 +137,7 @@ export function WorkstreamsView() {
             description={
               fixture
                 ? "There are no placeholder workstreams."
-                : "No workstreams exist yet. Create one above, then link tasks to it."
+                : "No workstreams exist yet. Ask the global orchestrator to create one, then link tasks to it."
             }
           />
         ) : (
@@ -261,17 +182,24 @@ export function WorkstreamsView() {
                   </li>
                 ))}
               </ul>
-              <div className="ws-row">
-                <Button disabled aria-describedby={`${reasonId}-list`}>
-                  Prioritize
-                </Button>
-                <Button disabled aria-describedby={`${reasonId}-list`}>
-                  Archive
-                </Button>
-              </div>
-              <p className="ws-reason" id={`${reasonId}-list`}>
-                {LIST_REASON}
-              </p>
+              {fixture ? (
+                <>
+                  <div className="ws-row">
+                    <Button disabled aria-describedby={`${reasonId}-list`}>
+                      Prioritize
+                    </Button>
+                    <Button disabled aria-describedby={`${reasonId}-list`}>
+                      Archive
+                    </Button>
+                  </div>
+                  <p className="ws-reason" id={`${reasonId}-list`}>
+                    {FIXTURE_REASON}
+                  </p>
+                </>
+              ) : (
+                current &&
+                controls && <ListActions group={current} first={current.id === groups[0]?.id} controls={controls} />
+              )}
               {live && !unlinkedKnown && (
                 <p className="ws-subtle" data-testid="ws-unlinked">
                   Tasks not in any workstream: unknown.
@@ -283,7 +211,7 @@ export function WorkstreamsView() {
                 </p>
               )}
             </Panel>
-            {current && (
+            {current && controls && (
               <Detail
                 group={current}
                 fixture={fixture}
@@ -291,17 +219,7 @@ export function WorkstreamsView() {
                 unlinked={unlinked}
                 unlinkedKnown={unlinkedKnown}
                 reasonId={`${reasonId}-actions`}
-                controls={{
-                  run: mutations.run,
-                  busy: mutations.busy,
-                  locked: model.stale
-                    ? STALE_REASON
-                    : current.unreadReason !== null
-                      ? UNREAD_REASON
-                      : current.state === "archived"
-                        ? ARCHIVED_REASON
-                        : null,
-                }}
+                controls={controls}
               />
             )}
           </div>
@@ -319,7 +237,6 @@ export function WorkstreamsView() {
           <p className="ws-head-summary">Explicit objectives, linked projects, validated plans, and evidence.</p>
         </div>
         <div className="ws-head-actions">
-          {headerAction}
           <NavLink className="ws-link-button" to={{ name: "projects" }}>
             Manage projects
           </NavLink>

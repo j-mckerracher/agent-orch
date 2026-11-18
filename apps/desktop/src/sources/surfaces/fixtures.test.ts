@@ -52,7 +52,6 @@ describe("fixture surfaces (D9-D16)", () => {
       for (const a of act.data.attention) ids.push(a.approvalId, a.taskId, a.projectId!);
     }
     const receipts = [
-      await s.workstreams.simulateCreate("x"),
       await s.activity.simulatePauseDispatch(),
       await s.activity.simulateStop("fixture:task-auth-2"),
       await s.decisions.simulatePostpone("fixture:approval-1"),

@@ -68,6 +68,7 @@ const ROWS: Row[] = [
   row("reviewRequestChanges", "review.request_changes", (a) => a.reviewRequestChanges(FX, "abc", "fix it", "k"), (a) => a.reviewRequestChanges(REAL, "abc", "fix it", "k")),
   row("workstreamsGet", "workstreams.get", (a) => a.workstreamsGet(FX), (a) => a.workstreamsGet(REAL)),
   row("workstreamsUpdate", "workstreams.update", (a) => a.workstreamsUpdate({ workstream_id: FX, expected_revision: 1, title: "t" }, "k"), (a) => a.workstreamsUpdate({ workstream_id: REAL, expected_revision: 1, title: "t" }, "k")),
+  row("workstreamsPrioritize", "workstreams.prioritize", (a) => a.workstreamsPrioritize(FX, "k"), (a) => a.workstreamsPrioritize(REAL, "k")),
   row("workstreamsAddObjective", "workstreams.add_objective", (a) => a.workstreamsAddObjective(FX, { title: "t" }, "k"), (a) => a.workstreamsAddObjective(REAL, { title: "t" }, "k")),
   row("workstreamsReviseObjective", "workstreams.revise_objective", (a) => a.workstreamsReviseObjective({ objective_id: FX, expected_revision: 1, title: "t" }, "k"), (a) => a.workstreamsReviseObjective({ objective_id: REAL, expected_revision: 1, title: "t" }, "k")),
   row(

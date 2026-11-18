@@ -452,6 +452,7 @@ impl RpcHandler for DaemonApi {
             "workstreams.list" => self.workstreams_list(params),
             "workstreams.get" => self.workstreams_get(params),
             "workstreams.update" => self.workstreams_update(params),
+            "workstreams.prioritize" => self.workstreams_prioritize(params),
             "workstreams.add_objective" => self.workstreams_add_objective(params),
             "workstreams.revise_objective" => self.workstreams_revise_objective(params),
             "workstreams.set_gate" => self.workstreams_set_gate(params),

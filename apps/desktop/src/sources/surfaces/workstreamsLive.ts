@@ -102,8 +102,8 @@ export function createLiveWorkstreams(
 ): Pick<
   WorkstreamSource,
   | "workstreams"
-  | "create"
   | "update"
+  | "prioritize"
   | "addObjective"
   | "reviseObjective"
   | "setGate"
@@ -171,12 +171,6 @@ export function createLiveWorkstreams(
         });
       }),
 
-    create: (title, summary) =>
-      mutate("ws:create", [title, summary], [], async (key) => {
-        const created = await connection.api().workstreamsCreate(title, summary, key);
-        return receipt(created.id, created.revision);
-      }),
-
     update: (target, change) =>
       mutate("ws:update:" + target.id, [target.revision, change], [target.id], async (key) => {
         const updated = await connection.api().workstreamsUpdate(
@@ -184,6 +178,12 @@ export function createLiveWorkstreams(
           key,
         );
         return receipt(updated.id, updated.revision);
+      }),
+
+    prioritize: (workstreamId) =>
+      mutate("ws:prioritize:" + workstreamId, null, [workstreamId], async (key) => {
+        const moved = await connection.api().workstreamsPrioritize(workstreamId, key);
+        return receipt(moved.id, moved.revision);
       }),
 
     addObjective: (workstreamId, objective) =>

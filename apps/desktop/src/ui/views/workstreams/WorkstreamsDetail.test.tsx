@@ -142,15 +142,14 @@ describe("workstream detail tabs (OX-W3)", () => {
 });
 
 describe("workstream list card (OX-W2)", () => {
-  it("titles the list as initiatives and offers Prioritize and Archive disabled, each with a reason", async () => {
+  it("titles the list as initiatives and offers Prioritize and Archive for the selected one", async () => {
     await mountLive();
     const list = screen.getByRole("region", { name: "Workstream list" });
     expect(within(list).getByRole("heading", { name: /1 initiative$/ })).toBeInTheDocument();
-    for (const name of ["Prioritize", "Archive"]) {
-      const button = within(list).getByRole("button", { name });
-      expect(button).toBeDisabled();
-      const reason = document.getElementById(button.getAttribute("aria-describedby") ?? "");
-      expect(reason?.textContent).toMatch(/not in this release|no daemon method/);
-    }
+    // The only initiative is already first, so there is nothing to move.
+    const prioritize = within(list).getByRole("button", { name: "Prioritize" });
+    expect(prioritize).toBeDisabled();
+    expect(document.getElementById(prioritize.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/already first/);
+    expect(within(list).getByRole("button", { name: "Archive" })).toBeEnabled();
   });
 });

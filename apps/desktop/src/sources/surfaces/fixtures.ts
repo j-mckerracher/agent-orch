@@ -188,7 +188,6 @@ function receipt(id: SurfaceId, envelope: { fixture: string }, ctx: Ctx, counter
 
 function workstreamSource(ctx: Ctx): WorkstreamSource {
   const envelope = workstreamFixture as unknown as Envelope<{ workstreams: Array<Omit<Workstream, "counts">> }>;
-  const counter = { n: 0 };
   return {
     provenance: provenance("D9", envelope),
     workstreams: () =>
@@ -205,10 +204,9 @@ function workstreamSource(ctx: Ctx): WorkstreamSource {
         },
         () => [],
       ),
-    simulateCreate: (title) => Promise.resolve(receipt("D9", envelope, ctx, counter, `workstream "${title}"`)),
-    // Real mutations never run against placeholder data; the view offers simulateCreate in fixture mode.
-    create: () => notMutable(),
+    // Real mutations never run against placeholder data.
     update: () => notMutable(),
+    prioritize: () => notMutable(),
     addObjective: () => notMutable(),
     reviseObjective: () => notMutable(),
     setGate: () => notMutable(),

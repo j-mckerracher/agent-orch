@@ -81,6 +81,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "workstreams.get": "workstreams",
   "workstreams.create": "workstreams",
   "workstreams.update": "workstreams",
+  "workstreams.prioritize": "workstreams",
   "workstreams.add_objective": "workstreams",
   "workstreams.revise_objective": "workstreams",
   "workstreams.set_gate": "workstreams",

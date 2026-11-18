@@ -58,7 +58,8 @@ export const WINDOWS = {
   // Dispatch defaults add two portable unit tests: 625 becomes 627.
   // Adaptive wakes add six portable daemon regressions.
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
-  daemon: { passed: 677, ignored: 1, sequence: [574, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 677 becomes 678.
+  daemon: { passed: 678, ignored: 1, sequence: [575, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -101,7 +102,8 @@ export const WINDOWS = {
   // Opt-in project coordinators add 2 portable conversation_history tests: 13 becomes 15, so 349 becomes 351 passed.
   // The home directory setting adds 1 portable store test (orchestrator_settings 12 becomes 13): 351 becomes 352.
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 352 becomes 353 passed.
-  store: { passed: 359, ignored: 1, sequence: [105, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 6, 20, 3, 11, 4, 14, 7, 2, 1, 1, 13, 0] },
+  // Workstream priority adds 2 portable workstreams.rs tests: 13 becomes 15, so 359 becomes 361 passed.
+  store: { passed: 361, ignored: 1, sequence: [105, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 6, 20, 3, 11, 4, 14, 7, 2, 1, 1, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 104 },
@@ -151,7 +153,8 @@ export const MACOS = {
   // Dispatch defaults add two portable unit tests and three Unix fake-CLI tests: 722 becomes 727.
   // Adaptive wakes add six portable daemon regressions.
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
-  daemon: { passed: 794, ignored: 1, sequence: [664, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 794 becomes 795.
+  daemon: { passed: 795, ignored: 1, sequence: [665, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -205,7 +208,8 @@ export const MACOS = {
   // Opt-in project coordinators add 2 conversation_history tests: 13 becomes 15, so 353 becomes 355 passed.
   // The home directory setting adds 1 store test (orchestrator_settings 12 becomes 13): 355 becomes 356.
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 356 becomes 357 passed.
-  store: { passed: 363, ignored: 1, sequence: [107, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 14, 6, 20, 3, 11, 5, 14, 7, 2, 1, 1, 13, 0] },
+  // Workstream priority adds 2 workstreams.rs tests: 13 becomes 15, so 363 becomes 365 passed.
+  store: { passed: 365, ignored: 1, sequence: [107, 7, 31, 9, 2, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 14, 6, 20, 3, 11, 5, 14, 7, 2, 1, 1, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 106 },
@@ -262,7 +266,8 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // Queued-task feedback, with the reported disk hold and wait reasons in task lists, adds 23 tests in existing files. A full
 // `npm --prefix apps/desktop test` after integrating main measured 125 files and 2303 tests.
 // Popovers that stay open while WebKit moves focus during a press add two tests to ConversationActions.test.tsx: 2305.
-export const VITEST = { files: 125, tests: 2313 };
+// Workstream list actions replace the create-form tests and add prioritize and archive tests: 2313 becomes 2315.
+export const VITEST = { files: 125, tests: 2315 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

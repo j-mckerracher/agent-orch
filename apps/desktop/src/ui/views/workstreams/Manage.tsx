@@ -317,6 +317,60 @@ export function LifecycleControls({ group, controls }: { group: WsGroup; control
   );
 }
 
+/**
+ * The list card's actions on the selected initiative. Prioritize moves it to the top of the
+ * daemon's order (`workstreams.prioritize`); Archive is the same confirmed terminal change as the
+ * detail panel's.
+ */
+export function ListActions({ group, first, controls }: { group: WsGroup; first: boolean; controls: Controls }) {
+  const { surfaces } = useServices();
+  const noteId = useId();
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => setConfirming(false), [group.id]);
+  const off = controls.busy || controls.locked !== null;
+  const archive = () => {
+    setConfirming(false);
+    void controls.run(`Archive "${group.title}"`, () =>
+      surfaces.workstreams.update({ id: group.id, revision: group.revision }, { state: "archived" }),
+    );
+  };
+  return (
+    <>
+      <div className="ws-row" role="group" aria-label="Selected initiative">
+        <Button
+          disabled={off || first}
+          aria-describedby={noteId}
+          onClick={() => void controls.run(`Prioritize "${group.title}"`, () => surfaces.workstreams.prioritize(group.id))}
+        >
+          Prioritize
+        </Button>
+        {confirming ? (
+          <>
+            <Button variant="danger" disabled={off} onClick={archive}>
+              Confirm archive
+            </Button>
+            <Button disabled={off} onClick={() => setConfirming(false)}>
+              Cancel
+            </Button>
+          </>
+        ) : (
+          <Button disabled={off} aria-describedby={noteId} onClick={() => setConfirming(true)}>
+            Archive
+          </Button>
+        )}
+      </div>
+      <p className="ws-reason" id={noteId}>
+        {controls.locked ??
+          (confirming
+            ? `Archive "${group.title}"? It becomes read-only, and this cannot be undone.`
+            : first
+              ? `"${group.title}" is already first. Prioritize moves the selected initiative to the top.`
+              : `Prioritize moves "${group.title}" to the top. The order is advisory: the scheduler does not consult it.`)}
+      </p>
+    </>
+  );
+}
+
 export function LinkTaskForm({
   group,
   unlinked,

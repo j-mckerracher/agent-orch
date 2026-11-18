@@ -194,8 +194,8 @@ impl SqliteStore {
                 });
             }
             sqlx::query(
-                "INSERT INTO workstreams (id, title, summary, state, revision) \
-                 VALUES (?, ?, ?, ?, ?)",
+                "INSERT INTO workstreams (id, title, summary, state, revision, priority) \
+                 VALUES (?, ?, ?, ?, ?, (SELECT COALESCE(MAX(priority), 0) + 1 FROM workstreams))",
             )
             .bind(&workstream.id)
             .bind(&workstream.title)
@@ -227,12 +227,14 @@ impl SqliteStore {
         })
     }
 
-    /// Lists workstreams in creation order, optionally of one state.
+    /// Lists workstreams in priority order, highest first, optionally of one
+    /// state. A new workstream goes last; [`Self::prioritize_workstream`]
+    /// moves one to the top.
     pub fn list_workstreams(&self, state: Option<WorkstreamState>) -> WResult<Vec<Workstream>> {
         self.wcall(move |pool| async move {
             let rows = sqlx::query(
                 "SELECT id, title, summary, state, revision FROM workstreams \
-                 WHERE (?1 IS NULL OR state = ?1) ORDER BY sequence",
+                 WHERE (?1 IS NULL OR state = ?1) ORDER BY priority, sequence",
             )
             .bind(state.map(WorkstreamState::tag))
             .fetch_all(&pool)
@@ -289,6 +291,35 @@ impl SqliteStore {
             .await?;
             transaction.commit().await?;
             Ok(next)
+        })
+    }
+
+    /// Moves an unarchived workstream to the top of the priority order. One
+    /// already on top is left as it is. Priority is list order, not workstream
+    /// content, so no revision is bumped. Advisory: the scheduler does not
+    /// consult it.
+    pub fn prioritize_workstream(&self, id: &str) -> WResult<Workstream> {
+        let id = id.to_owned();
+        self.wcall(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let workstream = load_workstream(&mut transaction, &id).await?;
+            require_unarchived(&workstream)?;
+            let (own, top): (i64, Option<i64>) = sqlx::query_as(
+                "SELECT priority, (SELECT MIN(priority) FROM workstreams WHERE id != ?1) \
+                 FROM workstreams WHERE id = ?1",
+            )
+            .bind(&id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if let Some(top) = top.filter(|top| own >= *top) {
+                sqlx::query("UPDATE workstreams SET priority = ? WHERE id = ?")
+                    .bind(top - 1)
+                    .bind(&id)
+                    .execute(&mut *transaction)
+                    .await?;
+            }
+            transaction.commit().await?;
+            Ok(workstream)
         })
     }
 

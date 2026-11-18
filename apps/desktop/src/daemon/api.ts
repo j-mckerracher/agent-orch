@@ -420,6 +420,13 @@ export class DaemonApi {
     });
   }
 
+  async workstreamsPrioritize(workstreamId: string, idempotencyKey: string): Promise<WorkstreamWire> {
+    return this.session.request("workstreams.prioritize", {
+      workstream_id: realId(workstreamId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
   async workstreamsAddObjective(
     workstreamId: string,
     objective: { title: string; description?: string; gates?: GateDraft[] },
