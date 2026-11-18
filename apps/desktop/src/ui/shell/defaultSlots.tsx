@@ -1,4 +1,4 @@
-import { decisionCountText, matchesFilter, pendingDecisionCount } from "../format";
+import { decisionCountText, matchesFilter, openTaskCount, pendingDecisionCount } from "../format";
 import { heldSets } from "../../sources/surfaces/holds";
 import { useServices, useStore } from "../services";
 import { ThemeToggle } from "../theme";
@@ -50,7 +50,7 @@ export function TopBarCounts() {
     <p className="shell-counts" data-testid="top-counts">
       <NavLink to={{ name: "global", view: "workstreams" }}>— workstreams</NavLink>
       <span aria-hidden="true"> · </span>
-      <NavLink to={{ name: "global", view: "agents" }}>{text(taskList?.length)} tasks</NavLink>
+      <NavLink to={{ name: "global", view: "agents" }}>{text(taskList ? openTaskCount(taskList) : undefined)} tasks</NavLink>
       <span aria-hidden="true"> · </span>
       <NavLink to={{ name: "global", view: "agents" }}>{text(running)} running</NavLink>
       <span aria-hidden="true"> · </span>

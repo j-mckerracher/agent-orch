@@ -101,6 +101,14 @@ describe("top bar counts", () => {
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
   });
 
+  it("counts only active or waiting tasks, not finished ones", async () => {
+    const fake = daemon();
+    fake.tasks.push(mkTask("t4", REPO, { state: "Succeeded" }), mkTask("t5", REPO, { state: "Failed" }));
+    await mount(fake);
+    const counts = screen.getByTestId("top-counts");
+    await waitFor(() => expect(counts).toHaveTextContent("3 tasks"));
+  });
+
   it("updates when events change the lists", async () => {
     const fake = daemon();
     await mount(fake);

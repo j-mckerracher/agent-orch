@@ -33,6 +33,11 @@ export const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
   "Cancelled",
 ]);
 
+/** Tasks still active or waiting (Created, Queued, Running, Verifying): the top-bar task count. */
+export function openTaskCount(tasks: readonly TaskRecord[]): number {
+  return tasks.filter((task) => !TERMINAL_STATES.has(task.state)).length;
+}
+
 /** States the daemon accepts `tasks.cancel` from; any other state is refused. */
 export const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set(["Created", "Queued", "Running", "Verifying"]);
 
