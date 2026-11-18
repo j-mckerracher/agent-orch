@@ -43,6 +43,8 @@ const tauri = createRequire(import.meta.url).resolve("@tauri-apps/cli/tauri.js")
 run(process.execPath, [join(here, "prepare-daemon-sidecar.mjs")]);
 // The pinned codeburn reader and its Node.js runtime, staged as bundle resources (DPES-1105).
 run(process.execPath, [join(here, "prepare-codeburn-sidecar.mjs")]);
+// The pinned treehouse worktree tool, bundled beside the daemon as an externalBin (DPES-1044).
+run(process.execPath, [join(here, "prepare-treehouse-sidecar.mjs")]);
 run(process.execPath, [
   tauri,
   "build",

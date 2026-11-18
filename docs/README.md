@@ -42,6 +42,7 @@ These documents describe design and implementation. They are written for maintai
 - [Conversation service](m7-08-conversation-service.md): how chat turns run in the daemon.
 - [Usage ledger](usage-ledger.md): how AI usage is recorded and summarized.
 - [codeburn reader](third-party/codeburn.md): the pinned local usage reader.
+- [treehouse](third-party/treehouse.md): the pinned worktree pool tool.
 - [Host metrics](host-metrics.md): the `host.metrics` daemon method.
 - [Queue snapshot](queue-snapshot.md): the `queue.snapshot` daemon method.
 - [Assignment profile policy](assignment-profile-policy-v1.md): how work is classified.
