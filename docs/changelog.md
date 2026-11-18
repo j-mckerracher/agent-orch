@@ -5,6 +5,46 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.15](https://github.com/mc-innersource/motif-mcao/compare/v0.1.14...v0.1.15) (2026-11-18)
+
+
+### Features
+
+* **agents:** DPES-1044 - Expose locate_program for the treehouse lookup ([6ed6731](https://github.com/mc-innersource/motif-mcao/commit/6ed6731230f4e05acd8ad7708cef0d61dc4e101c))
+* **daemon:** DPES-1044 - Create task worktrees with bundled treehouse ([54c6c18](https://github.com/mc-innersource/motif-mcao/commit/54c6c184fd9bab3ff8bdb2268b6690878e405a1d))
+* **daemon:** DPES-1044 - Lease task worktrees from treehouse ([1b64c90](https://github.com/mc-innersource/motif-mcao/commit/1b64c900f88f56ffb3850c5614099eef0e0f6446))
+* **git:** DPES-1044 - Create task worktrees with treehouse ([8012f91](https://github.com/mc-innersource/motif-mcao/commit/8012f9166d1b77c793d7e26bdc41ea354a7d6a73))
+
+
+### Bug Fixes
+
+* **daemon:** DPES-1044 - Run git projects in worktrees, never in place ([91decf2](https://github.com/mc-innersource/motif-mcao/commit/91decf2983eeeab5d429963c0c0ef10ea8cfc216))
+* **daemon:** DPES-1044 - Stop reading a worktree after its slot is returned ([66ca8f0](https://github.com/mc-innersource/motif-mcao/commit/66ca8f012c093f4ad70805f5569b071147eb858b))
+* **daemon:** DPES-1106 - Stop conversation sends failing while the agent CLI is slow ([9caa003](https://github.com/mc-innersource/motif-mcao/commit/9caa003612d52b901d90549b1864176f24cab2d2))
+* **daemon:** DPES-1106 - Stop slow agent CLIs from conflicting conversation sends ([2a5a167](https://github.com/mc-innersource/motif-mcao/commit/2a5a167b8613de7cba48c06d419b16dd4b874677))
+* **desktop:** DPES-1106 - Retry a conversation send while the agent is starting ([64440d8](https://github.com/mc-innersource/motif-mcao/commit/64440d82e8c626b6c7db2ab190387b1845822065))
+
+
+### Documentation
+
+* DPES-1044 - Describe the treehouse worktree pool and the pinned tool ([bb61a6b](https://github.com/mc-innersource/motif-mcao/commit/bb61a6bcc6debec1569a369912ed8f10c75f8aa7))
+
+
+### Tests
+
+* **cli:** DPES-1044 - Remove a debug print from the recovery test ([e3eda06](https://github.com/mc-innersource/motif-mcao/commit/e3eda0648f5ff7d1990196ef2a62a6222990e186))
+
+
+### Build
+
+* **desktop:** DPES-1044 - Pin and stage the treehouse worktree tool ([5d4d2be](https://github.com/mc-innersource/motif-mcao/commit/5d4d2bede595169ea2cca7a8d9a5804c9e538fb2))
+* **release:** DPES-1044 - Require treehouse beside the daemon in installers ([219d363](https://github.com/mc-innersource/motif-mcao/commit/219d36352ce86e922d6e9cb2e9c315fa044e643d))
+
+
+### CI
+
+* **workflows:** DPES-1044 - Fetch the pinned treehouse for worktree tests ([10e53f4](https://github.com/mc-innersource/motif-mcao/commit/10e53f4c3abf21a2e78a7f8d637f429ea78954e7))
+
 ## [0.1.14](https://github.com/mc-innersource/motif-mcao/compare/v0.1.13...v0.1.14) (2026-11-18)
 
 
