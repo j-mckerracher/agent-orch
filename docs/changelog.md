@@ -5,6 +5,76 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.5](https://github.com/mc-innersource/motif-mcao/compare/v0.1.4...v0.1.5) (2026-11-18)
+
+
+### Features
+
+* **desktop:** DPES-854 - Register repositories from Settings ([b70dcf3](https://github.com/mc-innersource/motif-mcao/commit/b70dcf3f5f5fd92d136a6215c33cbcaba996a1eb))
+* **desktop:** DPES-854 - Register repositories from Settings ([279758b](https://github.com/mc-innersource/motif-mcao/commit/279758bb8f04bf6dce2b05a5666272a88575a822))
+* **tasks:** DPES-1106 - Archive finished tasks ([f73f24e](https://github.com/mc-innersource/motif-mcao/commit/f73f24eb0c1787b9eb0b89ca6fa70d3c8fa7d5d7))
+* **tasks:** DPES-1106 - Archive finished tasks ([acca555](https://github.com/mc-innersource/motif-mcao/commit/acca5554fe086173e745b31eb6134bf705c8c3f3))
+* **workstreams:** DPES-1106 - Wire Prioritize and Archive in the workstream list ([7ae071a](https://github.com/mc-innersource/motif-mcao/commit/7ae071a3f911cab9cde6c32f1c058e69ce86f579))
+* **workstreams:** DPES-1106 - Wire Prioritize and Archive in the workstream list ([7db4f62](https://github.com/mc-innersource/motif-mcao/commit/7db4f62ccc79a88c76fbcaae96b4312106fff40f))
+
+
+### Bug Fixes
+
+* **cli:** DPES-1106 - Verify the candidate after a CLI run and cancel from Verifying ([f6ef0f9](https://github.com/mc-innersource/motif-mcao/commit/f6ef0f9a2293e1dadccdb96a6570a123f2a12fca))
+* **daemon:** DPES-1106 - Check agent CLI capabilities before launch ([2b4b668](https://github.com/mc-innersource/motif-mcao/commit/2b4b668cf83f209182e1b6e874d38d05da22615d))
+* **daemon:** DPES-1106 - Check agent CLI capabilities before launch ([cefb673](https://github.com/mc-innersource/motif-mcao/commit/cefb6736288f853c6917e5040d2a3d0341a7a5c6))
+* **daemon:** DPES-1106 - Run verification after agent exit and allow cancel while Verifying ([ccfefb4](https://github.com/mc-innersource/motif-mcao/commit/ccfefb47e1288668dab871b7cb9d5b01a4066868))
+* **daemon:** DPES-1106 - Validate task intake before probing the CLI ([d531a56](https://github.com/mc-innersource/motif-mcao/commit/d531a562018f83a476e55f26e31f138f71a86b7a))
+* **daemon:** Prepare the default agent before automatic turns ([1fbd2dd](https://github.com/mc-innersource/motif-mcao/commit/1fbd2ddd51522b1db37a59acfca2f70738a17622))
+* **daemon:** Run automatic turns on the Settings default agent ([03441db](https://github.com/mc-innersource/motif-mcao/commit/03441db9d03cf14e5ac946fdee502e91235ce28f))
+* **daemon:** Run automatic turns on the Settings default agent ([89af48b](https://github.com/mc-innersource/motif-mcao/commit/89af48be22a1bfde2bad353b8b67d029e3e9a230))
+* **daemon:** Settle the default agent before wake and relay turns ([5cfcbdb](https://github.com/mc-innersource/motif-mcao/commit/5cfcbdb77a068769d6999b5662bc8e0911a0b841))
+* **desktop:** Compact the conversation header and composer ([733cc4e](https://github.com/mc-innersource/motif-mcao/commit/733cc4e7dd4d113962073ad32f0c79cc5bddecac))
+* **desktop:** DPES-1106 - Compact the conversation header and composer ([d3ab76a](https://github.com/mc-innersource/motif-mcao/commit/d3ab76ae6d5f62b30d83aee3d169ff05279bac8a))
+* **desktop:** DPES-1106 - Enable Cancel only for states the daemon can cancel ([502c728](https://github.com/mc-innersource/motif-mcao/commit/502c728cb9f1b3db1982781ddca398b99fea72a4))
+* **desktop:** DPES-1106 - Render chat Markdown and add copy buttons ([911e167](https://github.com/mc-innersource/motif-mcao/commit/911e1673a71b51ead2b6b3aae766e049078d5cce))
+* **desktop:** DPES-1106 - Render chat Markdown and add copy buttons ([91f5011](https://github.com/mc-innersource/motif-mcao/commit/91f5011e023309fe6e4e9b85c75f2cdfc6161a21))
+* **desktop:** Show a failed orchestrator turn once ([289e555](https://github.com/mc-innersource/motif-mcao/commit/289e5558c03856c92c83aa7cbae078a7213e5c38))
+* **desktop:** Show workspace activity by default ([c0dae3a](https://github.com/mc-innersource/motif-mcao/commit/c0dae3a776155df76c8f62e626b916b09cb379e6))
+* **desktop:** Show workspace activity by default ([467a259](https://github.com/mc-innersource/motif-mcao/commit/467a259da7736af952dd7e8c989a4d81aa3933a6))
+* **desktop:** Tidy the workstream tasks table ([90d9ca1](https://github.com/mc-innersource/motif-mcao/commit/90d9ca10783029f6bf4bcf7aac2796253962f4f9))
+* **desktop:** Tidy the workstream tasks table ([3f8d0c0](https://github.com/mc-innersource/motif-mcao/commit/3f8d0c0d0d23e4d82688e2cb0c6bf631691a908e))
+* **docs:** DPES-1106 - Fix markdown lint errors in manual test docs ([6564af4](https://github.com/mc-innersource/motif-mcao/commit/6564af40c2f5554687c6e115b0900fb52284c4e9))
+* **docs:** DPES-1106 - Fix markdown lint errors in manual test docs ([d3de7fd](https://github.com/mc-innersource/motif-mcao/commit/d3de7fd33c2d05f18ebffbf334dc6d0203d90c6b))
+* **engine:** DPES-1106 - Run verification after a candidate is ready ([4ae4440](https://github.com/mc-innersource/motif-mcao/commit/4ae44405e5adbaac27fab70bcc08c523d64260bb))
+* **git:** DPES-1106 - Let verification runs be canceled mid-command ([12d6094](https://github.com/mc-innersource/motif-mcao/commit/12d609416d2ffd3435ac4624bfd2762c031c0453))
+* **orchestrator:** DPES-1106 - Report wake outcomes instead of staying quiet ([c4979f1](https://github.com/mc-innersource/motif-mcao/commit/c4979f157876fbe592488eeb87cbc52092c39d62))
+* **orchestrator:** DPES-1106 - Report wake outcomes instead of staying quiet ([22f5cac](https://github.com/mc-innersource/motif-mcao/commit/22f5cac1c40e90fd1daae7a2501039e5d68133dd))
+* **orchestrator:** DPES-1106 - Verify finished tasks and allow cancel while Verifying ([92135c0](https://github.com/mc-innersource/motif-mcao/commit/92135c038ea25cde875182c48a10d2d1052e0d87))
+* **store:** DPES-1106 - Settle verification atomically and allow cancel from Verifying ([16677de](https://github.com/mc-innersource/motif-mcao/commit/16677de31634341b0a402e9a919a8add135b4b55))
+
+
+### Updates
+
+* **desktop:** DPES-1106 - Remove explanatory UI notes and shorten unsupported text ([a95d9a1](https://github.com/mc-innersource/motif-mcao/commit/a95d9a11ae3e9c0fb6f1fb262ee71abea173a337))
+
+
+### Documentation
+
+* **manual-tests:** Add global orchestrator manual UI test cases ([bdb5460](https://github.com/mc-innersource/motif-mcao/commit/bdb5460e3c117182d0e3e85b592076b8949f8460))
+* **manual-tests:** Add global orchestrator manual UI test cases ([077f087](https://github.com/mc-innersource/motif-mcao/commit/077f087420f038d4f495057121dc5e5a4e88dc46))
+* **verification:** DPES-1106 - Document the verification runner and cancel from Verifying ([a82a82b](https://github.com/mc-innersource/motif-mcao/commit/a82a82becc50ada751713875d536f6cb697ba2d0))
+
+
+### Tests
+
+* **ci:** DPES-1106 - Update test pins for the verification runner ([ba6bca2](https://github.com/mc-innersource/motif-mcao/commit/ba6bca223df769a5f1a954186f9fcdaa8ea2de8f))
+* **ci:** DPES-1106 - Update the desktop vitest count for the Cancel allowlist tests ([f1caf5f](https://github.com/mc-innersource/motif-mcao/commit/f1caf5f2d13c46d7f9eb54553d67ff5894174560))
+* **desktop:** DPES-1106 - Make the usage e2e agents change a file ([293c539](https://github.com/mc-innersource/motif-mcao/commit/293c539bbc470bd4d79e971da19cd8bff83b69fd))
+* **verification:** DPES-1106 - Update new tests for the rebased attempt fields and settled states ([9bfe6ac](https://github.com/mc-innersource/motif-mcao/commit/9bfe6accf151a431fa1d7e77b65c668028bafff0))
+
+
+### CI
+
+* **gates:** DPES-1106 - Sync the native test pins from CI run 44256612453 ([8742f81](https://github.com/mc-innersource/motif-mcao/commit/8742f81b5a48beadaeb628a3bdafcf71b639d0a0))
+* **gates:** Sync the native test pins for the wake default agent change ([f20b353](https://github.com/mc-innersource/motif-mcao/commit/f20b353c9cf42b05154738be26177b6b7f31e442))
+* **gates:** Sync the native test pins from CI run 44226787184 ([89bdef4](https://github.com/mc-innersource/motif-mcao/commit/89bdef4e4feb13c21543b15034c214f798159405))
+
 ## [0.1.4](https://github.com/mc-innersource/motif-mcao/compare/v0.1.3...v0.1.4) (2026-11-18)
 
 
