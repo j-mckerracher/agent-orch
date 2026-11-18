@@ -39,6 +39,8 @@ pub enum WakeKind {
     ProposalWaiting,
     SignInNeeded,
     DaemonStart,
+    WorkCheck,
+    ScoutReportReady,
 }
 
 impl WakeKind {
@@ -50,6 +52,8 @@ impl WakeKind {
             Self::ProposalWaiting => "proposal_waiting",
             Self::SignInNeeded => "sign_in_needed",
             Self::DaemonStart => "daemon_start",
+            Self::WorkCheck => "work_check",
+            Self::ScoutReportReady => "scout_report_ready",
         }
     }
 
@@ -61,6 +65,8 @@ impl WakeKind {
             "proposal_waiting" => Some(Self::ProposalWaiting),
             "sign_in_needed" => Some(Self::SignInNeeded),
             "daemon_start" => Some(Self::DaemonStart),
+            "work_check" => Some(Self::WorkCheck),
+            "scout_report_ready" => Some(Self::ScoutReportReady),
             _ => None,
         }
     }
@@ -69,7 +75,10 @@ impl WakeKind {
     /// A stall is a notice only: the stall check never starts a model turn and never counts
     /// against the wake caps (decisions-3).
     pub const fn needs_model(self) -> bool {
-        matches!(self, Self::TaskFailed | Self::DaemonStart)
+        matches!(
+            self,
+            Self::TaskFailed | Self::DaemonStart | Self::WorkCheck | Self::ScoutReportReady
+        )
     }
 }
 
@@ -775,6 +784,69 @@ mod tests {
         store
             .claim_wake_batch(GLOBAL, ids, batch, &format!("turn-{batch}"), true, now_ms)
             .unwrap()
+    }
+
+    #[test]
+    fn adaptive_wake_migration_preserves_records_and_replays_unrelayed_reports() {
+        use sqlx::migrate::Migrator;
+        use std::borrow::Cow;
+
+        static MIGRATIONS: Migrator = sqlx::migrate!("./migrations");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await.unwrap();
+            let legacy = Migrator {
+                migrations: Cow::Owned(MIGRATIONS.iter().filter(|m| m.version < 57).cloned().collect()),
+                ..Migrator::DEFAULT
+            };
+            legacy.run(&pool).await.unwrap();
+            sqlx::raw_sql(
+                "INSERT INTO wake_records (rowid, id, scope, event_kind, subject, dedupe_key, notice,
+                    needs_model, state, batch_id, turn_id, attempts, anchor_sequence, notify_reply)
+                 VALUES (9, 'old', 'conversation:global', 'task_failed', 't', 'failed:t:7', 'Failed.',
+                    1, 'running', 'batch', 'turn', 1, 42, 1);
+                 INSERT INTO projects (id, root_path, settings) VALUES ('p', '/repo', '{}');
+                 INSERT INTO tasks (id, project_id, state, contract_json, version)
+                    VALUES ('t', 'p', '\"Succeeded\"', '{}', 1);
+                 INSERT INTO task_reports (task_id, attempt_id, body, captured_at)
+                    VALUES ('t', 'a', 'Finding.', '2026-11-17T00:00:00Z');
+                 INSERT INTO durable_events (sequence, task_id, kind, payload)
+                    VALUES (7, 't', 'task.report_ready', '{}');
+                 UPDATE orchestrator_settings SET wake_cursor = 10 WHERE id = 1;"
+            ).execute(&pool).await.unwrap();
+            MIGRATIONS.run(&pool).await.unwrap();
+            let row = sqlx::query("SELECT rowid, state, batch_id, turn_id, attempts, anchor_sequence, notify_reply
+                FROM wake_records WHERE id = 'old'").fetch_one(&pool).await.unwrap();
+            assert_eq!(row.get::<i64, _>("rowid"), 9);
+            assert_eq!(row.get::<String, _>("state"), "running");
+            assert_eq!(row.get::<String, _>("batch_id"), "batch");
+            assert_eq!(row.get::<String, _>("turn_id"), "turn");
+            assert_eq!(row.get::<i64, _>("attempts"), 1);
+            assert_eq!(row.get::<i64, _>("anchor_sequence"), 42);
+            assert_eq!(row.get::<i64, _>("notify_reply"), 1);
+            let cursor: i64 = sqlx::query_scalar("SELECT wake_cursor FROM orchestrator_settings WHERE id = 1")
+                .fetch_one(&pool).await.unwrap();
+            assert_eq!(cursor, 6);
+            for statement in [
+                "DELETE FROM wake_records",
+                "UPDATE wake_records SET notice = 'changed'",
+                "UPDATE wake_records SET state = 'noticed'",
+            ] {
+                assert!(sqlx::query(statement).execute(&pool).await.is_err(), "{statement}");
+            }
+            for kind in ["work_check", "scout_report_ready"] {
+                sqlx::query("INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice, needs_model, state)
+                    VALUES (?, 'conversation:global', ?, 't', ?, 'Check.', 1, 'pending')")
+                    .bind(kind).bind(kind).bind(kind).execute(&pool).await.unwrap();
+            }
+            pool.close().await;
+        });
     }
 
     #[test]

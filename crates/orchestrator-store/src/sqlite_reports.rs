@@ -4,7 +4,7 @@
 //! last message. The text is untrusted agent output. The daemon redacts it before it calls
 //! [`SqliteStore::capture_task_report`]; this layer stores no path, token or environment value
 //! of its own and never puts the text in a prompt. It is data: the daemon decides what a model
-//! sees, and only the relay the user asks for hands it to one turn.
+//! sees, and a manual or automatic relay hands it to one Restricted turn.
 //!
 //! A report is written once: a second capture changes nothing. Its text and times never change
 //! (the migration's triggers refuse an update, also from another connection), `relayed_at` is
@@ -178,7 +178,7 @@ impl SqliteStore {
         })
     }
 
-    /// Records that the user's relay handed the report to a turn, once. Returns `true` when it
+    /// Records that a relay handed the report to a turn, once. Returns `true` when it
     /// set `relayed_at` and `false` when the report was already relayed. A task with no report
     /// fails with `RecordNotFound`.
     pub fn mark_task_report_relayed(

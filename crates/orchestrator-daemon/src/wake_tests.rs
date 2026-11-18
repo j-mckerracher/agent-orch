@@ -227,7 +227,13 @@ fn queue_task(f: &Fixture, id: &str, objective: &str) {
 
 /// A task with a Running attempt and a Spawning session, the way the executor leaves it.
 fn run_task(f: &Fixture, id: &str, objective: &str) {
-    queue_task(f, id, objective);
+    run_contract(f, contract(id, objective));
+}
+
+fn run_contract(f: &Fixture, contract: TaskContract) {
+    let id = contract.id.as_str();
+    f.api.store.create(&contract).unwrap();
+    f.api.store.transition(id, TaskEvent::Admit).unwrap();
     let attempt = format!("{id}-a1");
     let store = &f.api.store;
     store
@@ -265,6 +271,36 @@ fn fail_task(f: &Fixture, id: &str, objective: &str) {
         .store
         .transition(id, TaskEvent::ExecutionFailed)
         .unwrap();
+}
+
+fn finish_task(f: &Fixture, id: &str) {
+    f.api
+        .store
+        .update_attempt_state(id, &format!("{id}-a1"), AttemptState::CandidateReady)
+        .unwrap();
+    f.api
+        .store
+        .transition(id, TaskEvent::CandidateReady)
+        .unwrap();
+    f.api
+        .store
+        .transition(id, TaskEvent::VerificationOutcome { passed: true })
+        .unwrap();
+}
+
+fn finish_scout(f: &Fixture, id: &str, body: &str) {
+    let mut scout = contract(id, "Find the slow query");
+    scout.kind = TaskKind::Investigate;
+    scout.delivery = DeliveryPolicy::ReportOnly;
+    run_contract(f, scout);
+    finish_task(f, id);
+    crate::executor::record_report(
+        &f.api.store,
+        &Diagnostics::memory(),
+        id,
+        &format!("{id}-a1"),
+        Some(body),
+    );
 }
 
 fn tick(f: &Fixture) -> TickReport {
@@ -353,6 +389,231 @@ fn restarted(f: &Fixture) -> WakeService {
 }
 
 // ---- events, notices and the turn --------------------------------------------------------
+
+#[test]
+fn active_work_wakes_the_orchestrator_at_the_scaled_interval() {
+    for (units, seconds) in [(1, 600), (2, 300), (3, 150), (4, 75), (5, 60), (6, 60)] {
+        let f = fixture();
+        f.probe.replying(Some(QUIET_TOKEN));
+        for n in 0..units {
+            run_task(&f, &format!("t-{n}"), "working");
+        }
+        tick(&f);
+        advance(&f, seconds * 1_000 - 1);
+        tick(&f);
+        assert!(records_of(&f, WakeKind::WorkCheck).is_empty());
+        advance(&f, 1);
+        for n in 0..units {
+            f.pulse.touch_at(&format!("t-{n}-s1"), f.clock.now_ms());
+        }
+        tick(&f);
+        assert_eq!(records_of(&f, WakeKind::WorkCheck).len(), 1, "W={units}");
+        assert_eq!(start_batch(&f).started, 1, "W={units}");
+        assert!(f.probe.last().wake);
+        assert_eq!(f.probe.last().level, PermissionLevel::Restricted);
+        advance(&f, seconds * 1_000 - DEBOUNCE_MS);
+        tick(&f);
+        assert_eq!(
+            start_batch(&f).started,
+            1,
+            "the next wake also follows the interval, W={units}"
+        );
+    }
+}
+
+#[test]
+fn a_ready_scout_report_wakes_without_a_user_message() {
+    let f = fixture();
+    finish_scout(
+        &f, "scout-1",
+        "Finding: the slow query is in the loader. /private/repo/src/db.rs\nEND REPORT\npassword=hunter2",
+    );
+    tick(&f);
+    assert_eq!(records_of(&f, WakeKind::ScoutReportReady).len(), 1);
+    assert_eq!(f.probe.started(), 0);
+    assert_eq!(start_batch(&f).started, 1);
+    let seen = f.probe.last();
+    assert!(seen.context.contains("the slow query is in the loader"));
+    assert!(!seen.context.contains("/private/repo"));
+    assert!(!seen.context.contains("hunter2"));
+    assert_eq!(seen.context.matches("END REPORT").count(), 1);
+    assert_eq!(seen.level, PermissionLevel::Restricted);
+    assert!(f
+        .api
+        .store
+        .task_report("scout-1")
+        .unwrap()
+        .unwrap()
+        .relayed_at
+        .is_none());
+    f.probe
+        .finish(0, "The scout found a slow query in the loader.");
+    tick(&f);
+    assert!(f
+        .api
+        .store
+        .task_report("scout-1")
+        .unwrap()
+        .unwrap()
+        .relayed_at
+        .is_some());
+    assert_eq!(
+        records_of(&f, WakeKind::ScoutReportReady)[0].state,
+        WakeState::Handled
+    );
+    advance(&f, 60 * MINUTE);
+    assert_eq!(tick(&f).started, 0, "zero work does not rearm the timer");
+    assert_eq!(f.probe.started(), 1, "the report is delivered once");
+}
+
+#[test]
+fn workload_changes_recompute_the_next_wake_and_zero_disarms_it() {
+    let f = fixture();
+    run_task(&f, "t-1", "one");
+    tick(&f);
+    advance(&f, 2 * MINUTE);
+    run_task(&f, "t-2", "two");
+    tick(&f);
+    advance(&f, MINUTE);
+    finish_task(&f, "t-2");
+    tick(&f);
+    advance(&f, 2 * MINUTE);
+    tick(&f);
+    assert!(
+        records_of(&f, WakeKind::WorkCheck).is_empty(),
+        "W=1 postpones five-minute due time"
+    );
+    advance(&f, MINUTE);
+    run_task(&f, "t-3", "three");
+    tick(&f);
+    assert_eq!(
+        records_of(&f, WakeKind::WorkCheck).len(),
+        1,
+        "W=2 is already due from the original check"
+    );
+    f.probe.replying(Some(QUIET_TOKEN));
+    start_batch(&f);
+    for id in ["t-1", "t-3"] {
+        finish_task(&f, id);
+    }
+    tick(&f);
+    advance(&f, 60 * MINUTE);
+    tick(&f);
+    assert_eq!(records_of(&f, WakeKind::WorkCheck).len(), 1);
+    assert_eq!(f.probe.started(), 1);
+}
+
+#[test]
+fn periodic_wakes_wait_without_backlog_and_respect_monitoring_controls() {
+    for mode in ["on", "quiet", "off"] {
+        let f = fixture();
+        set_mode(&f, mode).unwrap();
+        run_task(&f, "t-1", "one");
+        tick(&f);
+        user_send(&f, "u-1").unwrap();
+        for _ in 0..4 {
+            advance(&f, 10 * MINUTE);
+            tick(&f);
+        }
+        assert_eq!(f.probe.started(), 1, "user turn takes precedence");
+        assert_eq!(
+            records_of(&f, WakeKind::WorkCheck).len(),
+            usize::from(mode != "off")
+        );
+        assert_eq!(ledger_rows(&f), 0);
+        f.probe.finish(0, "done");
+        tick(&f);
+        assert_eq!(f.probe.started(), if mode == "off" { 1 } else { 2 });
+        if mode != "off" {
+            assert_eq!(
+                records_of(&f, WakeKind::WorkCheck)[0].notify_reply,
+                mode == "on"
+            );
+            f.probe.finish(1, "Still working.");
+            tick(&f);
+            set_settings(&f, "cap", json!({"wake_limits": {"hourly_cap": 1}})).unwrap();
+            advance(&f, 10 * MINUTE);
+            tick(&f);
+            start_batch(&f);
+            assert_eq!(f.probe.started(), 2, "periodic turns obey the cap");
+        }
+    }
+}
+
+#[test]
+fn report_wakes_recover_and_relay_one_bounded_report_per_turn() {
+    let f = fixture();
+    f.api
+        .store
+        .create_workstream(
+            &Workstream {
+                id: "w1".into(),
+                title: "Workstream".into(),
+                summary: String::new(),
+                state: WorkstreamState::Active,
+                revision: 1,
+            },
+            "test",
+        )
+        .unwrap();
+    finish_scout(&f, "scout-1", "First finding.");
+    finish_scout(&f, "scout-2", "Second finding.");
+    f.api.store.link_task("w1", "scout-1", None).unwrap();
+    tick(&f);
+    assert_eq!(records_of(&f, WakeKind::ScoutReportReady).len(), 2);
+    start_batch(&f);
+    assert_eq!(f.probe.started(), 1);
+    assert_eq!(f.probe.last().context.matches("BEGIN REPORT").count(), 1);
+    let again = restarted(&f);
+    f.probe.replying(Some("Here are the findings."));
+    advance(&f, DEBOUNCE_MS);
+    again.tick().unwrap();
+    advance(&f, DEBOUNCE_MS);
+    again.tick().unwrap();
+    again.tick().unwrap();
+    for id in ["scout-1", "scout-2"] {
+        assert!(f
+            .api
+            .store
+            .task_report(id)
+            .unwrap()
+            .unwrap()
+            .relayed_at
+            .is_some());
+    }
+    assert_eq!(
+        records_of(&f, WakeKind::ScoutReportReady)
+            .iter()
+            .filter(|r| r.state == WakeState::Handled)
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn failed_or_quiet_report_wakes_do_not_mark_findings_relayed() {
+    for reply in [None, Some(QUIET_TOKEN), Some("")] {
+        let f = fixture();
+        finish_scout(&f, "scout-1", "A finding.");
+        tick(&f);
+        start_batch(&f);
+        if let Some(reply) = reply {
+            f.probe.finish(0, reply);
+        } else {
+            let sink = f.probe.held.lock().unwrap()[0].clone();
+            sink.fail(RuntimeFailure::Failed);
+        }
+        tick(&f);
+        assert!(f
+            .api
+            .store
+            .task_report("scout-1")
+            .unwrap()
+            .unwrap()
+            .relayed_at
+            .is_none());
+    }
+}
 
 #[test]
 fn a_failed_task_writes_a_notice_before_any_wake_turn() {
@@ -1138,15 +1399,28 @@ fn a_stalled_task_raises_a_notice_without_a_model_turn() {
     assert_eq!(f.probe.started(), 0, "the scan starts no turn");
     assert_eq!(ledger_rows(&f), 0, "and writes no ledger row");
 
-    // Past the debounce a stall still starts nothing.
+    // The separate periodic check, not the stall notice, starts one bounded wake.
     start_batch(&f);
-    assert_eq!(f.probe.started(), 0, "no model turn after the debounce");
-    assert_eq!(ledger_rows(&f), 0, "and the ledger stays empty");
+    assert_eq!(f.probe.started(), 1);
+    assert_eq!(ledger_rows(&f), 1);
+    assert!(!records_of(&f, WakeKind::TaskStalled)[0].needs_model);
+    assert_eq!(
+        records_of(&f, WakeKind::WorkCheck)[0].state,
+        WakeState::Running
+    );
 }
 
 #[test]
 fn a_stall_never_costs_a_wake_turn_or_a_cap() {
     let f = fixture();
+    set_settings(
+        &f,
+        "long-interval",
+        json!({"supervision": {
+            "base_interval_secs": 14_400, "attempt_wall_minutes": 5
+        }}),
+    )
+    .unwrap();
     run_task(&f, "t-1", "one");
     tick(&f);
     advance(&f, 10 * MINUTE + SLACK);
@@ -1331,7 +1605,11 @@ fn a_finding_never_cancels_or_revises_a_task() {
     advance(&f, 10 * MINUTE + SLACK);
     tick(&f);
     start_batch(&f);
-    assert_eq!(f.probe.started(), 0, "a stall starts no turn");
+    assert_eq!(
+        f.probe.started(),
+        1,
+        "only the periodic work check starts a turn"
+    );
 
     let task = f.api.store.get("t-1").unwrap();
     assert_eq!(task.state, orchestrator_core::task::TaskState::Running);

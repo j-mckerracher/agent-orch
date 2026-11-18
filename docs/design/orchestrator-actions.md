@@ -67,7 +67,7 @@ Events the daemon records as wake candidates:
 | Proposal waiting past a threshold | Proposals table | Deterministic reminder, at most once per threshold. |
 | Credential or sign-in needed | Catalog and runtime failures | Deterministic notice. |
 | Daemon start after downtime | Reconcile | One catch-up model turn. |
-| Schedule | Timer, off by default | Model turn with the full snapshot. |
+| Active work check | Workload-scaled timer, when monitoring is on, quiet or away | Restricted model turn with the current snapshot. No timer at zero work. |
 
 Rules:
 
@@ -83,11 +83,11 @@ Rules:
 
 Decided by the user (N10, N11): while agents work for the orchestrator, it checks on them for two things, work that is stuck and work that has drifted outside its task. The daemon runs one check per running task in the target's scope, once per effective interval. The more work there is, the shorter the effective interval, exponentially, as described next. The user sets the base interval (default 10 minutes, 1 to 240) and the minimum interval (default 1 minute, 10 seconds up to the base).
 
-**Wake frequency by workload (N11).** The daemon has no periodic wake mechanism today: its scheduler reacts to events. Phase 3 adds a wake scheduler that arms one timer per target. The closest existing pattern is `RetryPolicy` in `orchestrator-core/src/retry.rs`: a pure function that doubles a delay within bounds and takes a jitter trait. The wake scheduler uses the same shape, with the exponent taken from the amount of work instead of a retry number, and with the delay shrinking instead of growing:
+**Wake frequency by workload (N11).** The daemon arms one timer per active target using `IntervalPolicy` in `orchestrator-core/src/interval.rs`. Each due check queues a Restricted wake turn with the current snapshot, not only a deterministic stall scan. The exponent comes from the amount of work instead of a retry number, and the delay shrinks instead of growing:
 
 `interval(W) = max(minimum, base ÷ 2^(W − 1))` for `W ≥ 1`. With `W = 0` no timer is armed.
 
-`W` counts the work units in the target's scope: each running task is one unit, and each sub-orchestrator is one more unit. A sub-orchestrator is a workstream conversation that has a running task, an open proposal or a pending wake record. The Global target counts every running task and every active workstream, so a workstream with 3 running tasks gives `W = 4` and a 75 second interval at the defaults. A workstream target counts only its own tasks, because depth stays flat. The due time is the previous check plus `interval(W)` for the current `W`, recomputed whenever a task starts or ends, so the interval lengthens again as work finishes. Jitter is none by default, which keeps the function testable. Setting the minimum equal to the base turns the scaling off. Tradeoff: the more work there is, the more often the scope check can run a model turn, so token cost rises with load. Three things bound it: the scope check runs only when a change set grew, one wake turn per target runs at a time, and the minimum is a floor the user can raise. The N9 limits apply if the user set any. Event-driven wakes (a task failed, an approval is waiting, sign-in needed) and the wall-time bound are not affected, and the 60 second debounce still applies.
+`W` counts the work units in the target's scope: each running task is one unit, and each sub-orchestrator is one more unit. A sub-orchestrator is a workstream conversation that has a running task, an open proposal or a pending wake record. The Global target counts every running task and every active workstream, so a workstream with 3 running tasks gives `W = 4` and a 75 second interval at the defaults. A workstream target counts only its own tasks, because depth stays flat. The due time is the previous check plus `interval(W)` for the current `W`, recomputed whenever a task starts or ends, so the interval lengthens again as work finishes. Jitter is none by default, which keeps the function testable. Setting the minimum equal to the base turns the scaling off. More work means more model turns and higher token cost. At most one periodic check is pending per target and one wake turn runs at a time; the minimum, configured wake limits, monitoring mode and load gate bound the rate. Event-driven wakes (including a ready scout report) and the wall-time bound are not delayed by the interval. The 60 second debounce and user-turn precedence still apply.
 
 - **Stuck.** Deterministic, no model call. A task is stuck when it has had no session event and no worktree change since the previous check, or when its attempt is over its wall-time bound. The wall-time bound fires when crossed, not at the next check. The result is the "Task stalled" wake event. Its model turn proposes recovery: cancel and retry (phase 2), revise (phase 4).
 - **Scope creep.** The daemon gathers facts in code: the task objective and, when linked, its workstream objective; the changed file names and the diff stat against the base commit, capped at 4 KiB; the file count and line count at the previous check. A task contract has no path scope today, so the judgment of "does this change match the objective" needs a model turn. That turn runs only when the change set grew since the last check, so a quiet task costs no tokens. Contents of diffs and session output are never sent.
@@ -387,7 +387,7 @@ merge.
 ## Not built
 
 - **Codex and Copilot MCP wiring.** Only Claude is wired. The other two forms stay design text in `agent-permission-levels.md`.
-- **Automatic scout report relay** (`report_relay_auto`), and the wake events `scout_report_ready` and `pr_changed`. Relay is user-triggered only.
+- **PR-change wakes** (`pr_changed`) and a separate `report_relay_auto` setting. Ready scout reports now wake Global under the existing monitoring mode and limits; manual relay remains available.
 - **`delivery.request` and `project.register` actions.** Deferred.
 
 ## Not verified

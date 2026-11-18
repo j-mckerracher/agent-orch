@@ -1,8 +1,8 @@
 //! Scout reports (DPES-1105 phase 4a): `reports.list`, `reports.get` and `reports.relay`.
 //!
 //! A scout's report is untrusted agent text, stored redacted by the executor. It reaches a
-//! prompt only through `reports.relay`, which the user asks for: one Restricted turn in the
-//! global conversation whose opening text the daemon writes and whose context carries the
+//! prompt through the user's `reports.relay` or the report-ready wake: one Restricted turn in
+//! the global conversation whose opening text the daemon writes and whose context carries the
 //! report between fixed delimiters, labelled as data. The turn can only propose, and every
 //! proposal still needs `actions.resolve`. No method here changes a task or a project. All
 //! three sit under the `coordinator` capability; the desktop is the user's own app, and the

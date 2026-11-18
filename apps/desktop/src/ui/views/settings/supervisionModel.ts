@@ -11,7 +11,7 @@ export const HOURLY_CAP_MAX = 1000;
 export const DAILY_CAP_MAX = 10000;
 
 export const SUPERVISION_INTRO =
-  "While agents work, the orchestrator checks for tasks that look stuck. The more work is running, the more often it checks, down to the fastest interval. These checks use no tokens. A task is flagged only after it has been silent for at least 5 minutes.";
+  "While agents work, the orchestrator wakes to check progress and report what needs attention. Each additional work unit halves the interval, down to the fastest interval; less work lengthens it, and no work stops the timer. Automatic replies use tokens and obey your limits. Stuck-task notices use no tokens and require at least 5 minutes of silence.";
 export const WAKE_INTRO =
   "Automatic replies are updates the orchestrator writes without being asked. Each one uses tokens. When a limit is reached, you still see a notice for every event, and the header says Monitoring paused: limit reached.";
 export const UNAVAILABLE_TEXT = "This daemon cannot change these settings.";

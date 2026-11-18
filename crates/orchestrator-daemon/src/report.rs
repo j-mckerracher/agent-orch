@@ -3,7 +3,7 @@
 //! A scout's last message is untrusted agent output: a scout may have read a hostile
 //! repository. [`report_body`] is the one place it is made fit to store. Nothing here
 //! reads or writes the store, and the text is never put in a prompt or snapshot by this
-//! module; only the user's relay hands it to one Restricted turn.
+//! module; a manual or automatic relay hands it to one Restricted turn.
 
 use orchestrator_diagnostics::redact;
 use orchestrator_store::MAX_REPORT_BYTES;

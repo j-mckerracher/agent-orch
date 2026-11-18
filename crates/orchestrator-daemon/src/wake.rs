@@ -4,8 +4,8 @@
 //! finding, and starts a Restricted model turn (a wake turn) only when interpretation is
 //! needed. The notice is committed before any turn starts for its event, so a failed or skipped
 //! turn never hides it. Limits, a 60 second debounce, user-turn precedence and the machine load
-//! gate bound the rate. The stall check runs at the workload-scaled interval, never starts a
-//! model turn and never counts against a cap.
+//! gate bound the rate. Work checks use the workload-scaled interval. Stall findings remain
+//! deterministic notices; the separate work-check turn interprets the current snapshot.
 //!
 //! Every timer reads the injected [`Clock`], so a test moves time by hand and calls
 //! [`WakeService::tick`] directly. The loop thread only calls `tick` every two seconds.
@@ -252,9 +252,11 @@ impl WakeService {
         let settings = self.settings()?;
         report.settled = self.settle_running(&settings, now)?;
         report.recorded += self.observe(&settings, now)?;
-        report.recorded += self.stall_scan(&settings, now)?;
         report.recorded += self.proposal_scan(&settings, now)?;
         self.start_ready(now, &mut report)?;
+        // Drain due batches before arming the next check. At the one-minute floor the
+        // interval equals the debounce: checking first would skip every other wake.
+        report.recorded += self.supervision_scan(&settings, now)?;
         self.prune(now);
         Ok(report)
     }
@@ -342,6 +344,34 @@ impl WakeService {
     }
 
     fn settle(&self, batch_id: &str, settle: Settle) -> Result<usize, String> {
+        if matches!(settle, Settle::Handled(WakeOutcome::Replied)) {
+            let records = self
+                .store
+                .running_wake_records()
+                .map_err(|_| "cannot read wake records".to_owned())?;
+            for record in records.iter().filter(|record| {
+                record.batch_id.as_deref() == Some(batch_id)
+                    && record.kind == WakeKind::ScoutReportReady
+            }) {
+                let turn_id = record
+                    .turn_id
+                    .as_deref()
+                    .ok_or_else(|| "report wake has no turn".to_owned())?;
+                let reply = self
+                    .store
+                    .turn_reply_text(turn_id, QUIET_PROBE_BYTES)
+                    .map_err(|_| "cannot read report wake reply".to_owned())?;
+                if reply.trim().is_empty() {
+                    continue;
+                }
+                self.store
+                    .mark_task_report_relayed(
+                        &record.subject,
+                        &super::report::utc_text(self.clock.now_ms()),
+                    )
+                    .map_err(|_| "cannot mark relayed report".to_owned())?;
+            }
+        }
         self.store
             .settle_wake_batch(batch_id, settle)
             .map_err(|_| "cannot settle wake batch".to_owned())
@@ -444,8 +474,8 @@ impl WakeService {
         Ok(inserted.len())
     }
 
-    /// Turns a candidate into its record, plus the notice-only copy in Global when the task
-    /// belongs to a workstream.
+    /// Task events are interpreted in their workstream with a notice in Global. Reports
+    /// instead relay in Global, with a notice in the workstream.
     fn expand(candidate: Candidate, scope: &str, out: &mut Vec<NewWakeRecord>) {
         out.push(NewWakeRecord {
             scope: scope.to_owned(),
@@ -453,9 +483,8 @@ impl WakeService {
             subject: candidate.subject.clone(),
             dedupe_key: candidate.dedupe_key.clone(),
             notice: candidate.notice.clone(),
-            // A stall is a notice and never a model turn (decisions-3), whatever the store says
-            // of the kind.
-            needs_model: candidate.kind.needs_model() && candidate.kind != WakeKind::TaskStalled,
+            needs_model: candidate.kind.needs_model()
+                && (candidate.kind != WakeKind::ScoutReportReady || scope == GLOBAL_SCOPE),
         });
         if scope != GLOBAL_SCOPE {
             out.push(NewWakeRecord {
@@ -464,7 +493,7 @@ impl WakeService {
                 subject: candidate.subject,
                 dedupe_key: format!("up:{}", candidate.dedupe_key),
                 notice: candidate.notice,
-                needs_model: false,
+                needs_model: candidate.kind == WakeKind::ScoutReportReady,
             });
         }
     }
@@ -485,6 +514,15 @@ impl WakeService {
         };
         let mut records = Vec::new();
         for event in &events {
+            if event.kind == "task.report_ready"
+                && self
+                    .store
+                    .task_report(&event.task_id)
+                    .map_err(|_| "cannot read task report".to_owned())?
+                    .is_none_or(|report| report.relayed_at.is_some())
+            {
+                continue;
+            }
             let facts = if event.task_id.is_empty() {
                 None
             } else {
@@ -511,9 +549,8 @@ impl WakeService {
         self.record_at(settings, &records, last, now)
     }
 
-    /// Step 3: the deterministic stall check. It writes notices only: it never cancels, retries
-    /// or revises a task, starts no turn and writes no ledger row.
-    fn stall_scan(&self, settings: &OrchestratorSettings, now: u64) -> Result<usize, String> {
+    /// Adaptive work checks and deterministic stall notices.
+    fn supervision_scan(&self, settings: &OrchestratorSettings, now: u64) -> Result<usize, String> {
         let loads = self
             .store
             .supervision_load()
@@ -525,6 +562,15 @@ impl WakeService {
         let policy = settings.interval_policy();
         let wall = Duration::from_secs(u64::from(settings.supervision.attempt_wall_minutes) * 60);
         let mut found: Vec<(String, String, String, Stall)> = Vec::new();
+        let mut records = Vec::new();
+        let outstanding: BTreeSet<String> = self
+            .store
+            .pending_wake_records()
+            .map_err(|_| "cannot read outstanding work checks".to_owned())?
+            .into_iter()
+            .filter(|record| record.kind == WakeKind::WorkCheck)
+            .map(|record| record.scope)
+            .collect();
 
         // Over wall time: every tick, not delayed by the interval.
         for attempt in &running {
@@ -559,6 +605,19 @@ impl WakeService {
                     continue;
                 }
                 state.last_check_ms.insert(load.scope.clone(), now);
+                if settings.mode.runs_wake_turns() && !outstanding.contains(&load.scope) {
+                    records.push(NewWakeRecord {
+                        scope: load.scope.clone(),
+                        kind: WakeKind::WorkCheck,
+                        subject: "work".to_owned(),
+                        dedupe_key: format!("check:{now}"),
+                        notice: format!(
+                            "Check on {} active work units. Report progress, failures and decisions that need attention.",
+                            load.work_units
+                        ),
+                        needs_model: true,
+                    });
+                }
                 let quiet_for = interval.max(STALL_QUIET_FLOOR);
                 for attempt in running.iter().filter(|a| a.scope == load.scope) {
                     let activity = self.activity(attempt);
@@ -576,7 +635,6 @@ impl WakeService {
             }
         }
 
-        let mut records = Vec::new();
         for (scope, task_id, attempt_id, stall) in found {
             let facts = self
                 .store
@@ -605,7 +663,7 @@ impl WakeService {
         }
     }
 
-    /// Step 4: a reminder for each proposal that has waited too long.
+    /// A reminder for each proposal that has waited too long.
     fn proposal_scan(&self, settings: &OrchestratorSettings, now: u64) -> Result<usize, String> {
         let stale = self
             .store
@@ -628,7 +686,7 @@ impl WakeService {
         self.record(settings, &records, now)
     }
 
-    /// Step 5: start the batches whose window is due. The settings are read again for each
+    /// Start the batches whose window is due. The settings are read again for each
     /// batch, just before the claim, so a mode set to Off or a lowered cap after the top of the
     /// pass is honored.
     fn start_ready(&self, now: u64, report: &mut TickReport) -> Result<(), String> {
@@ -660,7 +718,25 @@ impl WakeService {
                 Ok(Some(_)) | Err(_) => continue,
             }
             let ids = self.state().debounce.take(&scope);
-            let records: Vec<&WakeRecord> = ids.iter().filter_map(|id| pending.get(id)).collect();
+            // One report per turn keeps the existing relay prompt bound. Other reports stay
+            // pending rather than being marked handled without their text reaching the model.
+            let mut has_report = false;
+            let mut deferred = Vec::new();
+            let records: Vec<&WakeRecord> = ids
+                .iter()
+                .filter_map(|id| pending.get(id))
+                .filter(|record| {
+                    if record.kind == WakeKind::ScoutReportReady {
+                        if has_report {
+                            deferred.push(record.id.clone());
+                            return false;
+                        }
+                        has_report = true;
+                    }
+                    true
+                })
+                .collect();
+            self.offer_again(&scope, &deferred, now);
             let Some(first) = records.first() else {
                 continue;
             };
@@ -685,6 +761,27 @@ impl WakeService {
                     self.or_offer(self.skip(&ids, skip_reason(reason)), &scope, &ids, now)?;
                 continue;
             }
+            let relay = self.or_offer(
+                records
+                    .iter()
+                    .find(|record| record.kind == WakeKind::ScoutReportReady)
+                    .map(|record| {
+                        let report = self
+                            .store
+                            .task_report(&record.subject)
+                            .map_err(|_| "cannot read task report".to_owned())?
+                            .ok_or_else(|| "wake report is missing".to_owned())?;
+                        Ok(super::report::relay_block(
+                            &report.task_id,
+                            &report.body,
+                            report.truncated,
+                        ))
+                    })
+                    .transpose(),
+                &scope,
+                &ids,
+                now,
+            )?;
             // The turn count in the ledger joins the seed, so a batch that a user message
             // cancelled and that is requeued unchanged still gets a new turn id. A replayed
             // claim sees the same count, so a restart never makes a second turn for a record.
@@ -715,7 +812,10 @@ impl WakeService {
             let brief = WakeBrief {
                 events: claimed.iter().map(|record| record.notice.clone()).collect(),
             };
-            match self.conversations.start_wake(&target, &turn_id, &brief) {
+            match self
+                .conversations
+                .start_wake(&target, &turn_id, &brief, relay.as_deref())
+            {
                 Ok(_) => report.started += 1,
                 Err(ConversationError::TurnRunning { .. }) => {
                     // A user turn slipped in: the records go back, no attempt is spent.
