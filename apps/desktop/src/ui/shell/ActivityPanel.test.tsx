@@ -113,11 +113,12 @@ describe("fixture mode", () => {
   it("disables the stop menu and queue settings with a visible reason", async () => {
     const { panel, user } = await mountPanel(null);
     await expandSection(user, panel, "Agent slots");
-    for (const name of ["Stop menu", "Queue settings"]) {
-      const button = within(panel).getByRole("button", { name });
-      expect(button).toBeDisabled();
-      expect(button).toHaveAccessibleDescription(/Not available:/);
-    }
+    const stop = within(panel).getByRole("button", { name: "Stop menu" });
+    expect(stop).toBeDisabled();
+    expect(stop).toHaveAccessibleDescription("Not supported yet.");
+    const queue = within(panel).getByRole("button", { name: "Queue settings" });
+    expect(queue).toBeDisabled();
+    expect(queue).toHaveAccessibleDescription("Not available: queue settings are not simulated.");
   });
 });
 
@@ -128,13 +129,14 @@ describe("live mode", () => {
     expect(panel).not.toHaveTextContent("20 / 24");
     expect(panel).not.toHaveTextContent("20 of 24");
     expect(panel).not.toHaveTextContent("$26");
+    await waitFor(() => expect(within(panel).queryByTestId("activity-budget")).toBeNull());
     expect(within(panel).queryAllByTestId("badge-D11")).toHaveLength(0);
     await expandSection(user, panel, "Agent slots");
     expect(within(panel).getByTestId("activity-slots-value")).toHaveTextContent("1 of 2 slots in use · 1 available");
     for (const name of ["Pause new dispatch", "Stop menu", "Queue settings"]) {
       const button = within(panel).getByRole("button", { name });
       expect(button).toBeDisabled();
-      expect(button).toHaveAccessibleDescription(/Not available:/);
+      expect(button).toHaveAccessibleDescription("Not supported yet.");
     }
   });
 

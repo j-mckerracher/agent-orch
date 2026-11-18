@@ -140,9 +140,6 @@ export function ResourceStripView({ state, provenance, nowMs, defaultOpen = fals
           return <ResourceItem key={key} name={meter.name} accessibleName={meter.accessibleName} row={row} nowMs={nowMs} />;
         })}
       </div>
-      <p className="rs-note">
-        Scale colors (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.
-      </p>
     </Disclosure>
   );
 }

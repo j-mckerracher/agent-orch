@@ -85,14 +85,18 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
 
     const dir = mkdtempSync(join(workRoot(), "s-"));
     scriptDirs.push(dir);
+    // An Implement run that exits 0 without changing a file fails, so each agent writes one in its worktree.
+    const change = `echo usage-e2e > usage-e2e.txt`;
     const codex = script(dir, "codex-agent", [
       `if [ "$1" = exec ] && [ "$2" = --help ]; then printf '%s\\n' --json --sandbox --ignore-user-config; exit 0; fi`,
+      change,
       `printf '{"type":"thread.started","thread_id":"01a1b721-1f91-7393-ae1d-6aace8e4646a"}\\n'`,
       `printf '{"type":"turn.started"}\\n'`,
       `printf '%s\\n' '${CODEX_USAGE_TURN}'`,
     ].join("\n"));
     const claude = script(dir, "claude-agent", [
       `if [ "$1" = --help ]; then printf '%s\\n' -p --verbose --output-format --include-partial-messages --permission-mode --permission-prompts --restricted --strict-mcp-config --tools --allowedTools; exit 0; fi`,
+      change,
       `cat '${CLAUDE_STREAM}'`,
     ].join("\n"));
     process.env.AGENT_ORCH_CODEX_PROGRAM = codex;

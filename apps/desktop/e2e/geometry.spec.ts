@@ -132,11 +132,6 @@ test("System Usage stays reachable and unclipped in the activity popover at 960 
   for (const name of resourceLabels) {
     await expect(usage.getByText(name, { exact: true })).toBeVisible();
   }
-  await expect(
-    usage.getByText("Scale colors (green to red) are a display aid, not an alert threshold. Disk is capacity used, not activity.", {
-      exact: true,
-    }),
-  ).toBeVisible();
 
   await usage.scrollIntoViewIfNeeded();
   const geometry = await usage.evaluate((element) => {
@@ -150,14 +145,14 @@ test("System Usage stays reachable and unclipped in the activity popover at 960 
         right: Math.min(innerWidth, bounds.right),
         bottom: Math.min(innerHeight, bounds.bottom),
       },
-      content: Array.from(element.querySelectorAll<HTMLElement>(".rs-item, .rs-note"), (item) => {
+      content: Array.from(element.querySelectorAll<HTMLElement>(".rs-item"), (item) => {
         const rect = item.getBoundingClientRect();
         return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
       }),
     };
   });
 
-  expect(geometry.content).toHaveLength(resourceLabels.length + 1);
+  expect(geometry.content).toHaveLength(resourceLabels.length);
   for (const rect of geometry.content) {
     expect(rect.left).toBeGreaterThanOrEqual(geometry.clip.left - 1);
     expect(rect.top).toBeGreaterThanOrEqual(geometry.clip.top - 1);

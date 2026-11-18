@@ -314,12 +314,6 @@ describe("ResourceStripView", () => {
     const cpuRow = screen.getByRole("meter", { name: "CPU utilization" }).closest(".rs-item")!;
     expect(cpuRow).toHaveTextContent("Scope: CPU · observed 4 s ago");
   });
-
-  it("states that the color scale is not an alert threshold and that disk means capacity", () => {
-    view(ok({}));
-    expect(screen.getByText(/not an alert threshold/)).toBeInTheDocument();
-    expect(screen.getByText(/Disk is capacity used, not activity/)).toBeInTheDocument();
-  });
 });
 
 describe("ResourceStrip behavior", () => {

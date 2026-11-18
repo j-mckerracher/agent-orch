@@ -126,13 +126,7 @@ function LastTurn({ daemonLevel, sentLevel, trigger }: LastTurnLevel) {
     return <p className="ws-small">The daemon has not recorded a permission level for the last turn.</p>;
   }
   // An automatic update was never sent by the user, so there is no sent level to compare against.
-  if (trigger === "wake") {
-    return (
-      <p className="ws-small">
-        The last automatic update ran at {permissionLabel(daemonLevel)}, as automatic updates always do.
-      </p>
-    );
-  }
+  if (trigger === "wake") return null;
   if (sentLevel !== null && sentLevel !== daemonLevel) {
     return (
       <p role="alert" className="ws-small">
