@@ -9,9 +9,9 @@ Versioning and the steps to release are in [RELEASE.md](RELEASE.md).
 
 | File | Runs on | Triggers | What it does |
 | --- | --- | --- | --- |
-| `.github/workflows/ci.yml` | `macos-15`, `windows-2025` | pull request, push to `main`, manual, called by `release.yml` | Sets `core.autocrlf=false` and `core.longpaths=true`, then runs every native gate once with `CI=true`, its own target directory and an isolated test temp directory. The Windows gates run as parallel jobs that a pull request's changed files select (see [Windows jobs](#windows-jobs-and-what-a-pull-request-runs)). |
-| `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual; called by `release.yml` | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --omit=dev --audit-level=high` for the shipped desktop tree (the dev tree is audited as a warning). |
-| `.github/workflows/release.yml` | `macos-15`, `windows-2025`; `publish` on `ubuntu-latest` | tag `v*`; manual; dispatched by `release-please.yml` | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads each build's artifacts. For a `v*` tag with `publish` set (or a tag push), the `publish` job publishes the GitHub release (see [Publishing a release](#publishing-a-release)). |
+| `.github/workflows/ci.yml` | `macos-15`, `windows-2025` | pull request, push to `main`, nightly, manual | Sets `core.autocrlf=false` and `core.longpaths=true`, then runs every native gate once with `CI=true`, its own target directory and an isolated test temp directory. The Windows gates run as parallel jobs that a pull request's changed files select (see [Windows jobs](#windows-jobs-and-what-a-pull-request-runs)). |
+| `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --omit=dev --audit-level=high` for the shipped desktop tree (the dev tree is audited as a warning). |
+| `.github/workflows/release.yml` | `macos-15`, `windows-2025`; `publish` on `ubuntu-latest` | tag `v*`; manual; dispatched by `release-please.yml` | Builds the macOS app and the Windows NSIS installer; it does not re-run `ci.yml` or `audit.yml`, because the release pull request's checks are the gate. Signs when secrets are present. Uploads each build's artifacts. For a `v*` tag with `publish` set (or a tag push), the `publish` job publishes the GitHub release (see [Publishing a release](#publishing-a-release)). |
 | `.github/workflows/release-please.yml` | `ubuntu-24.04` | push to `main` | Opens or updates the release pull request. When a release pull request has merged, creates the annotated `v*` tag and dispatches `release.yml` on it with `publish=true`. Publishes nothing itself (see [RELEASE.md](RELEASE.md)). |
 
 Every third-party action is pinned to a commit SHA. Workflows set top-level `permissions: {}`, and
@@ -19,8 +19,8 @@ each job grants only what it uses: `contents: read` for the builds, `contents: w
 in `release.yml` (it publishes the release), `contents`, `issues` and `pull-requests: write` for the
 release-please job, and `actions: write` plus `contents: write` for the job in `release-please.yml`
 that tags and starts the release. Secrets are mapped only into the `Package` step of `release.yml`.
-`ci.yml` and `audit.yml` cancel a superseded run only for a pull request; a scheduled, `main` or
-release run always completes.
+`ci.yml` and `audit.yml` cancel a superseded run only for a pull request; a scheduled or `main`
+run always completes.
 
 ## Gates
 
@@ -552,9 +552,7 @@ Local checks (below) prove the YAML, the shell and the harness logic. They do no
   `v*` tag run (from a merged release pull request, or a tag push) is its first real run;
 - the `release-please.yml` path end to end: the release pull request, the annotated tag, and the dispatch
   of `release.yml` on the tag, which depends on the `release` environment accepting a tag-ref run from a
-  token-created dispatch;
-- that reusable-workflow `workflow_call` composition in `release.yml` resolves on the default
-  branch.
+  token-created dispatch.
 
 Not covered by M6-02: updater signing keys and update metadata, and the Windows desktop e2e (it needs
 a Unix socket). Installing the artifact is M6-04, below.

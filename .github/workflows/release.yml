@@ -1,7 +1,9 @@
 name: release
 
 # Release builds for macOS and Windows, and for a `v*` tag the GitHub release that carries them. The
-# build jobs build artifacts only. A release starts on a `v*` tag, from either of two runs: a tag push,
+# build jobs build artifacts only. This workflow does not re-run ci.yml or audit.yml: the release pull
+# request's own checks are the gate, and a new advisory or a flaky test must not stop the installers
+# for a commit that already merged. A release starts on a `v*` tag, from either of two runs: a tag push,
 # or the run that release-please dispatches on the tag it created when its release pull request merged
 # (dispatch with publish=true). The publish job checks the tag against the app version, uploads the
 # installers to the draft release release-please made (or creates the release), and publishes it. A
@@ -33,25 +35,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  verify:
-    name: verify (native gates)
-    # A caller's permissions cap the permissions of the called jobs, so this must cover what ci.yml's jobs use.
-    permissions:
-      contents: read
-    # zizmor 1.30.1 (super-linter v9.0.0) recommends $/ for same-repo reusable calls, but actionlint 1.7.12 (also pinned by super-linter v9.0.0) rejects $/ as workflow-call. Revisit when super-linter ships an actionlint that accepts $/.
-    uses: ./.github/workflows/ci.yml # zizmor: ignore[self-repository] see comment above (DPES-1106)
-
-  verify-audit:
-    name: verify (dependency audits)
-    # Caps the permissions of audit.yml's jobs, as the verify job does for ci.yml.
-    permissions:
-      contents: read
-    # Same as the verify job above: zizmor self-repository wants $/, actionlint 1.7.12 rejects it. Revisit when super-linter's actionlint accepts $/.
-    uses: ./.github/workflows/audit.yml # zizmor: ignore[self-repository] see comment above (DPES-1106)
-
   build:
     name: build (${{ matrix.name }})
-    needs: [verify, verify-audit]
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     permissions:
