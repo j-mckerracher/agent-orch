@@ -236,7 +236,8 @@ function buildOptions(
     live && workstreams.status === "ok"
       ? workstreams.data.flatMap((ws) => {
           const id = ws.workstreamId ?? ws.id;
-          return isFixtureId(id) || id === GLOBAL_TASKS_WORKSTREAM_ID
+          // An archived workstream is read-only, so it is not a coordinator target.
+          return isFixtureId(id) || id === GLOBAL_TASKS_WORKSTREAM_ID || ws.state === "archived"
             ? []
             : [
                 {

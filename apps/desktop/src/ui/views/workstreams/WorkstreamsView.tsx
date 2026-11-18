@@ -96,13 +96,23 @@ export function WorkstreamsView() {
     const { groups, mode, unlinked, unlinkedKnown } = model;
     const fixture = mode === "fixture";
     const needle = filter.trim().toLowerCase();
-    const visible = groups.filter((group) => group.title.toLowerCase().includes(needle));
+    // Archived workstreams move to their own box under the initiatives.
+    const open = groups.filter((group) => group.state !== "archived");
+    const archived = groups.filter((group) => group.state === "archived");
+    const matches = (group: WsGroup) => group.title.toLowerCase().includes(needle);
+    const visible = open.filter(matches);
+    const visibleArchived = archived.filter(matches);
     const current = groups.find((group) => group.id === selected) ?? visible[0] ?? groups[0];
     const marker = fixture ? <PlaceholderBadge provenance={model.provenance} compact /> : null;
     const live = !fixture;
     const controls: Controls | null = current
       ? {
-          run: mutations.run,
+          // Pin the selection first: archiving moves the selected workstream out of the open list,
+          // and an implicit "first open workstream" selection would jump to another one.
+          run: (label, send) => {
+            setSelected(current.id);
+            return mutations.run(label, send);
+          },
           busy: mutations.busy,
           locked: model.stale
             ? STALE_REASON
@@ -113,6 +123,25 @@ export function WorkstreamsView() {
                 : null,
         }
       : null;
+
+    const item = (group: WsGroup, label: string) => (
+      <li key={group.id}>
+        <button
+          type="button"
+          className="ws-item"
+          aria-pressed={group.id === current?.id}
+          onClick={() => setSelected(group.id)}
+          title={group.projectIds.join("\n")}
+        >
+          <span className="ws-item-title">{label}</span>
+          <small>
+            {group.projectIds.length > 0 && `${group.projectIds.length} ${group.projectIds.length === 1 ? "project" : "projects"} · `}
+            {group.unreadReason === null ? taskCount(group.tasks.length) : "tasks unknown"}
+            {group.state === "suspended" && " · suspended"}
+          </small>
+        </button>
+      </li>
+    );
 
     body = (
       <>
@@ -144,10 +173,11 @@ export function WorkstreamsView() {
           />
         ) : (
           <div className="ws-layout">
+            <div className="ws-side">
             <Panel
               title={
                 <>
-                  <span data-testid="ws-list-count">{groups.length}</span> {groups.length === 1 ? "initiative" : "initiatives"}
+                  <span data-testid="ws-list-count">{open.length}</span> {open.length === 1 ? "initiative" : "initiatives"}
                 </>
               }
               headingLevel={2}
@@ -160,29 +190,10 @@ export function WorkstreamsView() {
                 <input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} />
               </label>
               <p role="status" className="ws-subtle" data-testid="ws-showing">
-                Showing {visible.length} of {groups.length}
+                Showing {visible.length} of {open.length}
               </p>
               <ul className="ws-items" aria-label="Workstreams">
-                {visible.map((group, index) => (
-                  <li key={group.id}>
-                    <button
-                      type="button"
-                      className="ws-item"
-                      aria-pressed={group.id === current?.id}
-                      onClick={() => setSelected(group.id)}
-                      title={group.projectIds.join("\n")}
-                    >
-                      <span className="ws-item-title">
-                        {index + 1}. {group.title}
-                      </span>
-                      <small>
-                        {group.projectIds.length > 0 && `${group.projectIds.length} ${group.projectIds.length === 1 ? "project" : "projects"} · `}
-                        {group.unreadReason === null ? taskCount(group.tasks.length) : "tasks unknown"}
-                        {group.state !== "active" && ` · ${group.state}`}
-                      </small>
-                    </button>
-                  </li>
-                ))}
+                {visible.map((group, index) => item(group, `${index + 1}. ${group.title}`))}
               </ul>
               {fixture ? (
                 <>
@@ -200,7 +211,7 @@ export function WorkstreamsView() {
                 </>
               ) : (
                 current &&
-                controls && <ListActions group={current} first={current.id === groups[0]?.id} controls={controls} />
+                controls && <ListActions group={current} first={current.id === open[0]?.id} controls={controls} />
               )}
               {live && !unlinkedKnown && (
                 <p className="ws-subtle" data-testid="ws-unlinked">
@@ -213,6 +224,23 @@ export function WorkstreamsView() {
                 </p>
               )}
             </Panel>
+            {archived.length > 0 && (
+              <Panel
+                title={
+                  <>
+                    <span data-testid="ws-archived-count">{archived.length}</span> archived
+                  </>
+                }
+                headingLevel={2}
+                className="ws-list"
+                aria-label="Archived workstreams"
+              >
+                <ul className="ws-items" aria-label="Archived workstreams">
+                  {visibleArchived.map((group) => item(group, group.title))}
+                </ul>
+              </Panel>
+            )}
+            </div>
             {current && controls && (
               <Detail
                 group={current}

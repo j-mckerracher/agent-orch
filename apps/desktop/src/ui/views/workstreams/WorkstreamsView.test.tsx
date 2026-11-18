@@ -202,6 +202,31 @@ describe("live data", () => {
     expect(within(screen.getByRole("list", { name: "Workstreams" })).getAllByRole("listitem")).toHaveLength(2);
   });
 
+  it("lists archived workstreams in their own box, not under initiatives or in the sidebar", async () => {
+    await mount(
+      daemon((_, state) => {
+        state.workstreams[1]!.state = "archived";
+      }),
+    );
+    await groupsReady();
+    expect(screen.getByTestId("workstreams-count")).toHaveTextContent("1");
+    expect(level(1)).toHaveLength(1);
+    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("1");
+    expect(within(screen.getByRole("list", { name: "Workstreams" })).getAllByRole("listitem")).toHaveLength(1);
+    expect(screen.getByTestId("ws-archived-count")).toHaveTextContent("1");
+    expect(within(screen.getByRole("list", { name: "Archived workstreams" })).getAllByRole("listitem")).toHaveLength(1);
+  });
+
+  it("moves a workstream to the archived box when it is archived", async () => {
+    const { user } = await mount(daemon());
+    await groupsReady();
+    expect(screen.queryByRole("list", { name: "Archived workstreams" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Archive" }));
+    await user.click(screen.getByRole("button", { name: "Confirm archive" }));
+    expect(await screen.findByTestId("ws-archived-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("1");
+  });
+
   it("shows every objective with its gate states and evidence task", async () => {
     await mount(daemon());
     const objectives = await screen.findAllByTestId("ws-objective");

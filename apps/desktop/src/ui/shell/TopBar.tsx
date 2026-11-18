@@ -6,7 +6,7 @@ import type { GlobalView } from "../router";
 import { NavLink } from "./NavLink";
 import { TopSearch } from "./Search";
 import { UsagePill } from "./UsagePill";
-import { useWorkstreamsVersion } from "../views/workstreams/model";
+import { activeCount, useWorkstreamsVersion } from "../views/workstreams/model";
 import type { ShellSlots } from "./slots";
 import "./topbar.css";
 
@@ -99,7 +99,7 @@ function LiveCounts() {
       placeholder={null}
       attentionMore={proposals.more}
       values={{
-        workstreams: surfaceCount(workstreams.status, workstreams.status === "ok" ? workstreams.data.length : undefined),
+        workstreams: surfaceCount(workstreams.status, workstreams.status === "ok" ? activeCount(workstreams.data) : undefined),
         tasks: taskList ? openTaskCount(taskList) : pendingRead(tasks.status),
         running: taskList
           ? taskList.filter((task) => matchesFilter(task, "running", taskList, approvalList)).length
@@ -125,7 +125,7 @@ function FixtureCounts() {
     <CountsLine
       placeholder="D9, D11"
       values={{
-        workstreams: surfaceCount(workstreams.status, ws?.length),
+        workstreams: surfaceCount(workstreams.status, ws && activeCount(ws)),
         tasks: surfaceCount(workstreams.status, ws?.reduce((total, item) => total + item.tasks.length, 0)),
         running: surfaceCount(activity.status, act?.running.length),
         attention: surfaceCount(activity.status, act?.attention.length),

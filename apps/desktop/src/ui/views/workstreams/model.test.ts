@@ -3,7 +3,7 @@ import { mkApproval, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { layoutGraph, MAX_GRAPH_NODES, textDependencies } from "./graph";
 import { countStates, measured } from "../../../sources/surfaces/result";
 import type { Workstream, WorkstreamTask } from "../../../sources/surfaces/types";
-import { deriveLiveGroups, requiredEvidence, taskTitleOf, type WsTask } from "./model";
+import { activeCount, deriveLiveGroups, requiredEvidence, taskTitleOf, type WsTask } from "./model";
 
 const A = "/work/alpha";
 const B = "/work/beta";
@@ -211,5 +211,12 @@ describe("taskTitleOf", () => {
 
   it("falls back to the id for a blank objective", () => {
     expect(taskTitleOf({ id: "t-9", objective: "  " })).toBe("t-9");
+  });
+});
+
+describe("activeCount", () => {
+  it("counts every state but archived", () => {
+    expect(activeCount([{ state: "active" }, { state: "suspended" }, { state: "archived" }])).toBe(2);
+    expect(activeCount([])).toBe(0);
   });
 });
