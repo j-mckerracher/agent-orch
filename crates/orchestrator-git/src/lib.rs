@@ -21,8 +21,12 @@ mod git;
 mod git_path;
 pub mod github;
 pub mod github_fake;
+mod process;
 pub mod reconcile;
 mod repository;
+#[cfg(test)]
+mod test_support;
+mod treehouse;
 pub mod verification;
 mod worktree;
 
@@ -32,4 +36,5 @@ pub use branch_prefix::{
 };
 pub use error::Error;
 pub use repository::Repository;
-pub use worktree::{create_task_worktree, TaskWorktree};
+pub use treehouse::{Released, Treehouse};
+pub use worktree::{create_task_worktree, release_task_worktree, TaskWorktree};

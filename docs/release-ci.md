@@ -131,7 +131,7 @@ The smoke test is not under `scripts/**/*.test.mjs`, so `Harness self-tests` doe
 audit job runs the same file on Linux (`audit.yml`).
 
 The step runs when `scripts/ci/windows-jobs.mjs` reports `smoke=true`. On a pull request that is only when
-`crates/orchestrator-local-usage/**`, `scripts/smoke/**`, `apps/desktop/src-tauri/sidecars/**`,
+`crates/orchestrator-local-usage/**`, `scripts/smoke/**`, `apps/desktop/src-tauri/sidecars/codeburn/**`,
 `apps/desktop/scripts/prepare-codeburn-sidecar.mjs`, or the daemon's or the store's usage code changes. Every other event
 (a push to `main`, the nightly schedule, a manual run, a release call) runs it. Docs-only and frontend-only changes do
 not select it.
@@ -140,6 +140,18 @@ not select it.
 no other line changes.
 
 **Cost when it runs:** SMOKE_COST_PLACEHOLDER
+
+### Treehouse fetch step (DPES-1044)
+
+The gates that lease worktrees need the pinned treehouse binary: `engine-build`, `engine-tests-a`,
+`engine-tests-b`, `tauri-tests` and the `gates (macos)` job. Each runs
+`node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"`, which checks
+the archive and binary SHA-256 pins and the version before it stages anything, then exports
+`AGENT_ORCH_TREEHOUSE_PROGRAM` through `$GITHUB_ENV` for the gates after it. The `release.yml` build jobs run the
+packaging script, which stages the same binary into the installer, so they need no separate fetch.
+
+A change under `apps/desktop/src-tauri/sidecars/treehouse/` or to `prepare-treehouse-sidecar.mjs` selects the engine,
+Tauri and package groups on a pull request.
 
 ### Survivor check and bounded runs
 
@@ -332,6 +344,9 @@ Windows the list of rows this CI cannot prove. The workflow uploads the director
   `libsqlite3-sys` 0.39 or later.
 - MPL-2.0 is in the license allow-list because the desktop graph contains it. Legal needs to
   decide this before a public release.
+- The treehouse scan record (`docs/third-party/treehouse.md`) is checked by
+  `apps/desktop/src-tauri/sidecars/treehouse/treehouse-sidecar.test.mjs`. `audit.yml` runs it with the codeburn record
+  test and requires exact totals of 9 (8 codeburn and 1 treehouse).
 
 ## Release builds and signing
 
@@ -381,6 +396,12 @@ current-user store, passed to Tauri as `certificateThumbprint` through `TAURI_CO
 anything: only the PowerShell call that imports the certificate receives the password, so the
 `npm run package:win` build, Tauri and cargo build scripts never see either value. The macOS
 `APPLE_*` variables must reach the build, because Tauri signs and notarizes itself.
+
+`apps/desktop/scripts/prepare-treehouse-sidecar.mjs` runs in `package.mjs` after the codeburn staging and
+bundles `treehouse` (macOS) or `treehouse.exe` (Windows) beside the daemon. `scripts/release/package.mjs` fails a macOS
+build whose app bundle lacks `Contents/MacOS/treehouse`. The install smoke requires that file in `Contents/MacOS`, checks
+that it carries the app's team identifier, and on Windows checks its Authenticode status with the daemon's. Upstream
+treehouse is unsigned, so its SHA-256 pin is enforced at staging only: Tauri re-signs the file when it bundles it.
 
 `CARGO_TARGET_DIR` must be absolute; any separator style is accepted and normalized, so
 `${{ runner.temp }}/target` (`D:\a\_temp/target`) works on Windows.

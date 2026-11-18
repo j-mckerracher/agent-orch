@@ -19,6 +19,10 @@
 //!   at the store's pin), so it needs no `sqlite3` binary. The older
 //!   `sqlite3`-hook cases, and `recovery.rs` as a whole, remain Unix-only.
 
+mod support;
+
+use support::leased_worktree;
+
 use orchestrator_core::identity::{ExactProcessIdentity, ProcessClassification};
 use orchestrator_core::task::{AttemptState, AuditEvent, SessionState, TaskState};
 use orchestrator_runtime::is_process_running;
@@ -413,7 +417,7 @@ fn complete(guard: &mut OwnedProcesses, live: &mut Live) -> String {
 }
 
 fn worktree(fixture: &Fixture, id: &str) -> PathBuf {
-    fixture.data.join("worktrees").join(id)
+    leased_worktree(&fixture.data, id)
 }
 
 /// The worktree still holds the task's uncommitted file, byte for byte, and Git
@@ -918,7 +922,14 @@ fn event_write_failure_rolls_back_one_task_while_parallel_task_stays_live() {
     let rolled_back = store.get("rollback").unwrap();
     assert_eq!(rolled_back.state, TaskState::Created);
     assert!(rolled_back.events.is_empty());
-    assert!(!worktree(&fixture, "rollback").exists());
+    assert!(
+        store
+            .list_workspaces()
+            .unwrap()
+            .iter()
+            .all(|workspace| workspace.task_id != "rollback"),
+        "rolled-back task recorded a workspace"
+    );
     assert!(!fixture.data.join(".orchestrator.lock").exists());
     assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
     assert!(is_process_running(survivor.agent));

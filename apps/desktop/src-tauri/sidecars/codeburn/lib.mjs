@@ -139,13 +139,14 @@ export function tarProgram(platform = process.platform) {
 }
 
 /**
- * Extracts only the pinned `node` binary and its LICENSE from the archive into `outDir`, then checks
- * the binary's SHA-256 against the pin.
+ * Extracts only the pinned binary (and its LICENSE, when the pin names one) from the archive into
+ * `outDir`, then checks the binary's SHA-256 against the pin.
  */
 export function extractRuntime(runtime, platform, archivePath, outDir) {
   const entry = runtimeEntry(runtime, platform);
   mkdirSync(outDir, { recursive: true });
-  const result = spawnSync(tarProgram(), ["-xf", archivePath, "-C", outDir, entry.member, entry.licenseMember], { encoding: "utf8" });
+  const members = [entry.member, entry.licenseMember].filter(Boolean);
+  const result = spawnSync(tarProgram(), ["-xf", archivePath, "-C", outDir, ...members], { encoding: "utf8" });
   if (result.error || result.status !== 0) {
     throw new Error(`tar could not extract ${entry.member}: ${result.error ?? result.stderr}`);
   }
@@ -154,7 +155,7 @@ export function extractRuntime(runtime, platform, archivePath, outDir) {
   if (actual !== entry.binarySha256) {
     throw new Error(`extracted ${entry.member} has SHA-256 ${actual}, expected ${entry.binarySha256}`);
   }
-  return { binary, license: join(outDir, entry.licenseMember), binarySha256: actual };
+  return { binary, license: entry.licenseMember ? join(outDir, entry.licenseMember) : null, binarySha256: actual };
 }
 
 /** The environment the reader runs in, as the daemon sets it (allowlist, offline settings). */

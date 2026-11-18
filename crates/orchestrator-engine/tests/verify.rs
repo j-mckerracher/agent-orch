@@ -9,13 +9,25 @@ use orchestrator_core::contract::{
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, TaskEvent, TaskState};
 use orchestrator_engine::verify::{pending_verifications, verify_attempt, Verified};
-use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, Treehouse};
 use orchestrator_store::{SqliteStore, Store};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
 const TASK: &str = "task-1";
 const ATTEMPT: &str = "a1";
+
+/// The treehouse binary from `AGENT_ORCH_TREEHOUSE_PROGRAM`, with its private home under `data_dir`.
+fn bundled_treehouse(data_dir: &Path) -> Treehouse {
+    let program = std::env::var_os("AGENT_ORCH_TREEHOUSE_PROGRAM").unwrap_or_else(|| {
+        panic!(
+            "AGENT_ORCH_TREEHOUSE_PROGRAM is not set; fetch treehouse with \
+             `node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest target/treehouse` \
+             and point the variable at the binary"
+        )
+    });
+    Treehouse::new(program, data_dir).expect("treehouse private home")
+}
 
 /// A task whose candidate is committed in its own worktree.
 struct Candidate {
@@ -40,12 +52,15 @@ fn candidate(verification: VerificationPolicy) -> Candidate {
     fs::create_dir_all(&worktrees_root).expect("create worktree root");
     let store = SqliteStore::new(&root.path().join("store.sqlite")).expect("open store");
     create_task(&store, &project(&primary, json!({})), verification);
+    let treehouse = bundled_treehouse(root.path());
     let worktree = create_task_worktree(
         &repository,
         TASK,
         "main",
         &worktrees_root,
         &BranchPrefix::default(),
+        &treehouse,
+        TASK,
     )
     .expect("create task worktree");
     let sha = commit_file(worktree.path(), "candidate.txt", "candidate\n", "candidate");

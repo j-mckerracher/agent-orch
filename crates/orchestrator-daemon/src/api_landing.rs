@@ -834,6 +834,7 @@ impl DaemonApi {
                     Some(view) => {
                         let merge_sha = view.merge_sha.as_deref();
                         self.advance_merge(id, MergeState::Merged, None, merge_sha)?;
+                        self.release_task_slots(std::slice::from_ref(&merge.task_id));
                         self.finish_merge(
                             Some(proposal),
                             ActionOutcome::Executed {
@@ -943,6 +944,7 @@ impl DaemonApi {
             PrState::Merged if view.head_sha != attempt.head_sha => refuse(UNCONFIRMED),
             PrState::Merged => {
                 self.advance_merge(id, MergeState::Merged, None, view.merge_sha.as_deref())?;
+                self.release_task_slots(std::slice::from_ref(&attempt.task_id));
                 self.finish_merge(
                     proposal,
                     ActionOutcome::Executed {

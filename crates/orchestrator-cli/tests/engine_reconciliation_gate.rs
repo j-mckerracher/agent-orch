@@ -12,6 +12,10 @@
 //! gate per the M2-06 coordinator ruling (plan section 9); see the section
 //! comment above those tests for the exact policy they pin.
 
+mod support;
+
+use support::leased_worktree;
+
 use orchestrator_core::approval::{ApprovalAction, ApprovalActionKind, ParameterDigest};
 use orchestrator_core::authorization::ActionKind;
 use orchestrator_core::contract::{
@@ -799,7 +803,7 @@ fn live_parallel_run_neither_blocks_scheduling_nor_holds_the_lock() {
     for pid in [live.wrapper, live.agent, live.descendant] {
         assert!(is_process_running(pid), "PID {pid} must still be running");
     }
-    assert!(fixture.data.join("worktrees/par-live").exists());
+    assert!(leased_worktree(&fixture.data, "par-live").exists());
 
     let cancel = cli(&fixture, &["cancel", "par-live"]);
     assert_success(&cancel, "cancel");
@@ -814,7 +818,7 @@ fn live_parallel_run_neither_blocks_scheduling_nor_holds_the_lock() {
         });
         guard.forget(pid);
     }
-    assert!(fixture.data.join("worktrees/par-live").exists());
+    assert!(leased_worktree(&fixture.data, "par-live").exists());
 }
 
 #[test]
@@ -825,7 +829,7 @@ fn held_data_directory_lock_refuses_mutating_commands_and_leaves_readers_alone()
         .expect("run CLI");
     assert_success(&run, "prior run");
     let prior_record = record_debug(&fixture, "locked-prior");
-    let prior_worktree = fixture.data.join("worktrees/locked-prior");
+    let prior_worktree = leased_worktree(&fixture.data, "locked-prior");
     let before = snapshot(&fixture.repo);
 
     let lock = DataDirectoryLock::acquire(&fixture.data).expect("hold data-directory lock");
@@ -1482,7 +1486,7 @@ fn assert_live_owner_journal_refuses(
             "refusal must not touch live PID {pid}"
         );
     }
-    assert!(fixture.data.join("worktrees").join(task_id).exists());
+    assert!(leased_worktree(&fixture.data, task_id).exists());
 
     let mut live = live;
     assert!(live.run.try_wait().unwrap().is_none(), "owner kept going");

@@ -6,6 +6,10 @@
 //! exact identity and is signaled on failure only while that identity still
 //! matches, never by name.
 
+mod support;
+
+use support::{leased_worktree, returned_to_pool};
+
 use orchestrator_core::identity::{ExactProcessIdentity, ProcessClassification};
 use orchestrator_runtime::is_process_running;
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, observe_owner_process};
@@ -328,7 +332,7 @@ fn cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree() {
     git(&fixture.repo, &["merge", "--ff-only", &branch]);
     let cleanup = cli(&fixture, "cleanup", "retain-variants");
     assert_success(&cleanup, "cleanup of clean, landed worktree");
-    assert!(!worktree.exists());
+    assert!(returned_to_pool(&fixture.data, &fixture.repo, &worktree));
     let after = primary(&fixture.repo);
     assert_eq!(after.tracked_dirty, before.tracked_dirty);
     assert_eq!(after.untracked, before.untracked);
@@ -378,7 +382,7 @@ fn cleanup_refuses_clean_worktree_while_run_owner_is_live() {
     guard.track("descendant", descendant_pid);
     let tree = [wrapper_pid, agent_pid, descendant_pid];
 
-    let worktree = fixture.data.join("worktrees/live-owner");
+    let worktree = leased_worktree(&fixture.data, "live-owner");
     assert!(worktree.exists(), "run must have created its worktree");
     // Precondition: nothing but liveness can justify refusing this cleanup.
     assert_eq!(
@@ -473,7 +477,7 @@ fn cleanup_follows_existing_contract_for_provably_exited_run_owner() {
         guard.forget(pid);
     }
 
-    let worktree = fixture.data.join("worktrees/exited-owner");
+    let worktree = leased_worktree(&fixture.data, "exited-owner");
     assert!(worktree.exists(), "run must have created its worktree");
     assert_eq!(
         git(
@@ -486,8 +490,8 @@ fn cleanup_follows_existing_contract_for_provably_exited_run_owner() {
     let cleanup = cli(&fixture, "cleanup", "exited-owner");
     assert_success(&cleanup, "cleanup with a provably exited run owner");
     assert!(
-        !worktree.exists(),
-        "clean, landed worktree should be removed"
+        returned_to_pool(&fixture.data, &fixture.repo, &worktree),
+        "clean, landed worktree should be returned to the pool"
     );
     assert_eq!(&primary(&fixture.repo), &before);
 }
@@ -512,7 +516,7 @@ fn cleanup_refuses_running_task_that_never_registered_a_run_owner() {
         "injected crash must kill the run"
     );
 
-    let worktree = fixture.data.join("worktrees/startup-crash");
+    let worktree = leased_worktree(&fixture.data, "startup-crash");
     assert!(worktree.exists(), "run must have created its worktree");
     assert_eq!(
         git(
@@ -588,7 +592,7 @@ fn cleanup_refuses_exited_run_owner_while_its_agent_tree_is_alive() {
         .iter()
         .any(|(_, class)| *class == ProcessClassification::Alive);
 
-    let worktree = fixture.data.join("worktrees/orphaned-tree");
+    let worktree = leased_worktree(&fixture.data, "orphaned-tree");
     let refused = cli(&fixture, "cleanup", "orphaned-tree");
     let worktree_kept = worktree.exists();
     // Stop only our own tree before asserting; the guard backs this up.

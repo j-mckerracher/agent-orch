@@ -16,11 +16,23 @@ use orchestrator_core::contract::{
 };
 use orchestrator_core::records::{Project, VerificationRun, Workspace};
 use orchestrator_core::task::TaskEvent;
-use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, Treehouse};
 use orchestrator_store::{SqliteStore, Store};
 use serde_json::{json, Value};
 
 pub const PROJECT_ID: &str = "e2e-project";
+
+/// The treehouse binary the seeded worktrees are leased from, from `AGENT_ORCH_TREEHOUSE_PROGRAM`.
+pub fn bundled_treehouse(data_dir: &Path) -> Treehouse {
+    let program = std::env::var_os("AGENT_ORCH_TREEHOUSE_PROGRAM").unwrap_or_else(|| {
+        panic!(
+            "AGENT_ORCH_TREEHOUSE_PROGRAM is not set; fetch treehouse with \
+             `node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest target/treehouse` \
+             and point the variable at the binary"
+        )
+    });
+    Treehouse::new(program, data_dir).expect("treehouse private home")
+}
 
 /// Runs git with identity, signing and line-ending config pinned so a host's
 /// global or system config (Git for Windows defaults to `core.autocrlf=true`)
@@ -66,12 +78,16 @@ pub fn init_repo(path: &Path) {
 pub fn seed_review(data_dir: &Path, repo: &Path, worktrees: &Path, task_id: &str) -> Value {
     let repository = Repository::new(repo).expect("repository");
     let base = repository.resolve_base_ref("HEAD").expect("base");
+    let treehouse = bundled_treehouse(data_dir);
+    let workspace_id = format!("{task_id}-workspace");
     let worktree = create_task_worktree(
         &repository,
         task_id,
         "main",
         worktrees,
         &BranchPrefix::default(),
+        &treehouse,
+        &workspace_id,
     )
     .expect("worktree");
     let worktree_path: PathBuf = worktree.path().to_path_buf();
@@ -117,7 +133,6 @@ pub fn seed_review(data_dir: &Path, repo: &Path, worktrees: &Path, task_id: &str
     ] {
         store.transition(task_id, event).expect("transition");
     }
-    let workspace_id = format!("{task_id}-workspace");
     store
         .add_workspace(&Workspace {
             id: workspace_id.clone(),

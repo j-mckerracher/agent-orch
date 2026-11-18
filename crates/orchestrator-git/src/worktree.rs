@@ -6,16 +6,15 @@ use crate::error::{stderr_detail, Error};
 use crate::git::{git, LONG_PATHS};
 use crate::git_path;
 use crate::repository::Repository;
+use crate::treehouse::{Released, Treehouse, MAX_TREES};
 
-/// A task-owned branch and worktree, created from a resolved base commit.
+/// Task-owned branch worktree, created at the resolved base commit.
 ///
-/// Invariants:
-/// - The worktree directory and branch name are fresh at creation time;
-///   never reused across tasks.
-/// - Creation never modifies the primary checkout. On any failure the
-///   partially created branch and directory are left in place (reported by
-///   [`Error::CreationFailed`]) for inspection; nothing in this crate
-///   deletes worktrees, branches, or files.
+/// Invariants: the branch is named for this task and never reused across
+/// tasks. The directory is a treehouse slot, which a later task can lease once
+/// this one is released. Creation never modifies the primary checkout. On
+/// failure the slot is returned to the pool when treehouse allows it; nothing
+/// in this crate deletes worktrees, branches, or files.
 #[derive(Debug)]
 pub struct TaskWorktree {
     path: PathBuf,
@@ -32,7 +31,7 @@ impl TaskWorktree {
         &self.branch
     }
 
-    /// The resolved commit the worktree was created from.
+    /// Resolved commit the worktree was created from.
     pub fn base_sha(&self) -> &str {
         &self.base_sha
     }
@@ -71,20 +70,22 @@ fn ensure_worktree_path_fits(path: &Path, limit: Option<usize>) -> Result<(), Er
     Ok(())
 }
 
-/// Create a task branch and worktree from the resolved commit of `base_ref`.
+/// Lease a treehouse slot and create the task branch in it at the resolved
+/// commit of `base_ref`.
 ///
 /// The branch is `<branch_prefix><slug>`, with a numeric suffix on collision.
-/// The worktree directory goes under `worktrees_root`, which must live
-/// outside the repository's work trees (plan section 8: a `worktrees/`
-/// directory outside the repository, not the primary checkout). The primary
-/// checkout is never modified. On failure, the partially created branch and
-/// worktree are left in place; the error reports where to inspect them.
+/// The slot lives under `worktrees_root`, which must live outside the
+/// repository's work trees. The primary checkout is never modified. On failure
+/// the lease is returned, so the slot can be reused; a slot treehouse refuses to
+/// return stays leased for inspection.
 pub fn create_task_worktree(
     repo: &Repository,
     task_id: &str,
     base_ref: &str,
     worktrees_root: &Path,
     branch_prefix: &BranchPrefix,
+    treehouse: &Treehouse,
+    lease_holder: &str,
 ) -> Result<TaskWorktree, Error> {
     repo.worktrees_root_is_outside(worktrees_root)?;
     // The caller may pass a verbatim `\\?\C:\..` path (from `canonicalize`),
@@ -92,18 +93,105 @@ pub fn create_task_worktree(
     let worktrees_root = &git_path::for_git(worktrees_root);
     let slug = sanitize_task_id(task_id)?;
     let sha = repo.resolve_base_ref(base_ref)?;
+    ensure_worktree_path_fits(
+        &deepest_slot_path(worktrees_root, repo.path()),
+        cfg!(windows).then_some(WINDOWS_MAX_WORKTREE_PATH),
+    )?;
 
-    let mut last_err: Option<Box<Error>> = None;
+    let base = base_branch(repo, base_ref);
+    let path = treehouse.get(worktrees_root, repo.path(), base.as_deref(), lease_holder)?;
+    let created = create_branch(repo, &path, &slug, branch_prefix, &sha);
+    if created.is_err() {
+        // Best effort: a slot that cannot be returned stays leased, to be released with its task.
+        let _ = release_task_worktree(treehouse, worktrees_root, &path, lease_holder);
+    }
+    created
+}
+
+/// Return the slot at `path` to the treehouse pool, while `lease_holder` still
+/// holds it. `path` must lie under `worktrees_root`.
+///
+/// A dirty slot is never forced: it is reported as [`Released::Dirty`] and
+/// stays leased.
+pub fn release_task_worktree(
+    treehouse: &Treehouse,
+    worktrees_root: &Path,
+    path: &Path,
+    lease_holder: &str,
+) -> Result<Released, Error> {
+    let root = git_path::for_git(worktrees_root);
+    let inside = std::fs::canonicalize(path)?.starts_with(std::fs::canonicalize(&root)?);
+    if !inside {
+        return Err(Error::WorktreeOutsideRoot {
+            path: path.to_path_buf(),
+            root,
+        });
+    }
+    treehouse.ret(&root, path, lease_holder)
+}
+
+/// The local branch treehouse should cut the slot from: `base_ref` when it names
+/// one (`main` or `refs/heads/main`), or HEAD's branch. `None` for anything else,
+/// so treehouse infers its default; the commit is pinned afterwards either way.
+fn base_branch(repo: &Repository, base_ref: &str) -> Option<String> {
+    let name = if base_ref == "HEAD" {
+        git(
+            "read HEAD branch",
+            repo.path(),
+            ["symbolic-ref", "--quiet", "--short", "HEAD"],
+        )
+        .ok()?
+    } else {
+        base_ref
+            .strip_prefix("refs/heads/")
+            .unwrap_or(base_ref)
+            .to_string()
+    };
+    git(
+        "check base branch",
+        repo.path(),
+        [
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{name}"),
+        ],
+    )
+    .ok()?;
+    Some(name)
+}
+
+/// The deepest path treehouse can give a slot of this repository. Its pool is
+/// `<root>/.treehouse/<repo>-<6 hex>`, slots are numbered up to [`MAX_TREES`],
+/// and each slot holds the repository at `<repo>`. The Windows length check uses
+/// this path, so it holds for whichever slot is leased.
+fn deepest_slot_path(root: &Path, repo: &Path) -> PathBuf {
+    let name = repo
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned();
+    root.join(".treehouse")
+        .join(format!("{name}-000000"))
+        .join(MAX_TREES.to_string())
+        .join(&name)
+}
+
+/// Create the task branch in the leased slot at `sha`, taking the next free `-N`
+/// suffix when a branch of that name already exists.
+fn create_branch(
+    repo: &Repository,
+    path: &Path,
+    slug: &str,
+    branch_prefix: &BranchPrefix,
+    sha: &str,
+) -> Result<TaskWorktree, Error> {
     for attempt in 0..MAX_NAME_ATTEMPTS {
-        let (branch, dir) = if attempt == 0 {
-            (format!("{branch_prefix}{slug}"), slug.clone())
+        let branch = if attempt == 0 {
+            format!("{branch_prefix}{slug}")
         } else {
-            (
-                format!("{branch_prefix}{slug}-{attempt}"),
-                format!("{slug}-{attempt}"),
-            )
+            format!("{branch_prefix}{slug}-{attempt}")
         };
-        let path = worktrees_root.join(&dir);
         let branch_taken = git(
             "check branch availability",
             repo.path(),
@@ -115,70 +203,51 @@ pub fn create_task_worktree(
             ],
         )
         .is_ok();
-        if branch_taken || path.exists() {
+        if branch_taken {
             continue;
         }
-        ensure_worktree_path_fits(&path, cfg!(windows).then_some(WINDOWS_MAX_WORKTREE_PATH))?;
-        match add_worktree(repo, &branch, &path, &sha) {
+        match switch_to_new_branch(path, &branch, sha) {
             Ok(()) => {
-                verify_head(&path, &sha)?;
+                verify_head(path, sha)?;
                 return Ok(TaskWorktree {
-                    path,
+                    path: path.to_path_buf(),
                     branch,
                     base_sha: sha.to_string(),
                 });
             }
+            // A concurrent creator took the name after the check: try the next one.
+            Err(err) if matches!(&err, Error::Git { stderr, .. } if is_name_collision(stderr)) => {}
             Err(err) => {
-                // Name race (a concurrent creator won) vs. real failure:
-                // git's "already exists" means retry with the next name;
-                // anything else leaves the partial state for inspection.
-                let race = matches!(&err, Error::Git { stderr, .. }
-                    if is_name_collision(stderr));
-                last_err = Some(Box::new(err));
-                if !race {
-                    return Err(Error::CreationFailed {
-                        path,
-                        branch,
-                        source: last_err.take().unwrap(),
-                    });
-                }
+                return Err(Error::CreationFailed {
+                    path: path.to_path_buf(),
+                    branch,
+                    source: Box::new(err),
+                });
             }
         }
     }
-    match last_err {
-        Some(err) if matches!(*err, Error::Git { .. }) => Err(Error::NameExhausted {
-            base: format!("{branch_prefix}{slug}"),
-            attempts: MAX_NAME_ATTEMPTS,
-        }),
-        Some(err) => Err(*err),
-        None => Err(Error::NameExhausted {
-            base: format!("{branch_prefix}{slug}"),
-            attempts: MAX_NAME_ATTEMPTS,
-        }),
-    }
+    Err(Error::NameExhausted {
+        base: format!("{branch_prefix}{slug}"),
+        attempts: MAX_NAME_ATTEMPTS,
+    })
 }
 
-fn add_worktree(repo: &Repository, branch: &str, path: &Path, sha: &str) -> Result<(), Error> {
-    if let Err(e) = std::fs::create_dir_all(path.parent().unwrap_or(path)) {
-        return Err(Error::Io(e));
-    }
-    // `--` guards the (sanitized, never leading-dash) worktree path against
-    // option injection, and keeps every argument a literal value. `LC_ALL=C`
-    // (on this child only) fixes git's message wording so `is_name_collision`
-    // and the reported cause do not depend on the user's locale.
+/// Create `branch` at `sha` and check it out in the slot at `path`. `LC_ALL=C`
+/// (on this child only) fixes git's message wording so `is_name_collision` does
+/// not depend on the user's locale.
+fn switch_to_new_branch(path: &Path, branch: &str, sha: &str) -> Result<(), Error> {
+    // `-c` names the start point, so git never guesses a branch from `sha`.
     let output = Command::new("git")
-        .current_dir(repo.path())
+        .current_dir(path)
         .env("LC_ALL", "C")
         .args(LONG_PATHS)
-        .args(["worktree", "add", "-b"])
+        .args(["switch", "-c"])
         .arg(branch)
-        .arg("--")
-        .arg(path)
         .arg(sha)
         .output()?;
     if !output.status.success() {
         return Err(Error::Git {
-            step: "add worktree",
+            step: "switch worktree branch",
             status: output.status,
             stderr: stderr_detail(&output.stderr),
         });
@@ -186,11 +255,10 @@ fn add_worktree(repo: &Repository, branch: &str, path: &Path, sha: &str) -> Resu
     Ok(())
 }
 
-/// True when git reports that the branch or worktree path already exists,
-/// i.e. a concurrent creator took the name. `stderr` is `stderr_detail`
-/// output (lines joined by `; `). Matches git's own whole `fatal:` line, not
-/// the phrase anywhere, so an unrelated failure whose path contains
-/// "already exists" is not retried.
+/// True when git reports that the branch already exists, i.e. a concurrent
+/// creator took the name. `stderr` is `stderr_detail` output (lines joined by
+/// `; `). Matches git's own whole `fatal:` line, not the phrase anywhere, so an
+/// unrelated failure whose path contains "already exists" is not retried.
 fn is_name_collision(stderr: &str) -> bool {
     stderr.split("; ").any(|line| {
         line.strip_prefix("fatal: ").is_some_and(|message| {
@@ -237,6 +305,7 @@ pub(crate) fn sanitize_task_id(task_id: &str) -> Result<String, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::bundled_treehouse;
     use std::process::Command;
     use tempfile::TempDir;
 
@@ -280,24 +349,34 @@ mod tests {
         git(dir, &["commit", "-m", "initial"]);
     }
 
-    /// Fresh repository plus a worktrees root outside it (sibling in the
-    /// same tempdir). Both are owned by the test and cleaned up by tempfile.
-    fn fixture() -> (TempDir, PathBuf, Repository) {
+    /// Fresh repository, a worktrees root outside it (sibling in the same
+    /// tempdir), and the bundled treehouse with its private home in the same
+    /// tempdir. All are owned by the test and cleaned up by tempfile.
+    fn fixture() -> (TempDir, PathBuf, Repository, Treehouse) {
         let base = TempDir::new().unwrap();
         let repo_dir = base.path().join("repo");
         std::fs::create_dir_all(&repo_dir).unwrap();
         init_repo(&repo_dir);
         let repo = Repository::new(&repo_dir).expect("temp dir is a repository");
         let wts = base.path().join("worktrees");
-        (base, wts, repo)
+        let treehouse = bundled_treehouse(base.path());
+        (base, wts, repo, treehouse)
     }
 
     #[test]
     fn open_accepts_repo_and_isolates_primary() {
-        let (tmp, wts, repo) = fixture();
+        let (tmp, wts, repo, treehouse) = fixture();
         let head = git(tmp.path().join("repo").as_path(), &["rev-parse", "HEAD"]);
-        let wt = create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default())
-            .unwrap();
+        let wt = create_task_worktree(
+            &repo,
+            "task-a1b2c3",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "task-a1b2c3-workspace-1",
+        )
+        .unwrap();
         assert!(wt.path().exists());
         assert_eq!(wt.branch(), "mcao/task-a1b2c3");
         assert_eq!(wt.base_sha(), head);
@@ -331,7 +410,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn verbatim_worktrees_root_creates_a_worktree() {
-        let (_tmp, wts, repo) = fixture();
+        let (_tmp, wts, repo, treehouse) = fixture();
         std::fs::create_dir_all(&wts).unwrap();
         let verbatim = std::fs::canonicalize(&wts).unwrap();
         assert!(
@@ -344,6 +423,8 @@ mod tests {
             "HEAD",
             &verbatim,
             &BranchPrefix::default(),
+            &treehouse,
+            "accept-run-workspace-1",
         )
         .unwrap();
         assert!(wt.path().join("base.txt").exists());
@@ -356,11 +437,10 @@ mod tests {
 
     /// A checkout whose files go past MAX_PATH (260) must still be created:
     /// Git for Windows fails creating checkout files without `core.longpaths`.
-    /// The worktree path itself stays short, because Git cannot create a
-    /// worktree at a path over `WINDOWS_MAX_WORKTREE_PATH` at all.
+    /// The slot path itself stays within `WINDOWS_MAX_WORKTREE_PATH`.
     #[test]
     fn checkout_files_longer_than_max_path_are_created() {
-        let (tmp, wts, repo) = fixture();
+        let (tmp, wts, repo, treehouse) = fixture();
         let repo_dir = tmp.path().join("repo");
         let mut deep = PathBuf::new();
         for _ in 0..4 {
@@ -380,6 +460,8 @@ mod tests {
             "HEAD",
             &wts,
             &BranchPrefix::default(),
+            &treehouse,
+            "deep-checkout-workspace-1",
         )
         .unwrap();
         let file = wt.path().join(&deep).join("deep.txt");
@@ -387,32 +469,50 @@ mod tests {
         assert!(file.exists(), "{file:?}");
     }
 
-    /// Builds `wts\<a>\<b>\<id>` with exactly `total` characters.
-    fn path_of_length(wts: &Path, id: &str, total: usize) -> PathBuf {
-        let rest = total
-            .checked_sub(wts.as_os_str().len() + 1 + id.len())
-            .filter(|rest| *rest >= 4)
-            .unwrap_or_else(|| panic!("{wts:?} is too long for a {total} character worktree path"));
-        let first = rest / 2 - 1;
-        let second = rest - first - 2;
+    /// Builds `wts\<a>\<b>` exactly `total` characters long.
+    fn root_of_length(wts: &Path, total: usize) -> PathBuf {
+        let tail = total
+            .checked_sub(wts.as_os_str().len())
+            .filter(|tail| *tail >= 4)
+            .unwrap_or_else(|| panic!("{wts:?} is too long for a {total} character root"));
+        let first = (tail - 2) / 2;
+        let second = tail - 2 - first;
         let mut root = wts.to_path_buf();
         root.push("a".repeat(first));
         root.push("b".repeat(second));
         root
     }
 
+    /// Characters the pool adds to a worktrees root before the slot path: the
+    /// `.treehouse` pool directory, the slot number and the repository name.
+    fn slot_overhead(wts: &Path, repo: &Path) -> usize {
+        deepest_slot_path(wts, repo).as_os_str().len() - wts.as_os_str().len()
+    }
+
     /// The longest worktree path Git accepts must work: the Windows limit is
-    /// derived from Git's source, and this is what proves it is not too low.
+    /// derived from Git's source, and this is what proves it is not too low. The
+    /// limit applies to the deepest slot treehouse can hand out, so the root is
+    /// sized for slot MAX_TREES; the slot leased here is shorter.
     #[test]
     fn worktree_at_the_longest_accepted_path_is_created() {
-        let (_tmp, wts, repo) = fixture();
-        let id = "longest";
-        let root = path_of_length(&wts, id, WINDOWS_MAX_WORKTREE_PATH);
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let root = root_of_length(
+            &wts,
+            WINDOWS_MAX_WORKTREE_PATH - slot_overhead(&wts, repo.path()),
+        );
         std::fs::create_dir_all(&root).unwrap();
-        let wt = create_task_worktree(&repo, id, "HEAD", &root, &BranchPrefix::default()).unwrap();
-        assert_eq!(
-            wt.path().as_os_str().len(),
-            WINDOWS_MAX_WORKTREE_PATH,
+        let wt = create_task_worktree(
+            &repo,
+            "longest",
+            "HEAD",
+            &root,
+            &BranchPrefix::default(),
+            &treehouse,
+            "longest-workspace-1",
+        )
+        .unwrap();
+        assert!(
+            wt.path().as_os_str().len() <= WINDOWS_MAX_WORKTREE_PATH,
             "{:?}",
             wt.path()
         );
@@ -439,20 +539,29 @@ mod tests {
         ensure_worktree_path_fits(&path, None).unwrap();
     }
 
-    /// Where the limit applies, creation is refused before Git runs, so no
-    /// branch or directory is left behind. Windows only: elsewhere Git has no
-    /// such limit.
+    /// Where the limit applies, creation is refused before any lease or Git
+    /// state exists. Windows only: elsewhere Git has no such limit.
     #[cfg(windows)]
     #[test]
     fn a_worktree_over_the_windows_limit_is_refused_before_any_git_state_exists() {
-        let (tmp, wts, repo) = fixture();
-        let id = "too-long";
-        let root = path_of_length(&wts, id, WINDOWS_MAX_WORKTREE_PATH + 1);
+        let (tmp, wts, repo, treehouse) = fixture();
+        let root = root_of_length(
+            &wts,
+            WINDOWS_MAX_WORKTREE_PATH + 1 - slot_overhead(&wts, repo.path()),
+        );
         std::fs::create_dir_all(&root).unwrap();
-        let err =
-            create_task_worktree(&repo, id, "HEAD", &root, &BranchPrefix::default()).unwrap_err();
+        let err = create_task_worktree(
+            &repo,
+            "too-long",
+            "HEAD",
+            &root,
+            &BranchPrefix::default(),
+            &treehouse,
+            "too-long-workspace-1",
+        )
+        .unwrap_err();
         assert!(matches!(err, Error::WorktreePathTooLong { .. }), "{err:?}");
-        assert!(!root.join(id).exists());
+        assert!(!root.join(".treehouse").exists());
         let repo_dir = tmp.path().join("repo");
         assert!(!git_ok(
             &repo_dir,
@@ -467,13 +576,21 @@ mod tests {
 
     #[test]
     fn dirty_primary_checkout_preserved() {
-        let (tmp, wts, repo) = fixture();
+        let (tmp, wts, repo, treehouse) = fixture();
         let repo_dir = tmp.path().join("repo");
         let head = git(&repo_dir, &["rev-parse", "HEAD"]);
         std::fs::write(repo_dir.join("uncommitted.txt"), "wip\n").unwrap();
         git(&repo_dir, &["add", "uncommitted.txt"]);
-        let wt = create_task_worktree(&repo, "dirty-test", "HEAD", &wts, &BranchPrefix::default())
-            .unwrap();
+        let wt = create_task_worktree(
+            &repo,
+            "dirty-test",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "dirty-test-workspace-1",
+        )
+        .unwrap();
         // Worktree carries committed content only.
         assert!(
             !wt.path().join("uncommitted.txt").exists(),
@@ -490,7 +607,7 @@ mod tests {
 
     #[test]
     fn resolve_base_commit_rejects_invalid_ref() {
-        let (tmp, _wts, repo) = fixture();
+        let (tmp, _wts, repo, _treehouse) = fixture();
         let head = git(tmp.path().join("repo").as_path(), &["rev-parse", "HEAD"]);
         match repo.resolve_base_ref("no-such-ref") {
             Err(Error::InvalidBaseRef { .. }) => {}
@@ -501,7 +618,7 @@ mod tests {
 
     #[test]
     fn resolve_base_ref_refuses_option_like_and_control_character_refs() {
-        let (_tmp, _wts, repo) = fixture();
+        let (_tmp, _wts, repo, _treehouse) = fixture();
         for refspec in ["--all", "-h", "HEAD\nmain", "HEAD\0"] {
             match repo.resolve_base_ref(refspec) {
                 Err(Error::InvalidBaseRef { .. }) => {}
@@ -512,9 +629,17 @@ mod tests {
 
     #[test]
     fn empty_task_id_rejected() {
-        let (_tmp, wts, repo) = fixture();
+        let (_tmp, wts, repo, treehouse) = fixture();
         for id in ["", "---", "-"] {
-            let r = create_task_worktree(&repo, id, "HEAD", &wts, &BranchPrefix::default());
+            let r = create_task_worktree(
+                &repo,
+                id,
+                "HEAD",
+                &wts,
+                &BranchPrefix::default(),
+                &treehouse,
+                "holder",
+            );
             assert!(
                 matches!(r, Err(Error::EmptyTaskId)),
                 "task id {id:?} should be rejected, got {r:?}"
@@ -523,14 +648,22 @@ mod tests {
         // Rejected ids create nothing.
         assert!(!wts.exists());
         // Symbols are replaced, not rejected: "~~~" becomes a valid id.
-        let ok =
-            create_task_worktree(&repo, "~~~", "HEAD", &wts, &BranchPrefix::default()).unwrap();
+        let ok = create_task_worktree(
+            &repo,
+            "~~~",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "holder",
+        )
+        .unwrap();
         assert_eq!(ok.branch(), "mcao/___");
     }
 
     #[test]
     fn worktrees_root_inside_repository_rejected() {
-        let (tmp, _wts, repo) = fixture();
+        let (tmp, _wts, repo, treehouse) = fixture();
         let inside = tmp.path().join("repo").join("worktrees");
         match create_task_worktree(
             &repo,
@@ -538,6 +671,8 @@ mod tests {
             "HEAD",
             &inside,
             &BranchPrefix::default(),
+            &treehouse,
+            "holder",
         ) {
             Err(Error::WorktreesRootInsideRepository { .. }) => {}
             other => panic!("expected WorktreesRootInsideRepository, got {other:?}"),
@@ -550,13 +685,27 @@ mod tests {
 
     #[test]
     fn collision_allocates_suffix() {
-        let (_tmp, wts, repo) = fixture();
-        let first =
-            create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default())
-                .unwrap();
-        let second =
-            create_task_worktree(&repo, "task-a1b2c3", "HEAD", &wts, &BranchPrefix::default())
-                .unwrap();
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let first = create_task_worktree(
+            &repo,
+            "task-a1b2c3",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "first-workspace-1",
+        )
+        .unwrap();
+        let second = create_task_worktree(
+            &repo,
+            "task-a1b2c3",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "second-workspace-1",
+        )
+        .unwrap();
         assert_eq!(first.branch(), "mcao/task-a1b2c3");
         assert_eq!(second.branch(), "mcao/task-a1b2c3-1");
         assert!(
@@ -568,157 +717,223 @@ mod tests {
 
     #[test]
     fn preexisting_branch_skipped() {
-        let (tmp, wts, repo) = fixture();
+        let (tmp, wts, repo, treehouse) = fixture();
         git(tmp.path().join("repo").as_path(), &["branch", "mcao/x"]);
-        let wt = create_task_worktree(&repo, "x", "HEAD", &wts, &BranchPrefix::default()).unwrap();
+        let wt = create_task_worktree(
+            &repo,
+            "x",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "x-workspace-1",
+        )
+        .unwrap();
         assert_eq!(wt.branch(), "mcao/x-1");
         assert!(wt.path().exists());
     }
 
     #[test]
-    fn git_add_failure_preserves_repo_state_and_reports_partial_state() {
-        let (tmp, _wts, repo) = fixture();
+    fn worktree_is_pinned_to_the_resolved_sha_when_origin_is_ahead() {
+        let (tmp, wts, repo, treehouse) = fixture();
         let repo_dir = tmp.path().join("repo");
-        let head = git(&repo_dir, &["rev-parse", "HEAD"]);
-        let before = git(&repo_dir, &["worktree", "list"]);
-        let wts = tmp.path().join("wts-blocked");
-        // Block the worktrees root with an existing regular file so the
-        // worktree directory cannot be created, cross-platform.
-        std::fs::write(&wts, "blocker\n").unwrap();
-        std::fs::write(tmp.path().join("precious.txt"), "keep\n").unwrap();
-        let r = create_task_worktree(&repo, "fail-test", "HEAD", &wts, &BranchPrefix::default());
-        match &r {
-            Err(Error::CreationFailed {
-                path,
-                branch,
-                source,
-            }) => {
-                assert_eq!(path, &wts.join("fail-test"));
-                assert_eq!(branch, "mcao/fail-test");
-                assert!(
-                    matches!(**source, Error::Io(_)),
-                    "expected an Io failure, got {source:?}"
-                );
-            }
-            other => panic!("expected CreationFailed, got {other:?}"),
-        }
-        assert!(
-            git(&repo_dir, &["worktree", "list"]) == before,
-            "worktree list must be unchanged after a failed add"
+        let origin = tmp.path().join("origin.git");
+        let clone = tmp.path().join("clone");
+        git(tmp.path(), &["init", "--bare", "-b", "main", "origin.git"]);
+        git(
+            &repo_dir,
+            &["remote", "add", "origin", origin.to_str().unwrap()],
         );
-        assert_eq!(
-            std::fs::read_to_string(tmp.path().join("precious.txt")).unwrap(),
-            "keep\n",
-            "unrelated files must survive a failed add"
+        git(&repo_dir, &["push", "origin", "main"]);
+        // Origin moves on, and the fetch makes `origin/main` ahead of local `main`.
+        git(
+            tmp.path(),
+            &["clone", origin.to_str().unwrap(), clone.to_str().unwrap()],
         );
-        assert!(
-            !git_ok(
-                &repo_dir,
-                &[
-                    "rev-parse",
-                    "--verify",
-                    "--quiet",
-                    "refs/heads/mcao/fail-test"
-                ]
-            ),
-            "no branch may remain after a failed add (git itself never created it)"
+        std::fs::write(clone.join("ahead.txt"), "ahead\n").unwrap();
+        git(&clone, &["add", "ahead.txt"]);
+        git(
+            &clone,
+            &[
+                "-c",
+                "user.email=t@example.com",
+                "-c",
+                "user.name=T",
+                "commit",
+                "-m",
+                "ahead",
+            ],
         );
-        assert_eq!(git(&repo_dir, &["rev-parse", "HEAD"]), head);
-    }
+        git(&clone, &["push", "origin", "main"]);
+        git(&repo_dir, &["fetch", "origin"]);
+        let local_head = git(&repo_dir, &["rev-parse", "HEAD"]);
 
-    /// A branch named `mcao` makes `refs/heads/mcao/<slug>`
-    /// uncreatable (ref directory/file conflict). Git prints a progress line
-    /// before its `fatal:` line; the reported error must carry the `fatal:`
-    /// cause, not just the progress line, and must keep the original source.
-    /// The full ref name appears only on the `fatal:` line, so asserting it
-    /// proves the cause survived without depending on Git's message wording.
-    const CAUSE_REF: &str = "refs/heads/mcao/cause-test";
+        let wt = create_task_worktree(
+            &repo,
+            "pin",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "pin-workspace-1",
+        )
+        .unwrap();
+        assert_eq!(wt.base_sha(), local_head);
+        assert!(
+            !wt.path().join("ahead.txt").exists(),
+            "the worktree must stay at the resolved commit, not origin/main"
+        );
+    }
 
     #[test]
-    fn git_add_failure_reports_git_stderr_cause() {
-        let (tmp, wts, repo) = fixture();
-        let repo_dir = tmp.path().join("repo");
-        git(&repo_dir, &["branch", "mcao"]);
-        let err = create_task_worktree(&repo, "cause-test", "HEAD", &wts, &BranchPrefix::default())
-            .unwrap_err();
-        let shown = err.to_string();
-        assert!(shown.contains("worktree creation failed at"), "{shown}");
-        assert!(shown.contains(CAUSE_REF), "git's cause is lost: {shown}");
-        match &err {
-            Error::CreationFailed { source, .. } => match &**source {
-                Error::Git {
-                    step,
-                    status,
-                    stderr,
-                } => {
-                    assert_eq!(*step, "add worktree");
-                    assert!(!status.success());
-                    assert!(stderr.contains(CAUSE_REF), "{stderr}");
-                }
-                other => panic!("expected Git source, got {other:?}"),
-            },
-            other => panic!("expected CreationFailed, got {other:?}"),
-        }
+    fn released_slot_is_reused_by_the_next_task() {
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let first = create_task_worktree(
+            &repo,
+            "first",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "first-workspace-1",
+        )
+        .unwrap();
+        let released =
+            release_task_worktree(&treehouse, &wts, first.path(), "first-workspace-1").unwrap();
+        assert_eq!(released, Released::Returned);
+
+        let second = create_task_worktree(
+            &repo,
+            "second",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "second-workspace-1",
+        )
+        .unwrap();
+        assert_eq!(second.path(), first.path());
+        assert_eq!(second.branch(), "mcao/second");
     }
 
-    /// A non-collision Git failure whose message merely contains a path with
-    /// the phrase "already exists" must fail at once with Git's cause, not be
-    /// retried as a name race until the names run out.
+    #[test]
+    fn dirty_worktree_is_not_released() {
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let wt = create_task_worktree(
+            &repo,
+            "dirty",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "dirty-workspace-1",
+        )
+        .unwrap();
+        std::fs::write(wt.path().join("wip.txt"), "wip\n").unwrap();
+
+        let released =
+            release_task_worktree(&treehouse, &wts, wt.path(), "dirty-workspace-1").unwrap();
+        assert_eq!(released, Released::Dirty);
+        assert!(
+            wt.path().join("wip.txt").exists(),
+            "uncommitted work must survive"
+        );
+        // Still leased, so the next task gets another slot.
+        let next = create_task_worktree(
+            &repo,
+            "next",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "next-workspace-1",
+        )
+        .unwrap();
+        assert_ne!(next.path(), wt.path());
+    }
+
+    /// Only the holder of a lease may return it: treehouse refuses another holder, so a stale
+    /// caller cannot free a slot another task is using.
+    #[test]
+    fn release_by_another_holder_is_refused() {
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let wt = create_task_worktree(
+            &repo,
+            "held",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "held-workspace-1",
+        )
+        .unwrap();
+        let err =
+            release_task_worktree(&treehouse, &wts, wt.path(), "other-workspace-1").unwrap_err();
+        assert!(
+            matches!(err, Error::TreehouseFailed { step: "return", .. }),
+            "{err:?}"
+        );
+        assert!(
+            wt.path().join("base.txt").exists(),
+            "the slot must stay leased"
+        );
+    }
+
+    /// A treehouse that never finishes: `get` must be stopped and reported, not waited on.
     #[cfg(unix)]
     #[test]
-    fn non_collision_failure_with_already_exists_in_path_is_not_retried() {
+    fn treehouse_timeout_is_reported() {
         use std::os::unix::fs::PermissionsExt;
-        let (tmp, _wts, repo) = fixture();
-        let wts = tmp.path().join("already exists");
-        std::fs::create_dir(&wts).unwrap();
-        std::fs::set_permissions(&wts, std::fs::Permissions::from_mode(0o555)).unwrap();
-        let writable = std::fs::File::create(wts.join("probe")).is_ok();
-        let started = std::time::Instant::now();
-        let r = create_task_worktree(&repo, "ro-root", "HEAD", &wts, &BranchPrefix::default());
-        std::fs::set_permissions(&wts, std::fs::Permissions::from_mode(0o755)).unwrap();
-        if writable {
-            return; // permission bits are not enforced (e.g. running as root)
-        }
-        match r {
-            Err(Error::CreationFailed { path, source, .. }) => {
-                assert_eq!(path, wts.join("ro-root"));
-                match *source {
-                    Error::Git { stderr, .. } => {
-                        assert!(stderr.contains(&*wts.to_string_lossy()), "{stderr}")
-                    }
-                    other => panic!("expected Git source, got {other:?}"),
-                }
-            }
-            other => panic!("expected CreationFailed, got {other:?}"),
-        }
+        let (tmp, wts, repo, _treehouse) = fixture();
+        let program = tmp.path().join("hanging-treehouse");
+        std::fs::write(&program, "#!/bin/sh\nexec sleep 600\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let hanging = Treehouse::new(&program, tmp.path()).unwrap();
+        let err = create_task_worktree(
+            &repo,
+            "slow",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &hanging,
+            "slow-workspace-1",
+        )
+        .unwrap_err();
         assert!(
-            started.elapsed() < std::time::Duration::from_secs(10),
-            "retried"
+            matches!(err, Error::TreehouseTimeout { step: "get" }),
+            "{err:?}"
         );
     }
 
-    /// A real name collision (git's own "already exists") still retries.
-    #[cfg(unix)]
     #[test]
-    fn path_name_collision_retries_the_next_name() {
-        let (_tmp, wts, repo) = fixture();
-        std::fs::create_dir_all(&wts).unwrap();
-        // A dangling symlink: `path.exists()` is false, git says "already exists".
-        std::os::unix::fs::symlink(wts.join("missing-target"), wts.join("race")).unwrap();
-        let wt =
-            create_task_worktree(&repo, "race", "HEAD", &wts, &BranchPrefix::default()).unwrap();
-        assert_eq!(wt.path(), wts.join("race-1"));
-        assert_eq!(wt.branch(), "mcao/race-1");
+    fn missing_treehouse_is_reported() {
+        let (tmp, wts, repo, _treehouse) = fixture();
+        let missing = Treehouse::new(tmp.path().join("no-such-treehouse"), tmp.path()).unwrap();
+        let err = create_task_worktree(
+            &repo,
+            "gone",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &missing,
+            "gone-workspace-1",
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::TreehouseUnavailable { .. }), "{err:?}");
+        assert!(!git_ok(
+            &tmp.path().join("repo"),
+            &["rev-parse", "--verify", "--quiet", "refs/heads/mcao/gone"]
+        ));
     }
 
     #[test]
-    fn configured_prefix_names_the_branch_and_collision_suffix() {
-        let (_tmp, wts, repo) = fixture();
-        let prefix = BranchPrefix::parse("team1/").unwrap();
-        let first = create_task_worktree(&repo, "t", "HEAD", &wts, &prefix).unwrap();
-        let second = create_task_worktree(&repo, "t", "HEAD", &wts, &prefix).unwrap();
-        assert_eq!(first.branch(), "team1/t");
-        assert_eq!(second.branch(), "team1/t-1");
+    fn path_outside_worktrees_root_is_refused() {
+        let (tmp, wts, _repo, treehouse) = fixture();
+        std::fs::create_dir_all(&wts).unwrap();
+        let outside = tmp.path().join("elsewhere");
+        std::fs::create_dir_all(&outside).unwrap();
+        let err = release_task_worktree(&treehouse, &wts, &outside, "holder").unwrap_err();
+        assert!(matches!(err, Error::WorktreeOutsideRoot { .. }), "{err:?}");
     }
 
     #[test]
@@ -733,6 +948,18 @@ mod tests {
         ));
         assert!(!is_name_collision("fatal: failed in /tmp/already exists"));
         assert!(!is_name_collision("already exists"));
+    }
+
+    #[test]
+    fn configured_prefix_names_the_branch_and_collision_suffix() {
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let prefix = BranchPrefix::parse("team1/").unwrap();
+        let first =
+            create_task_worktree(&repo, "t", "HEAD", &wts, &prefix, &treehouse, "t-1").unwrap();
+        let second =
+            create_task_worktree(&repo, "t", "HEAD", &wts, &prefix, &treehouse, "t-2").unwrap();
+        assert_eq!(first.branch(), "team1/t");
+        assert_eq!(second.branch(), "team1/t-1");
     }
 
     #[test]

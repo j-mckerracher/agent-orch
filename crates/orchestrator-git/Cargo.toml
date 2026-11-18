@@ -10,6 +10,8 @@ publish = false
 thiserror = "=2.0.21"
 # The merge method and the pull request and check states are pure core types.
 orchestrator-core = { path = "../orchestrator-core" }
+# Owner-only permissions for treehouse's private home under the data directory.
+orchestrator-private-fs = { path = "../orchestrator-private-fs" }
 # GitHub JSON from `gh` is read as untyped values; the same pin as orchestrator-core.
 serde_json = "=1.0.154"
 

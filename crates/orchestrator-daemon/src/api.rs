@@ -34,7 +34,7 @@ use orchestrator_ipc::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
 use orchestrator_runtime::reconcile::observe_owner_process;
 use orchestrator_store::{
     ArchiveError, CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord,
-    SqliteStore, Store, StoreError,
+    MergeState, SqliteStore, Store, StoreError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -249,6 +249,8 @@ impl DaemonApi {
             SqliteStore::new(&data_dir.join("store.sqlite"))
                 .map_err(|_| "cannot open daemon store".to_owned())?,
         );
+        home_directory::clear_stale_in_place_flags(&store)
+            .map_err(|_| "cannot clear stale in-place flags".to_owned())?;
         // The saved limits apply before anything can start a task.
         let settings = store
             .orchestrator_settings()
@@ -1192,7 +1194,9 @@ impl DaemonApi {
             return Err(RpcError::InvalidParams);
         }
         let key = request.idempotency_key.clone();
-        idempotency::run(
+        // Only the tasks this call archived. A replayed reply archives nothing again.
+        let mut archived_now = Vec::new();
+        let reply = idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "tasks.archive",
@@ -1206,9 +1210,31 @@ impl DaemonApi {
                         Some(_) => RpcError::Conflict,
                         None => map_store_error(error),
                     })?;
+                archived_now.clone_from(&archived);
                 Ok(json!({"archived": archived}))
             },
-        )
+        )?;
+        self.release_task_slots(&archived_now);
+        Ok(reply)
+    }
+
+    /// Returns the treehouse slots of finished tasks to the pool. Called after the
+    /// write, outside the gate, since each return runs treehouse. A failure is logged
+    /// and never fails the RPC that finished the task.
+    fn release_task_slots(&self, task_ids: &[String]) {
+        let Some(executor) = &self.executor else {
+            return;
+        };
+        for task_id in task_ids {
+            match self.store.workspaces_for_task(task_id) {
+                Ok(workspaces) => executor.release_workspaces(&workspaces),
+                Err(error) => self.config.diagnostics.error(
+                    "api",
+                    "workspaces_unread_for_release",
+                    &[("task_id", task_id), ("error", &error.to_string())],
+                ),
+            }
+        }
     }
 
     fn cancel_task(&self, params: Value) -> Result<Value, RpcError> {
@@ -1501,11 +1527,27 @@ impl DaemonApi {
         }))
     }
 
+    /// Whether the task's treehouse slot has been returned to the pool (the task is archived or
+    /// its pull request is merged). The recorded path may then be leased to another task, so it
+    /// is not read.
+    pub(super) fn slot_returned(&self, task_id: &str) -> Result<bool, RpcError> {
+        let archived = self.store.archived_task_ids().map_err(map_store_error)?;
+        let merged = self
+            .store
+            .latest_pull_request_merge(task_id)
+            .map_err(map_store_error)?
+            .is_some_and(|merge| merge.state == MergeState::Merged);
+        Ok(merged || archived.contains(task_id))
+    }
+
     fn selected_workspace(
         &self,
         task_id: &str,
         requested_id: Option<&str>,
     ) -> Result<Workspace, RpcError> {
+        if self.slot_returned(task_id)? {
+            return Err(RpcError::NotFound);
+        }
         // A task that ran in place has no checkout of its own to diff, review or land.
         let workspaces: Vec<Workspace> = self
             .store

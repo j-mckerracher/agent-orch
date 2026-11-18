@@ -33,7 +33,7 @@ use orchestrator_git::verification::{
     VerificationPolicy as GitVerificationPolicy, VerificationRequest, VerificationResult,
     VerificationStatus, WorkspaceRecord,
 };
-use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, TaskWorktree};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, TaskWorktree, Treehouse};
 use orchestrator_store::{
     DeliveryOutcome as StoreDeliveryOutcome, DeliveryStepRecord, SqliteStore, Store, TaskRecord,
 };
@@ -174,11 +174,24 @@ struct TestWorkspace {
     worktrees_root: PathBuf,
     database_path: PathBuf,
     repository: Repository,
+    treehouse: Treehouse,
 }
 
 struct Candidate {
     worktree: TaskWorktree,
     sha: String,
+}
+
+/// The treehouse binary from `AGENT_ORCH_TREEHOUSE_PROGRAM`, with its private home under `data_dir`.
+fn bundled_treehouse(data_dir: &Path) -> Treehouse {
+    let program = std::env::var_os("AGENT_ORCH_TREEHOUSE_PROGRAM").unwrap_or_else(|| {
+        panic!(
+            "AGENT_ORCH_TREEHOUSE_PROGRAM is not set; fetch treehouse with \
+             `node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest target/treehouse` \
+             and point the variable at the binary"
+        )
+    });
+    Treehouse::new(program, data_dir).expect("treehouse private home")
 }
 
 fn workspace_fixture() -> TestWorkspace {
@@ -198,12 +211,14 @@ fn workspace_fixture() -> TestWorkspace {
     let worktrees_root = root.path().join("worktrees");
     fs::create_dir_all(&worktrees_root).expect("create task worktree root");
 
+    let treehouse = bundled_treehouse(root.path());
     TestWorkspace {
         database_path: root.path().join("store.sqlite"),
         _root: root,
         primary_path,
         worktrees_root,
         repository,
+        treehouse,
     }
 }
 
@@ -239,6 +254,8 @@ fn candidate(workspace: &TestWorkspace, task_id: &str, path: &str, contents: &st
         "main",
         &workspace.worktrees_root,
         &BranchPrefix::default(),
+        &workspace.treehouse,
+        task_id,
     )
     .expect("create task-owned worktree");
     let sha = commit_file(worktree.path(), path, contents, "candidate");

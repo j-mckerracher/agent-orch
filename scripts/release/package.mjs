@@ -119,6 +119,9 @@ try {
       const path = join(app, "Contents", "Resources", "codeburn", file);
       if (!existsSync(path)) throw new Error(`usage reader missing from the app bundle: ${path}`);
     }
+    // The daemon runs treehouse from beside itself (DPES-1044). The Windows copy is checked by install-smoke.
+    const treehouse = join(app, "Contents", "MacOS", "treehouse");
+    if (!existsSync(treehouse)) throw new Error(`treehouse missing from the app bundle: ${treehouse}`);
     if (decision.sign) {
       run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
       if (decision.notarize) {

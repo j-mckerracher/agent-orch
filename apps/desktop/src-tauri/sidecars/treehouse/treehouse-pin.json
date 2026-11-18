@@ -1,0 +1,27 @@
+{
+  "name": "treehouse",
+  "version": "3.1.8",
+  "source": "https://github.com/kunchenguid/treehouse",
+  "tag": "v3.1.8",
+  "commit": "f168807c583ec3afaec7635806b3688d5530e945",
+  "license": "MIT",
+  "distBase": "https://github.com/kunchenguid/treehouse/releases/download/v3.1.8/",
+  "checksums": "checksums.txt",
+  "checksumsSha256": "2614f7081d68018fb975ad8e25624201ec2cf0d3c0d63bd4a8910c59ff2003e9",
+  "platforms": {
+    "darwin-arm64": {
+      "triple": "aarch64-apple-darwin",
+      "archive": "treehouse-v3.1.8-darwin-arm64.tar.gz",
+      "archiveSha256": "007c55c26e0bd8b672b1a917465f06c3f89d93a66cd171364ffb65743d268601",
+      "member": "treehouse",
+      "binarySha256": "3757e3f5f38800036495b4744799db634bb1d77eb9073bc88de4f0805e1e77b7"
+    },
+    "win-x64": {
+      "triple": "x86_64-pc-windows-msvc",
+      "archive": "treehouse-v3.1.8-windows-amd64.zip",
+      "archiveSha256": "72e7d61886e80e2befa067f5fab1c7ce2afbb49ba79c654cb7f4fc026cbc6b33",
+      "member": "treehouse.exe",
+      "binarySha256": "b00743793a8bb53fc0c0df0b5e7c3ba7066b71700da210124e669c924f3d7cab"
+    }
+  }
+}

@@ -4,6 +4,10 @@
 //! The agent is a std-only program compiled with `rustc` (must be on PATH), so no
 //! shell, `sleep`, or POSIX permission bits are involved.
 
+mod support;
+
+use support::{leased_worktree, returned_to_pool};
+
 use orchestrator_core::identity::{ExactProcessIdentity, ProcessClassification};
 use orchestrator_runtime::is_process_running;
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, observe_owner_process};
@@ -320,7 +324,10 @@ fn run_produces_isolated_diff_and_cleanup_preserves_primary() {
     git(&fixture.repo, &["merge", "--ff-only", &branch]);
     let cleanup = cli(&fixture, "cleanup", "accept-run");
     assert_success(&cleanup, "cleanup");
-    assert!(!worktree.exists(), "cleanup must remove the worktree");
+    assert!(
+        returned_to_pool(&fixture.data, &fixture.repo, &worktree),
+        "cleanup must return the worktree to the pool"
+    );
 
     let after = snapshot(&fixture.repo);
     assert_eq!(after.head, candidate, "primary advanced only by the merge");
@@ -423,7 +430,7 @@ fn cancel_terminates_agent_and_descendant() {
         ["Exited"],
         "{inspect_out}"
     );
-    let worktree = fixture.data.join("worktrees/accept-cancel");
+    let worktree = leased_worktree(&fixture.data, "accept-cancel");
     assert!(worktree.exists(), "cancel must preserve the worktree");
     assert_eq!(
         snapshot(&fixture.repo),

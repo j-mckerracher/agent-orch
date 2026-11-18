@@ -1023,6 +1023,7 @@ name = "orchestrator-git"
 version = "0.1.14"
 dependencies = [
  "orchestrator-core",
+ "orchestrator-private-fs",
  "serde_json",
  "tempfile",
  "thiserror",

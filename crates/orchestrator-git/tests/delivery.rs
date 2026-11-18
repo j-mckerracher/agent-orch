@@ -16,6 +16,9 @@ use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
+mod support;
+use support::bundled_treehouse;
+
 const REVIEW_REF: &str = "refs/heads/orchestrator/review/task-1";
 const CANDIDATE_SHA: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
@@ -53,6 +56,8 @@ fn fixture() -> Fixture {
         "main",
         &worktrees_path,
         &BranchPrefix::default(),
+        &bundled_treehouse(directory.path()),
+        "task-1-workspace-1",
     )
     .expect("create task worktree");
     let worktree_path = worktree.path().to_path_buf();
@@ -867,6 +872,8 @@ fn primary_checkout_is_retained_and_a_clean_landed_worktree_is_safe() {
         "main",
         &fixture._directory.path().join("worktrees"),
         &BranchPrefix::default(),
+        &bundled_treehouse(fixture._directory.path()),
+        "task-landed-workspace-1",
     )
     .expect("create landed worktree");
     let result =

@@ -41,6 +41,10 @@ test("each area runs the groups that consume it", () => {
     [["scripts/smoke/usage-reader.smoke.mjs"], ALL],
     [["apps/desktop/src-tauri/sidecars/codeburn/bin.js"], only("tauri", "package", "smoke")],
     [["apps/desktop/scripts/prepare-codeburn-sidecar.mjs"], only("desktop", "package", "smoke")],
+    // The treehouse worktree tool (DPES-1044) is not a usage input, so its files select no usage smoke. Its pin and
+    // staging script select the engine tests that lease from the binary, the Tauri host and the installer.
+    [["apps/desktop/src-tauri/sidecars/treehouse/treehouse-pin.json"], only("engine", "tauri", "package")],
+    [["apps/desktop/scripts/prepare-treehouse-sidecar.mjs"], only("engine", "tauri", "desktop", "package")],
     [["crates/orchestrator-daemon/src/api_usage.rs"], only("engine", "tauri", "package", "smoke")],
     [["crates/orchestrator-store/src/sqlite_usage.rs"], only("engine", "tauri", "package", "smoke")],
     [["crates/orchestrator-git/src/lib.rs"], only("engine", "tauri", "package")],

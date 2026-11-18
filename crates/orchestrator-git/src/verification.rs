@@ -433,18 +433,9 @@ fn check_worktree(
             recorded_path.display()
         ));
     }
-    let slug = sanitize_task_id(request.task_id).map_err(|error| error.to_string())?;
-    let suffix = task_branch_suffix(request.task_id, &workspace.branch)?;
-    let expected_path_name = format!("{slug}{suffix}");
-    let path_name = recorded_path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .ok_or_else(|| "worktree path has no UTF-8 final component".to_owned())?;
-    if path_name != expected_path_name {
-        return Err(format!(
-            "worktree path component {path_name:?} does not match task {expected_path_name:?}"
-        ));
-    }
+    // A treehouse slot is named after the repository, not the task, so the branch carries the
+    // task identity.
+    task_branch_suffix(request.task_id, &workspace.branch)?;
     if !registered_worktree(repository, &recorded_path, &workspace.branch)
         .map_err(|error| error.to_string())?
     {
@@ -1033,6 +1024,7 @@ fn overall_status(
 mod tests {
     use super::*;
     use crate::repository::Repository;
+    use crate::test_support::bundled_treehouse;
     use crate::worktree::{create_task_worktree, TaskWorktree};
     use std::fs;
     use std::path::Path;
@@ -1071,12 +1063,15 @@ mod tests {
         let repository = Repository::new(&repository_path).unwrap();
         let worktrees_root = temp.path().join("worktrees");
         fs::create_dir(&worktrees_root).unwrap();
+        let treehouse = bundled_treehouse(temp.path());
         let worktree = create_task_worktree(
             &repository,
             task_id,
             "HEAD",
             &worktrees_root,
             &BranchPrefix::default(),
+            &treehouse,
+            &format!("{task_id}-workspace-1"),
         )
         .unwrap();
         (repository, worktree)

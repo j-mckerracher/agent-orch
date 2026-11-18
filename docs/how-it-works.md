@@ -17,7 +17,7 @@ The app uses JSON-RPC 2.0 over a local socket (`ipc/daemon.sock`) or a named pip
 
 ## What a task touches
 
-Each task gets its own worktree under `worktrees/` and its own branch. Your primary checkout is read-only to MCAO. A candidate is only delivered after the steps its delivery mode requires.
+Each task gets its own worktree and its own branch. The worktrees come from a pool that the bundled [treehouse](third-party/treehouse.md) tool keeps under `worktrees/`. A pool slot goes back to the pool when its task is landed or archived, and the next task reuses it at the commit it needs. Your primary checkout is read-only to MCAO. A candidate is only delivered after the steps its delivery mode requires. A folder that is not a Git repository has no worktree and stays report-only.
 
 ## Provider access
 

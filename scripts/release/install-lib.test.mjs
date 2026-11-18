@@ -284,8 +284,23 @@ test("macOS: a sidecar signed by another team fails", () => {
     return { code: 0, out: "", err: "accepted" };
   };
   const steps = quiet(() => runMacos(ctxFor("macos", { run, exists: () => true }, { requireSigned: true, readDir: readDirFor("macos", true) })));
-  assert.ok(steps.items.some((s) => s.verdict === "FAIL" && /sidecar carries the app's team/.test(s.name)));
+  assert.ok(steps.items.some((s) => s.verdict === "FAIL" && /orchestrator-daemon carries the app's team/.test(s.name)));
   assert.ok(call > 0);
+});
+
+test("macOS: treehouse signed by another team, or missing from Contents/MacOS, fails", () => {
+  const run = (command, args) => {
+    const line = [command, ...args].join(" ");
+    if (line.startsWith("codesign -dvv") && line.endsWith("/treehouse")) return { code: 0, out: "", err: DEVID.replaceAll("ABCDE12345", "ZZZZZ99999") };
+    if (line.startsWith("codesign -dvv")) return { code: 0, out: "", err: DEVID };
+    if (line.includes("PlistBuddy")) return { code: 0, out: "0.1.0", err: "" };
+    return { code: 0, out: "", err: "accepted" };
+  };
+  const ctx = (over) => ctxFor("macos", { run, exists: () => true }, { requireSigned: true, readDir: readDirFor("macos", true), ...over });
+  const team = quiet(() => runMacos(ctx({})));
+  assert.ok(team.items.some((s) => s.verdict === "FAIL" && /treehouse carries the app's team/.test(s.name)));
+  const missing = quiet(() => runMacos(ctx({ exists: (path) => !path.endsWith("/treehouse") ? true : false })));
+  assert.ok(missing.items.some((s) => s.verdict === "FAIL" && /treehouse is missing/.test(s.detail)));
 });
 
 // A fake Windows machine. `uninstallHook(userData)` is what the uninstaller does to the data directory;

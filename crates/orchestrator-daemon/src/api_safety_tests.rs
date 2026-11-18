@@ -2,7 +2,7 @@ use super::super::*;
 use orchestrator_core::contract::{AutonomyPolicy, DeliveryPolicy, TaskKind, VerificationPolicy};
 use orchestrator_core::records::{Project, VerificationRun, Workspace};
 use orchestrator_core::task::TaskEvent;
-use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, Treehouse};
 use orchestrator_store::Store;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -46,12 +46,19 @@ fn fixture() -> Fixture {
     git(&repository_path, &["commit", "-m", "base"]);
     let repository = Repository::new(&repository_path).unwrap();
     let base_sha = repository.resolve_base_ref("HEAD").unwrap();
+    let treehouse = Treehouse::new(
+        crate::executor::test_treehouse_program(),
+        &directory.path().join("data"),
+    )
+    .unwrap();
     let worktree = create_task_worktree(
         &repository,
         "task-1",
         "main",
         &directory.path().join("worktrees"),
         &BranchPrefix::default(),
+        &treehouse,
+        "task-1-workspace-1",
     )
     .unwrap();
     let worktree_path = worktree.path().to_path_buf();
