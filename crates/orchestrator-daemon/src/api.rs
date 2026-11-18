@@ -638,6 +638,10 @@ impl DaemonApi {
         if let Some(reply) = idempotency::replay(&self.store, "tasks.submit", &key, &request)? {
             return Ok(reply);
         }
+        // An unconfirmed work item is invalid regardless of CLI availability.
+        if let Some(item) = &request.contract.work_item {
+            contract::validate_work_item(item).map_err(|_| RpcError::InvalidParams)?;
+        }
         let (resolved, selection_catalog) = self.resolve_submission(&request.contract)?;
         // The fingerprint is the request as sent; the write sees what it resolved to.
         let resolved = TaskSubmitParams {
