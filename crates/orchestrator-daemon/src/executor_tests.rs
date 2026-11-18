@@ -2168,6 +2168,11 @@ fn archiving_a_finished_task_returns_its_worktree_slot_to_the_pool() {
     .unwrap();
 
     assert_eq!(lease_one_more(&fixture), leased);
+    // The path may now belong to another task, so it is no longer shown as this task's diff.
+    assert_eq!(
+        api.dispatch("workspaces.diff", json!({"task_id": task_id})),
+        Err(RpcError::NotFound)
+    );
     api.shutdown();
 }
 

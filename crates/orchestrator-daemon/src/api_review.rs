@@ -216,7 +216,12 @@ impl DaemonApi {
         if workspaces.len() > 1 {
             return Err(RpcError::Conflict);
         }
-        let workspace = workspaces.pop();
+        // Evidence for a task whose slot went back to the pool carries no checkout.
+        let workspace = if self.slot_returned(&request.task_id)? {
+            None
+        } else {
+            workspaces.pop()
+        };
         let receipts = self
             .store
             .usage_receipts_for_task(&request.task_id)

@@ -34,7 +34,7 @@ use orchestrator_ipc::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
 use orchestrator_runtime::reconcile::observe_owner_process;
 use orchestrator_store::{
     ArchiveError, CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord,
-    SqliteStore, Store, StoreError,
+    MergeState, SqliteStore, Store, StoreError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -1527,11 +1527,27 @@ impl DaemonApi {
         }))
     }
 
+    /// Whether the task's treehouse slot has been returned to the pool (the task is archived or
+    /// its pull request is merged). The recorded path may then be leased to another task, so it
+    /// is not read.
+    pub(super) fn slot_returned(&self, task_id: &str) -> Result<bool, RpcError> {
+        let archived = self.store.archived_task_ids().map_err(map_store_error)?;
+        let merged = self
+            .store
+            .latest_pull_request_merge(task_id)
+            .map_err(map_store_error)?
+            .is_some_and(|merge| merge.state == MergeState::Merged);
+        Ok(merged || archived.contains(task_id))
+    }
+
     fn selected_workspace(
         &self,
         task_id: &str,
         requested_id: Option<&str>,
     ) -> Result<Workspace, RpcError> {
+        if self.slot_returned(task_id)? {
+            return Err(RpcError::NotFound);
+        }
         // A task that ran in place has no checkout of its own to diff, review or land.
         let workspaces: Vec<Workspace> = self
             .store
