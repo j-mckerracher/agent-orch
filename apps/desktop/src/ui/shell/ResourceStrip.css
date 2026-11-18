@@ -65,10 +65,3 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
-
-.rs-note {
-  margin: 8px 0 0;
-  color: var(--subtle);
-  font-size: 11px;
-  line-height: 1.4;
-}

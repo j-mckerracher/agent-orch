@@ -16,7 +16,8 @@
  *   tasks, "Waiting" for known blockers, "Unclassified" when the daemon reports no reason.
  * - Slots, dispatch order, pause, stop-all and queue settings have no daemon data yet
  *   (D11 live: M7-05/M7-20; budget D12: M7-06). Fixture mode labels them PLACEHOLDER; live
- *   mode shows "not available" and disables the controls with a visible reason.
+ *   mode shows "not available" for slots, omits the budget line until the daemon reports one, and
+ *   disables the controls with a visible note.
  * - The only real mutation is per-task Stop = `AppData.cancelTask` (`tasks.cancel`). It needs a
  *   live connection with the `tasks` capability, refuses `fixture:` ids, and asks for
  *   confirmation. Fixture rows use the source's simulated stop and never reach the daemon.
@@ -275,19 +276,19 @@ function ReasonButton({ label, reason, onClick, disabled }: { label: string; rea
       </Button>
       {blocked && (
         <span id={id} className="activity-reason">
-          Not available: {reason}
+          {reason}
         </span>
       )}
     </div>
   );
 }
 
-function formatBudget(usage: Loaded<UsageSummary>): { text: string; fixture: boolean } {
+function formatBudget(usage: Loaded<UsageSummary>): { text: string; fixture: boolean } | null {
   if (usage.status === "loading") return { text: "Budget: loading…", fixture: false };
   const fixture = usage.provenance.kind === "fixture";
-  if (usage.status !== "ok") return { text: `Budget: not available (${usage.reason})`, fixture };
+  if (usage.status !== "ok") return null;
   const { budget, currency } = usage.data;
-  if (budget.status !== "ok") return { text: `Budget: not available (${budget.reason})`, fixture };
+  if (budget.status !== "ok") return null;
   return { text: `Budget: ${budget.value.toFixed(2)} ${currency}`, fixture };
 }
 
@@ -388,8 +389,8 @@ export function ActivityPanel() {
   const pauseReason = fixture
     ? null
     : snapshot?.dispatchPaused.status === "ok"
-      ? "pausing dispatch is not wired to the daemon yet."
-      : (snapshot ? unavailableText(snapshot.dispatchPaused) : "the daemon has no global dispatch pause.");
+      ? "Not available: pausing dispatch is not wired to the daemon yet."
+      : (snapshot ? "Not supported yet." : "Not available: the daemon has no global dispatch pause.");
   const slotsReason = !snapshot
     ? "no activity source answered."
     : snapshot.slots.status === "ok"
@@ -541,9 +542,11 @@ export function ActivityPanel() {
             {snapshot?.dispatchPaused.status === "ok" && (
               <p>New dispatch: {snapshot.dispatchPaused.value ? "paused" : "running"}</p>
             )}
-            <p data-testid="activity-budget">
-              {budget.text} {budget.fixture && <Placeholder id="D12" />}
-            </p>
+            {budget && (
+              <p data-testid="activity-budget">
+                {budget.text} {budget.fixture && <Placeholder id="D12" />}
+              </p>
+            )}
             <div className="activity-controls">
               <ReasonButton
                 label="Pause new dispatch"
@@ -553,10 +556,10 @@ export function ActivityPanel() {
                   setReceipts((all) => [...all, receipt]);
                 }}
               />
-              <ReasonButton label="Stop menu" reason="stopping everything at once is not supported; stop a single task from the queue." />
+              <ReasonButton label="Stop menu" reason="Not supported yet." />
               <ReasonButton
                 label="Queue settings"
-                reason={fixture ? "queue settings are not simulated." : "the daemon does not expose scheduler limits."}
+                reason={fixture ? "Not available: queue settings are not simulated." : "Not supported yet."}
               />
             </div>
           </Disclosure>

@@ -270,7 +270,9 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // Popovers that stay open while WebKit moves focus during a press add two tests to ConversationActions.test.tsx: 2305.
 // Workstream list actions replace the create-form tests and add prioritize and archive tests: 2313 becomes 2315.
 // Repository Settings on main adds two tests; the capability picker replaces tests in place.
-export const VITEST = { files: 125, tests: 2317 };
+// Wake outcome reporting (PR #171) adds 5 more that the 2317 pin did not count.
+// Removing the ResourceStrip color-scale note test drops one.
+export const VITEST = { files: 125, tests: 2321 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

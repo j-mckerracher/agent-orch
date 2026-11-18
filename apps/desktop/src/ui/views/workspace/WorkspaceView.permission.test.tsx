@@ -260,15 +260,15 @@ describe("permission level in the chat composer, live daemon", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
-  it("describes a last automatic update in its own words, with no mismatch alert", async () => {
+  it("shows no permission note for a last automatic update, and no mismatch alert", async () => {
     const fake = liveDaemon();
     stubLatestWakeTurn(fake, "restricted");
     const services = track(build({ fake }));
     const { user } = await mountView(services, false);
     await waitLive(services);
     await pickGlobal(user);
-    expect(await screen.findByText("The last automatic update ran at Restricted, as automatic updates always do.")).toBeInTheDocument();
-    expect(screen.queryByText(/last reply ran at/)).toBeNull();
+    expect(await screen.findByText("No messages yet")).toBeInTheDocument();
+    expect(screen.queryByText(/ran at/)).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
