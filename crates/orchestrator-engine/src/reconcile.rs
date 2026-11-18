@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use orchestrator_core::identity::ProcessClassification;
 use orchestrator_core::records::Workspace;
-use orchestrator_core::task::{AttemptState, SessionState, TaskEvent, TaskState};
+use orchestrator_core::task::{AttemptState, AuditEvent, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_git::delivery::{check_worktree_safe_to_delete, DeliveryAction};
 use orchestrator_git::delivery_reconcile::{reconcile_delivery_steps, RecordedDeliveryStep};
@@ -125,6 +125,8 @@ pub fn reconcile_before_scheduling_with(
             .iter()
             .filter(|session| !session.state.is_terminal())
             .collect::<Vec<_>>();
+        // A task cancelled while its candidate awaited verification has no run
+        // owner to confirm the cancel. Its last audit event records it.
         if task.state == TaskState::Cancelled
             && unfinished.is_empty()
             && task.sessions.iter().rev().any(|session| {
@@ -132,6 +134,7 @@ pub fn reconcile_before_scheduling_with(
                     attempt.id == session.attempt_id && attempt.state == AttemptState::Cancelled
                 })
             })
+            && task.events.last() != Some(&AuditEvent::VerificationCancelled)
             && store
                 .cancellation_status_for_task(&task.contract.id)
                 .map_err(|error| {

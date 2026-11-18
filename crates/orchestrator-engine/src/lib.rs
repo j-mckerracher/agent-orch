@@ -7,3 +7,4 @@
 //! work.
 
 pub mod reconcile;
+pub mod verify;
