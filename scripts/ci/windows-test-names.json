@@ -841,7 +841,9 @@
    "api::archive_tests::a_task_that_is_not_finished_refuses_the_whole_archive_and_writes_nothing",
    "api::archive_tests::an_archived_task_drops_out_of_its_workstream_view_but_not_the_store_links",
    "api::archive_tests::archived_tasks_leave_the_list_and_tasks_get_still_answers",
-   "api::archive_tests::archiving_again_is_a_no_op_and_an_unknown_task_is_not_found"
+   "api::archive_tests::archiving_again_is_a_no_op_and_an_unknown_task_is_not_found",
+   "api::home_directory_tests::a_git_home_directory_registers_as_a_worktree_project",
+   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -923,8 +925,6 @@
    "collision_allocates_suffix",
    "dirty_primary_checkout_preserved",
    "empty_task_id_rejected",
-   "git_add_failure_preserves_repo_state_and_reports_partial_state",
-   "git_add_failure_reports_git_stderr_cause",
    "long_stderr_keeps_the_final_cause_within_the_bound",
    "name_collision_is_recognized_only_for_gits_own_conflict_lines",
    "open_accepts_repo_and_isolates_primary",
@@ -982,7 +982,15 @@
    "github_fake::tests::fake_github_refuses_a_merge_on_a_stale_head_or_red_checks",
    "github_fake::tests::fake_github_records_every_call_in_order",
    "github_fake::tests::fake_github_scripted_failures_apply_once_in_order_per_method",
-   "github_fake::tests::fake_github_unknown_pull_request_is_not_found"
+   "github_fake::tests::fake_github_unknown_pull_request_is_not_found",
+   "treehouse::tests::user_treehouse_hooks_are_not_run",
+   "treehouse::tests::private_config_sets_the_pool_size",
+   "worktree::tests::missing_treehouse_is_reported",
+   "worktree::tests::dirty_worktree_is_not_released",
+   "worktree::tests::path_outside_worktrees_root_is_refused",
+   "worktree::tests::release_by_another_holder_is_refused",
+   "worktree::tests::released_slot_is_reused_by_the_next_task",
+   "worktree::tests::worktree_is_pinned_to_the_resolved_sha_when_origin_is_ahead"
   ],
   "cli-cleanup-safety": [
    "cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree",
@@ -1393,7 +1401,8 @@
    "settlement_after_cancel_is_superseded_and_writes_nothing",
    "an_unknown_task_is_not_found_and_writes_nothing",
    "a_task_that_is_not_finished_refuses_the_whole_call_and_writes_nothing",
-   "finished_tasks_archive_once_keep_their_rows_and_each_emit_one_event"
+   "finished_tasks_archive_once_keep_their_rows_and_each_emit_one_event",
+   "clearing_in_place_removes_only_the_flag_from_the_project_settings"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",

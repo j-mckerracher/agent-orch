@@ -6,7 +6,7 @@
 // requested real-signing check on an unsigned artifact is a FAIL, not a skip.
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 export const APP_NAME = "MCAO";
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -202,7 +202,9 @@ const runSmoke = (steps, ctx, { oldDaemon, oldVersion, newDaemon, kind }) => {
     "--work", ctx.smokeWork, "--expect-new-version", ctx.version, "--out", out,
   ];
   const label = `daemon smoke against the packaged sidecar${smokeSuffix[kind] ?? SAME_VERSION_LABEL}`;
-  const smoke = ctx.run(ctx.smokeBin, args, { stream: true });
+  // release_smoke seeds its review worktrees with treehouse (DPES-1044); it leases them from the packaged copy beside the sidecar.
+  const treehouse = join(dirname(newDaemon), `treehouse${ctx.platform === "windows" ? ".exe" : ""}`);
+  const smoke = ctx.run(ctx.smokeBin, args, { stream: true, env: { AGENT_ORCH_TREEHOUSE_PROGRAM: treehouse } });
   const problems = [];
   if (smoke.code !== 0) {
     problems.push(`release_smoke exited ${smoke.code}${smoke.signal ? ` (signal ${smoke.signal})` : ""}${smoke.error ? `: ${smoke.error}` : ""}`);

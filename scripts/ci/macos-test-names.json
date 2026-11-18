@@ -947,7 +947,16 @@
    "executor::tests::a_claude_cli_without_the_agent_flags_launches_plain_and_warns_naming_the_flag",
    "executor::tests::a_missing_workflow_agent_warns_on_the_attempt_and_still_launches_plain",
    "executor::tests::an_agent_without_a_launcher_is_accepted_at_submit_when_its_cli_is_absent",
-   "executor::tests::extended_codex_is_invalid_params_even_when_its_cli_cannot_be_probed"
+   "executor::tests::extended_codex_is_invalid_params_even_when_its_cli_cannot_be_probed",
+   "api::conversation_agent::tests::launch::a_version_read_whose_child_keeps_stdout_open_still_answers",
+   "api::conversation_agent::tests::launch::a_slow_cli_conflicts_until_its_reads_land_and_is_then_served_from_cache",
+   "api::conversation_agent::tests::launch::an_expired_selection_answers_while_its_refresh_runs",
+   "api::home_directory_tests::a_git_home_directory_registers_as_a_worktree_project",
+   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup",
+   "executor::tests::a_missing_treehouse_fails_the_attempt_with_a_stable_reason",
+   "executor::tests::an_in_place_home_that_became_a_repository_runs_in_a_worktree",
+   "executor::tests::archiving_keeps_the_slot_of_a_task_whose_worktree_is_dirty",
+   "executor::tests::archiving_a_finished_task_returns_its_worktree_slot_to_the_pool"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1037,13 +1046,9 @@
    "collision_allocates_suffix",
    "dirty_primary_checkout_preserved",
    "empty_task_id_rejected",
-   "git_add_failure_preserves_repo_state_and_reports_partial_state",
-   "git_add_failure_reports_git_stderr_cause",
    "long_stderr_keeps_the_final_cause_within_the_bound",
    "name_collision_is_recognized_only_for_gits_own_conflict_lines",
-   "non_collision_failure_with_already_exists_in_path_is_not_retried",
    "open_accepts_repo_and_isolates_primary",
-   "path_name_collision_retries_the_next_name",
    "preexisting_branch_skipped",
    "resolve_base_commit_rejects_invalid_ref",
    "resolve_base_ref_refuses_option_like_and_control_character_refs",
@@ -1100,7 +1105,16 @@
    "github_fake::tests::fake_github_unknown_pull_request_is_not_found",
    "github::tests::github_a_gh_that_prints_too_much_is_capped",
    "github::tests::github_a_gh_that_times_out_is_killed_and_reports_timeout",
-   "verification::tests::canceled_command_is_killed_and_recorded"
+   "verification::tests::canceled_command_is_killed_and_recorded",
+   "treehouse::tests::user_treehouse_hooks_are_not_run",
+   "treehouse::tests::private_config_sets_the_pool_size",
+   "worktree::tests::missing_treehouse_is_reported",
+   "worktree::tests::path_outside_worktrees_root_is_refused",
+   "worktree::tests::dirty_worktree_is_not_released",
+   "worktree::tests::release_by_another_holder_is_refused",
+   "worktree::tests::released_slot_is_reused_by_the_next_task",
+   "worktree::tests::worktree_is_pinned_to_the_resolved_sha_when_origin_is_ahead",
+   "worktree::tests::treehouse_timeout_is_reported"
   ],
   "cli-cleanup-safety": [
    "cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree",
@@ -1512,7 +1526,8 @@
    "settlement_after_cancel_is_superseded_and_writes_nothing",
    "an_unknown_task_is_not_found_and_writes_nothing",
    "finished_tasks_archive_once_keep_their_rows_and_each_emit_one_event",
-   "a_task_that_is_not_finished_refuses_the_whole_call_and_writes_nothing"
+   "a_task_that_is_not_finished_refuses_the_whole_call_and_writes_nothing",
+   "clearing_in_place_removes_only_the_flag_from_the_project_settings"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
