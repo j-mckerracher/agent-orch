@@ -799,7 +799,7 @@ fn a_wake_turn_cancelled_by_a_user_message_runs_again_after_the_user_turn() {
 fn a_user_message_over_a_running_user_turn_is_still_refused() {
     let f = fixture();
     user_send(&f, "u-1").unwrap();
-    assert_eq!(user_send(&f, "u-2"), Err(RpcError::Conflict));
+    assert_eq!(user_send(&f, "u-2"), Err(RpcError::ConversationBusy));
 }
 
 #[test]

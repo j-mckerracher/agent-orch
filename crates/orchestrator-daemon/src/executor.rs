@@ -99,8 +99,8 @@ pub(crate) struct ExecutorConfig {
     pub(crate) probe_timeout: Duration,
     /// Where failures and recovery actions are reported (stderr in the daemon).
     pub(crate) diagnostics: Diagnostics,
-    /// Upper bound for each CLI probe behind `agents.catalog` and submit-time
-    /// selection checks. Launch-time checks use `LAUNCH_CATALOG_TIMEOUT`.
+    /// Upper bound for each CLI probe of a catalog read. Reads run in the
+    /// background, so a slow CLI gets the launch bound and its catalog is cached.
     pub(crate) catalog_timeout: Duration,
     /// How long a caller waits for a catalog read before it is told the
     /// catalog is not known yet. Must stay well under the 2 s client I/O
@@ -280,7 +280,7 @@ impl ExecutorConfig {
             // Leaves headroom under the 2 s client I/O timeout.
             probe_timeout: Duration::from_millis(1500),
             diagnostics,
-            catalog_timeout: Duration::from_millis(1500),
+            catalog_timeout: LAUNCH_CATALOG_TIMEOUT,
             catalog_wait: Duration::from_millis(1100),
             load: Arc::default(),
             load_feed,

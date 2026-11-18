@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createHash } from "node:crypto";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import { ALL_CAPABILITIES, type ActionProposalWire } from "../../../daemon/types";
 import { createServices } from "../../createServices";
@@ -64,6 +64,7 @@ const created: Services[] = [];
 const track = (services: Services) => (created.push(services), services);
 
 afterEach(() => {
+  vi.useRealTimers();
   for (const services of created.splice(0)) services.connection.stop();
 });
 
@@ -346,6 +347,26 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const [first, second] = fake.callsTo("conversations.send").map((call) => (call.params as Record<string, unknown>).idempotency_key);
     expect(second).toBe(first);
     await waitFor(() => expect(box).toHaveValue(""));
+  });
+
+  it("says the agent is still starting when every send attempt conflicts, not that the record conflicts (DPES-1106)", async () => {
+    const fake = liveDaemon();
+    fake.failNext("conversations.send", { code: -32011, message: "operation conflicts with current state" }, 6);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
+    await user.type(box, "still starting");
+    // The retries wait about 13.5 s. The clock is faked only for the send, so typing is not affected.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    fireEvent.click(screen.getByRole("button", { name: "Send message to alpha coordinator" }));
+    await act(() => vi.runAllTimersAsync());
+    expect(fake.callsTo("conversations.send")).toHaveLength(6);
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Sending the message failed. The orchestrator's agent is still starting. Your message was not sent. Try again in a moment.",
+    );
+    expect(screen.queryByText(/not in a state that allows this action/)).toBeNull();
+    expect(box).toHaveValue("still starting");
   });
 
   it("sends to the Global target through the daemon and shows the runtime-unavailable state, never a reply", async () => {

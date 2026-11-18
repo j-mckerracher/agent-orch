@@ -299,6 +299,23 @@ function refuseFixture(target: ConversationTarget): void {
   }
 }
 
+// The daemon answers a send with conflict while the chosen agent CLI is still starting. Nothing is recorded,
+// so the same key is sent again. The daemon answers conflict only within its 15 s retry window; after that it
+// records a failed turn instead. These delays sum to 13.5 s, so the last attempt still lands inside that window.
+const SEND_RETRY_DELAYS_MS = [500, 1000, 2000, 4000, 6000];
+
+async function retryWhileStarting<T>(attempt: () => Promise<T>): Promise<T> {
+  for (let retry = 0; ; retry++) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (!(error instanceof DaemonError) || error.kind !== "conflict") throw error;
+      if (retry === SEND_RETRY_DELAYS_MS.length) throw new DaemonError("agent-starting", error.message, error.code);
+      await new Promise((resolve) => setTimeout(resolve, SEND_RETRY_DELAYS_MS[retry]));
+    }
+  }
+}
+
 export function createLiveConversation(
   connection: ConnectionManager,
   provenance: Provenance,
@@ -396,7 +413,9 @@ export function createLiveConversation(
       const fingerprint = permission === undefined ? [text, selection ?? null] : [text, selection ?? null, permission];
       const key = keys.keyFor(scope, JSON.stringify(fingerprint));
       try {
-        const result = await connection.api().conversationsSend(toWireTarget(target), text, key, selection, permission);
+        const result = await retryWhileStarting(() =>
+          connection.api().conversationsSend(toWireTarget(target), text, key, selection, permission),
+        );
         keys.settle(scope, null);
         const { entry } = result;
         // A replay of a message that a clear deleted has no entry body and no turn (DPES-1105).

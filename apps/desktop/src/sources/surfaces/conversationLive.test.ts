@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { FakeDaemon } from "../../test/fakeDaemon";
 import { stubConversation } from "../../test/m724Stubs";
 import type { ConversationWireEntry } from "../../daemon/types";
@@ -300,6 +300,61 @@ describe("live conversation adapter", () => {
     // Without a choice the request has no `selection` key at all, as before the picker sent one.
     expect(second).not.toHaveProperty("selection");
     expect(second!.idempotency_key).not.toBe(first!.idempotency_key);
+  });
+
+  describe("send while the agent is starting (DPES-1106)", () => {
+    const conflict = { code: -32011, message: "operation conflicts with current state" };
+    afterEach(() => vi.useRealTimers());
+
+    it("retries a conflict with the same key until the agent answers, and records the message once", async () => {
+      const fake = populate(new FakeDaemon());
+      stubConversation(fake);
+      fake.failNext("conversations.send", conflict, 2);
+      const s = await live(fake);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const sent = s.conversation.send({ kind: "global" }, "hello");
+      await vi.runAllTimersAsync();
+      const receipt = await sent;
+      const keys = fake.callsTo("conversations.send").map((c) => (c.params as Record<string, string>).idempotency_key);
+      expect(keys).toHaveLength(3);
+      expect(new Set(keys).size).toBe(1);
+      expect(receipt.turn).toMatchObject({ state: "failed", errorCode: "runtime_unavailable" });
+    });
+
+    it("gives up after the retry budget with agent-starting, and keeps the same key until then", async () => {
+      const fake = populate(new FakeDaemon());
+      stubConversation(fake);
+      fake.failNext("conversations.send", conflict, 6);
+      const s = await live(fake);
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+      const sent = expect(s.conversation.send({ kind: "global" }, "hello")).rejects.toMatchObject({
+        kind: "agent-starting",
+        code: -32011,
+      });
+      await vi.runAllTimersAsync();
+      await sent;
+      const keys = fake.callsTo("conversations.send").map((c) => (c.params as Record<string, string>).idempotency_key);
+      expect(keys).toHaveLength(6);
+      expect(new Set(keys).size).toBe(1);
+    });
+
+    it("does not retry a send that fails with another error", async () => {
+      const fake = populate(new FakeDaemon());
+      stubConversation(fake);
+      fake.failNext("conversations.send", { code: -32602, message: "text is empty" });
+      const s = await live(fake);
+      await expect(s.conversation.send({ kind: "global" }, "hello")).rejects.toMatchObject({ kind: "invalid-params" });
+      expect(fake.callsTo("conversations.send")).toHaveLength(1);
+    });
+
+    it("does not retry conversation-busy, which means a turn is already running", async () => {
+      const fake = populate(new FakeDaemon());
+      stubConversation(fake);
+      fake.failNext("conversations.send", { code: -32019, message: "a reply is still running" });
+      const s = await live(fake);
+      await expect(s.conversation.send({ kind: "global" }, "hello")).rejects.toMatchObject({ kind: "conversation-busy" });
+      expect(fake.callsTo("conversations.send")).toHaveLength(1);
+    });
   });
 
   it("refuses a fixture workstream id before any request", async () => {
