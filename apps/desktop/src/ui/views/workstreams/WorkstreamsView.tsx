@@ -587,15 +587,16 @@ function Detail({
                 {group.tasks.map((task) => (
                   <tr key={task.id} data-testid="task-row">
                     <th scope="row">
-                      {task.openable ? (
-                        <NavLink to={{ name: "task", projectId: task.projectId, taskId: task.id }}>
-                          {taskLabelOf(task)}
-                        </NavLink>
-                      ) : (
-                        <>
-                          {taskLabelOf(task)} <small>(placeholder: no detail page)</small>
-                        </>
-                      )}
+                      <span className="ws-task-label" title={taskLabelOf(task)}>
+                        {task.openable ? (
+                          <NavLink to={{ name: "task", projectId: task.projectId, taskId: task.id }}>
+                            {taskLabelOf(task)}
+                          </NavLink>
+                        ) : (
+                          taskLabelOf(task)
+                        )}
+                      </span>
+                      {!task.openable && <small>(placeholder: no detail page)</small>}
                     </th>
                     <td title={task.projectId}>
                       {objectives.find((objective) => objective.id === task.objectiveId)?.title ?? "Workstream only"} /{" "}
@@ -608,7 +609,7 @@ function Detail({
                     <td>{assignment(task)}</td>
                     <td>{evidence.get(task.id) ?? task.requiredEvidence}</td>
                     {!fixture && (
-                      <td>
+                      <td className="ws-table-action">
                         <UnlinkButton group={group} task={task} controls={controls} />
                       </td>
                     )}
