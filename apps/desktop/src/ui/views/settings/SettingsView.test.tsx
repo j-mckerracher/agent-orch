@@ -165,6 +165,31 @@ describe("Agent dispatch defaults", () => {
 });
 
 describe("Settings page, live", () => {
+  it("registers a local repository from Settings and shows it in the repository list", async () => {
+    const { fake, services } = await connected();
+    const user = userEvent.setup();
+    page(services);
+    const region = await screen.findByRole("region", { name: "Repositories" });
+    await user.type(within(region).getByLabelText("Repository path"), "/work/new-repo");
+    await user.click(within(region).getByRole("button", { name: "Register repository" }));
+
+    expect(await within(region).findByText("Repository registered.")).toBeInTheDocument();
+    expect(await within(region).findByRole("list", { name: "Registered repositories" })).toHaveTextContent("/work/new-repo");
+    expect(fake.callsTo("projects.register")[0]?.params).toEqual({ path: "/work/new-repo" });
+  });
+
+  it("rejects a relative repository path in Settings without calling the daemon", async () => {
+    const { fake, services } = await connected();
+    const user = userEvent.setup();
+    page(services);
+    const region = await screen.findByRole("region", { name: "Repositories" });
+    await user.type(within(region).getByLabelText("Repository path"), "relative/repo");
+    await user.click(within(region).getByRole("button", { name: "Register repository" }));
+
+    expect(await within(region).findByRole("alert")).toHaveTextContent("Enter an absolute repository path.");
+    expect(fake.callsTo("projects.register")).toHaveLength(0);
+  });
+
   it("settings_page_shows_three_labelled_limit_fields_with_the_daemons_values_and_hints", async () => {
     const { services } = await connected();
     page(services);

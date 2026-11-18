@@ -35,6 +35,7 @@ import { McpToolsSection } from "./McpToolsSection";
 import { DispatchDefaultsSection } from "./DispatchDefaultsSection";
 import { GrantsSection } from "./GrantsSection";
 import { NotesSection } from "./NotesSection";
+import { RepositoriesSection } from "./RepositoriesSection";
 import { SupervisionSections } from "./SupervisionSection";
 import { useSettings, type SettingsModel } from "./useSettings";
 import "./SettingsView.css";
@@ -206,6 +207,7 @@ export function SettingsView() {
       <SupervisionSections model={model} />
       <ChatPullRequestSection model={model} />
       <McpToolsSection model={model} />
+      <RepositoriesSection />
       <HomeDirectorySection model={model} />
       <GrantsSection />
       <NotesSection />
