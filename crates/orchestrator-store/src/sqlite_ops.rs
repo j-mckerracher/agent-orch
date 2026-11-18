@@ -1893,33 +1893,7 @@ impl Store for SqliteStore {
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
-            let current = current_task_state(&mut transaction, &task_id).await?;
-            let (next, audit) = task_transition(current, event)?;
-            let state = encode(&next)?;
-            let updated =
-                sqlx::query("UPDATE tasks SET state = ?, version = version + 1 WHERE id = ?")
-                    .bind(state)
-                    .bind(&task_id)
-                    .execute(&mut *transaction)
-                    .await?;
-            if updated.rows_affected() != 1 {
-                return Err(StoreError::NotFound(task_id));
-            }
-            sqlx::query("INSERT INTO events (task_id, kind, payload) VALUES (?, ?, ?)")
-                .bind(&task_id)
-                .bind(format!("{audit:?}"))
-                .bind(encode(&audit)?)
-                .execute(&mut *transaction)
-                .await?;
-            let payload = serde_json::json!({"audit": &audit, "state": &next});
-            append_durable_event(
-                &mut transaction,
-                &task_id,
-                None,
-                "task.transition",
-                &payload,
-            )
-            .await?;
+            let audit = apply_task_event_in(&mut transaction, &task_id, event).await?;
             transaction.commit().await?;
             Ok(audit)
         })
@@ -2344,7 +2318,37 @@ async fn load_record(
     })
 }
 
-async fn current_task_state(
+/// Applies `event` to the task inside the caller's transaction: validates the
+/// edge, writes the new state, and appends the audit and journal rows that
+/// must commit with it.
+pub(crate) async fn apply_task_event_in(
+    transaction: &mut Transaction<'_, Sqlite>,
+    task_id: &str,
+    event: TaskEvent,
+) -> Result<AuditEvent, StoreError> {
+    let current = current_task_state(transaction, task_id).await?;
+    let (next, audit) = task_transition(current, event)?;
+    let state = encode(&next)?;
+    let updated = sqlx::query("UPDATE tasks SET state = ?, version = version + 1 WHERE id = ?")
+        .bind(state)
+        .bind(task_id)
+        .execute(&mut **transaction)
+        .await?;
+    if updated.rows_affected() != 1 {
+        return Err(StoreError::NotFound(task_id.to_owned()));
+    }
+    sqlx::query("INSERT INTO events (task_id, kind, payload) VALUES (?, ?, ?)")
+        .bind(task_id)
+        .bind(format!("{audit:?}"))
+        .bind(encode(&audit)?)
+        .execute(&mut **transaction)
+        .await?;
+    let payload = serde_json::json!({"audit": &audit, "state": &next});
+    append_durable_event(transaction, task_id, None, "task.transition", &payload).await?;
+    Ok(audit)
+}
+
+pub(crate) async fn current_task_state(
     transaction: &mut Transaction<'_, Sqlite>,
     task_id: &str,
 ) -> Result<TaskState, StoreError> {
@@ -2356,7 +2360,7 @@ async fn current_task_state(
     decode(&row.try_get::<String, _>("state")?)
 }
 
-async fn bump_task_version(
+pub(crate) async fn bump_task_version(
     transaction: &mut Transaction<'_, Sqlite>,
     task_id: &str,
 ) -> Result<(), StoreError> {
@@ -2370,7 +2374,7 @@ async fn bump_task_version(
     Ok(())
 }
 
-fn validate_task_id(task_id: &str) -> Result<(), StoreError> {
+pub(crate) fn validate_task_id(task_id: &str) -> Result<(), StoreError> {
     if task_id.is_empty()
         || !task_id
             .bytes()
@@ -2381,11 +2385,11 @@ fn validate_task_id(task_id: &str) -> Result<(), StoreError> {
     Ok(())
 }
 
-fn encode<T: Serialize>(value: &T) -> Result<String, StoreError> {
+pub(crate) fn encode<T: Serialize>(value: &T) -> Result<String, StoreError> {
     Ok(serde_json::to_string(value)?)
 }
 
-fn decode<T: DeserializeOwned>(value: &str) -> Result<T, StoreError> {
+pub(crate) fn decode<T: DeserializeOwned>(value: &str) -> Result<T, StoreError> {
     Ok(serde_json::from_str(value)?)
 }
 

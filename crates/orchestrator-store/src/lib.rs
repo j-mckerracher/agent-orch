@@ -127,6 +127,7 @@ pub use sqlite_usage::{
     ProviderUsage, ReceiptOutcome, UsageBucket, UsageFigures, UsageReceipt, UsageSource,
     UsageWindowSummary,
 };
+pub use sqlite_verification::Settlement;
 
 use std::path::Path;
 

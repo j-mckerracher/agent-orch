@@ -86,9 +86,10 @@ pub enum TaskEvent {
     /// fresh [`Attempt`]; the failed attempt is preserved. Only legal from
     /// `Failed` or `VerificationFailed`.
     RetryRequested,
-    /// Origin: engine before an agent process is started. Legal only from
-    /// `Created` or `Queued`; a request for a running task is not cancellation
-    /// confirmation and must not use this event.
+    /// Origin: engine, while no agent process exists. Legal from `Created`,
+    /// `Queued` or `Verifying` (the candidate is discarded). A request for a
+    /// running task is not cancellation confirmation and must not use this
+    /// event.
     CancelRequested,
     /// Origin: the process owner, after its agent handle has canceled and
     /// waited for the managed child to exit. A separate cancellation request
@@ -119,6 +120,9 @@ pub enum AuditEvent {
     /// `Created | Queued -> Cancelled` on [`TaskEvent::CancelRequested`], or
     /// `Running -> Cancelled` on [`TaskEvent::CancellationConfirmed`].
     TaskCancelled,
+    /// `Verifying -> Cancelled` on [`TaskEvent::CancelRequested`]: the
+    /// candidate is discarded before any verification outcome is recorded.
+    VerificationCancelled,
 }
 
 /// Result of a rejected transition.
@@ -201,6 +205,12 @@ const MOVE: &[(TaskState, TaskEvent, TaskState, AuditEvent)] = &[
         TaskEvent::CancelRequested,
         TaskState::Cancelled,
         AuditEvent::TaskCancelled,
+    ),
+    (
+        TaskState::Verifying,
+        TaskEvent::CancelRequested,
+        TaskState::Cancelled,
+        AuditEvent::VerificationCancelled,
     ),
     (
         TaskState::Running,
@@ -541,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn cancel_requested_is_legal_only_before_agent_start() {
+    fn cancel_requested_is_legal_only_without_a_live_agent() {
         for state in [TaskState::Created, TaskState::Queued] {
             assert_eq!(
                 transition(state, TaskEvent::CancelRequested),
@@ -549,9 +559,13 @@ mod tests {
                 "cancel not legal from {state:?}"
             );
         }
+        assert_eq!(
+            transition(TaskState::Verifying, TaskEvent::CancelRequested),
+            Ok((TaskState::Cancelled, AuditEvent::VerificationCancelled)),
+            "cancel not legal from Verifying"
+        );
         for state in [
             TaskState::Running,
-            TaskState::Verifying,
             TaskState::Failed,
             TaskState::VerificationFailed,
         ] {
