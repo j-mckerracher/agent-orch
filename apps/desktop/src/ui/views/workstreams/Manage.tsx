@@ -277,6 +277,8 @@ export function LifecycleControls({ group, controls }: { group: WsGroup; control
   const { surfaces } = useServices();
   const noteId = useId();
   const [confirming, setConfirming] = useState(false);
+  // The panel is not remounted on selection, so a pending confirm must not carry over to another workstream.
+  useEffect(() => setConfirming(false), [group.id]);
   const change = (action: string, state: "active" | "suspended" | "archived") => {
     setConfirming(false);
     void controls.run(action, () => surfaces.workstreams.update({ id: group.id, revision: group.revision }, { state }));

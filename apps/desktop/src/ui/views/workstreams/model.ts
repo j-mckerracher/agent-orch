@@ -298,6 +298,10 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
   }));
 }
 
+/** Workstreams still in play: an archived one stays listed (read-only) but is not counted. */
+export const activeCount = (workstreams: readonly { state: string }[]): number =>
+  workstreams.filter((ws) => ws.state !== "archived").length;
+
 /*
  * Every consumer of D9 (this view, the sidebar tree, the top-bar counts) reloads when a
  * workstream mutation lands, so none of them keeps showing the pre-mutation revision.

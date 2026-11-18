@@ -10,6 +10,7 @@ import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import type { Route } from "../router";
 import { ActivityPanel } from "./ActivityPanel";
+import { workstreamsGlobalViews, workstreamsShellSlots } from "../views/workstreams/register";
 import { topBarSlots } from "./TopBar";
 
 const WORKSPACE: Route = { name: "global", view: "workspace" };
@@ -125,6 +126,40 @@ describe("top bar counts", () => {
     expect(counts).toHaveTextContent("3 running");
     expect(counts).toHaveTextContent("2 require attention");
     expect(counts).toHaveTextContent("3 workstreams");
+  });
+
+  it("does not count archived workstreams", async () => {
+    const fake = daemon();
+    streams.get(fake)!.workstreams[1]!.state = "archived";
+    await mount(fake);
+    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("1 workstreams"));
+  });
+
+  it("drops the count when a workstream is archived from the Workstreams view", async () => {
+    const fake = daemon();
+    const services = createServices({
+      connector: fake,
+      initialRoute: { name: "global", view: "workstreams" },
+      connection: { backoffMs: [5], requestTimeoutMs: 250 },
+      data: { coalesceMs: 10 },
+      sources: createFixtureSources(),
+    });
+    const user = userEvent.setup();
+    render(
+      <App
+        services={services}
+        shellSlots={{ ...topBarSlots, ...workstreamsShellSlots }}
+        globalViews={workstreamsGlobalViews}
+      />,
+    );
+    await connected();
+    const counts = screen.getByTestId("top-counts");
+    await waitFor(() => expect(counts).toHaveTextContent("2 workstreams"));
+    const actions = within(screen.getByRole("group", { name: "Selected initiative" }));
+    await user.click(actions.getByRole("button", { name: "Archive" }));
+    await user.click(actions.getByRole("button", { name: "Confirm archive" }));
+    await waitFor(() => expect(counts).toHaveTextContent("1 workstreams"));
+    expect(screen.getByTestId("workstreams-count")).toHaveTextContent("1");
   });
 
   it("shows a dash, never 0, when the daemon is unreachable", async () => {

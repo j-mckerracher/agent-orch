@@ -2,6 +2,7 @@ import { useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { formatRoute } from "../router";
 import { useServices, useStore } from "../services";
 import {
+  activeCount,
   taskCount,
   taskLabelOf,
   taskListNotice,
@@ -35,7 +36,7 @@ export function WorkstreamsCount() {
   if (model.status !== "ready") return <span aria-label="workstreams: not available">—</span>;
   return (
     <>
-      <span data-testid="workstreams-count">{model.groups.length}</span>
+      <span data-testid="workstreams-count">{activeCount(model.groups)}</span>
       {model.mode === "fixture" && (
         <Badge tone="placeholder" title={`PLACEHOLDER DATA (${model.provenance.id}): fixture workstream count`}>
           Placeholder
@@ -99,7 +100,8 @@ export function WorkstreamTree() {
     );
   }
 
-  const { groups } = model;
+  // Archived workstreams stay in the Workstreams view (read-only) but are not listed here.
+  const groups = model.groups.filter((group) => group.state !== "archived");
   if (groups.length === 0) {
     return <p className="shell-placeholder">No workstreams exist yet. Create one in the Workstreams view.</p>;
   }

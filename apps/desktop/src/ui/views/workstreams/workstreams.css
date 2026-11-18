@@ -71,6 +71,12 @@
   min-width: 0;
 }
 
+.ws-side {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+}
+
 .ws-list,
 .ws-detail > .ui-panel {
   min-width: 0;
