@@ -728,7 +728,7 @@ in all. A field the kind does not list rejects the whole block.
 | Kind | Parameters | What approval does |
 | --- | --- | --- |
 | `task.propose` | `project`, `objective`, `agent`, `task_kind`, `delivery`, and optionally `workstream_id` or `workstream_ref`, and `objective_id` | Creates one task and queues it. When a workstream is named, links the task to it, and to the objective when `objective_id` is set. In the global conversation with no workstream named, links it to the "Global tasks" workstream, made on first use; an archived one leaves the task unlinked. |
-| `task.cancel` | `task_id` | Cancels a created or queued task at once. A running task ends the proposal `executed` with the text "Cancellation requested", because the task stops when its agent confirms. A finished task fails `conflict`. |
+| `task.cancel` | `task_id` | Cancels a created, queued or verifying task at once. A running task ends the proposal `executed` with the text "Cancellation requested", because the task stops when its agent confirms. A finished task fails `conflict`. |
 | `task.retry` | `task_id` | Queues one new attempt of a failed or verification-failed task. A running or queued task fails `conflict`, and a running attempt is never cancelled or restarted. |
 | `workstream.link_task` | `workstream_id`, `task_id`, and optionally `objective_id` | Links an existing task to the workstream. A task linked elsewhere fails `conflict`. |
 
