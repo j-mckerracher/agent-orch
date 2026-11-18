@@ -852,7 +852,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     await waitLive(services);
     const box = await screen.findByRole("textbox", { name: "Message alpha coordinator" });
     expect(box.getAttribute("placeholder")).toBe("Ask a question, redirect work, or discuss the plan…");
-    expect(box).toHaveAttribute("rows", "2");
+    expect(box).toHaveAttribute("rows", "1");
     expect(screen.queryByText("Message alpha coordinator", { selector: "label" })).toBeNull();
     expect(screen.queryByText(/Press Enter to send, Shift\+Enter for a new line\./)).toBeNull();
   });

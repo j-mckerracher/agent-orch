@@ -42,7 +42,8 @@
 }
 
 .ws-scope {
-  flex-basis: 100%;
+  flex: 0 1 auto;
+  min-width: 0;
   margin: 0;
   overflow: hidden;
   color: var(--muted);
@@ -138,8 +139,8 @@
 .ws-composer {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 6px;
+  padding: 8px 12px;
   border: 1px solid var(--control-border);
   border-radius: 13px;
   background: var(--panel);
@@ -161,7 +162,7 @@
   min-width: 0;
 }
 
-/* Two lines at rest (rows={2}); a longer draft scrolls inside the box. */
+/* One line at rest (rows={1}); a longer draft scrolls inside the box. */
 .ws-composer textarea {
   width: 100%;
   resize: none;
