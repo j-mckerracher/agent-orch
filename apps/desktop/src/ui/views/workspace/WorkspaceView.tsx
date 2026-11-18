@@ -646,7 +646,6 @@ function Conversation({
             canChange={!live || (gate.can("monitoring") && gate.connection.approver)}
           />
         )}
-        {target.kind !== "project" && <ReturnBrief />}
         {target.kind !== "workstream" && (
           <ConversationActions
             option={option}
@@ -663,6 +662,7 @@ function Conversation({
             }
           />
         )}
+        {target.kind !== "project" && <ReturnBrief />}
       </header>
 
       <div
@@ -731,7 +731,7 @@ function Conversation({
         <textarea
           id={`${ids}-draft`}
           aria-label={`Message ${option.label}`}
-          rows={2}
+          rows={1}
           value={draft}
           placeholder={COMPOSER_PLACEHOLDER}
           aria-describedby={blocked ? sendId : undefined}
