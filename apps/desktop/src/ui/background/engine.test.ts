@@ -103,6 +103,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
   document.documentElement.removeAttribute("data-theme");
+  document.body.style.backgroundColor = "";
 });
 
 const mount = (options: Parameters<typeof mountAmbientBackground>[1] = {}) =>
@@ -230,9 +231,62 @@ describe("WebGPU path", () => {
     const ocean = fakeOcean();
     mount({ hasGpu: () => true, loadOcean: async () => ocean.module });
     await vi.waitFor(() => expect(ocean.createRenderer).toHaveBeenCalled());
-    expect(ocean.createRenderer.mock.calls[0][0].colors.fg).toEqual([0, 0, 0]);
+    expect(ocean.createRenderer.mock.calls[0][0].colors.fg).toEqual([1, 1, 1]);
     document.documentElement.setAttribute("data-theme", "dark");
     await vi.waitFor(() => expect(ocean.renderer.setColors).toHaveBeenCalledWith(expect.objectContaining({ fg: [1, 1, 1] })));
+  });
+
+  it("inverts the GPU canvas in light mode and renders the dark palette", async () => {
+    document.body.style.backgroundColor = "rgb(255, 255, 255)";
+    installMedia();
+    installFrames();
+    const ocean = fakeOcean();
+    mount({ hasGpu: () => true, loadOcean: async () => ocean.module });
+    await vi.waitFor(() => expect(ocean.createRenderer).toHaveBeenCalled());
+    const [gpu, fallback] = Array.from(host.querySelectorAll("canvas"));
+    expect(gpu.style.filter).toBe("invert(1)");
+    expect(fallback.style.filter).toBe("");
+    expect(ocean.createRenderer.mock.calls[0][0].colors).toEqual({ fg: [1, 1, 1], bg: [0, 0, 0] });
+  });
+
+  it("leaves the GPU canvas uninverted in dark mode with the original colors", async () => {
+    document.body.style.backgroundColor = "rgb(16, 26, 37)";
+    installMedia({ dark: true });
+    installFrames();
+    const ocean = fakeOcean();
+    mount({ hasGpu: () => true, loadOcean: async () => ocean.module });
+    await vi.waitFor(() => expect(ocean.createRenderer).toHaveBeenCalled());
+    const [gpu] = Array.from(host.querySelectorAll("canvas"));
+    expect(gpu.style.filter).toBe("");
+    const { fg, bg } = ocean.createRenderer.mock.calls[0][0].colors;
+    expect(fg).toEqual([1, 1, 1]);
+    expect(bg[0]).toBeCloseTo(0.0052, 3);
+  });
+
+  it("updates the GPU filter and colors together when the theme switches", async () => {
+    document.body.style.backgroundColor = "rgb(255, 255, 255)";
+    installMedia();
+    installFrames();
+    const ocean = fakeOcean();
+    mount({ hasGpu: () => true, loadOcean: async () => ocean.module });
+    await vi.waitFor(() => expect(ocean.createRenderer).toHaveBeenCalled());
+    const [gpu] = Array.from(host.querySelectorAll("canvas"));
+    document.documentElement.setAttribute("data-theme", "dark");
+    await vi.waitFor(() => expect(ocean.renderer.setColors).toHaveBeenLastCalledWith({ fg: [1, 1, 1], bg: [1, 1, 1] }));
+    expect(gpu.style.filter).toBe("");
+    document.documentElement.setAttribute("data-theme", "light");
+    await vi.waitFor(() => expect(ocean.renderer.setColors).toHaveBeenLastCalledWith({ fg: [1, 1, 1], bg: [0, 0, 0] }));
+    expect(gpu.style.filter).toBe("invert(1)");
+  });
+
+  it("inverts the paper in sRGB before converting it to linear light", async () => {
+    document.body.style.backgroundColor = "rgb(128, 128, 128)";
+    installMedia();
+    installFrames();
+    const ocean = fakeOcean();
+    mount({ hasGpu: () => true, loadOcean: async () => ocean.module });
+    await vi.waitFor(() => expect(ocean.createRenderer).toHaveBeenCalled());
+    expect(ocean.createRenderer.mock.calls[0][0].colors.bg[0]).toBeCloseTo(0.2122, 3);
   });
 
   it("falls back to Canvas 2D and disposes the renderer when it reports an error", async () => {
