@@ -75,9 +75,18 @@ jobs:
       - name: cargo audit (desktop host)
         run: cargo audit --file apps/desktop/src-tauri/Cargo.lock
 
-      - name: npm audit
+      # The desktop tree that ships in the installers fails the job. Dev-only build and test
+      # tooling (Vite, Vitest) is not shipped, so its findings are reported as a warning.
+      - name: npm audit (desktop runtime tree)
         working-directory: apps/desktop
-        run: npm audit --audit-level=high
+        run: npm audit --package-lock-only --omit=dev --audit-level=high
+
+      - name: npm audit (desktop build tooling, warning only)
+        working-directory: apps/desktop
+        run: |
+          if ! npm audit --package-lock-only --audit-level=high; then
+            echo "::warning title=npm audit (desktop build tooling)::High-severity advisories in dev-only packages, which are not shipped. See this step's log."
+          fi
 
       # The codeburn runtime tree (what ships) and its bundler (build time only), checked against the
       # npm advisory database from their lockfiles. Lockfile-only: nothing is installed.

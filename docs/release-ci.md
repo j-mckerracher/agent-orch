@@ -10,7 +10,7 @@ Versioning and the steps to release are in [RELEASE.md](RELEASE.md).
 | File | Runs on | Triggers | What it does |
 | --- | --- | --- | --- |
 | `.github/workflows/ci.yml` | `macos-15`, `windows-2025` | pull request, push to `main`, manual, called by `release.yml` | Sets `core.autocrlf=false` and `core.longpaths=true`, then runs every native gate once with `CI=true`, its own target directory and an isolated test temp directory. The Windows gates run as parallel jobs that a pull request's changed files select (see [Windows jobs](#windows-jobs-and-what-a-pull-request-runs)). |
-| `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual; called by `release.yml` | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --audit-level=high`. |
+| `.github/workflows/audit.yml` | `ubuntu-24.04` | changes to manifests, lockfiles or `deny.toml`; push to `main`; daily; manual; called by `release.yml` | `cargo deny` for both manifests, `cargo audit` for both lockfiles, `npm audit --omit=dev --audit-level=high` for the shipped desktop tree (the dev tree is audited as a warning). |
 | `.github/workflows/release.yml` | `macos-15`, `windows-2025`; `publish` on `ubuntu-latest` | tag `v*`; manual; dispatched by `release-please.yml` | Requires `ci.yml` and `audit.yml` to pass, then builds the macOS app and the Windows NSIS installer. Signs when secrets are present. Uploads each build's artifacts. For a `v*` tag with `publish` set (or a tag push), the `publish` job publishes the GitHub release (see [Publishing a release](#publishing-a-release)). |
 | `.github/workflows/release-please.yml` | `ubuntu-24.04` | push to `main` | Opens or updates the release pull request. When a release pull request has merged, creates the annotated `v*` tag and dispatches `release.yml` on it with `publish=true`. Publishes nothing itself (see [RELEASE.md](RELEASE.md)). |
 
@@ -321,7 +321,11 @@ Windows the list of rows this CI cannot prove. The workflow uploads the director
   manifest because `apps/desktop/src-tauri` is outside the root workspace.
 - `cargo audit --file <lockfile>` runs for both lockfiles; vulnerabilities fail, warnings (the
   unmaintained GTK3 crates that only Linux builds use) do not.
-- `npm audit --audit-level=high` runs against `apps/desktop/package-lock.json`.
+- `npm audit --package-lock-only --omit=dev --audit-level=high` runs against
+  `apps/desktop/package-lock.json` and fails on the runtime tree that ships in the installers.
+  The full tree, which adds dev-only build and test tooling (Vite, Vitest), is audited in a
+  second step that reports high-severity findings as a warning and does not fail. Example:
+  GHSA-fc5q-39xc-vjpf (picomatch ReDoS, no patched release) reaches only Vite and Vitest.
 - **Known exception:** `RUSTSEC-2026-0459` (bundled SQLite before 3.54.0 in `libsqlite3-sys`
   0.37.0, reached through `sqlx` 0.9.0) is ignored in `deny.toml` and `.cargo/audit.toml` with a
   reason. It is a tracked finding, not an acceptance. Remove both entries once the lockfile has

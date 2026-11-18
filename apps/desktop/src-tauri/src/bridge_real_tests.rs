@@ -389,6 +389,23 @@ fn the_host_launches_the_real_daemon_and_drives_an_approval_to_delivery() {
     let connection = opened.connection_id;
 
     // Coordinator: the real conversation store, idempotent, no authority.
+    // Registration adds no coordinator, so one is added before the first message.
+    assert_eq!(
+        frames.error_code(
+            bridge,
+            connection,
+            "coordinator.get",
+            json!({"project_id": project_id, "after_sequence": null}),
+        ),
+        NOT_FOUND,
+        "a registered project has no coordinator until one is added"
+    );
+    frames.result(
+        bridge,
+        connection,
+        "coordinator.restore",
+        json!({"project_id": project_id, "idempotency_key": "coordinator-add-1"}),
+    );
     let message = frames.result(
         bridge,
         connection,
