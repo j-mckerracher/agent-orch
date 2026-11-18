@@ -1,4 +1,4 @@
-import { decisionCountText, matchesFilter, pendingDecisionCount } from "../format";
+import { decisionCountText, matchesFilter, openTaskCount, pendingDecisionCount } from "../format";
 import { heldSets } from "../../sources/surfaces/holds";
 import { useGate, useServices, useStore, useSurface } from "../services";
 import { Badge } from "../theme";
@@ -100,7 +100,7 @@ function LiveCounts() {
       attentionMore={proposals.more}
       values={{
         workstreams: surfaceCount(workstreams.status, workstreams.status === "ok" ? workstreams.data.length : undefined),
-        tasks: taskList ? taskList.length : pendingRead(tasks.status),
+        tasks: taskList ? openTaskCount(taskList) : pendingRead(tasks.status),
         running: taskList
           ? taskList.filter((task) => matchesFilter(task, "running", taskList, approvalList)).length
           : pendingRead(tasks.status),
