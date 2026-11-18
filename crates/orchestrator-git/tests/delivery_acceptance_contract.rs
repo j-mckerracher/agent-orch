@@ -20,6 +20,9 @@ use std::thread;
 use std::time::Duration;
 use tempfile::TempDir;
 
+mod support;
+use support::bundled_treehouse;
+
 const REVIEW_REF: &str = "refs/heads/orchestrator/review/task-1";
 const REVIEW_PREFIX: &str = "refs/heads/orchestrator/review/";
 
@@ -53,6 +56,8 @@ fn fixture() -> Fixture {
         "main",
         &directory.path().join("worktrees"),
         &BranchPrefix::default(),
+        &bundled_treehouse(directory.path()),
+        "task-1-workspace-1",
     )
     .expect("create task worktree");
     let worktree_path = worktree.path().to_path_buf();

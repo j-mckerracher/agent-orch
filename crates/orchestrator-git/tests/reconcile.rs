@@ -5,14 +5,18 @@ use std::process::Command;
 use orchestrator_git::reconcile::{
     reconcile_workspaces, RecordedWorkspace, WorkspaceClassification,
 };
-use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
+use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, Treehouse};
 use tempfile::TempDir;
+
+mod support;
+use support::bundled_treehouse;
 
 struct Fixture {
     _directory: TempDir,
     repository_path: PathBuf,
     worktrees_path: PathBuf,
     repository: Repository,
+    treehouse: Treehouse,
 }
 
 fn fixture() -> Fixture {
@@ -29,11 +33,13 @@ fn fixture() -> Fixture {
     git(&repository_path, &["add", "base.txt"]);
     git(&repository_path, &["commit", "-m", "initial"]);
     let repository = Repository::new(&repository_path).expect("validated repository");
+    let treehouse = bundled_treehouse(directory.path());
     Fixture {
         worktrees_path: directory.path().join("worktrees"),
         _directory: directory,
         repository_path,
         repository,
+        treehouse,
     }
 }
 
@@ -88,6 +94,8 @@ fn unchanged_worktree_matches_recorded_branch_and_base() {
         "HEAD",
         &fixture.worktrees_path,
         &BranchPrefix::default(),
+        &fixture.treehouse,
+        "reconcile-workspace-1",
     )
     .expect("create real worktree");
     let recorded = [RecordedWorkspace {
@@ -114,6 +122,8 @@ fn unrecorded_worktree_is_reported_as_unexpected_and_left_untouched() {
         "HEAD",
         &fixture.worktrees_path,
         &BranchPrefix::default(),
+        &fixture.treehouse,
+        "reconcile-workspace-1",
     )
     .expect("create real worktree");
 
@@ -138,6 +148,8 @@ fn removed_real_worktree_is_classified_missing() {
         "HEAD",
         &fixture.worktrees_path,
         &BranchPrefix::default(),
+        &fixture.treehouse,
+        "reconcile-workspace-1",
     )
     .expect("create real worktree");
     let recorded = [RecordedWorkspace {
@@ -165,6 +177,8 @@ fn checked_out_branch_mismatch_is_classified_branch_moved() {
         "HEAD",
         &fixture.worktrees_path,
         &BranchPrefix::default(),
+        &fixture.treehouse,
+        "reconcile-workspace-1",
     )
     .expect("create real worktree");
     git(worktree.path(), &["switch", "--detach"]);
@@ -192,6 +206,8 @@ fn committed_worktree_branch_is_classified_branch_moved() {
         "HEAD",
         &fixture.worktrees_path,
         &BranchPrefix::default(),
+        &fixture.treehouse,
+        "reconcile-workspace-1",
     )
     .expect("create real worktree");
     let base_commit = worktree.base_sha().to_string();

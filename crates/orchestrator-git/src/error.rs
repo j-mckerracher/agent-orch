@@ -2,11 +2,13 @@ use std::path::PathBuf;
 
 use thiserror::Error;
 
-/// Failures of repository validation, task worktree creation, and scoped diffs.
+/// Failures of repository validation, treehouse leases, task worktree creation,
+/// and scoped diffs.
 ///
-/// Worktree creation is conservative: partially created Git state remains for
-/// inspection. Diff operations accept only paths scoped to the validated
-/// repository and never invoke external diff or text-conversion tools.
+/// Worktree creation is conservative: a failed creation returns its treehouse
+/// lease when treehouse allows it, and never deletes a branch or directory.
+/// Diff operations accept only paths scoped to the validated repository and
+/// never invoke external diff or text-conversion tools.
 ///
 /// Updated: 2026-11-08T17:01:05+00:00.
 #[derive(Debug, Error)]
@@ -50,6 +52,27 @@ pub enum Error {
         status: std::process::ExitStatus,
         stderr: String,
     },
+
+    #[error("treehouse could not be run ({detail}); the worktree pool needs the treehouse program bundled with the app")]
+    TreehouseUnavailable { detail: String },
+
+    #[error("treehouse {step} did not finish in time and was stopped")]
+    TreehouseTimeout { step: &'static str },
+
+    #[error("treehouse {step} exited with {status}: {stderr}")]
+    TreehouseFailed {
+        step: &'static str,
+        status: std::process::ExitStatus,
+        stderr: String,
+    },
+
+    #[error(
+        "every worktree in the treehouse pool is leased or dirty; return one or raise max_trees"
+    )]
+    WorktreePoolFull,
+
+    #[error("worktree {path:?} is outside the worktrees root {root:?}; it was not returned")]
+    WorktreeOutsideRoot { path: PathBuf, root: PathBuf },
 
     #[error("worktree HEAD mismatch at {path}: expected {expected}, found {found}")]
     HeadMismatch {

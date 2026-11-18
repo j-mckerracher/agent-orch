@@ -21,13 +21,10 @@
 
 use std::ffi::OsString;
 use std::fmt;
-use std::io::Read;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
-use std::sync::mpsc;
+use std::process::Command;
 use std::sync::{Mutex, PoisonError};
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use orchestrator_core::landing::{CheckState, MergeMethod, PrState};
 use serde_json::Value;
@@ -35,6 +32,7 @@ use serde_json::Value;
 use crate::branch_prefix::is_safe_branch_name;
 use crate::env_policy::EnvPolicy;
 use crate::git::git;
+use crate::process::{run_bounded, RunError};
 use crate::Repository;
 
 /// Variable that names a different `gh` program (tests and unusual installs).
@@ -44,10 +42,6 @@ const VIEW_TIMEOUT: Duration = Duration::from_secs(20);
 const MERGE_TIMEOUT: Duration = Duration::from_secs(60);
 /// Longest stdout read from `gh`, in bytes. More is a failure, not a truncation.
 const MAX_STDOUT_BYTES: usize = 1024 * 1024;
-const MAX_STDERR_BYTES: usize = 16 * 1024;
-const POLL_INTERVAL: Duration = Duration::from_millis(20);
-/// How long to wait for the output readers after the child has exited.
-const DRAIN_GRACE: Duration = Duration::from_secs(2);
 
 /// Most required checks one view carries. More is refused: dropping some could hide a red one.
 pub const MAX_CHECKS: usize = 100;
@@ -567,43 +561,22 @@ where
     ChildParts { env, cwd }
 }
 
-struct Drained {
-    bytes: Vec<u8>,
-    overflow: bool,
-}
-
-/// Reads `stream` to the end on its own thread, keeping at most `cap` bytes and discarding the
-/// rest, so a chatty child never blocks on a full pipe.
-fn drain<R: Read + Send + 'static>(stream: Option<R>, cap: usize) -> mpsc::Receiver<Drained> {
-    let (sender, receiver) = mpsc::channel();
-    thread::spawn(move || {
-        let mut bytes = Vec::new();
-        let mut overflow = false;
-        if let Some(mut stream) = stream {
-            let mut buffer = [0u8; 8192];
-            loop {
-                match stream.read(&mut buffer) {
-                    Ok(0) => break,
-                    Ok(read) => {
-                        let room = cap.saturating_sub(bytes.len());
-                        overflow |= read > room;
-                        bytes.extend_from_slice(&buffer[..read.min(room)]);
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
-                    Err(_) => break,
-                }
-            }
-        }
-        let _ = sender.send(Drained { bytes, overflow });
-    });
-    receiver
-}
-
 struct Finished {
     success: bool,
     stdout: Vec<u8>,
     /// Lower case, for matching only. Never logged or returned.
     stderr: String,
+}
+
+fn gh_error(error: RunError) -> GitHubError {
+    match error {
+        RunError::Spawn(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            GitHubError::NotAvailable
+        }
+        RunError::Spawn(_) => GitHubError::Failed("spawn"),
+        RunError::Timeout => GitHubError::Timeout,
+        RunError::Failed(code) => GitHubError::Failed(code),
+    }
 }
 
 /// The real implementation: the user's `gh` as a child process.
@@ -661,49 +634,12 @@ impl GhCli {
             .env_clear()
             .envs(parts.env)
             .args(args)
-            .current_dir(parts.cwd)
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        let mut child = command.spawn().map_err(|error| {
-            if error.kind() == std::io::ErrorKind::NotFound {
-                GitHubError::NotAvailable
-            } else {
-                GitHubError::Failed("spawn")
-            }
-        })?;
-        let stdout = drain(child.stdout.take(), self.max_stdout);
-        let stderr = drain(child.stderr.take(), MAX_STDERR_BYTES);
-        let deadline = Instant::now() + timeout;
-        let status = loop {
-            match child.try_wait() {
-                Ok(Some(status)) => break status,
-                Ok(None) if Instant::now() >= deadline => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(GitHubError::Timeout);
-                }
-                Ok(None) => thread::sleep(POLL_INTERVAL),
-                Err(_) => {
-                    let _ = child.kill();
-                    let _ = child.wait();
-                    return Err(GitHubError::Failed("wait"));
-                }
-            }
-        };
-        let stdout = stdout
-            .recv_timeout(DRAIN_GRACE)
-            .map_err(|_| GitHubError::Failed("output"))?;
-        let stderr = stderr
-            .recv_timeout(DRAIN_GRACE)
-            .map_err(|_| GitHubError::Failed("output"))?;
-        if stdout.overflow {
-            return Err(GitHubError::Failed("output_too_large"));
-        }
+            .current_dir(parts.cwd);
+        let output = run_bounded(&mut command, timeout, self.max_stdout).map_err(gh_error)?;
         Ok(Finished {
-            success: status.success(),
-            stdout: stdout.bytes,
-            stderr: String::from_utf8_lossy(&stderr.bytes).to_lowercase(),
+            success: output.status.success(),
+            stdout: output.stdout,
+            stderr: String::from_utf8_lossy(&output.stderr).to_lowercase(),
         })
     }
 
@@ -1338,6 +1274,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn github_a_gh_that_times_out_is_killed_and_reports_timeout() {
+        use std::time::Instant;
+
         // `exec` so the kill lands on the sleeping process itself, not on a shell around it.
         let stub = StubGh::new("timeout", "exec sleep 30");
         let cli = GhCli::with_limits(
