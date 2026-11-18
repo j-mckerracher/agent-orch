@@ -9,7 +9,8 @@ MCAO keeps its state in one folder. The default is `~/.local/share/agent-orch` o
 | Path | Contents |
 | --- | --- |
 | `store.sqlite` | Tasks and conversations |
-| `worktrees/` | One Git worktree per task |
+| `worktrees/<repo>-<hash>/<slot>` | Git worktrees for tasks, pooled by the bundled treehouse tool. A slot is reused by a later task once its task is landed or archived. |
+| `treehouse-home/` | Private home for the treehouse tool, with its `config.toml`. Treehouse never reads your own treehouse config or hooks. |
 | `daemon.log` | Daemon output, rotated to `daemon.log.1` at 4 MiB |
 | `daemon.token` | Local authentication token. Never share it. |
 | `ipc/daemon.sock` | The daemon's local socket (a named pipe on Windows) |
@@ -70,4 +71,4 @@ Set `AGENT_ORCH_TRACE_REQUESTS` to any value to log one line per daemon request 
 
 ## Development only
 
-`AGENT_ORCH_DAEMON_BIN` names the daemon for a debug desktop build. `AGENT_ORCH_CODEBURN_BIN` names the usage reader in debug builds. Release builds ignore both. See [Build from source](build-from-source.md).
+`AGENT_ORCH_DAEMON_BIN` names the daemon for a debug desktop build. `AGENT_ORCH_CODEBURN_BIN` names the usage reader in debug builds. `AGENT_ORCH_TREEHOUSE_PROGRAM` names the worktree tool in debug builds; without it, a debug build looks on `PATH`. Release builds ignore all three. See [Build from source](build-from-source.md) and [treehouse](third-party/treehouse.md).
