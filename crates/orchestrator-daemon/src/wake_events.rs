@@ -118,6 +118,13 @@ pub(crate) fn classify(event: &StreamEvent, facts: Option<&TaskWakeFacts>) -> Op
     let task = describe(&event.task_id, facts);
     let task_id = safe_id(&event.task_id);
     match event.kind.as_str() {
+        "task.report_ready" => Some(Candidate {
+            subject: event.task_id.clone(),
+            dedupe_key: format!("report:{}", event.task_id),
+            notice: format!("{task} has a report ready. Relay its findings and any decisions."),
+            task_id,
+            kind: WakeKind::ScoutReportReady,
+        }),
         "task.transition" => {
             let words = match event.payload.get("state")?.as_str()? {
                 "Failed" => "failed.",

@@ -854,11 +854,13 @@ needs a per-action approval.
 - **Scout reports.** A scout's report is stored after its run, capped at 16 KiB and
   marked when cut. Credential shapes are masked. Paths are kept in the stored copy.
   A report is never deleted in this phase.
-- **Relay.** A relay is started only by the user, from a button on the notice. It
-  runs as a Restricted chat turn. The copy handed to the model goes through the same
+- **Relay.** A ready report automatically queues a Restricted wake turn in Global,
+  subject to monitoring mode, caps, load gating and user-turn precedence. A user can
+  also request a relay from the notice. The copy handed to the model goes through the same
   word-level redactor as the wake service: paths become `[path]`, and token-like
-  words become `[redacted]`. The model receives it as labelled data. Automatic relay
-  is not built.
+  words become `[redacted]`. The model receives it as labelled data, with at most one
+  report per wake turn. Automatic relay sets `relayed_at` only after a successful,
+  non-quiet reply. Failure, cancellation and a quiet reply do not mark it relayed.
 - **Methods.** `reports.get` and `reports.relay` are user-only. `reports.list` returns
   metadata only and is open.
 - **Promotion.** A scout promotes to a ship only after its report has been relayed,

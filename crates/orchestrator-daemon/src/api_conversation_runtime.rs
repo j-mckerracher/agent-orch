@@ -662,6 +662,7 @@ impl ConversationService {
         target: &ConversationTarget,
         turn_id: &str,
         brief: &WakeBrief,
+        relay: Option<&str>,
     ) -> Result<BegunTurn, ConversationError> {
         let text = brief.opening_text();
         self.start_as(
@@ -672,7 +673,7 @@ impl ConversationService {
             PermissionLevel::Restricted,
             true,
             Some(brief),
-            None,
+            relay,
         )
     }
 

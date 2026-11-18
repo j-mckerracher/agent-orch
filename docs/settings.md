@@ -43,11 +43,15 @@ A task in the home directory runs in that folder itself, not in a separate workt
 
 ## Checks on running work
 
-The orchestrator checks for tasks that look stuck, and these checks use no tokens. A task is flagged only after it has been silent for at least 5 minutes. You can set the check interval (minutes), the fastest check interval (seconds), and the longest time a task may run before it is flagged (minutes).
+The orchestrator wakes automatically to check progress while work is active. Each extra work unit halves the interval, down to the fastest interval. As work finishes, the interval grows again; with no work, no timer is armed. At the defaults, 1, 2, 3, 4 and 5 work units give intervals of 10 minutes, 5 minutes, 2 minutes 30 seconds, 75 seconds and 60 seconds. Global counts running tasks plus active workstreams; each workstream counts its own running tasks.
+
+Checks join the 60-second wake debounce, wait for any user turn and the machine load gate, and obey the automatic-reply limits and monitoring mode. These model turns use tokens. The separate stuck-task notices use no tokens: a task is flagged after at least 5 minutes of silence or when it exceeds its wall-time limit. You can set the base interval (minutes), fastest interval (seconds), and wall-time limit (minutes).
 
 ## Automatic replies
 
 Automatic replies are updates the orchestrator writes without being asked, and each uses tokens. You can cap replies per hour and per day for each conversation, and set a daily token budget. When a limit is reached, you still see a notice for each event, and the header shows "Monitoring paused: limit reached".
+
+Ready scout reports trigger a Global update without waiting for a periodic check or a user message. The update reads one bounded, redacted report as untrusted data at Restricted permission. A report is marked relayed only after a successful, non-quiet reply; failed or skipped updates leave the manual relay available. Monitoring Off prevents automatic turns; Quiet stores replies without notifying.
 
 ## When settings are locked
 
