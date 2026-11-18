@@ -247,7 +247,11 @@
    "session_events_replay_task_and_only_selected_session_events",
    "local_midnight_boundaries_follow_the_offset",
    "nanos_format_as_trimmed_decimals",
-   "verifying_task_cancellation_is_rejected_without_partial_attempt_update",
+   "api::tests::verifying_task_cancellation_cancels_the_candidate_attempt",
+   "api::tests::verifying_task_cancellation_leaves_reconcile_clean",
+   "api::tests::in_place_task_with_a_verification_gate_is_refused_at_submit",
+   "api::workstream_plan_tests::remove_cancels_and_unlinks_a_verifying_task",
+   "api::actions_phase4_tests::a_revise_of_a_verifying_task_stops_it_and_queues_a_linked_new_one",
    "task_submission_is_deduplicated_and_hides_project_path",
    "task_submission_normalizes_display_agent_names_and_rejects_unknown_agents",
    "task_submission_rejects_a_missing_parent_before_creating_a_task",
@@ -1378,7 +1382,11 @@
    "sqlite_wake::tests::fail_wake_records_with_notice_rewrites_the_notice",
    "sqlite_wake::tests::settle_wake_records_changes_only_the_named_running_records",
    "sqlite_wake::tests::unseen_wake_counts_include_unanswered_outcomes",
-   "attempt_summary_and_changed_files_round_trip_and_clear"
+   "attempt_summary_and_changed_files_round_trip_and_clear",
+   "failing_settlement_fails_the_attempt_with_its_reason",
+   "passing_settlement_succeeds_the_attempt_and_records_the_run",
+   "cancel_verifying_task_requires_verifying_and_no_live_session",
+   "settlement_after_cancel_is_superseded_and_writes_nothing"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
