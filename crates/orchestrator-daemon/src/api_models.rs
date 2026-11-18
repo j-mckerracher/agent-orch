@@ -14,6 +14,7 @@
 //! result (no unknown facet) is reused, so one slow read is never remembered.
 
 use std::collections::HashMap;
+use std::hash::Hash;
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar};
 use std::time::{Duration, Instant};
@@ -30,35 +31,47 @@ const CATALOG_AGENTS: [&str; 4] = ["codex", "claude-code", "pi", "github-copilot
 const CATALOG_TTL: Duration = Duration::from_secs(30);
 const READ_PENDING: &str = "the catalog is still being read; retry shortly";
 
-/// Definitive reads plus the reads in flight.
+/// Definitive catalogs plus the reads in flight, per agent.
 #[derive(Default)]
 pub(crate) struct CatalogCache {
-    /// Lock order: `flights`, then `entries`.
-    entries: Mutex<HashMap<String, (Instant, AgentCatalog)>>,
-    flights: Mutex<HashMap<String, Arc<Flight>>>,
+    reads: Arc<SharedReads<String, AgentCatalog>>,
 }
 
-/// One read in progress, shared by every caller that wants the same agent.
-#[derive(Default)]
-struct Flight {
-    result: Mutex<Option<AgentCatalog>>,
+/// One read in progress, shared by every caller that wants the same key.
+pub(crate) struct Flight<T> {
+    result: Mutex<Option<T>>,
     done: Condvar,
 }
 
-enum Source {
-    Cached(AgentCatalog),
-    Reading(Arc<Flight>),
+pub(crate) enum Source<V> {
+    Cached(V),
+    Reading(Arc<Flight<V>>),
 }
 
-impl Flight {
-    fn wait_until(&self, deadline: Instant) -> Option<AgentCatalog> {
+impl<T: Clone> Flight<T> {
+    fn new() -> Self {
+        Self {
+            result: Mutex::new(None),
+            done: Condvar::new(),
+        }
+    }
+
+    fn set(&self, value: T) {
+        *self
+            .result
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(value);
+        self.done.notify_all();
+    }
+
+    pub(crate) fn wait_until(&self, deadline: Instant) -> Option<T> {
         let mut result = self
             .result
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         loop {
-            if let Some(catalog) = result.as_ref() {
-                return Some(catalog.clone());
+            if let Some(value) = result.as_ref() {
+                return Some(value.clone());
             }
             let remaining = deadline.checked_duration_since(Instant::now())?;
             result = self
@@ -70,71 +83,82 @@ impl Flight {
     }
 }
 
-impl CatalogCache {
-    /// The cached catalog, or the read to wait for (started here if none is
-    /// running).
-    fn source(
+/// Reads keyed by agent or program. A result that `keep` accepts is reused for
+/// `ttl`. One read per key runs at a time, on its own thread, and every caller
+/// shares it, so a slow read is never started twice.
+pub(crate) struct SharedReads<K, V> {
+    /// Lock order: `flights`, then `entries`.
+    entries: Mutex<HashMap<K, (Instant, V)>>,
+    flights: Mutex<HashMap<K, Arc<Flight<V>>>>,
+}
+
+impl<K, V> Default for SharedReads<K, V> {
+    fn default() -> Self {
+        Self {
+            entries: Mutex::default(),
+            flights: Mutex::default(),
+        }
+    }
+}
+
+impl<K, V> SharedReads<K, V>
+where
+    K: Eq + Hash + Clone + Send + 'static,
+    V: Clone + Send + 'static,
+{
+    /// The reusable result for `key`, or the read to wait for (started here if
+    /// none is running). `failed` is the result of a read that panics or cannot
+    /// start.
+    pub(crate) fn source(
         self: &Arc<Self>,
-        agent: &str,
-        config: &ExecutorConfig,
-        working_dir: PathBuf,
-    ) -> Source {
+        key: K,
+        ttl: Duration,
+        keep: fn(&V) -> bool,
+        failed: V,
+        read: impl FnOnce() -> V + Send + 'static,
+    ) -> Source<V> {
         let mut flights = self
             .flights
             .lock()
             .unwrap_or_else(|error| error.into_inner());
-        if let Some(catalog) = self.cached(agent) {
-            return Source::Cached(catalog);
+        if let Some(value) = self.cached(&key, ttl) {
+            return Source::Cached(value);
         }
-        if let Some(flight) = flights.get(agent) {
+        if let Some(flight) = flights.get(&key) {
             return Source::Reading(flight.clone());
         }
-        let flight = Arc::new(Flight::default());
-        flights.insert(agent.to_owned(), flight.clone());
+        let flight = Arc::new(Flight::new());
+        flights.insert(key.clone(), flight.clone());
         let started = std::thread::Builder::new()
-            .name("catalog-read".into())
+            .name("agent-read".into())
             .spawn({
-                let (cache, config, flight, agent) = (
-                    self.clone(),
-                    config.clone(),
-                    flight.clone(),
-                    agent.to_owned(),
-                );
+                let (cache, flight, key, fallback) =
+                    (self.clone(), flight.clone(), key.clone(), failed.clone());
                 move || {
-                    let read = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        read_blocking(&config, &agent, &working_dir)
-                    }));
-                    let catalog = read.unwrap_or_else(|_| {
-                        AgentCatalog::unknown(&agent, "the catalog read failed unexpectedly")
-                    });
-                    cache.finish(&agent, &flight, catalog);
+                    let value = std::panic::catch_unwind(std::panic::AssertUnwindSafe(read))
+                        .unwrap_or(fallback);
+                    cache.finish(&key, &flight, value, ttl, keep);
                 }
             });
         if started.is_err() {
-            flights.remove(agent);
-            *flight
-                .result
-                .lock()
-                .unwrap_or_else(|error| error.into_inner()) = Some(AgentCatalog::unknown(
-                agent,
-                "the catalog read could not be started",
-            ));
+            flights.remove(&key);
+            flight.set(failed);
         }
         Source::Reading(flight)
     }
 
-    fn cached(&self, agent: &str) -> Option<AgentCatalog> {
+    fn cached(&self, key: &K, ttl: Duration) -> Option<V> {
         let entries = self
             .entries
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         entries
-            .get(agent)
-            .filter(|(read_at, _)| read_at.elapsed() < CATALOG_TTL)
-            .map(|(_, catalog)| catalog.clone())
+            .get(key)
+            .filter(|(read_at, _)| read_at.elapsed() < ttl)
+            .map(|(_, value)| value.clone())
     }
 
-    fn finish(&self, agent: &str, flight: &Flight, catalog: AgentCatalog) {
+    fn finish(&self, key: &K, flight: &Flight<V>, value: V, ttl: Duration, keep: fn(&V) -> bool) {
         {
             let mut flights = self
                 .flights
@@ -142,21 +166,38 @@ impl CatalogCache {
                 .unwrap_or_else(|error| error.into_inner());
             // A failed or partial read is not a fact worth reusing: it would
             // refuse selections for a whole TTL after one slow probe.
-            if catalog.is_definitive() {
+            if keep(&value) {
                 let mut entries = self
                     .entries
                     .lock()
                     .unwrap_or_else(|error| error.into_inner());
-                entries.retain(|_, (read_at, _)| read_at.elapsed() < CATALOG_TTL);
-                entries.insert(agent.to_owned(), (Instant::now(), catalog.clone()));
+                entries.retain(|_, (read_at, _)| read_at.elapsed() < ttl);
+                entries.insert(key.clone(), (Instant::now(), value.clone()));
             }
-            flights.remove(agent);
+            flights.remove(key);
         }
-        *flight
-            .result
-            .lock()
-            .unwrap_or_else(|error| error.into_inner()) = Some(catalog);
-        flight.done.notify_all();
+        flight.set(value);
+    }
+}
+
+impl CatalogCache {
+    /// The cached catalog, or the read to wait for (started here if none is
+    /// running). The read is bounded by `catalog_timeout` and runs in the
+    /// background, so a slow CLI still yields a definitive catalog.
+    fn source(
+        &self,
+        agent: &str,
+        config: &ExecutorConfig,
+        working_dir: PathBuf,
+    ) -> Source<AgentCatalog> {
+        let (config, agent_name) = (config.clone(), agent.to_owned());
+        self.reads.source(
+            agent.to_owned(),
+            CATALOG_TTL,
+            AgentCatalog::is_definitive,
+            AgentCatalog::unknown(agent, "the catalog read did not complete"),
+            move || read_blocking(&config, &agent_name, &working_dir),
+        )
     }
 }
 
@@ -274,11 +315,7 @@ impl DaemonApi {
 }
 
 impl CatalogCache {
-    pub(crate) fn read(
-        self: &Arc<Self>,
-        config: &ExecutorConfig,
-        agents: &[&str],
-    ) -> Vec<AgentCatalog> {
+    pub(crate) fn read(&self, config: &ExecutorConfig, agents: &[&str]) -> Vec<AgentCatalog> {
         let deadline = Instant::now() + config.catalog_wait;
         let working_dir = config
             .worktrees_root

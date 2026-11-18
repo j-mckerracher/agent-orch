@@ -259,7 +259,7 @@ fn a_running_turn_blocks_the_next_message_until_it_ends() {
     assert_eq!(sent["turn"]["state"], "running");
     assert_eq!(
         send(&api, global(), "second", "k2"),
-        Err(RpcError::Conflict)
+        Err(RpcError::ConversationBusy)
     );
     assert_eq!(runtime.started.load(Ordering::SeqCst), 1);
 
@@ -275,7 +275,7 @@ fn a_running_turn_blocks_the_next_message_until_it_ends() {
     // A rejected attempt stays rejected for its key; the retry needs a new one.
     assert_eq!(
         send(&api, global(), "second", "k2"),
-        Err(RpcError::Conflict)
+        Err(RpcError::ConversationBusy)
     );
     send(&api, global(), "second", "k3").unwrap();
 }

@@ -54,7 +54,7 @@ use super::conversation_runtime::{
     Choice, ConversationRuntime, HistoryTurn, ReplySink, RuntimeFailure, RuntimeIdentity,
     TurnControl, TurnRequest, WorkstreamDirectory, UNAVAILABLE_RUNTIME_NAME,
 };
-use super::models::CatalogCache;
+use super::models::{CatalogCache, SharedReads, Source};
 use crate::executor::{log_safe, ExecutorConfig, COPILOT_RUNS_DIR};
 use crate::mcp_server::McpTurnServer;
 
@@ -92,8 +92,15 @@ const SELECTION_TTL: Duration = Duration::from_secs(30);
 /// A cold catalog read finishes well inside this; a selection still unknown
 /// after it is not going to become known by waiting.
 const DEFAULT_RETRY_WINDOW: Duration = Duration::from_secs(15);
-/// Leaves headroom under the 2 s client I/O timeout after the catalog wait.
-const VERSION_PROBE_TIMEOUT: Duration = Duration::from_millis(500);
+/// Leaves headroom under the 2 s client I/O timeout after the catalog wait. A
+/// `--version` read still running after this is pending, and it keeps running.
+const VERSION_WAIT: Duration = Duration::from_millis(500);
+/// Ceiling of one `--version` read, which runs in the background. A read slower
+/// than this is never cached, so a CLI that cannot answer within it stays
+/// pending until the retry window ends.
+const VERSION_READ_LIMIT: Duration = Duration::from_secs(10);
+/// Time allowed to read the output of a CLI that exited just before its limit.
+const VERSION_OUTPUT_GRACE: Duration = Duration::from_millis(100);
 const MAX_VERSION_LEN: usize = 64;
 /// More than any real `--version` line; longer output is not a version probe.
 const MAX_VERSION_OUTPUT: usize = 1024;
@@ -121,7 +128,8 @@ pub(crate) struct ConversationConfig {
     pub agents: PathBuf,
     /// How long a selection that cannot be established yet (the catalog is
     /// still loading) is answered with a retryable `Conflict`. After it the
-    /// turn fails closed with `runtime_unavailable`.
+    /// turn fails closed with `runtime_unavailable`, unless an expired selection
+    /// that still matches its executable answers instead.
     pub retry_window: Duration,
 }
 
@@ -224,6 +232,9 @@ pub(crate) struct AgentRuntime {
     store: Arc<SqliteStore>,
     /// One resolved selection per choice; `None` is the configured default.
     selections: Mutex<HashMap<Option<Choice>, (Instant, Selection)>>,
+    /// `--version` reads per installed executable, shared in the background
+    /// (`version_probe`). A changed executable is a new key, so it is read again.
+    versions: Arc<SharedReads<Executable, Probe>>,
     /// When a selection first could not be established; cleared by any
     /// definitive outcome. Bounds the `Conflict` retries.
     pending_since: Mutex<Option<Instant>>,
@@ -243,6 +254,7 @@ impl AgentRuntime {
             config,
             store,
             selections: Mutex::new(HashMap::new()),
+            versions: Arc::default(),
             pending_since: Mutex::new(None),
             running: Arc::new(AtomicUsize::new(0)),
         }
@@ -293,19 +305,36 @@ impl AgentRuntime {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .get(&choice.cloned())
-            .is_some_and(|(at, selection)| {
-                at.elapsed() < SELECTION_TTL
-                    && match selection {
-                        Selection::Ready(selected) => {
-                            selected.help.is_some()
-                                && selected.executable.as_ref().is_some_and(|executable| {
-                                    self.exec
-                                        .locate_agent(selected.agent)
-                                        .is_some_and(|path| executable.matches(&path))
-                                })
-                        }
-                        Selection::Missing(_) => true,
-                    }
+            .is_some_and(|(at, selection)| at.elapsed() < SELECTION_TTL && self.intact(selection))
+    }
+
+    /// Whether `selection` still matches the installed executable. A Ready one
+    /// also needs its help read; a Missing one has nothing to match.
+    fn intact(&self, selection: &Selection) -> bool {
+        match selection {
+            Selection::Ready(selected) => {
+                selected.help.is_some()
+                    && selected.executable.as_ref().is_some_and(|executable| {
+                        self.exec
+                            .locate_agent(selected.agent)
+                            .is_some_and(|path| executable.matches(&path))
+                    })
+            }
+            Selection::Missing(_) => true,
+        }
+    }
+
+    /// Whether the selection for `choice` is an expired Ready one that still
+    /// matches the installed executable. Only that one may answer past its TTL.
+    /// Sign-in is not checked again while it answers; a sign-out lands when the
+    /// refresh does.
+    fn serves_while_refreshing(&self, choice: Option<&Choice>) -> bool {
+        self.selections
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .get(&choice.cloned())
+            .is_some_and(|(_, selection)| {
+                matches!(selection, Selection::Ready(_)) && self.intact(selection)
             })
     }
 
@@ -399,9 +428,12 @@ impl AgentRuntime {
     /// a catalog that has not been read. `Conflict` means pending: the caller
     /// retries with the same idempotency key and nothing is recorded, but only
     /// for [`ConversationConfig::retry_window`]; after that the selection
-    /// fails closed like any other unavailable runtime.
+    /// fails closed like any other unavailable runtime. An expired selection
+    /// that still matches its executable is never failed closed here, so it is
+    /// not replaced by `Missing`; `prepare` serves it instead.
     fn resolve(&self, choice: Option<&Choice>) -> Result<Selection, RpcError> {
         let outcome = self.select(choice);
+        let serving = self.serves_while_refreshing(choice);
         let mut pending = self
             .pending_since
             .lock()
@@ -413,7 +445,7 @@ impl AgentRuntime {
             }
             Outcome::Pending => {
                 let since = *pending.get_or_insert_with(Instant::now);
-                if since.elapsed() <= self.config.retry_window {
+                if serving || since.elapsed() <= self.config.retry_window {
                     return Err(RpcError::Conflict);
                 }
                 eprintln!(
@@ -448,7 +480,12 @@ impl AgentRuntime {
         }
         let program = self.program_of(agent);
         let executable = Executable::read(&program).ok().map(Arc::new);
-        let version = match read_version(&program, agent) {
+        let version = match self.version_probe(
+            &program,
+            agent,
+            executable.as_deref(),
+            Instant::now() + VERSION_WAIT,
+        ) {
             Probe::Version(version) => version,
             Probe::Rejected => {
                 eprintln!(
@@ -498,6 +535,7 @@ impl AgentRuntime {
             Err(failure) => return Outcome::Decided(Selection::Missing(failure)),
         };
         let mut slow = false;
+        let deadline = Instant::now() + VERSION_WAIT;
         let launchable: Vec<_> = agents
             .into_iter()
             .filter_map(|agent| {
@@ -506,7 +544,7 @@ impl AgentRuntime {
                 }
                 let program = self.program_of(agent);
                 let executable = Executable::read(&program).ok().map(Arc::new);
-                match read_version(&program, agent) {
+                match self.version_probe(&program, agent, executable.as_deref(), deadline) {
                     Probe::Version(version) => Some((agent, program, version, executable)),
                     Probe::Rejected => {
                         eprintln!(
@@ -585,6 +623,38 @@ impl AgentRuntime {
             Outcome::Pending
         } else {
             Outcome::Decided(Selection::Missing(missing))
+        }
+    }
+
+    /// The `--version` of `program`, from the shared background read for its
+    /// executable. Waits until `deadline` at most. A read still running is
+    /// `TimedOut`, which callers treat as pending, and it is never cached. A
+    /// program that cannot be read has no identity to cache under, so it is
+    /// rejected.
+    fn version_probe(
+        &self,
+        program: &Path,
+        agent: &str,
+        executable: Option<&Executable>,
+        deadline: Instant,
+    ) -> Probe {
+        let Some(executable) = executable else {
+            eprintln!(
+                "orchestrator-daemon: `--version` probe via {} skipped: the program cannot be read",
+                program.display()
+            );
+            return Probe::Rejected;
+        };
+        let (path, agent_name) = (program.to_owned(), agent.to_owned());
+        match self.versions.source(
+            executable.clone(),
+            SELECTION_TTL,
+            |probe| *probe != Probe::TimedOut,
+            Probe::TimedOut,
+            move || read_version(&path, &agent_name, VERSION_READ_LIMIT),
+        ) {
+            Source::Cached(probe) => probe,
+            Source::Reading(flight) => flight.wait_until(deadline).unwrap_or(Probe::TimedOut),
         }
     }
 
@@ -684,7 +754,14 @@ impl ConversationRuntime for AgentRuntime {
         if self.fresh(choice) {
             return Ok(());
         }
-        let selection = self.resolve(choice)?;
+        let selection = match self.resolve(choice) {
+            Ok(selection) => selection,
+            // The catalog and version reads behind a refresh run in the background and can
+            // outlast one send. The expired selection keeps answering until the refresh lands,
+            // as long as the executable it was chosen with is still installed.
+            Err(_) if self.serves_while_refreshing(choice) => return Ok(()),
+            Err(error) => return Err(error),
+        };
         // The one place a CLI's help is read: before the request gate, so the
         // bounded read never blocks other requests (DPES-1106).
         let selection = match selection {
@@ -993,21 +1070,21 @@ pub(super) async fn check_chat_provider(
 }
 
 /// What `--version` of an agent program showed.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 enum Probe {
     Version(String),
     /// Cannot be started, exits non-zero, prints too much or does not print a
     /// version. The program is not a launchable agent.
     Rejected,
-    /// No answer within [`VERSION_PROBE_TIMEOUT`]. A cold start of a real CLI
-    /// can be this slow, so this is only provisional (see `resolve`). A
-    /// program that floods its output blocks on the pipe and lands here too.
+    /// No answer within the read's limit. A cold start of a real CLI can be
+    /// this slow, so this is only provisional (see `resolve`). A program that
+    /// floods its output blocks on the pipe and lands here too.
     TimedOut,
 }
 
-/// `--version` of the agent, read with a hard time bound. The child leads its
-/// own process group on Unix so a wrapper script cannot outlive the bound.
-fn read_version(program: &Path, agent: &str) -> Probe {
+/// `--version` of the agent, read within `limit`. The child leads its own
+/// process group on Unix so a wrapper script cannot outlive the limit.
+fn read_version(program: &Path, agent: &str, limit: Duration) -> Probe {
     let mut command = Command::new(program);
     command
         .arg("--version")
@@ -1027,7 +1104,7 @@ fn read_version(program: &Path, agent: &str) -> Probe {
             return Probe::Rejected;
         }
     };
-    let deadline = Instant::now() + VERSION_PROBE_TIMEOUT;
+    let deadline = Instant::now() + limit;
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
@@ -1046,6 +1123,9 @@ fn read_version(program: &Path, agent: &str) -> Probe {
             }
         }
     };
+    // A child the CLI left behind can hold the stdout pipe open. Killing the group ends it, so the
+    // output below reads to the end of the pipe.
+    kill_probe(&mut child);
     if !status.success() {
         eprintln!(
             "orchestrator-daemon: `--version` probe via {} exited with code {}",
@@ -1059,12 +1139,31 @@ fn read_version(program: &Path, agent: &str) -> Probe {
     let Some(stdout) = child.stdout.take() else {
         return Probe::Rejected;
     };
-    let mut output = Vec::new();
-    let read = std::io::Read::read_to_end(
-        &mut std::io::Read::take(stdout, MAX_VERSION_OUTPUT as u64 + 1),
-        &mut output,
-    );
-    if read.is_err() || output.len() > MAX_VERSION_OUTPUT {
+    // A child that left the process group keeps the pipe open too, so the read runs on its own
+    // thread and is bounded by the same deadline.
+    let (sender, received) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut output = Vec::new();
+        let read = std::io::Read::read_to_end(
+            &mut std::io::Read::take(stdout, MAX_VERSION_OUTPUT as u64 + 1),
+            &mut output,
+        );
+        let _ = sender.send(read.map(|_| output));
+    });
+    let budget = deadline
+        .saturating_duration_since(Instant::now())
+        .max(VERSION_OUTPUT_GRACE);
+    let Ok(read) = received.recv_timeout(budget) else {
+        eprintln!(
+            "orchestrator-daemon: `--version` probe via {} left its output open",
+            program.display()
+        );
+        return Probe::TimedOut;
+    };
+    let Ok(output) = read else {
+        return Probe::Rejected;
+    };
+    if output.len() > MAX_VERSION_OUTPUT {
         return Probe::Rejected;
     }
     let text = String::from_utf8_lossy(&output);
@@ -1823,6 +1922,7 @@ mod tests {
     #[cfg(unix)]
     mod launch {
         use super::*;
+        use std::fs;
         use std::os::unix::fs::PermissionsExt;
 
         fn program(dir: &Path, name: &str, body: &str, mode: u32) -> PathBuf {
@@ -1858,12 +1958,12 @@ mod tests {
         /// The probe of a program that answers; a loaded machine can outlast
         /// the probe once.
         fn answered(path: &Path) -> Probe {
-            let mut probe = read_version(path, CODEX);
+            let mut probe = read_version(path, CODEX, VERSION_READ_LIMIT);
             for _ in 0..20 {
                 if probe != Probe::TimedOut {
                     break;
                 }
-                probe = read_version(path, CODEX);
+                probe = read_version(path, CODEX, VERSION_READ_LIMIT);
             }
             probe
         }
@@ -1903,16 +2003,17 @@ mod tests {
         #[test]
         fn a_version_probe_that_does_not_answer_is_only_provisionally_bad() {
             let dir = tempfile::tempdir().unwrap();
+            let limit = Duration::from_millis(300);
             for (name, body) in [("hang", "exec sleep 30"), ("flood", "yes codex-cli")] {
                 let path = program(dir.path(), name, body, 0o755);
                 // A script written while another test forks can be "busy".
-                let mut probe = read_version(&path, CODEX);
+                let mut probe = read_version(&path, CODEX, limit);
                 for _ in 0..40 {
                     if probe == Probe::TimedOut {
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(50));
-                    probe = read_version(&path, CODEX);
+                    probe = read_version(&path, CODEX, limit);
                 }
                 assert_eq!(probe, Probe::TimedOut, "{name}");
             }
@@ -1985,6 +2086,118 @@ mod tests {
                 runtime.resolve(None),
                 Ok(Selection::Missing(RuntimeFailure::Unavailable))
             ));
+        }
+
+        const CATALOG_MODELS: &str = r#"{"models":[
+    {"slug":"gpt-6-luna","display_name":"GPT-6 Luna","visibility":"list",
+     "default_reasoning_level":"medium",
+     "supported_reasoning_levels":[{"effort":"low","description":"x"},{"effort":"medium","description":"y"}]},
+    {"slug":"hidden-model","visibility":"hide","supported_reasoning_levels":[]}
+]}"#;
+
+        /// A codex whose `--version` takes about a second and whose `login` probe
+        /// about three while the `slow` marker exists. Every probe appends its
+        /// name to the returned `probes` log.
+        fn slow_codex(dir: &Path) -> (PathBuf, PathBuf, PathBuf) {
+            let models = dir.join("models.json");
+            fs::write(&models, CATALOG_MODELS).unwrap();
+            let probes = dir.join("probes.txt");
+            let slow = dir.join("slow");
+            let codex = startable(
+                dir,
+                "slow-codex",
+                &format!(
+                    "case \"$1\" in\n\
+                     --version) echo version >> '{probes}'; [ -f '{slow}' ] && sleep 1; echo codex-cli 1.2.3 ;;\n\
+                     login) echo login >> '{probes}'; [ -f '{slow}' ] && sleep 3; echo 'Logged in using ChatGPT'; exit 0 ;;\n\
+                     debug) echo debug >> '{probes}'; cat '{models}'; exit 0 ;;\n\
+                     exec) echo '  --ephemeral  Run without persisting'; exit 0 ;;\n\
+                     esac",
+                    probes = probes.display(),
+                    slow = slow.display(),
+                    models = models.display(),
+                ),
+            );
+            (codex, slow, probes)
+        }
+
+        /// Sends as a client retries on `Conflict`, polling the send's own result
+        /// for at most thirty seconds.
+        fn settle(runtime: &AgentRuntime) -> Result<(), RpcError> {
+            let mut sent = runtime.prepare(None);
+            for _ in 0..300 {
+                if !matches!(sent, Err(RpcError::Conflict)) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+                sent = runtime.prepare(None);
+            }
+            sent
+        }
+
+        #[test]
+        fn a_version_read_whose_child_keeps_stdout_open_still_answers() {
+            let dir = tempfile::tempdir().unwrap();
+            // The background child inherits stdout and outlives the CLI's own exit.
+            let path = startable(dir.path(), "held", "(sleep 30) &\necho codex-cli 1.2.3");
+            let started = Instant::now();
+            let probe = read_version(&path, CODEX, Duration::from_secs(20));
+            assert_eq!(probe, Probe::Version("1.2.3".into()));
+            assert!(
+                started.elapsed() < Duration::from_secs(10),
+                "waited on the held pipe"
+            );
+        }
+
+        #[test]
+        fn a_slow_cli_conflicts_until_its_reads_land_and_is_then_served_from_cache() {
+            let dir = tempfile::tempdir().unwrap();
+            let (path, slow, probes) = slow_codex(dir.path());
+            fs::write(&slow, "").unwrap();
+            let mut runtime = runtime(dir.path(), &path, Duration::from_secs(20));
+            runtime.exec.catalog_timeout = Duration::from_secs(10);
+
+            // The version and login reads outlast a send's wait, so the first send
+            // conflicts while they keep running in the background.
+            assert!(matches!(runtime.prepare(None), Err(RpcError::Conflict)));
+            assert!(settle(&runtime).is_ok());
+
+            // The selection and both reads are cached, so a later send runs no probe.
+            let settled = fs::read_to_string(&probes).unwrap();
+            assert!(runtime.prepare(None).is_ok());
+            assert_eq!(fs::read_to_string(&probes).unwrap(), settled);
+        }
+
+        #[test]
+        fn an_expired_selection_answers_while_its_refresh_runs() {
+            let dir = tempfile::tempdir().unwrap();
+            let (path, slow, _) = slow_codex(dir.path());
+            let mut runtime = runtime(dir.path(), &path, Duration::from_secs(20));
+            runtime.exec.catalog_timeout = Duration::from_secs(10);
+            assert!(settle(&runtime).is_ok());
+
+            // The selection expires and its reads are dropped, so the refresh reads
+            // the slow CLI again.
+            runtime.selections.lock().unwrap().get_mut(&None).unwrap().0 = Instant::now()
+                .checked_sub(SELECTION_TTL + Duration::from_secs(1))
+                .unwrap();
+            runtime.cache = Arc::default();
+            runtime.versions = Arc::default();
+            fs::write(&slow, "").unwrap();
+
+            // The refresh is pending, so the expired selection is served, not refused.
+            assert!(runtime.prepare(None).is_ok());
+            assert!(matches!(runtime.current(None), Some(Selection::Ready(_))));
+
+            // Once the refresh lands, the selection is fresh again. Poll the observed state.
+            for _ in 0..300 {
+                if runtime.fresh(None) {
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+                assert!(runtime.prepare(None).is_ok());
+            }
+            assert!(runtime.fresh(None), "the refresh never landed");
         }
     }
 

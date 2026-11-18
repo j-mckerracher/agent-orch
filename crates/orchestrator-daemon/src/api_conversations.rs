@@ -163,6 +163,7 @@ impl DaemonApi {
                 let target = request.target.to_store();
                 self.conversations.require_target(&target)?;
                 let turn_id = idempotency::stable_id("conversation-turn", &request.idempotency_key);
+                // A message over a running turn is busy, not a conflict: the desktop retries it.
                 let begun = self
                     .conversations
                     .start(
@@ -173,7 +174,7 @@ impl DaemonApi {
                         level,
                         actions,
                     )
-                    .map_err(map_conversation_error)?;
+                    .map_err(map_clear_error)?;
                 Ok(json!({
                     "entry_id": begun.user_entry.id,
                     "entry_sequence": begun.user_entry.sequence,
