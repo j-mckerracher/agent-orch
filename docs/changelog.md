@@ -5,6 +5,32 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.9](https://github.com/mc-innersource/motif-mcao/compare/v0.1.8...v0.1.9) (2026-11-18)
+
+
+### Features
+
+* **agents:** DPES-1044 - Run work attempts as the pstack workflow agent ([c347546](https://github.com/mc-innersource/motif-mcao/commit/c3475465adc45ac17d654b7a72bd7e917d5b62bb))
+* **agents:** DPES-1044 - Run work attempts as the pstack workflow agent ([503218a](https://github.com/mc-innersource/motif-mcao/commit/503218a23a26683b5fee3928f976af9967f3d6f8))
+
+
+### Bug Fixes
+
+* **daemon:** DPES-1106 - Ignore a half-written launch line in the MCP port test ([848329a](https://github.com/mc-innersource/motif-mcao/commit/848329ab7b5ec1c726021bf0a6c65155a0195533))
+* **daemon:** DPES-1106 - Ignore a half-written launch line in the MCP port test ([2dbe097](https://github.com/mc-innersource/motif-mcao/commit/2dbe097afc31f8cc16f32307cbaa3dbb4c36ad59))
+* **release:** DPES-1106 - Answer the CLI capability probe in the release smoke ([5cc7839](https://github.com/mc-innersource/motif-mcao/commit/5cc7839663668255c359510b75b441c8ece755bf))
+* **release:** DPES-1106 - Answer the CLI capability probe in the release smoke ([7a5b4fd](https://github.com/mc-innersource/motif-mcao/commit/7a5b4fdd36b0f4698e37a2f2d715fd3d03e0b0da))
+
+
+### Tests
+
+* **ci:** DPES-1044 - Update the pinned test counts for the workflow agent ([5b93179](https://github.com/mc-innersource/motif-mcao/commit/5b931795d70a27382a42fffe208a7f03bb98e5c6))
+
+
+### CI
+
+* **gates:** DPES-1106 - Update test count pins for the archive tests ([867ecb5](https://github.com/mc-innersource/motif-mcao/commit/867ecb5fd021118e3f1508b8b588c46125f0ae0b))
+
 ## [0.1.8](https://github.com/mc-innersource/motif-mcao/compare/v0.1.7...v0.1.8) (2026-11-18)
 
 
