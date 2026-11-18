@@ -52,10 +52,31 @@ describe("WakeNotice", () => {
   });
 
   it("wake_notice_a_quiet_record_collapses_to_one_line_and_hides_its_notice", () => {
-    const quiet = (id: string) => record({ id, state: "handled", outcome: "quiet", notify: false, notice: `secret ${id}` });
+    const quiet = (id: string) =>
+      record({ id, event: "work_check", state: "handled", outcome: "quiet", notify: false, notice: `secret ${id}` });
     render(<WakeRecords records={[quiet("a"), quiet("b")]} />);
     expect(screen.getByText("Checked 2 updates. Nothing needs you.")).toBeInTheDocument();
     expect(screen.queryByText(/secret/)).not.toBeInTheDocument();
+  });
+
+  it("wake_records_fold_only_heartbeat_quiet_records", () => {
+    const quiet = (id: string, event: string, notice: string) =>
+      record({ id, event, state: "handled", outcome: "quiet", notify: false, notice });
+    render(
+      <WakeRecords
+        records={[quiet("a", "work_check", "Checking on 1 active work units."), quiet("b", "task_failed", "Task t-2 failed.")]}
+      />,
+    );
+    expect(screen.getByText("Checked 1 update. Nothing needs you.")).toBeInTheDocument();
+    expect(screen.getByText("Task t-2 failed.")).toBeInTheDocument();
+    expect(screen.queryByText(/Checking on/)).not.toBeInTheDocument();
+  });
+
+  it("wake_notice_an_unanswered_outcome_keeps_its_notice_and_adds_a_note", () => {
+    render(<WakeNotice record={record({ state: "handled", outcome: "unanswered" })} />);
+    expect(screen.getByText("Task t-1 (Fix the login bug) failed.")).toBeInTheDocument();
+    expect(screen.getByText("No automatic explanation was given. Open the task.")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveAttribute("data-state", "handled");
   });
 
   it("wake_notice_state_is_in_words_not_colour", () => {

@@ -20,7 +20,9 @@ The fake agent stops the tests from spending money. Create the directory `$HOME/
 - `fake-codex`: the controllable agent. It must answer the `--version` probe in under 500 ms and print a version. For a conversation turn it must print an agent reply whose final lines are the action block the test needs. Each test says which action block to emit. Control the block with a file: the script reads `$HOME/agent-orch-manual-test-bin/next-reply.txt` and prints it. If the file is empty, it prints a short text reply.
 - `fake-codex-fail`: same `--version` probe, but every conversation turn exits non-zero. Tests TC-W-09 and TC-W-10 use it.
 
-Task runs started by the fake agent must finish on a file switch too: if `$HOME/agent-orch-manual-test-bin/task-mode` contains `succeed`, `fail`, or `hang`, the task ends successfully, ends with an error, or runs without output until killed.
+Task runs started by the fake agent must finish on a file switch too: if `$HOME/agent-orch-manual-test-bin/task-mode` contains `succeed`, `fail`, or `hang`, the task exits 0 without changing a file, ends with an error, or runs without output until killed. An Implement task that exits 0 without a file change ends `Failed` with the reason "The agent exited without changing any files.", so `succeed` never reaches `Verifying`. Investigate tasks are not affected: they may finish without a file change.
+
+**Missing: a `write` mode.** A candidate needs a task run that changes one file and exits 0. The contract above has no such mode. The fake agent script is not in the repo, so this section is the only specification. The Rust test fakes in `crates/orchestrator-daemon/tests/daemon.rs` and `crates/orchestrator-daemon/tests/work_classes.rs` print JSON events and never write a file, so they cannot stand in. To close the gap, add a `write` branch to `$HOME/agent-orch-manual-test-bin/fake-codex`: when `task-mode` contains `write`, create one file in the task's worktree and exit 0. Then add `write` to the list above. Until the branch exists, every test that needs a candidate is `BLOCKED`: TC-W-05 (delivery part), TC-W-16, and TC-I-10 step 7.
 
 If you cannot build the fake agent, mark every test that needs it `BLOCKED` and say so in `RESULTS.md`. Do not substitute a real agent.
 
@@ -56,10 +58,12 @@ Expected: `manual-test-project` is listed.
 ## 6. How to create wake events
 
 | Event | How |
-|-------|-----|
+| ------- | ----- |
 | Failed task | Write `fail` to `task-mode`, then approve a task proposal. |
 | Stalled task | Write `hang` to `task-mode`, approve a task, and wait 5 minutes with no output. |
-| Task delivery waiting | Write `succeed` to `task-mode` and approve a task with a delivery. |
+| Empty change set fails | Write `succeed` to `task-mode` and approve an Implement task. The task ends `Failed` with "The agent exited without changing any files." |
+| Candidate ready | Write `write` to `task-mode` and approve an Implement task. `BLOCKED` until the fake agent supports `write` (section 2). |
+| Task delivery waiting | Write `write` to `task-mode` and approve a task with a delivery. `BLOCKED` until the fake agent supports `write` (section 2). |
 | Scout report ready | Approve a `task.propose` with `task_kind` `Investigate` and `delivery` `ReportOnly`, with `task-mode` set to `succeed`. |
 | Failing agent | Quit the app, set `AGENT_ORCH_CODEX_PROGRAM` to `fake-codex-fail`, start the app, and send three user messages. |
 

@@ -44,7 +44,7 @@ Setup: [00-setup.md](00-setup.md).
 ## TC-I-04 A ready scout report wakes Global
 
 **Source:** `docs/m7-08-conversation-service.md` "reports" (automatic relay).
-**Preconditions:** Mode **On**. `task-mode` is `succeed`. The fake agent returns a report containing the path `/Users/test/secret/file.txt` and the token-like string `sk-abcdefghijklmnopqrstuvwxyz123456`.
+**Preconditions:** Mode **On**. `task-mode` is `succeed`. The fake agent returns a report containing the path `/Users/test/secret/file.txt` and the token-like string `sk-abcdefghijklmnopqrstuvwxyz123456`. `succeed` is correct for an Investigate task: it may finish without a file change.
 
 1. Make Global propose a `task.propose` with `task_kind` `Investigate`, `delivery` `ReportOnly`. Approve it.
 2. Switch to another target. Wait up to two minutes.
@@ -66,20 +66,20 @@ Setup: [00-setup.md](00-setup.md).
 **Source:** same; `docs/settings.md` ("failed or skipped updates leave the manual relay available").
 **Preconditions:** A ready report. Use `fake-codex-fail` so the automatic relay fails.
 
-1. Wait for the failed wake notice ("The automatic reply failed.").
+1. Wait for the relay notice. The automatic relay is retried about a minute after the first failure. After the second failure the notice reads "Report from task `<task id>` is ready; automatic relay failed. Open the task to read it.", with "The automatic reply failed." under it.
 2. Find the relay action on the notice and click it.
 
-**Expected:** A relay button or link exists after the failure. Clicking it queues a Global turn with the report. The report is not marked relayed until a reply succeeds. Mark `BLOCKED` if no relay control is visible and quote the notice text.
+**Expected:** A relay button or link exists on that notice. Clicking it queues a Global turn with the report. The report is not marked relayed until a reply succeeds. Mark `BLOCKED` if no relay control is visible and quote the notice text.
 
 ## TC-I-07 Only a successful, non-quiet reply marks the report relayed
 
 **Source:** same (`relayed_at`).
-**Preconditions:** Ready report. The fake agent answers with the quiet token.
+**Preconditions:** Ready report. `next-reply.txt` contains `MCAO_QUIET`.
 
-1. Let the automatic relay run.
+1. Let the automatic relay run. It gets a quiet reply, is retried about a minute later, and gets a quiet reply again.
 2. Check the notice.
 
-**Expected:** The notice reads "Checked 1 update. Nothing needs you." The manual relay stays available. Then switch the fake agent to a normal reply and relay manually. The relay control is gone afterward. A proposal made after that reply is labelled "Made after reading a report".
+**Expected:** The notice reads "Report from task `<task id>` is ready; automatic relay failed. Open the task to read it." It does not read "Checked 1 update. Nothing needs you." The report is not marked relayed. If a manual relay control is visible, it stays available. Then switch the fake agent to a normal reply and relay manually. The relay control is gone afterward. A proposal made after that reply is labelled "Made after reading a report". If no relay control is visible, mark that part `BLOCKED` and quote the notice text.
 
 ## TC-I-08 Approvals surface to the user as cards and notices
 
@@ -112,14 +112,14 @@ Setup: [00-setup.md](00-setup.md).
 4. Switch to `manual-test-project`. Wait for the task to fail and the wake debounce (60 seconds).
 5. Return to Global. Read the wake notice.
 6. Put a `task.retry` block in `next-reply.txt`. Send `Retry it`. Approve the card.
-7. Write `succeed` to `task-mode`. Wait for the task to finish.
+7. Write `write` to `task-mode`. Wait for the task to finish. **BLOCKED until supported:** the fake agent has no `write` mode yet (`00-setup.md` section 2). Until then, mark TC-I-10 `BLOCKED` at this step.
 
 **Expected:**
 
 - Each action needed your approval.
 - The failure reached you in Global without a user message.
 - The retry ran only after approval.
-- The task finishes.
+- The task reaches `Verifying` with a candidate.
 
 **Screenshot** after steps 3, 5, and 7.
 

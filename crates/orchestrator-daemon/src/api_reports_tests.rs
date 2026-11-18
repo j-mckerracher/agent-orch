@@ -110,6 +110,8 @@ fn attempt(task_id: &str) -> Attempt {
         attempt_number: 1,
         state: AttemptState::Pending,
         failure_reason: None,
+        summary: None,
+        changed_files: None,
     }
 }
 

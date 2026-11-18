@@ -22,6 +22,7 @@ use orchestrator_core::workstream::{
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection, SqlitePool};
 
+use crate::sqlite_ops::open_task_from_row;
 use crate::{OpenTask, SqliteStore, StoreError};
 
 /// A workstream mutation failed.
@@ -597,8 +598,16 @@ impl SqliteStore {
             let mut newest = Vec::new();
             for row in sqlx::query(
                 "SELECT t.id, t.project_id, t.state, \
-                 COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective \
+                 COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective, \
+                 l.workstream_id, latest.failure_reason, latest.changed_files, \
+                 CAST(MAX(0, (julianday('now') - julianday((SELECT e.created_at FROM durable_events e \
+                 WHERE e.task_id = t.id AND e.kind IN ('task.created', 'task.transition') \
+                 ORDER BY e.sequence DESC LIMIT 1))) * 1440) AS INTEGER) AS minutes_in_state, \
+                 CASE WHEN r.task_id IS NULL THEN NULL ELSE r.relayed_at IS NOT NULL END AS report_relayed \
                  FROM workstream_tasks l JOIN tasks t ON t.id = l.task_id \
+                 LEFT JOIN attempts latest ON latest.task_id = t.id \
+                 AND latest.attempt_number = (SELECT MAX(a.attempt_number) FROM attempts a WHERE a.task_id = t.id) \
+                 LEFT JOIN task_reports r ON r.task_id = t.id \
                  WHERE l.workstream_id = ? ORDER BY t.rowid DESC LIMIT ?",
             )
             .bind(&workstream_id)
@@ -606,13 +615,7 @@ impl SqliteStore {
             .fetch_all(&pool)
             .await?
             {
-                newest.push(OpenTask {
-                    id: row.try_get("id")?,
-                    project_id: row.try_get("project_id")?,
-                    state: serde_json::from_str(&row.try_get::<String, _>("state")?)?,
-                    objective: row.try_get("objective")?,
-                    workstream_id: Some(workstream_id.clone()),
-                });
+                newest.push(open_task_from_row(&row)?);
             }
             Ok(WorkstreamTasks { counts, newest })
         })

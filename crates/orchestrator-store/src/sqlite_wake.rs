@@ -20,8 +20,8 @@ use std::io;
 use orchestrator_core::supervision::{
     wake_record_id, MonitoringMode, WakeUsage, DAY_MS, HOUR_MS, MAX_BATCH,
 };
-use sqlx::sqlite::SqliteRow;
-use sqlx::{Row, SqliteConnection};
+use sqlx::sqlite::{Sqlite, SqliteRow};
+use sqlx::{Executor, Row, SqliteConnection};
 
 use crate::sqlite_conversations::corrupt;
 use crate::{SqliteStore, StoreError};
@@ -43,6 +43,8 @@ pub enum WakeKind {
     ScoutReportReady,
     /// The default agent failed wake turns in a row. A notice only, it never starts a turn.
     AgentFailing,
+    /// A task's agent exited with changes ready for review. A wake turn reports it.
+    CandidateReady,
 }
 
 impl WakeKind {
@@ -57,6 +59,7 @@ impl WakeKind {
             Self::WorkCheck => "work_check",
             Self::ScoutReportReady => "scout_report_ready",
             Self::AgentFailing => "agent_failing",
+            Self::CandidateReady => "candidate_ready",
         }
     }
 
@@ -71,6 +74,7 @@ impl WakeKind {
             "work_check" => Some(Self::WorkCheck),
             "scout_report_ready" => Some(Self::ScoutReportReady),
             "agent_failing" => Some(Self::AgentFailing),
+            "candidate_ready" => Some(Self::CandidateReady),
             _ => None,
         }
     }
@@ -81,7 +85,11 @@ impl WakeKind {
     pub const fn needs_model(self) -> bool {
         matches!(
             self,
-            Self::TaskFailed | Self::DaemonStart | Self::WorkCheck | Self::ScoutReportReady
+            Self::TaskFailed
+                | Self::DaemonStart
+                | Self::WorkCheck
+                | Self::ScoutReportReady
+                | Self::CandidateReady
         )
     }
 }
@@ -125,6 +133,8 @@ impl WakeState {
 pub enum WakeOutcome {
     Replied,
     Quiet,
+    /// The wake turn ended without an answer the user can read. The user is told.
+    Unanswered,
 }
 
 impl WakeOutcome {
@@ -132,6 +142,7 @@ impl WakeOutcome {
         match self {
             Self::Replied => "replied",
             Self::Quiet => "quiet",
+            Self::Unanswered => "unanswered",
         }
     }
 
@@ -139,6 +150,7 @@ impl WakeOutcome {
         match value {
             "replied" => Some(Self::Replied),
             "quiet" => Some(Self::Quiet),
+            "unanswered" => Some(Self::Unanswered),
             _ => None,
         }
     }
@@ -317,6 +329,38 @@ async fn load_wake(connection: &mut SqliteConnection, id: &str) -> Result<WakeRe
     .fetch_one(connection)
     .await?;
     decode_wake(row)
+}
+
+/// Ends the running records whose `column` equals `key`, one way. Returns how many changed.
+/// Every settle is one UPDATE whose only edge is `running`, so batch and record settles share it.
+async fn settle_running<'c, E>(
+    executor: E,
+    settle: Settle,
+    column: &str,
+    key: &str,
+) -> Result<u64, StoreError>
+where
+    E: Executor<'c, Database = Sqlite>,
+{
+    let set = match settle {
+        Settle::Handled(_) => "state = 'handled', outcome = ?, updated_at = CURRENT_TIMESTAMP",
+        Settle::Failed => "state = 'failed', updated_at = CURRENT_TIMESTAMP",
+        Settle::Requeue { .. } => {
+            "state = 'pending', batch_id = NULL, turn_id = NULL, \
+             attempts = MIN(attempts + ?, 2), updated_at = CURRENT_TIMESTAMP"
+        }
+        Settle::Skipped(_) => "state = 'skipped', skip_reason = ?, updated_at = CURRENT_TIMESTAMP",
+    };
+    // Only fixed fragments are interpolated; the key and the outcome, reason or count are bound.
+    let sql = format!("UPDATE wake_records SET {set} WHERE {column} = ? AND state = 'running'");
+    let query = sqlx::query(sqlx::AssertSqlSafe(sql));
+    let query = match settle {
+        Settle::Handled(outcome) => query.bind(outcome.as_str()),
+        Settle::Failed => query,
+        Settle::Requeue { count_attempt } => query.bind(i64::from(count_attempt)),
+        Settle::Skipped(reason) => query.bind(reason.as_str()),
+    };
+    Ok(query.bind(key).execute(executor).await?.rows_affected())
 }
 
 async fn load_batch(
@@ -541,30 +585,52 @@ impl SqliteStore {
     pub fn settle_wake_batch(&self, batch_id: &str, settle: Settle) -> Result<usize, StoreError> {
         let batch_id = batch_id.to_owned();
         self.call(move |pool| async move {
-            let query = match settle {
-                Settle::Handled(outcome) => sqlx::query(
-                    "UPDATE wake_records SET state = 'handled', outcome = ?, \
-                     updated_at = CURRENT_TIMESTAMP WHERE batch_id = ? AND state = 'running'",
-                )
-                .bind(outcome.as_str()),
-                Settle::Failed => sqlx::query(
-                    "UPDATE wake_records SET state = 'failed', \
-                     updated_at = CURRENT_TIMESTAMP WHERE batch_id = ? AND state = 'running'",
-                ),
-                Settle::Requeue { count_attempt } => sqlx::query(
-                    "UPDATE wake_records SET state = 'pending', batch_id = NULL, turn_id = NULL, \
-                     attempts = MIN(attempts + ?, 2), updated_at = CURRENT_TIMESTAMP \
-                     WHERE batch_id = ? AND state = 'running'",
-                )
-                .bind(i64::from(count_attempt)),
-                Settle::Skipped(reason) => sqlx::query(
-                    "UPDATE wake_records SET state = 'skipped', skip_reason = ?, \
-                     updated_at = CURRENT_TIMESTAMP WHERE batch_id = ? AND state = 'running'",
-                )
-                .bind(reason.as_str()),
-            };
-            let changed = query.bind(&batch_id).execute(&pool).await?.rows_affected();
+            let changed = settle_running(&pool, settle, "batch_id", &batch_id).await?;
             Ok(usize::try_from(changed).unwrap_or(usize::MAX))
+        })
+    }
+
+    /// Ends the running records `ids` one way, in one transaction. A record that is not running
+    /// changes nothing. Returns how many records changed.
+    pub fn settle_wake_records(&self, ids: &[String], settle: Settle) -> Result<usize, StoreError> {
+        let ids = ids.to_vec();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let mut changed = 0_u64;
+            for id in &ids {
+                changed += settle_running(&mut *transaction, settle, "id", id).await?;
+            }
+            transaction.commit().await?;
+            Ok(usize::try_from(changed).unwrap_or(usize::MAX))
+        })
+    }
+
+    /// Fails the running records `ids` and gives them `notice`, in one transaction. A failed turn
+    /// is the only time a notice changes, so the notice says why the turn failed. A record that
+    /// is not running changes nothing. Returns how many records changed.
+    pub fn fail_wake_records_with_notice(
+        &self,
+        ids: &[String],
+        notice: &str,
+    ) -> Result<usize, StoreError> {
+        let ids = ids.to_vec();
+        let notice = notice.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let mut failed = 0_u64;
+            for id in &ids {
+                failed += sqlx::query(
+                    "UPDATE wake_records SET state = 'failed', notice = ?, \
+                     updated_at = CURRENT_TIMESTAMP WHERE id = ? AND state = 'running'",
+                )
+                .bind(&notice)
+                .bind(id)
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected();
+            }
+            transaction.commit().await?;
+            Ok(usize::try_from(failed).unwrap_or(usize::MAX))
         })
     }
 
@@ -719,12 +785,14 @@ impl SqliteStore {
     }
 
     /// Unseen count per scope: `seen = 0` and the state is noticed, skipped or failed, or
-    /// handled with a reply the mode wanted announced. Scopes with none are left out.
+    /// handled with a reply the mode wanted announced, or handled with an unanswered turn. A
+    /// quiet outcome is never unseen. Scopes with none are left out.
     pub fn unseen_wake_counts(&self) -> Result<Vec<(String, u32)>, StoreError> {
         self.call(|pool| async move {
             let rows: Vec<(String, i64)> = sqlx::query_as(
                 "SELECT scope, COUNT(*) FROM wake_records WHERE seen = 0 AND \
                  (state IN ('noticed', 'skipped', 'failed') \
+                  OR (state = 'handled' AND outcome = 'unanswered') \
                   OR (state = 'handled' AND outcome = 'replied' AND notify_reply = 1)) \
                  GROUP BY scope ORDER BY scope",
             )
@@ -1566,6 +1634,203 @@ mod tests {
         );
         assert_eq!(store.ack_wake_records(GLOBAL).unwrap(), 3);
         assert!(store.unseen_wake_counts().unwrap().is_empty());
+    }
+
+    /// Each record of the global scope with its state, oldest first.
+    fn states(store: &SqliteStore) -> Vec<(String, WakeState)> {
+        store
+            .wake_records_page(GLOBAL, 10)
+            .unwrap()
+            .0
+            .into_iter()
+            .map(|record| (record.id, record.state))
+            .collect()
+    }
+
+    #[test]
+    fn settle_wake_records_changes_only_the_named_running_records() {
+        let (_directory, store) = open();
+        let a = pending(&store, "failed:t1:1");
+        let b = pending(&store, "failed:t1:2");
+        let c = pending(&store, "failed:t1:3");
+        claim(&store, &[a.id.clone(), b.id.clone()], "batch-1", 1_000);
+        // a is running and named; b is running but not named; c is named but pending.
+        let changed = store
+            .settle_wake_records(
+                &[a.id.clone(), c.id.clone()],
+                Settle::Handled(WakeOutcome::Replied),
+            )
+            .unwrap();
+        assert_eq!(changed, 1);
+        assert_eq!(
+            states(&store),
+            vec![
+                (a.id.clone(), WakeState::Handled),
+                (b.id.clone(), WakeState::Running),
+                (c.id.clone(), WakeState::Pending),
+            ]
+        );
+        // A second settle of the same ids finds nothing running.
+        assert_eq!(
+            store
+                .settle_wake_records(&[a.id.clone(), b.id.clone()], Settle::Failed)
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            states(&store)[..2],
+            [
+                (a.id.clone(), WakeState::Handled),
+                (b.id.clone(), WakeState::Failed),
+            ]
+        );
+    }
+
+    #[test]
+    fn fail_wake_records_with_notice_rewrites_the_notice() {
+        let (_directory, store) = open();
+        let a = pending(&store, "failed:t1:1");
+        let b = pending(&store, "failed:t1:2");
+        let c = pending(&store, "failed:t1:3");
+        claim(&store, &[a.id.clone(), b.id.clone()], "batch-1", 1_000);
+        let reason = "The wake turn failed: the agent timed out.";
+        assert_eq!(
+            store
+                .fail_wake_records_with_notice(&[a.id.clone(), c.id.clone()], reason)
+                .unwrap(),
+            1
+        );
+        let (records, _) = store.wake_records_page(GLOBAL, 10).unwrap();
+        let [first, second, third] = &records[..] else {
+            panic!("three records expected");
+        };
+        assert_eq!(
+            (first.state, first.notice.as_str()),
+            (WakeState::Failed, reason)
+        );
+        // The running record that was not named keeps its state and notice.
+        assert_eq!(
+            (second.state, second.notice.as_str()),
+            (WakeState::Running, "Task task-1 failed.")
+        );
+        // A pending record is not running, so it keeps its notice, and the database refuses the
+        // rewrite on its own.
+        assert_eq!(
+            (third.state, third.notice.as_str()),
+            (WakeState::Pending, "Task task-1 failed.")
+        );
+        assert!(execute(
+            &store,
+            "UPDATE wake_records SET notice = 'rewritten' WHERE id = ?",
+            &[c.id.as_str()]
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn unseen_wake_counts_include_unanswered_outcomes() {
+        let (_directory, store) = open();
+        let unanswered = pending(&store, "failed:t1:1");
+        let quiet = pending(&store, "failed:t1:2");
+        claim(&store, std::slice::from_ref(&unanswered.id), "b1", 1_000);
+        store
+            .settle_wake_batch("b1", Settle::Handled(WakeOutcome::Unanswered))
+            .unwrap();
+        claim(&store, std::slice::from_ref(&quiet.id), "b2", 2_000);
+        store
+            .settle_wake_batch("b2", Settle::Handled(WakeOutcome::Quiet))
+            .unwrap();
+        // The unanswered turn is unseen; the quiet one is not.
+        assert_eq!(
+            store.unseen_wake_counts().unwrap(),
+            vec![(GLOBAL.to_owned(), 1)]
+        );
+        assert_eq!(store.ack_wake_records(GLOBAL).unwrap(), 2);
+        assert!(store.unseen_wake_counts().unwrap().is_empty());
+    }
+
+    #[test]
+    fn candidate_ready_migration_keeps_records_and_accepts_the_new_kind_and_outcome() {
+        use sqlx::migrate::Migrator;
+        use std::borrow::Cow;
+
+        static MIGRATIONS: Migrator = sqlx::migrate!("./migrations");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async {
+            let pool = sqlx::sqlite::SqlitePoolOptions::new()
+                .max_connections(1)
+                .connect("sqlite::memory:")
+                .await
+                .unwrap();
+            let before = Migrator {
+                migrations: Cow::Owned(
+                    MIGRATIONS
+                        .iter()
+                        .filter(|m| m.version < 60)
+                        .cloned()
+                        .collect(),
+                ),
+                ..Migrator::DEFAULT
+            };
+            before.run(&pool).await.unwrap();
+            sqlx::raw_sql(
+                "INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice,
+                    needs_model, state, outcome, skip_reason, notify_reply)
+                 VALUES ('replied', 'conversation:global', 'task_failed', 't', 'failed:t:1',
+                    'Failed.', 1, 'handled', 'replied', NULL, 1),
+                    ('skipped', 'conversation:global', 'task_failed', 't', 'failed:t:2',
+                    'Failed.', 1, 'skipped', NULL, 'mode_off', 0)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            MIGRATIONS.run(&pool).await.unwrap();
+
+            let kept: String = sqlx::query_scalar(
+                "SELECT outcome || ':' || notice FROM wake_records WHERE id = 'replied'",
+            )
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+            assert_eq!(kept, "replied:Failed.");
+            sqlx::raw_sql(
+                "INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice,
+                    needs_model, state, outcome, notify_reply)
+                 VALUES ('ready', 'conversation:global', 'candidate_ready', 't', 'candidate:t:1',
+                    'Ready.', 1, 'pending', NULL, 0),
+                    ('unanswered', 'conversation:global', 'task_failed', 't', 'failed:t:3',
+                    'Failed.', 1, 'handled', 'unanswered', 0),
+                    ('running', 'conversation:global', 'task_failed', 't', 'failed:t:4',
+                    'Failed.', 1, 'running', NULL, 0)",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            // A running turn that fails may say why; nothing else may change a notice.
+            sqlx::query(
+                "UPDATE wake_records SET state = 'failed', notice = 'Timed out.' WHERE id = 'running'",
+            )
+            .execute(&pool)
+            .await
+            .unwrap();
+            for statement in [
+                "UPDATE wake_records SET notice = 'changed' WHERE id = 'skipped'",
+                "UPDATE wake_records SET notice = 'changed' WHERE id = 'replied'",
+                "INSERT INTO wake_records (id, scope, event_kind, subject, dedupe_key, notice,
+                    needs_model, state, outcome, notify_reply)
+                 VALUES ('bogus', 'conversation:global', 'bogus', 't', 'bogus:1', 'Bogus.', 0,
+                    'handled', 'maybe', 0)",
+            ] {
+                assert!(
+                    sqlx::query(statement).execute(&pool).await.is_err(),
+                    "{statement}"
+                );
+            }
+            pool.close().await;
+        });
     }
 
     #[test]

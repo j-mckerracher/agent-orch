@@ -679,6 +679,7 @@ function Conversation({
           onRetry={() => setNonce((value) => value + 1)}
           afterTurn={afterTurn}
           leading={leading}
+          taskRoute={taskRoute}
         />
       </div>
 
@@ -816,6 +817,7 @@ function TranscriptBody({
   onRetry,
   afterTurn,
   leading,
+  taskRoute,
 }: {
   transcript: SurfaceState<ConversationTranscript>;
   label: string;
@@ -825,6 +827,8 @@ function TranscriptBody({
   afterTurn?: (turnId: string) => ReactNode;
   /** Rendered before the entries, under the truncation note (DPES-1105). */
   leading?: ReactNode;
+  /** Links a task event's notice to its task page (DPES-1106). */
+  taskRoute: (taskId: string) => Route | null;
 }) {
   if (transcript.status === "loading") return <p role="status">Loading conversation…</p>;
   const sim = simulated.map((entry) => (
@@ -889,7 +893,7 @@ function TranscriptBody({
       {truncated && <p className="ws-small">Older messages are not shown: the log was cut off.</p>}
       {proposalsMore && <p className="ws-small">Older proposals are not shown.</p>}
       {leading}
-      <WakeRecords records={placement.before} />
+      <WakeRecords records={placement.before} taskRoute={taskRoute} />
       {entries.map((entry, index) => (
         <Fragment key={entry.id}>
           <EntryBubble
@@ -899,7 +903,7 @@ function TranscriptBody({
             runtime={latestTurn && entry.turnId === latestTurn.id ? latestTurn.runtime : undefined}
           />
           {afterTurn && entry.turnId !== undefined && entries[index + 1]?.turnId !== entry.turnId && afterTurn(entry.turnId)}
-          <WakeRecords records={placement.after.get(entry.id) ?? []} />
+          <WakeRecords records={placement.after.get(entry.id) ?? []} taskRoute={taskRoute} />
         </Fragment>
       ))}
       {sim}

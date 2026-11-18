@@ -79,8 +79,20 @@ pub(crate) struct HistoryTurn {
 }
 
 /// The events a wake turn reports: the daemon's own notice lines, never agent text.
+#[derive(Clone)]
 pub(crate) struct WakeBrief {
     pub events: Vec<String>,
+    /// Every claimed record is a heartbeat (a work check or a daemon start), so the model is
+    /// offered the quiet token. A batch with an outcome is always answered in words.
+    pub may_be_quiet: bool,
+}
+
+/// The one block of agent text a turn is handed, inside its delimiters: a scout report's relay
+/// or a candidate's summary.
+pub(crate) struct Evidence {
+    pub block: String,
+    /// A scout report. The turn is marked as one that read a report, so a proposal says so.
+    pub is_report: bool,
 }
 
 impl WakeBrief {
@@ -692,7 +704,7 @@ impl ConversationService {
         target: &ConversationTarget,
         turn_id: &str,
         brief: &WakeBrief,
-        relay: Option<&str>,
+        evidence: Option<&Evidence>,
     ) -> Result<BegunTurn, ConversationError> {
         let text = brief.opening_text();
         self.start_as(
@@ -703,7 +715,7 @@ impl ConversationService {
             PermissionLevel::Restricted,
             true,
             Some(brief),
-            relay,
+            evidence,
         )
     }
 
@@ -722,6 +734,10 @@ impl ConversationService {
         block: &str,
         negotiated: bool,
     ) -> Result<BegunTurn, ConversationError> {
+        let evidence = Evidence {
+            block: block.to_owned(),
+            is_report: true,
+        };
         self.start_as(
             target,
             turn_id,
@@ -730,14 +746,14 @@ impl ConversationService {
             PermissionLevel::Restricted,
             negotiated,
             None,
-            Some(block),
+            Some(&evidence),
         )
     }
 
     /// The one start path. A `wake` brief makes the turn a wake turn and forces the level
-    /// to Restricted whatever the caller passed, so no other level is reachable. A `relay`
-    /// block (a scout report, already delimited) does the same and drops the caller's model
-    /// choice, so a turn that read a report always runs at the least authority.
+    /// to Restricted whatever the caller passed, so no other level is reachable. Evidence (a
+    /// delimited block of agent text) does the same and drops the caller's model choice, so a
+    /// turn that read agent text always runs at the least authority.
     #[allow(clippy::too_many_arguments)]
     fn start_as(
         &self,
@@ -748,14 +764,14 @@ impl ConversationService {
         level: PermissionLevel,
         negotiated: bool,
         wake: Option<&WakeBrief>,
-        relay: Option<&str>,
+        evidence: Option<&Evidence>,
     ) -> Result<BegunTurn, ConversationError> {
-        let level = if wake.is_some() || relay.is_some() {
+        let level = if wake.is_some() || evidence.is_some() {
             PermissionLevel::Restricted
         } else {
             level
         };
-        let choice = if relay.is_some() { None } else { choice };
+        let choice = if evidence.is_some() { None } else { choice };
         let trigger = wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake);
         // Project coordinators gain replies, not the Global/workstream action authority.
         let actions =
@@ -788,14 +804,17 @@ impl ConversationService {
             return Ok(begun);
         }
         // The mark comes before the launch, so a proposal of this turn always says it read a
-        // report. A turn that cannot be marked never launches.
-        let unmarked = relay.is_some() && store.mark_turn_read_report(turn_id).is_err();
+        // report. A turn that cannot be marked never launches. A candidate's summary is not a
+        // report, so its turn is not marked.
+        let reads_report = evidence.is_some_and(|evidence| evidence.is_report);
+        let unmarked = reads_report && store.mark_turn_read_report(turn_id).is_err();
+        let block = evidence.map(|evidence| evidence.block.as_str());
         let failure = match permission {
             _ if unmarked => Some(RuntimeFailure::Failed),
             Err(failure) => Some(failure),
             Ok(permission) => self
                 .launch(
-                    &identity, choice, level, target, turn_id, text, actions, wake, relay,
+                    &identity, choice, level, target, turn_id, text, actions, wake, block,
                 )
                 .or_else(|| {
                     permission.and_then(|permission| self.record_launched(turn_id, permission))
@@ -880,9 +899,7 @@ impl ConversationService {
                 }
             }),
             actions,
-            wake: wake.map(|brief| WakeBrief {
-                events: brief.events.clone(),
-            }),
+            wake: wake.cloned(),
             mcp: self.mcp_view(level, wake.is_some(), relay.is_some()),
         };
         let sink = ReplySink {

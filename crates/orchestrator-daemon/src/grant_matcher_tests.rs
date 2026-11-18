@@ -438,6 +438,8 @@ fn a_grant_stops_when_its_token_budget_is_spent_and_cancels_nothing() {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

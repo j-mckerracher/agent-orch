@@ -8,6 +8,8 @@
 
 use std::collections::BTreeMap;
 
+use orchestrator_core::contract::{TaskContract, TaskKind};
+use orchestrator_core::records::Project;
 use orchestrator_core::task::{AttemptState, SessionState, TaskState};
 use sqlx::Row;
 
@@ -35,7 +37,7 @@ pub struct RunningAttempt {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScopeLoad {
     pub scope: String,
-    /// Tasks in Running or Verifying. Global counts every such task.
+    /// Tasks in Running. Global counts every such task.
     pub running_tasks: u32,
     /// A workstream that is a sub-orchestrator: it has a running task, a pending action
     /// proposal or a pending wake record. Always false for Global.
@@ -45,12 +47,39 @@ pub struct ScopeLoad {
     pub work_units: u32,
 }
 
-/// What a wake notice may say about a task.
+/// What a wake notice may say about a task. The text fields are agent output or a failure
+/// reason; the daemon redacts them before any prompt sees them.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TaskWakeFacts {
     pub scope: String,
     /// The objective on one line, cut to 80 bytes.
     pub objective: String,
+    /// The latest attempt's failure reason, cut to 160 bytes. `None` when there is none.
+    pub failure_reason: Option<String>,
+    /// Files the latest attempt changed. `None` until recorded.
+    pub changed_files: Option<u32>,
+    /// The latest attempt's summary, cut to 4 KiB. `None` until recorded.
+    pub summary: Option<String>,
+    /// Whether the task leaves a report rather than a change. This is the executor's test for
+    /// storing a report: an Investigate task, or a task of a project that runs in place.
+    pub report_only: bool,
+}
+
+/// Longest failure reason a wake fact carries, in bytes.
+const FAILURE_REASON_BYTES: usize = 160;
+/// Longest summary a wake fact carries, in bytes.
+const SUMMARY_BYTES: usize = 4096;
+
+/// `text` cut to at most `max` bytes, on a character boundary.
+fn cut_bytes(mut text: String, max: usize) -> String {
+    if text.len() > max {
+        let mut end = max;
+        while !text.is_char_boundary(end) {
+            end -= 1;
+        }
+        text.truncate(end);
+    }
+    text
 }
 
 fn encode<T: serde::Serialize>(value: &T) -> Result<String, StoreError> {
@@ -127,11 +156,12 @@ impl SqliteStore {
     }
 
     /// The work each scope holds, sorted by scope. A scope with no work is left out, so a
-    /// scope absent from the answer arms no check. Workstream scopes count only their own
-    /// running tasks. Global counts every running task, and one more unit for each workstream
-    /// that is an active sub-orchestrator.
+    /// scope absent from the answer arms no check. Only a Running task is work: a task in
+    /// Verifying waits for the user's review and must not keep the check timer going.
+    /// Workstream scopes count only their own running tasks. Global counts every running task,
+    /// and one more unit for each workstream that is an active sub-orchestrator.
     pub fn supervision_load(&self) -> Result<Vec<ScopeLoad>, StoreError> {
-        let running_states = [encode(&TaskState::Running)?, encode(&TaskState::Verifying)?];
+        let running = encode(&TaskState::Running)?;
         self.call(move |pool| async move {
             // scope -> (running tasks, has other activity)
             let mut scopes: BTreeMap<String, (u32, bool)> = BTreeMap::new();
@@ -139,10 +169,9 @@ impl SqliteStore {
             let rows: Vec<(Option<String>, i64)> = sqlx::query_as(
                 "SELECT ws.workstream_id, COUNT(*) FROM tasks t \
                  LEFT JOIN workstream_tasks ws ON ws.task_id = t.id \
-                 WHERE t.state IN (?, ?) GROUP BY ws.workstream_id",
+                 WHERE t.state = ? GROUP BY ws.workstream_id",
             )
-            .bind(&running_states[0])
-            .bind(&running_states[1])
+            .bind(&running)
             .fetch_all(&pool)
             .await?;
             for (workstream_id, count) in rows {
@@ -194,15 +223,22 @@ impl SqliteStore {
         })
     }
 
-    /// The scope and one-line objective of a task, for a wake notice. `None` for an unknown
-    /// task. The daemon applies its own sanitizer on top, so no path reaches a prompt.
+    /// The scope, one-line objective and latest-attempt facts of a task, for a wake notice. `None`
+    /// for an unknown task. The daemon applies its own sanitizer on top, so no path reaches a
+    /// prompt.
     pub fn task_wake_facts(&self, task_id: &str) -> Result<Option<TaskWakeFacts>, StoreError> {
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
             let row = sqlx::query(
                 "SELECT ws.workstream_id, \
-                        COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective \
+                        COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective, \
+                        t.contract_json, p.id AS project_id, p.root_path AS project_root, \
+                        p.settings AS project_settings, \
+                        latest.failure_reason, latest.changed_files, latest.summary \
                  FROM tasks t LEFT JOIN workstream_tasks ws ON ws.task_id = t.id \
+                 LEFT JOIN projects p ON p.id = t.project_id \
+                 LEFT JOIN attempts latest ON latest.task_id = t.id \
+                 AND latest.attempt_number = (SELECT MAX(a.attempt_number) FROM attempts a WHERE a.task_id = t.id) \
                  WHERE t.id = ?",
             )
             .bind(&task_id)
@@ -210,9 +246,38 @@ impl SqliteStore {
             .await?;
             row.map(|row| {
                 let objective: String = row.try_get("objective")?;
+                let changed_files = row
+                    .try_get::<Option<i64>, _>("changed_files")?
+                    .map(|count| {
+                        u32::try_from(count).map_err(|_| StoreError::Corrupt {
+                            task_id: task_id.clone(),
+                            detail: "changed file count exceeds u32".to_owned(),
+                        })
+                    })
+                    .transpose()?;
+                let contract: TaskContract =
+                    serde_json::from_str(&row.try_get::<String, _>("contract_json")?)?;
+                // A task whose project row is missing is not in place.
+                let in_place = match row.try_get::<Option<String>, _>("project_settings")? {
+                    Some(settings) => Project {
+                        id: row.try_get("project_id")?,
+                        root_path: row.try_get("project_root")?,
+                        settings: serde_json::from_str(&settings)?,
+                    }
+                    .is_in_place(),
+                    None => false,
+                };
                 Ok::<_, StoreError>(TaskWakeFacts {
                     scope: workstream_scope(row.try_get("workstream_id")?),
                     objective: one_line(&objective),
+                    failure_reason: row
+                        .try_get::<Option<String>, _>("failure_reason")?
+                        .map(|reason| cut_bytes(reason, FAILURE_REASON_BYTES)),
+                    changed_files,
+                    summary: row
+                        .try_get::<Option<String>, _>("summary")?
+                        .map(|summary| cut_bytes(summary, SUMMARY_BYTES)),
+                    report_only: contract.kind == TaskKind::Investigate || in_place,
                 })
             })
             .transpose()
@@ -287,6 +352,8 @@ mod tests {
                     attempt_number: 1,
                     state: AttemptState::Pending,
                     failure_reason: None,
+                    summary: None,
+                    changed_files: None,
                 },
             )
             .unwrap();
@@ -354,6 +421,8 @@ mod tests {
                     attempt_number: 1,
                     state: AttemptState::Pending,
                     failure_reason: None,
+                    summary: None,
+                    changed_files: None,
                 },
             )
             .unwrap();
@@ -458,6 +527,169 @@ mod tests {
         assert!(facts.objective.starts_with("fix the thing é"));
         assert!(facts.objective.len() <= 80 && !facts.objective.contains('\n'));
         assert!(store.task_wake_facts("missing").unwrap().is_none());
+    }
+
+    #[test]
+    fn a_verifying_task_is_not_a_work_unit() {
+        let (_directory, store) = open();
+        workstream(&store, "w1");
+        run_task(&store, "t1");
+        store.link_task("w1", "t1", None).unwrap();
+        run_task(&store, "t2");
+        // t2 is ready for the user's review: it is Verifying, not running.
+        store.transition("t2", TaskEvent::CandidateReady).unwrap();
+        let loads = store.supervision_load().unwrap();
+        let by_scope: Vec<(&str, u32, bool, u32)> = loads
+            .iter()
+            .map(|load| {
+                (
+                    load.scope.as_str(),
+                    load.running_tasks,
+                    load.sub_active,
+                    load.work_units,
+                )
+            })
+            .collect();
+        assert_eq!(
+            by_scope,
+            vec![
+                // Global: one running task and one active sub-orchestrator.
+                ("conversation:global", 1, false, 2),
+                ("conversation:workstream:w1", 1, true, 1),
+            ]
+        );
+        // A store whose only task is Verifying has no work, so no check timer runs.
+        let (_other_directory, only_verifying) = open();
+        run_task(&only_verifying, "v");
+        only_verifying
+            .transition("v", TaskEvent::CandidateReady)
+            .unwrap();
+        assert!(only_verifying.supervision_load().unwrap().is_empty());
+    }
+
+    #[test]
+    fn task_facts_carry_the_latest_attempt_within_the_byte_caps() {
+        let (_directory, store) = open();
+        run_task(&store, "t1");
+        // 201 bytes. The 160-byte cut falls inside a two-byte character, so it steps back to 159.
+        store
+            .record_attempt_failure("t1", "t1-a1", &format!("a{}", "é".repeat(100)))
+            .unwrap();
+        store
+            .record_attempt_summary("t1", "t1-a1", Some(&"é".repeat(3000)), Some(4))
+            .unwrap();
+        let facts = store.task_wake_facts("t1").unwrap().unwrap();
+        assert_eq!(facts.failure_reason.map(|reason| reason.len()), Some(159));
+        assert_eq!(facts.summary.map(|summary| summary.len()), Some(4096));
+        assert_eq!(facts.changed_files, Some(4));
+    }
+
+    #[test]
+    fn a_report_only_task_is_flagged_in_its_wake_facts() {
+        let (_directory, store) = open();
+        store
+            .register_project(&Project {
+                id: "home".into(),
+                root_path: "/home/me".into(),
+                settings: serde_json::json!({"in_place": true}),
+            })
+            .unwrap();
+        let create = |id: &str, project: &str, kind: TaskKind, delivery: DeliveryPolicy| {
+            store
+                .create(&TaskContract {
+                    id: id.into(),
+                    project_id: project.into(),
+                    parent_id: None,
+                    objective: id.into(),
+                    kind,
+                    agent: "codex".into(),
+                    dependencies: Vec::new(),
+                    verification: VerificationPolicy::Commands {
+                        commands: vec![vec!["true".into()]],
+                    },
+                    delivery,
+                    autonomy: AutonomyPolicy::WorkspaceWrites,
+                    max_retries: 1,
+                    max_repairs: 1,
+                    model_selection: None,
+                    work_item: None,
+                    permission: Default::default(),
+                })
+                .unwrap();
+        };
+        create(
+            "change",
+            "p",
+            TaskKind::Implement,
+            DeliveryPolicy::LocalReview,
+        );
+        create(
+            "scout",
+            "p",
+            TaskKind::Investigate,
+            DeliveryPolicy::ReportOnly,
+        );
+        create(
+            "home-change",
+            "home",
+            TaskKind::Implement,
+            DeliveryPolicy::LocalReview,
+        );
+        // Only the executor's test counts: a ReportOnly delivery alone leaves no report.
+        create(
+            "delivery-only",
+            "p",
+            TaskKind::Implement,
+            DeliveryPolicy::ReportOnly,
+        );
+        let report_only = |id: &str| store.task_wake_facts(id).unwrap().unwrap().report_only;
+        assert!(!report_only("change"));
+        assert!(report_only("scout"));
+        assert!(report_only("home-change"));
+        assert!(!report_only("delivery-only"));
+    }
+
+    #[test]
+    fn open_tasks_carry_the_latest_attempt_time_in_state_and_report_facts() {
+        let (_directory, store) = open();
+        run_task(&store, "t1");
+        store
+            .record_attempt_failure("t1", "t1-a1", "The agent exited with code 2.")
+            .unwrap();
+        store
+            .record_attempt_summary("t1", "t1-a1", Some("Partial work."), Some(2))
+            .unwrap();
+        let first = |store: &SqliteStore| {
+            store
+                .task_overview(10)
+                .unwrap()
+                .open
+                .into_iter()
+                .next()
+                .unwrap()
+        };
+        let task = first(&store);
+        assert_eq!(
+            task.failure_reason.as_deref(),
+            Some("The agent exited with code 2.")
+        );
+        assert_eq!(
+            (
+                task.changed_files,
+                task.minutes_in_state,
+                task.report_relayed
+            ),
+            (Some(2), Some(0), None)
+        );
+        // A captured report is not yet relayed until a relay marks it.
+        assert!(store
+            .capture_task_report("t1", "t1-a1", "Findings.", false, "2026-01-01T00:00:00Z")
+            .unwrap());
+        assert_eq!(first(&store).report_relayed, Some(false));
+        assert!(store
+            .mark_task_report_relayed("t1", "2026-01-01T00:00:01Z")
+            .unwrap());
+        assert_eq!(first(&store).report_relayed, Some(true));
     }
 
     #[test]

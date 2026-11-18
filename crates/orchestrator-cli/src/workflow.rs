@@ -417,6 +417,8 @@ pub async fn run_task(
         attempt_number: 1,
         state: AttemptState::Pending,
         failure_reason: None,
+        summary: None,
+        changed_files: None,
     };
     store.add_attempt(&task_id, &attempt).map_err(|error| {
         format!("cannot record attempt {attempt_id} for task {task_id}: {error}")
@@ -2189,6 +2191,8 @@ mod tests {
                     attempt_number: 1,
                     state: AttemptState::Pending,
                     failure_reason: None,
+                    summary: None,
+                    changed_files: None,
                 },
             )
             .unwrap();
@@ -3296,6 +3300,8 @@ mod tests {
                     attempt_number: 1,
                     state: AttemptState::Pending,
                     failure_reason: None,
+                    summary: None,
+                    changed_files: None,
                 },
             )
             .unwrap();

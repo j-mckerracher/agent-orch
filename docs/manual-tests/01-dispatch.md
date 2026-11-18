@@ -72,6 +72,7 @@ How to make the Global agent propose a task: write the action block into `next-r
 **Expected:**
 
 - The card shows "Approved, running" and then a finished state.
+- Under `succeed` the task changes no file, so it ends `Failed`. Its failure reason reads "The agent exited without changing any files." This does not fail the test; the test checks only that approval starts the task.
 - A task for `manual-test-project` is listed on the Agents page with the objective `Add a README line`.
 
 **Screenshot** after steps 2 and 3.

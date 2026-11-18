@@ -1132,6 +1132,8 @@ fn attempts_api(
                     attempt_number: u32::try_from(index).unwrap() + 1,
                     state: AttemptState::Pending,
                     failure_reason: None,
+                    summary: None,
+                    changed_files: None,
                 },
             )
             .unwrap();

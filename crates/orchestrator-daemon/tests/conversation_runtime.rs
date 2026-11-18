@@ -4159,6 +4159,8 @@ fn seed_merge_target(layout: &Layout) {
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .unwrap();

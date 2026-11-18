@@ -3,7 +3,7 @@
 These test cases check four documented behaviors of the Global Orchestrator through the desktop app UI. An AI agent with computer use runs them. A human can run them too.
 
 | # | Behavior | File |
-|---|----------|------|
+| --- | ---------- | ------ |
 | 1 | The Global Orchestrator dispatches agents to do work | [01-dispatch.md](01-dispatch.md) |
 | 2 | The Global Orchestrator wakes to check on its agents | [02-wake.md](02-wake.md) |
 | 3 | The Global Orchestrator starts sub-orchestrators | [03-sub-orchestrators.md](03-sub-orchestrators.md) |
@@ -46,7 +46,7 @@ Each test case has:
 ## Coverage matrix
 
 | Documented behavior | Source | Test cases |
-|---------------------|--------|------------|
+| --------------------- | -------- | ------------ |
 | Dispatch defaults and precedence | `docs/settings.md` "Agent dispatch defaults" | TC-D-01, TC-D-02, TC-D-03 |
 | Task proposal card, approve, reject | `docs/design/orchestrator-actions.md` N1 | TC-D-04, TC-D-05, TC-D-06 |
 | Dependent card order | `actionCardModel.ts` | TC-D-07 |
@@ -59,7 +59,12 @@ Each test case has:
 | Monitoring chip and modes | `docs/design/orchestrator-actions.md` "Wake" | TC-W-01, TC-W-02, TC-W-03 |
 | Wake on failed task | same | TC-W-04 |
 | Notice-only wakes (stalled, delivery waiting) | same | TC-W-05 |
-| Quiet reply | same | TC-W-06 |
+| Quiet reply only folds a work check | `docs/design/orchestrator-actions.md` "Output" | TC-W-06 |
+| Quiet reply does not hide a failure | same | TC-W-17 |
+| Empty change set fails with a reason | same | TC-W-15 |
+| Candidate ready update | `docs/design/orchestrator-actions.md` event table | TC-W-16 |
+| Report relay retried, then a deterministic notice | `docs/design/orchestrator-actions.md` "Output" | TC-W-18 |
+| Open task link on a task notice | `docs/design/orchestrator-actions.md` "What the user sees" | TC-W-15, TC-W-16, TC-W-17 |
 | User turn cancels wake | same | TC-W-07 |
 | Limits and "Monitoring paused: limit reached" | same; `docs/settings.md` "Automatic replies" | TC-W-08 |
 | Three failures pause automatic updates | same | TC-W-09, TC-W-10 |

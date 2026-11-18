@@ -305,6 +305,8 @@ fn fixture() -> (Fixture, Vec<Expected>) {
         attempt_number: 1,
         state: AttemptState::Pending,
         failure_reason: None,
+        summary: None,
+        changed_files: None,
     };
     store.add_attempt("t-running", &attempt).unwrap();
     store
