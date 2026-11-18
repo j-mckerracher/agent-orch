@@ -179,7 +179,7 @@ describe("saved model choice across a remount, live (DPES-1105)", () => {
     });
   });
 
-  it("sends without a choice when the saved provider is no longer launchable, and shows the daemon's reason", async () => {
+  it("blocks sending when the saved provider is no longer launchable, and preserves the choice", async () => {
     window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "claude-code" }));
     const fake = liveDaemon();
     stubAgents(fake, { codex: true, "claude-code": false });
@@ -191,10 +191,12 @@ describe("saved model choice across a remount, live (DPES-1105)", () => {
     await pickTarget(user, /Global orchestrator/);
     expect(screen.getByRole("button", { name: /^Model settings: Claude Code · unavailable/ })).toBeInTheDocument();
     await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "hello");
-    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
-    await waitFor(() => expect(fake.callsTo("conversations.send")).toHaveLength(1));
-    expect(fake.callsTo("conversations.send")[0]!.params).toMatchObject({ text: "hello" });
-    expect(fake.callsTo("conversations.send")[0]!.params).not.toHaveProperty("selection");
+    const send = screen.getByRole("button", { name: "Send message to Global orchestrator" });
+    expect(send).toBeDisabled();
+    expect(screen.getByText(/Your agent choice cannot be used.*claude executable was not found/)).toBeInTheDocument();
+    await user.click(send);
+    expect(fake.callsTo("conversations.send")).toHaveLength(0);
+    expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(JSON.stringify({ agent: "claude-code" }));
   });
 
   it("blocks a saved choice on a daemon without conversation_selection, names the control, and keeps the saved value", async () => {

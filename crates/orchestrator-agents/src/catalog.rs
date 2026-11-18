@@ -33,7 +33,6 @@ use crate::claude_code_adapter::ClaudeCodeAdapter;
 use crate::codex_adapter::CodexAdapter;
 use crate::copilot_adapter::{
     probe_version as probe_copilot_version, CopilotAdapter, COPILOT_AGENT,
-    PINNED_VERSION as COPILOT_PINNED_VERSION,
 };
 use crate::copilot_sign_in::{
     SignInRecord, SignInState, NOT_CHECKED_DETAIL, NOT_SIGNED_IN_DETAIL, NO_SEAT_DETAIL,
@@ -236,7 +235,7 @@ impl AgentCatalog {
         match self.state {
             CatalogState::Available => {}
             CatalogState::Unavailable => {
-                // The adapter's own reason: a missing CLI, an unverified version, or a Copilot account without a seat.
+                // Preserve the adapter's own reason for the refusal.
                 let detail = if self.detail.is_empty() {
                     format!("agent {agent} is not installed")
                 } else {
@@ -1216,13 +1215,7 @@ impl CopilotAdapter {
             );
         };
         match probe_copilot_version(&program, limit).await {
-            Ok(version) if version == COPILOT_PINNED_VERSION => copilot_catalog(sign_in),
-            Ok(version) => AgentCatalog::uniform(
-                COPILOT_AGENT,
-                Some(COPILOT_PROVIDER),
-                CatalogState::Unavailable,
-                &format!("GitHub Copilot CLI {version} is not the verified version {COPILOT_PINNED_VERSION}"),
-            ),
+            Ok(_) => copilot_catalog(sign_in),
             Err(error) => {
                 eprintln!("orchestrator-agents: {COPILOT_AGENT} catalog version probe: {error}");
                 AgentCatalog::uniform(

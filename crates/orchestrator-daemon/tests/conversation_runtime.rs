@@ -70,7 +70,7 @@ fn fake_env(layout: &Layout, extra: &[(&str, &str)]) -> Vec<(String, String)> {
         // the names listed here, so the fake agent's own settings are listed.
         (
             "AGENT_ORCH_ENV_PASSTHROUGH".to_owned(),
-            "FAKE_AGENT_LOG,FAKE_AGENT_PID_FILE,FAKE_AGENT_REPLY,FAKE_AGENT_INPUT_TOKENS"
+            "FAKE_AGENT_LOG,FAKE_AGENT_PID_FILE,FAKE_AGENT_REPLY,FAKE_AGENT_INPUT_TOKENS,FAKE_AGENT_HELP_MODE"
                 .to_owned(),
         ),
     ];
@@ -880,26 +880,22 @@ fn an_unverified_version_with_every_chat_flag_runs_and_is_marked_unverified() {
 }
 
 #[test]
-fn a_pinned_version_is_verified_and_its_help_is_never_read() {
-    // Outcome 1: a verified pin runs with no warning. Its help would refuse (the
-    // flag is missing), so the run proves the help was not read.
+fn a_pinned_version_still_needs_required_flags() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
     let daemon = start(
         &layout,
         &[
             ("AGENT_ORCH_FAKE_VERSION", "0.0.0-fake"),
-            ("AGENT_ORCH_FAKE_HELP_MODE", "missing:--ephemeral"),
+            ("FAKE_AGENT_HELP_MODE", "missing:--ephemeral"),
             ("FAKE_AGENT_LOG", log.to_str().unwrap()),
         ],
     );
     let mut chat = Chat::open(&layout);
     let sent = chat.send(&global(), "hi", "m-1");
-    let page = chat.settled(&global());
-    assert_eq!(sent["turn"]["state"], "running", "{sent}");
-    assert_eq!(page["turn"]["state"], "completed", "{page}");
-    assert_eq!(page["turn"]["verified"], true, "{page}");
-    assert_eq!(launch_lines(&log).len(), 1);
+    assert_eq!(sent["turn"]["state"], "failed", "{sent}");
+    assert_eq!(sent["turn"]["error_code"], "version_mismatch", "{sent}");
+    assert!(!log.exists());
     stop(&layout, daemon, chat);
 }
 
@@ -913,7 +909,7 @@ fn an_unverified_version_missing_a_chat_flag_is_refused_and_names_the_flag() {
         &layout,
         &[
             ("AGENT_ORCH_FAKE_VERSION", "0.169.0"),
-            ("AGENT_ORCH_FAKE_HELP_MODE", "missing:--ephemeral"),
+            ("FAKE_AGENT_HELP_MODE", "missing:--ephemeral"),
             ("FAKE_AGENT_LOG", log.to_str().unwrap()),
         ],
     );
@@ -932,25 +928,25 @@ fn an_unverified_version_missing_a_chat_flag_is_refused_and_names_the_flag() {
 }
 
 #[test]
-fn an_unreadable_help_never_refuses_a_version() {
-    // A help text that shows no flags, or cannot be read, is not a refusal: the
-    // turn runs with the warning (DPES-1106).
+fn an_unreadable_help_refuses_the_turn_without_launching() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
     let daemon = start(
         &layout,
         &[
             ("AGENT_ORCH_FAKE_VERSION", "0.169.0"),
-            ("AGENT_ORCH_FAKE_HELP_MODE", "unreadable"),
+            ("FAKE_AGENT_HELP_MODE", "unreadable"),
             ("FAKE_AGENT_LOG", log.to_str().unwrap()),
         ],
     );
     let mut chat = Chat::open(&layout);
     let sent = chat.send(&global(), "hi", "m-1");
-    let page = chat.settled(&global());
-    assert_eq!(page["turn"]["state"], "completed", "{page}");
-    assert_eq!(page["turn"]["verified"], false, "{page}");
-    assert_eq!(launch_lines(&log).len(), 1, "{sent}");
+    assert_eq!(sent["turn"]["state"], "failed", "{sent}");
+    assert_eq!(
+        sent["turn"]["error_code"], "runtime_compatibility_unconfirmed",
+        "{sent}"
+    );
+    assert!(!log.exists());
     stop(&layout, daemon, chat);
 }
 
@@ -972,13 +968,12 @@ fn an_unverified_turn_whose_output_cannot_be_read_fails_and_never_goes_empty() {
 #[test]
 fn a_pin_marks_an_otherwise_unknown_version_verified() {
     // Outcome 4: AGENT_ORCH_CONVERSATION_PINS is the operator's verification. The
-    // version is verified, so its help is not read and no warning is shown.
+    // verified label is independent of the compatibility result.
     let layout = Layout::new();
     let daemon = start(
         &layout,
         &[
             ("AGENT_ORCH_FAKE_VERSION", "0.169.0"),
-            ("AGENT_ORCH_FAKE_HELP_MODE", "missing:--ephemeral"),
             ("AGENT_ORCH_CONVERSATION_PINS", "codex@0.169.0"),
         ],
     );
@@ -1360,7 +1355,7 @@ const COPILOT_COMPLETED: &str = concat!(
 #[cfg(unix)]
 const COPILOT_NOT_SIGNED_IN: &str = "{\"type\":\"session.error\",\"data\":{\"errorType\":\"auth\",\"message\":\"Not logged in. Please run copilot login.\"}}\n{\"type\":\"result\",\"exitCode\":1}\n";
 
-/// A fake `copilot`. `--version` prints the pinned version. Each run appends
+/// A fake `copilot` at a version that is not pinned. Each run appends
 /// its working directory and arguments to `copilot.log`, prints `stream` and
 /// exits with `code`. Returns the program and the log.
 #[cfg(unix)]
@@ -1372,7 +1367,8 @@ fn fake_copilot(layout: &Layout, stream: &str, code: i32) -> (PathBuf, PathBuf) 
     let program = layout.data.join("fake-copilot");
     let body = format!(
         "#!/bin/sh\n\
-         if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\n\
+         if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.113.'\n  exit 0\nfi\n\
+         if [ \"$1\" = \"--help\" ]; then\n  printf '%s\\n' --prompt --output-format --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir --usage-output-file -C --allow-tool --deny-tool --allow-all --assisted-approval --model --max-ai-credits\n  exit 0\nfi\n\
          printf 'cwd=%s args=%s\\n' \"$PWD\" \"$(printf '%s ' \"$@\" | /usr/bin/tr '\\n' ' ')\" >> '{log}'\n\
          /bin/cat '{stream}'\n\
          exit {code}\n",
@@ -1410,7 +1406,7 @@ fn each_copilot_level_launches_with_its_flags_and_records_it() {
         assert_eq!(page["turn"]["state"], "completed", "{page}");
         assert_eq!(page["turn"]["permission_profile"], profile, "{page}");
         assert_eq!(page["turn"]["runtime"]["name"], "github-copilot", "{page}");
-        assert_eq!(page["turn"]["runtime"]["version"], "1.0.109", "{page}");
+        assert_eq!(page["turn"]["runtime"]["version"], "1.0.113", "{page}");
         assert_eq!(reply(&page), "OK", "{page}");
     }
 
@@ -3977,7 +3973,7 @@ fn a_help_that_does_not_list_mcp_config_runs_the_turn_without_mcp() {
     let daemon = mcp_daemon(
         &layout,
         &log,
-        &[("AGENT_ORCH_FAKE_HELP_MODE", "missing:--mcp-config")],
+        &[("FAKE_AGENT_HELP_MODE", "missing:--mcp-config")],
     );
     let mut chat = Chat::open(&layout);
     mcp_enable(&mut chat);
@@ -3989,20 +3985,18 @@ fn a_help_that_does_not_list_mcp_config_runs_the_turn_without_mcp() {
 }
 
 #[test]
-fn an_unreadable_help_runs_the_turn_without_mcp() {
+fn an_unreadable_help_blocks_even_when_mcp_is_optional() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
-    let daemon = mcp_daemon(
-        &layout,
-        &log,
-        &[("AGENT_ORCH_FAKE_HELP_MODE", "unreadable")],
-    );
+    let daemon = mcp_daemon(&layout, &log, &[("FAKE_AGENT_HELP_MODE", "unreadable")]);
     let mut chat = Chat::open(&layout);
     mcp_enable(&mut chat);
-    mcp_turn(&mut chat, "hi", "m-1", None);
-    let lines = launch_lines(&log);
-    assert_eq!(lines.len(), 1, "{lines:?}");
-    mcp_has_no_mcp_flag(&lines[0]);
+    let sent = chat.send(&global(), "hi", "m-1");
+    assert_eq!(
+        sent["turn"]["error_code"], "runtime_compatibility_unconfirmed",
+        "{sent}"
+    );
+    assert!(!log.exists());
     stop(&layout, daemon, chat);
 }
 

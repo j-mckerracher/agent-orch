@@ -326,6 +326,7 @@ export interface AgentCapabilityEntry {
   } | null;
   /** DPES-1105: GitHub Copilot only. Its session sign-in record. */
   sign_in?: CopilotSignInRecord | null;
+  chat_compatibility?: Partial<Record<PermissionLevelWire, { retryable: boolean; reason: string }>>;
 }
 
 export interface ProposalTaskSummary {

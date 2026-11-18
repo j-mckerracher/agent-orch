@@ -52,7 +52,14 @@ type Check = { key: string; result: SurfaceResult<ModelSelectionCheck> | "checki
  * refuses a choice for, so the list never offers a choice that always fails. Until the sign-in state is read, Copilot
  * stays choosable: the daemon decides each send.
  */
-function blockOf(item: ModelProvider, signIn: CopilotSignInRecord | null): { label: string; reason: string } | null {
+function blockOf(item: ModelProvider, signIn: CopilotSignInRecord | null, level: PermissionLevel): { label: string; reason: string } | null {
+  const failure = item.chatCompatibility?.[level];
+  if (failure) {
+    return {
+      label: failure.retryable ? "compatibility not confirmed" : "not compatible",
+      reason: failure.reason,
+    };
+  }
   if (!item.launchable) return { label: "not launchable", reason: item.detail ?? "The daemon cannot launch this agent." };
   if (item.id !== COPILOT || signIn === null) return null;
   const label = SIGN_IN_BLOCKS[signIn.state];
@@ -60,8 +67,8 @@ function blockOf(item: ModelProvider, signIn: CopilotSignInRecord | null): { lab
 }
 
 /** The line under the provider list that says why a provider cannot be chosen, or that Copilot sign-in is not confirmed yet. */
-function providerNote(item: ModelProvider, signIn: CopilotSignInRecord | null): string | null {
-  const block = blockOf(item, signIn);
+function providerNote(item: ModelProvider, signIn: CopilotSignInRecord | null, level: PermissionLevel): string | null {
+  const block = blockOf(item, signIn, level);
   if (block) return `${item.name}: ${block.reason}`;
   if (item.id === COPILOT && signIn?.state === "not_checked") return `${item.name}: ${SIGN_IN_TEXT.not_checked}`;
   return null;
@@ -86,11 +93,12 @@ function problemOf(
   provider: ModelProvider | undefined,
   signIn: CopilotSignInRecord | null,
   efforts: string[],
+  level: PermissionLevel,
 ): Problem | null {
   if (catalog.status === "loading") return { pending: true, text: "the model catalog is still being read" };
   if (catalog.status !== "ok") return { pending: false, text: "the model catalog is not available" };
   if (provider === undefined) return { pending: false, text: `the daemon's catalog does not list ${choice.agent}` };
-  const block = blockOf(provider, signIn);
+  const block = blockOf(provider, signIn, level);
   if (block) return { pending: provider.id === COPILOT && signIn?.state === "checking", text: block.reason };
   if (choice.model !== undefined) {
     if (provider.models.status === "unknown") return { pending: true, text: "the model list is still being read" };
@@ -170,6 +178,7 @@ export function ModelPicker({
   copilotSignIn,
   onRetry,
   onChoiceChange,
+  onChoiceBlocked,
   selectionSupported = true,
   permission,
 }: {
@@ -184,6 +193,7 @@ export function ModelPicker({
    * choice (`selectionSupported` false), a saved choice is still reported, so a send is blocked and never sent without it.
    */
   onChoiceChange?: (choice: ModelChoice | null) => void;
+  onChoiceBlocked?: (reason: string | null) => void;
   /** Live only: false when the connected daemon has no `conversation_selection` capability (DPES-1105). */
   selectionSupported?: boolean;
   /** A chat's permission level: shown in the chip and chosen in the panel. Omitted where no message runs (DPES-1105). */
@@ -199,13 +209,14 @@ export function ModelPicker({
   const [signIn, setSignIn] = useState<CopilotSignInRecord | null>(null);
 
   const providers = catalog.status === "ok" ? catalog.data.providers : [];
+  const level = permission?.level ?? "restricted";
   const providerNotes = live
-    ? providers.map((item) => providerNote(item, signIn)).filter((note): note is string => note !== null)
+    ? providers.map((item) => providerNote(item, signIn, level)).filter((note): note is string => note !== null)
     : [];
-  const choosable = (item: ModelProvider) => blockOf(item, signIn) === null;
+  const choosable = (item: ModelProvider) => blockOf(item, signIn, level) === null;
   // A provider that cannot be chosen is listed but never chosen. Live, Copilot is never the default: the daemon's
   // default is Codex, then Claude Code. A chosen or restored provider is shown even when it cannot be chosen now.
-  const defaultChoosable = (item: ModelProvider) => choosable(item) && (!live || item.id !== COPILOT);
+  const defaultChoosable = (item: ModelProvider) => item.launchable && (!live || item.id !== COPILOT);
   const pinnedProvider = providers.find((item) => item.id === pinned?.agent);
   const provider: ModelProvider | undefined = pinned === null ? providers.find(defaultChoosable) : pinnedProvider;
   const models = provider?.models.status === "ok" ? provider.models.value : [];
@@ -223,7 +234,7 @@ export function ModelPicker({
   }
   // A chosen or restored part the catalog does not offer is never replaced by the default: it is shown as unavailable,
   // with the reason, and the choice is not sent (DPES-1105).
-  const problem = live && pinned !== null ? problemOf(pinned, catalog, provider, signIn, efforts) : null;
+  const problem = live && pinned !== null ? problemOf(pinned, catalog, provider, signIn, efforts, level) : null;
   const missingAgent = live && pinned !== null && catalog.status === "ok" && pinnedProvider === undefined ? pinned.agent : null;
   const unavailableModel = live && modelId !== null && provider !== undefined && model === undefined ? modelId : null;
   const unavailableEffort = live && effort !== null && !efforts.includes(effort) ? effort : null;
@@ -251,11 +262,12 @@ export function ModelPicker({
   const summary = levelLabel ? `${modelSummary} · ${levelLabel}` : modelSummary;
 
   const lock = provider === undefined && missingAgent === null;
+  const providerLocked = lock && !providers.some(choosable);
   // A blocked send says so in the capability note instead, so this note never claims a send goes without the choice.
   const problemNote =
     problem === null || savedBlocked
       ? null
-      : `Your choice is ${problemWord}. ${sentence(problem.text)} Messages are sent without a choice until ${problem.pending ? "it is confirmed" : "you change it"}.`;
+      : `Your choice is ${problemWord}. ${sentence(problem.text)} Change your choice or select the daemon default to send.`;
   const note = live ? LIVE_NOTE : FIXTURE_NOTE;
   const noteId = `${ids}-note`;
   const modelHelpId = `${ids}-model-help`;
@@ -302,7 +314,7 @@ export function ModelPicker({
   else if (providers.some((item) => item.launchable)) noProviderLabel = "No provider available for chat";
 
   // The choice a message carries is what the picker displays, once the user has chosen or restored one. A choice that is
-  // unavailable or not confirmed yet is never sent: the message goes without a choice, as an untouched picker's does.
+  // unavailable or unconfirmed blocks sending; only an untouched picker sends without a choice.
   const choice: ModelChoice | null =
     live && pinned !== null && provider !== undefined && problem === null
       ? {
@@ -318,6 +330,10 @@ export function ModelPicker({
     onChoiceChange?.(reported);
     // Keyed by value, so a new object for the same choice is not reported again.
   }, [choiceKey]);
+  const blockedReason = problem === null ? null : sentence(problem.text);
+  useEffect(() => {
+    onChoiceBlocked?.(blockedReason);
+  }, [onChoiceBlocked, blockedReason]);
 
   const selectionKey = `${provider?.id}|${model?.id}|${chosenEffort}|${catalog.status}`;
   useEffect(() => {
@@ -437,18 +453,20 @@ export function ModelPicker({
           Provider
           <select
             value={provider?.id ?? missingAgent ?? ""}
-            disabled={lock}
+            disabled={providerLocked}
             aria-describedby={noteId}
             onChange={(event) => pin({ agent: event.target.value })}
           >
-            {provider === undefined && missingAgent === null && <option value="">{noProviderLabel}</option>}
+            {provider === undefined && missingAgent === null && (
+              <option value="">{providerLocked ? noProviderLabel : "Choose a provider"}</option>
+            )}
             {missingAgent !== null && (
               <option value={missingAgent} disabled>
                 {`${missingAgent} (saved)`}
               </option>
             )}
             {providers.map((item) => {
-              const block = blockOf(item, signIn);
+              const block = blockOf(item, signIn, level);
               return (
                 <option key={item.id} value={item.id} disabled={block !== null}>
                   {item.name}
@@ -463,6 +481,9 @@ export function ModelPicker({
             {note}
           </p>
         ))}
+        {onRetry && providers.some((item) => item.chatCompatibility?.[level]?.retryable) && (
+          <Button variant="quiet" onClick={onRetry}>Retry compatibility check</Button>
+        )}
         {problemNote && (
           <p role="status" className="ws-small">
             {problemNote}

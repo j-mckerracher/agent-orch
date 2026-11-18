@@ -185,12 +185,12 @@ fn script(dir: &Path, name: &str, body: &str) -> PathBuf {
     path
 }
 
-/// A fake `copilot`: `--version` prints a first line with `version`, and any
-/// other invocation runs `run_body`.
+/// A fake `copilot` with metadata commands separate from inference.
 #[cfg(unix)]
 fn fake_copilot(dir: &Path, name: &str, version: &str, run_body: &str) -> PathBuf {
     let body = format!(
-        "if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI {version}.' \"Run 'copilot update' to check for updates.\"\n  exit 0\nfi\n{run_body}"
+        "if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI {version}.' \"Run 'copilot update' to check for updates.\"\n  exit 0\nfi\n\
+         if [ \"$1\" = \"--help\" ]; then\n  printf '%s\\n' --prompt --output-format --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir --usage-output-file -C --allow-tool --deny-tool --model --max-ai-credits\n  exit 0\nfi\n{run_body}"
     );
     script(dir, name, &body)
 }
@@ -470,7 +470,7 @@ async fn a_missing_binary_is_not_found() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn detection_accepts_the_pinned_version_and_refuses_any_other() {
+async fn detection_is_independent_of_the_verified_version() {
     let dir = tempfile::tempdir().unwrap();
     let pinned = fake_copilot(dir.path(), "pinned", "1.0.109", "exit 0\n");
     let caps = CopilotAdapter::new()
@@ -481,16 +481,14 @@ async fn detection_accepts_the_pinned_version_and_refuses_any_other() {
     assert_eq!(caps, CopilotAdapter::new().capabilities());
     assert!(!caps.model_selection && caps.streaming && caps.cancellation);
 
-    let older = fake_copilot(dir.path(), "older", "1.0.108", "exit 0\n");
-    let error = CopilotAdapter::new()
-        .with_program(&older)
-        .detect()
-        .await
-        .unwrap_err();
-    let message = error.to_string();
-    assert!(
-        message.contains("1.0.108") && message.contains("1.0.109"),
-        "{message}"
+    let newer = fake_copilot(dir.path(), "newer", "1.2.3", "exit 0\n");
+    assert_eq!(
+        CopilotAdapter::new()
+            .with_program(&newer)
+            .detect()
+            .await
+            .unwrap(),
+        caps
     );
 }
 
@@ -577,15 +575,16 @@ async fn the_catalog_states_follow_the_sign_in_record() {
 
 #[cfg(unix)]
 #[tokio::test]
-async fn a_catalog_for_an_unpinned_version_is_unavailable() {
+async fn a_catalog_for_an_unseen_version_keeps_provider_and_model_support_separate() {
     let dir = tempfile::tempdir().unwrap();
     let program = fake_copilot(dir.path(), "copilot", "1.0.108", "exit 0\n");
     let catalog = CopilotAdapter::new()
         .with_program(&program)
         .catalog(Duration::from_secs(5), &SignInRecord::default())
         .await;
-    assert_eq!(catalog.state, CatalogState::Unavailable);
-    assert!(catalog.detail.contains("1.0.108"), "{}", catalog.detail);
+    assert_eq!(catalog.state, CatalogState::Available);
+    assert_eq!(catalog.models.state, CatalogState::Unsupported);
+    assert_eq!(catalog.efforts.state, CatalogState::Unsupported);
 }
 
 // --- environment and argument transport through the real supervisor ---------

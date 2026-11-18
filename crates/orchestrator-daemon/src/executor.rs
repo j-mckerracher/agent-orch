@@ -34,6 +34,9 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::api::admission::{AdmissionConfig, AdmissionGate};
+use orchestrator_agents::cli_compat::{
+    CliHelp, CompatibilityCache, CompatibilityError, Executable,
+};
 use orchestrator_agents::{
     pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
@@ -80,6 +83,7 @@ pub(crate) struct ExecutorConfig {
     /// Copilot sign-in state for this daemon session. Shared by the catalog,
     /// the explicit check, and every Copilot run.
     pub(crate) copilot_sign_in: Arc<CopilotSignIn>,
+    pub(crate) compatibility: Arc<CompatibilityCache>,
     pub(crate) limits: SchedulerLimits,
     /// Host-resource thresholds checked before each start; all off by default.
     pub(crate) admission: AdmissionConfig,
@@ -118,6 +122,53 @@ pub(crate) fn log_safe(text: &str) -> String {
 }
 
 impl ExecutorConfig {
+    pub(crate) fn locate_agent(&self, agent: &str) -> Option<PathBuf> {
+        match agent {
+            CODEX_AGENT => CodexAdapter::new()
+                .with_program(self.codex_program.as_deref().unwrap_or(Path::new("codex")))
+                .locate(),
+            CLAUDE_AGENT => ClaudeCodeAdapter::new()
+                .with_program(
+                    self.claude_program
+                        .as_deref()
+                        .unwrap_or(Path::new("claude")),
+                )
+                .locate(),
+            COPILOT_AGENT => CopilotAdapter::new()
+                .with_program(
+                    self.copilot_program
+                        .as_deref()
+                        .unwrap_or(Path::new("copilot")),
+                )
+                .locate(),
+            _ => None,
+        }
+    }
+
+    pub(crate) async fn help_for(
+        &self,
+        agent: &str,
+        program: &Path,
+        executable: &Executable,
+    ) -> Option<Arc<CliHelp>> {
+        self.compatibility
+            .help(agent, program, executable, self.probe_timeout)
+            .await
+    }
+
+    pub(crate) async fn check_launch(
+        &self,
+        agent: &str,
+        program: &Path,
+        executable: &Executable,
+        args: &[String],
+    ) -> Result<(), CompatibilityError> {
+        self.help_for(agent, program, executable)
+            .await
+            .ok_or(CompatibilityError::Unconfirmed)?
+            .check(agent, args)
+    }
+
     /// Reads one agent's catalog from its installed CLI. An agent the daemon
     /// cannot launch with a selection is reported `unsupported`.
     pub(crate) async fn read_catalog(
@@ -186,10 +237,11 @@ impl ExecutorConfig {
             limits: SchedulerLimits::default(),
             admission: AdmissionConfig::from_env(),
             poll: Duration::from_millis(500),
+            compatibility: Arc::default(),
             #[cfg(test)]
             wait_for_exit_before_identity: false,
             // Leaves headroom under the 2 s client I/O timeout.
-            probe_timeout: Duration::from_millis(1200),
+            probe_timeout: Duration::from_millis(1500),
             diagnostics,
             catalog_timeout: Duration::from_millis(1500),
             catalog_wait: Duration::from_millis(1100),
@@ -649,7 +701,7 @@ impl Inner {
                         return Err(GitError::InvalidBaseRef {
                             refspec: branch.to_owned(),
                             detail: "not a safe branch name".to_owned(),
-                        })
+                        });
                     }
                     None => "HEAD".to_owned(),
                 };
@@ -749,7 +801,9 @@ impl Inner {
             fail_before_agent_exit(
                 store,
                 &job,
-                Some("The daemon could not start the agent supervisor. Check the daemon log for details."),
+                Some(
+                    "The daemon could not start the agent supervisor. Check the daemon log for details.",
+                ),
             );
             return Err(format!("cannot start supervisor thread: {error}"));
         }
@@ -846,7 +900,9 @@ fn worktree_failure_reason(error: &GitError) -> &'static str {
         // Only a project's base branch reaches here: the reason never names it.
         GitError::InvalidBaseRef { .. } => BASE_BRANCH_MISSING,
         GitError::CreationFailed { source, .. } => worktree_failure_reason(source),
-        _ => "The daemon could not prepare a task worktree. Check the daemon log for details, then retry.",
+        _ => {
+            "The daemon could not prepare a task worktree. Check the daemon log for details, then retry."
+        }
     }
 }
 
@@ -888,7 +944,9 @@ fn supervise_inner(inner: &Inner, job: &Job) {
             fail_before_agent_exit(
                 &inner.store,
                 job,
-                Some("The daemon could not start the agent runtime. Check the daemon log for details."),
+                Some(
+                    "The daemon could not start the agent runtime. Check the daemon log for details.",
+                ),
             );
             return;
         }
@@ -958,7 +1016,7 @@ pub(crate) fn agent_command(
 /// Launches a Copilot task. The run directory lives in the handle, so it is
 /// removed when the run ends. A model selection is refused, because Copilot
 /// offers none.
-async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
+async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
     if job.model_selection.is_some() {
         return Err(
             "model selection refused: GitHub Copilot offers no model or effort selection".into(),
@@ -968,7 +1026,10 @@ async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>,
     if let Some(program) = &inner.config.copilot_program {
         adapter = adapter.with_program(program);
     }
-    adapter.detect().await.map_err(|error| error.to_string())?;
+    let program = adapter
+        .locate()
+        .ok_or("the copilot executable was not found")?;
+    let executable = Executable::read(&program).map_err(|_| CompatibilityError::Unconfirmed)?;
     let run = CopilotRun::create(&inner.config.data_dir.join(COPILOT_RUNS_DIR))
         .map_err(|error| format!("cannot create the Copilot run directory: {error}"))?;
     let args = CopilotAdapter::task_args(
@@ -978,34 +1039,58 @@ async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>,
         job.permission,
         inner.config.copilot_credit_cap,
     );
+    inner
+        .config
+        .check_launch(&job.agent, &program, &executable, &args)
+        .await?;
     let request = AgentLaunchRequest {
-        program: inner
-            .config
-            .copilot_program
-            .clone()
-            .unwrap_or_else(|| PathBuf::from("copilot")),
+        program,
         args,
         working_dir: job.worktree.clone(),
     };
     adapter
         .spawn_run(request, Some(run))
         .await
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string().into())
 }
 
-async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, String> {
+#[derive(Debug)]
+enum LaunchFailure {
+    Compatibility(CompatibilityError),
+    Other(String),
+}
+
+impl From<CompatibilityError> for LaunchFailure {
+    fn from(error: CompatibilityError) -> Self {
+        Self::Compatibility(error)
+    }
+}
+
+impl From<String> for LaunchFailure {
+    fn from(reason: String) -> Self {
+        Self::Other(reason)
+    }
+}
+
+impl From<&str> for LaunchFailure {
+    fn from(reason: &str) -> Self {
+        Self::Other(reason.to_owned())
+    }
+}
+
+async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
     if job.agent == COPILOT_AGENT {
         return spawn_copilot(inner, job).await;
     }
     let selection = job.model_selection.as_ref();
-    let Some((program, mut args)) = agent_command(
+    let Some((_, mut args)) = agent_command(
         &inner.config,
         &job.agent,
         &job.objective,
         selection,
         job.permission,
     ) else {
-        return Err(format!("agent {:?} has no daemon launcher", job.agent));
+        return Err(format!("agent {:?} has no daemon launcher", job.agent).into());
     };
     // `codex exec` refuses a directory that is not a Git repository unless told otherwise.
     if job.in_place && job.agent == CODEX_AGENT {
@@ -1023,6 +1108,11 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
                 format!("model selection refused: {}", log_safe(&error.to_string()))
             })?;
     }
+    let program = inner
+        .config
+        .locate_agent(&job.agent)
+        .ok_or("the agent executable was not found")?;
+    let executable = Executable::read(&program).map_err(|_| CompatibilityError::Unconfirmed)?;
     let detect = match job.agent.as_str() {
         CODEX_AGENT => {
             let adapter = CodexAdapter::new().with_program(program.clone());
@@ -1038,6 +1128,10 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
             AdapterChoice::Claude(adapter)
         }
     };
+    inner
+        .config
+        .check_launch(&job.agent, &program, &executable, &args)
+        .await?;
     let request = AgentLaunchRequest {
         program,
         args,
@@ -1047,7 +1141,7 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, S
         AdapterChoice::Codex(adapter) => adapter.spawn(request).await,
         AdapterChoice::Claude(adapter) => adapter.spawn(request).await,
     };
-    result.map_err(|error| error.to_string())
+    result.map_err(|error| error.to_string().into())
 }
 
 enum AdapterChoice {
@@ -1060,18 +1154,21 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let mut handle = match spawn_agent(inner, job).await {
         Ok(handle) => handle,
         Err(error) => {
-            fail_before_agent_exit(
-                store,
-                job,
-                Some("The daemon could not start the selected agent. Check that its CLI is installed and signed in, then retry; see the daemon log for details."),
-            );
+            let (reason, detail) = match error {
+                LaunchFailure::Compatibility(error) => {
+                    let detail = error.to_string();
+                    (format!("{} task at {} permission did not start. {detail}", job.agent, job.permission.as_str()), detail)
+                }
+                LaunchFailure::Other(detail) => ("The daemon could not start the selected agent. Check that its CLI is installed and signed in, then retry; see the daemon log for details.".to_owned(), detail),
+            };
+            fail_before_agent_exit(store, job, Some(&reason));
             let (worktree, uncommitted) = preserved_work(job);
             job.diag.error(
                 LOG,
                 "agent_launch_failed",
                 &job.event_fields(&[
                     ("agent", &job.agent),
-                    ("error", &error),
+                    ("error", &detail),
                     ("worktree", &worktree),
                     ("uncommitted_paths", &uncommitted),
                 ]),
@@ -1125,7 +1222,9 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         fail_before_agent_exit(
             store,
             job,
-            Some("The daemon could not verify the agent process and stopped the run. Check the daemon log for details."),
+            Some(
+                "The daemon could not verify the agent process and stopped the run. Check the daemon log for details.",
+            ),
         );
         return Err(message);
     }

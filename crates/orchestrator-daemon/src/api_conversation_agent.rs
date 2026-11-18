@@ -35,6 +35,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use orchestrator_agents::cli_compat::{CliHelp, CompatibilityError, Executable};
 use orchestrator_agents::copilot_adapter::parse_copilot_version;
 use orchestrator_agents::permission::chat_profile;
 use orchestrator_agents::{
@@ -48,7 +49,6 @@ use orchestrator_runtime::command_line::windows_command_line_units;
 use orchestrator_store::{ConversationTarget, SqliteStore, TurnPermission, WorkstreamStoreError};
 use uuid::Uuid;
 
-use super::conversation_help::{self as help, Help, HelpCache};
 use super::conversation_orphans as orphans;
 use super::conversation_runtime::{
     Choice, ConversationRuntime, HistoryTurn, ReplySink, RuntimeFailure, RuntimeIdentity,
@@ -66,9 +66,8 @@ pub(crate) const CLAUDE: &str = "claude-code";
 pub(crate) const GITHUB_COPILOT: &str = "github-copilot";
 
 /// Versions of the agent CLIs whose conversation output this runtime has been
-/// checked against. These are verified: they run without a warning. Any other
-/// version runs with an unverified-version warning, after its `--help` shows
-/// every flag the chat needs (see [`required_flags`]). Operators add to this with
+/// checked against. Compatibility is checked independently of this list.
+/// Other versions that can run receive a warning. Operators add to this with
 /// `AGENT_ORCH_CONVERSATION_PINS`.
 const KNOWN_PINS: [(&str, &str); 4] = [
     (CODEX, "0.167.0"),
@@ -192,9 +191,8 @@ struct Selected {
     identity: RuntimeIdentity,
     model: Option<String>,
     effort: Option<String>,
-    /// What the installed CLI's help lists. Read once, only for an unverified
-    /// version; `None` for a verified one, which is not checked (DPES-1106).
-    help: Option<Arc<Help>>,
+    executable: Option<Arc<Executable>>,
+    help: Option<Arc<CliHelp>>,
 }
 
 #[derive(Clone)]
@@ -230,8 +228,6 @@ pub(crate) struct AgentRuntime {
     /// definitive outcome. Bounds the `Conflict` retries.
     pending_since: Mutex<Option<Instant>>,
     running: Arc<AtomicUsize>,
-    /// The `--help` read of each unverified CLI version, once.
-    helps: HelpCache,
 }
 
 impl AgentRuntime {
@@ -249,7 +245,6 @@ impl AgentRuntime {
             selections: Mutex::new(HashMap::new()),
             pending_since: Mutex::new(None),
             running: Arc::new(AtomicUsize::new(0)),
-            helps: HelpCache::default(),
         }
     }
 
@@ -298,7 +293,20 @@ impl AgentRuntime {
             .lock()
             .unwrap_or_else(|error| error.into_inner())
             .get(&choice.cloned())
-            .is_some_and(|(at, _)| at.elapsed() < SELECTION_TTL)
+            .is_some_and(|(at, selection)| {
+                at.elapsed() < SELECTION_TTL
+                    && match selection {
+                        Selection::Ready(selected) => {
+                            selected.help.is_some()
+                                && selected.executable.as_ref().is_some_and(|executable| {
+                                    self.exec
+                                        .locate_agent(selected.agent)
+                                        .is_some_and(|path| executable.matches(&path))
+                                })
+                        }
+                        Selection::Missing(_) => true,
+                    }
+            })
     }
 
     fn program_of(&self, agent: &str) -> PathBuf {
@@ -439,6 +447,7 @@ impl AgentRuntime {
             return Outcome::Decided(Selection::Missing(RuntimeFailure::Unavailable));
         }
         let program = self.program_of(agent);
+        let executable = Executable::read(&program).ok().map(Arc::new);
         let version = match read_version(&program, agent) {
             Probe::Version(version) => version,
             Probe::Rejected => {
@@ -466,6 +475,7 @@ impl AgentRuntime {
                 },
                 model: choice.model.clone(),
                 effort: choice.effort.clone(),
+                executable,
                 help: None,
             })),
             Err(error) => {
@@ -488,15 +498,16 @@ impl AgentRuntime {
             Err(failure) => return Outcome::Decided(Selection::Missing(failure)),
         };
         let mut slow = false;
-        let launchable: Vec<(&'static str, PathBuf, String)> = agents
+        let launchable: Vec<_> = agents
             .into_iter()
             .filter_map(|agent| {
                 if !self.launchable(agent) {
                     return None;
                 }
                 let program = self.program_of(agent);
+                let executable = Executable::read(&program).ok().map(Arc::new);
                 match read_version(&program, agent) {
-                    Probe::Version(version) => Some((agent, program, version)),
+                    Probe::Version(version) => Some((agent, program, version, executable)),
                     Probe::Rejected => {
                         eprintln!(
                             "orchestrator-daemon: conversation agent {agent} is not launchable: \
@@ -524,7 +535,9 @@ impl AgentRuntime {
         let wants_selection = model.is_some() || effort.is_some();
         let mut pending = slow;
         let mut missing = RuntimeFailure::Unavailable;
-        for ((agent, program, version), catalog) in launchable.into_iter().zip(&catalogs) {
+        for ((agent, program, version, executable), catalog) in
+            launchable.into_iter().zip(&catalogs)
+        {
             if catalog.state != CatalogState::Available {
                 eprintln!(
                     "orchestrator-daemon: conversation agent {agent} ({}) catalog is {:?}: {}",
@@ -564,6 +577,7 @@ impl AgentRuntime {
                 },
                 model: model.clone(),
                 effort: effort.clone(),
+                executable,
                 help: None,
             }));
         }
@@ -674,12 +688,18 @@ impl ConversationRuntime for AgentRuntime {
         // The one place a CLI's help is read: before the request gate, so the
         // bounded read never blocks other requests (DPES-1106).
         let selection = match selection {
-            Selection::Ready(mut selected) if !self.verified(&selected.identity) => {
-                selected.help = Some(self.helps.get_or_read(
-                    &selected.program,
-                    selected.agent,
-                    &selected.identity.version,
-                ));
+            Selection::Ready(mut selected) => {
+                selected.help = selected.executable.as_ref().and_then(|executable| {
+                    let runtime = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .ok()?;
+                    runtime.block_on(self.exec.help_for(
+                        selected.agent,
+                        &selected.program,
+                        executable,
+                    ))
+                });
                 Selection::Ready(selected)
             }
             other => other,
@@ -710,13 +730,20 @@ impl ConversationRuntime for AgentRuntime {
         if selected.identity != request.identity {
             return Err(RuntimeFailure::RuntimeChanged);
         }
-        // Refused only when the help was read and a flag the chat needs is
-        // definitely absent. A help that could not be read never refuses.
-        if let Some(Help::Listed(listed)) = selected.help.as_deref() {
-            let required = help::required_flags(selected.agent, request.level);
-            if let Some(flag) = help::missing_flag(listed, &required) {
-                return Err(RuntimeFailure::MissingFlag(flag));
-            }
+        let help = selected
+            .help
+            .as_deref()
+            .ok_or(RuntimeFailure::CompatibilityUnconfirmed)?;
+        let executable = selected
+            .executable
+            .as_ref()
+            .ok_or(RuntimeFailure::CompatibilityUnconfirmed)?;
+        if !self
+            .exec
+            .locate_agent(selected.agent)
+            .is_some_and(|path| executable.matches(&path))
+        {
+            return Err(RuntimeFailure::RuntimeChanged);
         }
         let slot = Slot::take(&self.running).ok_or(RuntimeFailure::Busy)?;
         std::fs::create_dir_all(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
@@ -768,10 +795,19 @@ impl ConversationRuntime for AgentRuntime {
             };
             (launch, None, Some(turn_dir))
         };
+        help.check(selected.agent, &launch.args)
+            .map_err(|error| match error {
+                CompatibilityError::MissingFlag(flag) => RuntimeFailure::MissingFlag(flag),
+                CompatibilityError::Unconfirmed => RuntimeFailure::CompatibilityUnconfirmed,
+            })?;
+        if !executable.matches(&launch.program) {
+            return Err(RuntimeFailure::RuntimeChanged);
+        }
         let cancelled = Arc::new(AtomicBool::new(false));
         let turn = Turn {
             agent: selected.agent,
             launch,
+            executable: executable.clone(),
             timeout: self.config.turn_timeout,
             cancelled: cancelled.clone(),
             agents: self.config.agents.clone(),
@@ -802,8 +838,7 @@ impl AgentRuntime {
     /// The per-turn read-only MCP server and how Claude reaches it. `None` means the turn
     /// runs without tools and is never refused: the request asked for none, the agent is
     /// not Claude, its help does not list `--mcp-config` (or could not be read), the
-    /// daemon's own path is unknown, or the listener could not bind. A verified version
-    /// carries no help read, so it is read here once per version and cached.
+    /// daemon's own path is unknown, or the listener could not bind.
     fn start_mcp(
         &self,
         request: &TurnRequest,
@@ -813,14 +848,8 @@ impl AgentRuntime {
         if selected.agent != CLAUDE {
             return None;
         }
-        let help = selected.help.clone().unwrap_or_else(|| {
-            self.helps.get_or_read(
-                &selected.program,
-                selected.agent,
-                &selected.identity.version,
-            )
-        });
-        if !help::offered_flag(&help, MCP_CONFIG_FLAG) {
+        let help = selected.help.as_ref()?;
+        if !help.offers(MCP_CONFIG_FLAG) || !help.offers("--allowedTools") {
             return None;
         }
         let command = std::env::current_exe()
@@ -915,6 +944,52 @@ fn conversation_args(
             mcp,
         )
     }
+}
+
+/// Provider visibility is independent of the current level and model choice.
+/// A turn still validates its complete argv at the requested level.
+pub(super) async fn check_chat_provider(
+    config: &ExecutorConfig,
+    agent: &str,
+) -> Option<Vec<(PermissionLevel, Result<(), CompatibilityError>)>> {
+    let program = config.locate_agent(agent)?;
+    let help = match Executable::read(&program) {
+        Ok(executable) => config.help_for(agent, &program, &executable).await,
+        Err(_) => None,
+    };
+    let mut levels = Vec::new();
+    for level in [
+        PermissionLevel::Restricted,
+        PermissionLevel::Auto,
+        PermissionLevel::Full,
+    ] {
+        let args = match agent {
+            CODEX => CodexAdapter::args_for_conversation(level, "prompt", None, None),
+            CLAUDE => ClaudeCodeAdapter::args_for_conversation(
+                level,
+                "prompt",
+                Some("instructions"),
+                None,
+                None,
+            ),
+            GITHUB_COPILOT => CopilotAdapter::conversation_args(
+                level,
+                "prompt",
+                Path::new("usage.json"),
+                Path::new("."),
+                config.copilot_credit_cap,
+            ),
+            _ => None,
+        };
+        if let Some(args) = args {
+            let result = help
+                .as_ref()
+                .ok_or(CompatibilityError::Unconfirmed)
+                .and_then(|help| help.check(agent, &args));
+            levels.push((level, result));
+        }
+    }
+    Some(levels)
 }
 
 /// What `--version` of an agent program showed.
@@ -1249,6 +1324,7 @@ fn prompt_content(request: &TurnRequest, history: &[HistoryTurn]) -> String {
 struct Turn {
     agent: &'static str,
     launch: AgentLaunchRequest,
+    executable: Arc<Executable>,
     timeout: Duration,
     cancelled: Arc<AtomicBool>,
     /// Registry of running agents; see `api_conversation_orphans`.
@@ -1369,6 +1445,10 @@ fn drain(handle: &mut dyn AgentHandle, sink: &ReplySink) {
 }
 
 async fn drive(turn: Turn, sink: &ReplySink) {
+    if !turn.executable.matches(&turn.launch.program) {
+        sink.fail(RuntimeFailure::RuntimeChanged);
+        return;
+    }
     let spawned = if turn.agent == CODEX {
         CodexAdapter::new().spawn(turn.launch).await
     } else if turn.agent == GITHUB_COPILOT {
@@ -1514,7 +1594,7 @@ mod tests {
         Arc::new(crate::mcp_server::McpView::new(Arc::new(store)))
     }
 
-    fn claude_selected(dir: &Path, agent: &'static str, help: Option<Help>) -> Selected {
+    fn claude_selected(dir: &Path, agent: &'static str, help: Option<CliHelp>) -> Selected {
         Selected {
             agent,
             program: dir.join("no-such-program"),
@@ -1524,12 +1604,17 @@ mod tests {
             },
             model: None,
             effort: None,
+            executable: None,
             help: help.map(Arc::new),
         }
     }
 
-    fn listing(flags: &[&str]) -> Help {
-        Help::Listed(flags.iter().map(|flag| (*flag).to_owned()).collect())
+    fn listing(flags: &[&str]) -> CliHelp {
+        let mut flags = flags.to_vec();
+        if flags.contains(&"--mcp-config") {
+            flags.push("--allowedTools");
+        }
+        CliHelp::from_text(&flags.join("\n")).unwrap()
     }
 
     fn mcp_runtime(dir: &Path) -> AgentRuntime {
@@ -1602,7 +1687,7 @@ mod tests {
             (CODEX, offered()),
             (GITHUB_COPILOT, offered()),
             (CLAUDE, Some(listing(&["--tools"]))),
-            (CLAUDE, Some(Help::Unreadable)),
+            (CLAUDE, None),
         ] {
             let selected = claude_selected(dir.path(), agent, help);
             assert!(runtime.start_mcp(&asked, &selected).is_none(), "{agent}");

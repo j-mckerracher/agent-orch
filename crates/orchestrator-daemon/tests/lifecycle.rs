@@ -57,6 +57,10 @@ fn main() {
 /// Its stdout and stderr belong to the daemon, so it leaves breadcrumb files
 /// next to the pid file for the failure diagnostics.
 fn agent(pid_file: &Path) {
+    if std::env::args().skip(1).eq(["exec", "--help"]) {
+        println!("  --json\n  --sandbox <MODE>\n  --ignore-user-config");
+        return;
+    }
     if std::env::args().any(|arg| arg == "--version") {
         println!("lifecycle-fake-agent 0.0.0");
         return;

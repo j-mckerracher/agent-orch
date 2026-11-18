@@ -348,6 +348,7 @@ function Conversation({
   const [busy, setBusy] = useState(false);
   // The model choice each message is sent with; null means the daemon default (DPES-1105).
   const [choice, setChoice] = useState<ModelChoice | null>(null);
+  const [choiceBlocked, setChoiceBlocked] = useState<string | null>(null);
   // The level each message runs at (DPES-1105). Only a saved Restricted survives a reload.
   const [permission, setPermission] = useState<PermissionLevel>(() => readSavedLevel());
   // The level each turn was sent at, by turn id, so a reply can be checked against what the daemon reports.
@@ -479,6 +480,7 @@ function Conversation({
     else if (choiceOnWire !== undefined && !gate.can("conversation_selection"))
       blocked =
         'This daemon cannot use a chosen model or effort. Open model settings and choose "Use the daemon default", or update the daemon.';
+    else if (choiceBlocked !== null) blocked = `Your agent choice cannot be used. ${choiceBlocked}`;
     else if (userRunning) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
   }
   const empty = draft.trim() === "";
@@ -753,6 +755,7 @@ function Conversation({
             copilotSignIn={surfaces.models}
             onRetry={retryModels}
             onChoiceChange={setChoice}
+            onChoiceBlocked={setChoiceBlocked}
             selectionSupported={!live || !gate.connected || gate.can("conversation_selection")}
             permission={permissionControl}
           />
