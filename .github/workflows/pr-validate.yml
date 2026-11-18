@@ -24,6 +24,8 @@ concurrency:
 
 jobs:
   pr-validate:
+    # release-please writes the release pull request's branch name and body, so they never match the template.
+    if: github.head_ref != 'release-please--branches--main'
     permissions:
       pull-requests: read
       contents: read

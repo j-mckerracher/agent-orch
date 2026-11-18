@@ -17,16 +17,16 @@ and publish jobs are described in [release-ci.md](release-ci.md).
    were given before the push, so approve after the last merge you want in the release.
 4. Merging it runs `.github/workflows/release-please.yml`. That run makes the release a draft, creates
    the annotated `vX.Y.Z` tag at the merge commit, and starts `release.yml` on the tag with `publish=true`.
-5. `release.yml` runs the full verify (`ci.yml` and `audit.yml`), builds both platforms and publishes
-   the release. Plan for about 40 to 60 minutes from the merge to a public release.
+5. `release.yml` builds both platforms and publishes the release. It does not re-run `ci.yml` or
+   `audit.yml`: the release pull request's checks are the gate, so read them before you merge. Plan for
+   about 25 minutes from the merge to a public release.
 6. Check the release page. It lists the installers and `SHA256SUMS`, and it is a prerelease while any
    installer is unsigned.
 
 The release pull request looks unfinished before you merge it, and that is expected. Its runs are
-created by the token that release-please uses, so `CI`, `Lint` and `PR Validate` show as awaiting
-approval until someone approves them. `PR Validate` fails on it, because release-please generates
-its branch name and body and they do not match the pull request template. `main` has no required
-status checks, so the failure does not block the merge.
+created by the token that release-please uses, so `CI` and `Lint` show as awaiting approval until
+someone approves them. `PR Validate` is skipped on it, because release-please generates its branch
+name and body and they do not match the pull request template.
 
 ## Versioning
 

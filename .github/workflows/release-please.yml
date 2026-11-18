@@ -2,7 +2,7 @@ name: release-please
 
 # Opens or updates the release pull request on every push to main. Merging that pull request is the
 # release: release-please then creates a draft release, and this workflow creates the annotated v* tag
-# it names and starts release.yml on that tag, which builds, verifies and publishes the release.
+# it names and starts release.yml on that tag, which builds and publishes the release.
 # release-please publishes nothing itself. See docs/RELEASE.md.
 
 on:
