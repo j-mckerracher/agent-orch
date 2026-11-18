@@ -1,7 +1,15 @@
 #![cfg(unix)]
 
-use orchestrator_core::task::{AttemptState, AuditEvent, SessionState, TaskState};
-use orchestrator_store::{CancellationStatus, SqliteStore, Store, StoreError};
+mod support;
+
+use support::leased_worktree;
+
+#[cfg(feature = "fault-injection")]
+use orchestrator_core::task::AuditEvent;
+use orchestrator_core::task::{AttemptState, SessionState, TaskState};
+#[cfg(feature = "fault-injection")]
+use orchestrator_store::{CancellationStatus, StoreError};
+use orchestrator_store::{SqliteStore, Store};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::CommandExt;
@@ -109,6 +117,7 @@ fn run_command(fixture: &Fixture, task_id: &str, objective: &str) -> Command {
     command
 }
 
+#[cfg(feature = "fault-injection")]
 fn cancel_command(fixture: &Fixture, task_id: &str) -> Command {
     let mut command = Command::new(CLI);
     command
@@ -257,7 +266,7 @@ fn two_parallel_tasks_preserve_disjoint_worktrees_for_five_runs() {
             assert_eq!(record.attempts[0].state, AttemptState::Succeeded);
             assert_eq!(record.sessions[0].state, SessionState::Exited);
             assert_eq!(
-                fs::read(fixture.data.join("worktrees").join(task_id).join(file)).unwrap(),
+                fs::read(leased_worktree(&fixture.data, task_id).join(file)).unwrap(),
                 bytes
             );
         }
@@ -367,7 +376,7 @@ fn sigkill_reconciles_dead_task_while_parallel_task_completes() {
         .expect("process identity was persisted before the fault");
     assert_eq!(identity.process_group, Some(identity.pid));
     crash.process_group = identity.process_group;
-    let worktree = fixture.data.join("worktrees/crashed-task");
+    let worktree = leased_worktree(&fixture.data, "crashed-task");
     let changed_file = worktree.join("crash-only.txt");
     let before = fs::read(&changed_file).expect("agent wrote uncommitted file");
     let before_checksum = checksum(&before);
@@ -596,6 +605,7 @@ fn audit_journal_is_complete_after_concurrent_failure_and_crash_paths() {
     assert!(!run_bounded(fault_command).status.success());
     let store = SqliteStore::new(&fixture.data.join("store.sqlite")).unwrap();
     assert!(store.get("audit-fault").unwrap().events.is_empty());
+    for entry in store.event_journal(0).unwrap() { eprintln!("JOURNAL {} {:?} {:?}", entry.task_id, entry.event, entry.sequence); }
     assert_eq!(store.event_journal(0).unwrap().len(), 6);
     let clear_fault = Command::new("sqlite3")
         .arg("-batch")

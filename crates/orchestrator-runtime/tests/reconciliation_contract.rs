@@ -161,7 +161,9 @@ mod git_state {
     use orchestrator_git::delivery::{check_worktree_safe_to_delete, DeliveryAction};
     use orchestrator_git::delivery_reconcile::{reconcile_delivery_steps, RecordedDeliveryStep};
     use orchestrator_git::reconcile::{reconcile_workspaces, RecordedWorkspace};
-    use orchestrator_git::{create_task_worktree, BranchPrefix, Repository, TaskWorktree};
+    use orchestrator_git::{
+        create_task_worktree, BranchPrefix, Repository, TaskWorktree, Treehouse,
+    };
     use orchestrator_runtime::reconcile::{
         classify_interrupted_task, delivery_evidence, scheduling_may_resume, workspace_evidence,
         DeliveryEvidence, TaskEvidence, TaskRecovery, WorkspaceEvidence,
@@ -172,7 +174,20 @@ mod git_state {
         path: PathBuf,
         worktrees: PathBuf,
         repository: Repository,
+        treehouse: Treehouse,
         candidate_sha: String,
+    }
+
+    /// The treehouse binary from `AGENT_ORCH_TREEHOUSE_PROGRAM`, with its private home under `data_dir`.
+    fn bundled_treehouse(data_dir: &Path) -> Treehouse {
+        let program = std::env::var_os("AGENT_ORCH_TREEHOUSE_PROGRAM").unwrap_or_else(|| {
+            panic!(
+                "AGENT_ORCH_TREEHOUSE_PROGRAM is not set; fetch treehouse with \
+                 `node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest target/treehouse` \
+                 and point the variable at the binary"
+            )
+        });
+        Treehouse::new(program, data_dir).expect("treehouse private home")
     }
 
     fn git(directory: &Path, args: &[&str]) -> String {
@@ -203,11 +218,13 @@ mod git_state {
         git(&path, &["commit", "-m", "base"]);
         let candidate_sha = git(&path, &["rev-parse", "HEAD"]);
         let repository = Repository::new(&path).expect("validated repository");
+        let treehouse = bundled_treehouse(directory.path());
         Fixture {
             worktrees: directory.path().join("worktrees"),
             _directory: directory,
             path,
             repository,
+            treehouse,
             candidate_sha,
         }
     }
@@ -279,6 +296,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "task-1",
         )
         .expect("create worktree");
 
@@ -318,6 +337,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "task-1",
         )
         .expect("create worktree");
         fs::write(worktree.path().join("work.txt"), "work\n").expect("write work");
@@ -358,6 +379,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "task-1",
         )
         .expect("create worktree");
         fs::remove_dir_all(worktree.path()).expect("simulate out-of-band removal");
@@ -383,6 +406,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "task-1",
         )
         .expect("create worktree");
 
@@ -546,6 +571,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "dirty",
         )
         .expect("create dirty worktree");
         let dirty_file = dirty_tree.path().join("unsaved.txt");
@@ -558,6 +585,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "unknown",
         )
         .expect("create uninspected worktree");
         let unknown = observe_workspace(fixture, &unknown_tree, false);
@@ -730,6 +759,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "matching",
         )
         .expect("create matching worktree");
         let matching = observe_workspace(fixture, &matching, true);
@@ -740,6 +771,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "missing",
         )
         .expect("create missing worktree");
         fs::remove_dir_all(missing.path()).expect("simulate out-of-band removal");
@@ -751,6 +784,8 @@ mod git_state {
             "HEAD",
             &fixture.worktrees,
             &BranchPrefix::default(),
+            &fixture.treehouse,
+            "moved",
         )
         .expect("create moved worktree");
         fs::write(moved.path().join("work.txt"), "work\n").expect("write work");

@@ -1194,7 +1194,9 @@ impl DaemonApi {
             return Err(RpcError::InvalidParams);
         }
         let key = request.idempotency_key.clone();
-        idempotency::run(
+        // Only the tasks this call archived. A replayed reply archives nothing again.
+        let mut archived_now = Vec::new();
+        let reply = idempotency::run(
             &self.store,
             &self.idempotency_gate,
             "tasks.archive",
@@ -1208,9 +1210,31 @@ impl DaemonApi {
                         Some(_) => RpcError::Conflict,
                         None => map_store_error(error),
                     })?;
+                archived_now.clone_from(&archived);
                 Ok(json!({"archived": archived}))
             },
-        )
+        )?;
+        self.release_task_slots(&archived_now);
+        Ok(reply)
+    }
+
+    /// Returns the treehouse slots of finished tasks to the pool. Called after the
+    /// write, outside the gate, since each return runs treehouse. A failure is logged
+    /// and never fails the RPC that finished the task.
+    fn release_task_slots(&self, task_ids: &[String]) {
+        let Some(executor) = &self.executor else {
+            return;
+        };
+        for task_id in task_ids {
+            match self.store.workspaces_for_task(task_id) {
+                Ok(workspaces) => executor.release_workspaces(&workspaces),
+                Err(error) => self.config.diagnostics.error(
+                    "api",
+                    "workspaces_unread_for_release",
+                    &[("task_id", task_id), ("error", &error.to_string())],
+                ),
+            }
+        }
     }
 
     fn cancel_task(&self, params: Value) -> Result<Value, RpcError> {

@@ -24,7 +24,8 @@ use std::time::{Duration, Instant};
 use orchestrator_agents::catalog::codex_developer_instructions_arg;
 use orchestrator_agents::workflow_agent::{self, WorkflowAgent};
 use orchestrator_agents::{
-    AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest, CodexAdapter,
+    locate_program, AgentAdapter, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
+    CodexAdapter,
 };
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
@@ -41,7 +42,9 @@ use orchestrator_engine::reconcile::delivery_blocks;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::reconcile::{reconcile_before_scheduling, reconcile_cancellation_owners};
 use orchestrator_engine::verify::{verify_attempt, Verified};
-use orchestrator_git::{create_task_worktree, BranchPrefix, Repository};
+use orchestrator_git::{
+    create_task_worktree, release_task_worktree, BranchPrefix, Released, Repository, Treehouse,
+};
 #[cfg(test)]
 use orchestrator_runtime::reconcile::DeliveryEvidence;
 use orchestrator_runtime::reconcile::{
@@ -349,12 +352,16 @@ pub async fn run_task(
 
     let branch_prefix = BranchPrefix::read(&data_target.path)
         .map_err(|error| format!("cannot read branch prefix: {error}"))?;
+    let treehouse = treehouse_for(&data_target.path)?;
+    let workspace_id = format!("{task_id}-workspace-1");
     let worktree = match create_task_worktree(
         &repository,
         &task_id,
         base_ref,
         &worktrees_target.path,
         &branch_prefix,
+        &treehouse,
+        &workspace_id,
     ) {
         Ok(worktree) => worktree,
         Err(error) => {
@@ -370,7 +377,7 @@ pub async fn run_task(
     );
     store
         .add_workspace(&Workspace {
-            id: format!("{task_id}-workspace-1"),
+            id: workspace_id,
             task_id: task_id.clone(),
             path: worktree.path().display().to_string(),
             branch: worktree.branch().to_string(),
@@ -1592,25 +1599,54 @@ pub fn cleanup_task(data_dir: &Path, task_id: &str) -> Result<(), String> {
     if !reachable.status.success() {
         return Err(format!("refusing cleanup: commit {head} from branch {} is not reachable from base ref {:?}; merge or otherwise land it before cleanup", metadata.branch, metadata.base_ref));
     }
-    git_output(
-        repository.path(),
-        &[
-            "worktree",
-            "remove",
-            "--",
-            metadata.worktree.to_str().ok_or_else(|| {
-                format!(
-                    "worktree path {} is not valid UTF-8 for Git",
-                    metadata.worktree.display()
-                )
-            })?,
-        ],
-    )?;
+    let treehouse = treehouse_for(data_dir)?;
+    let released = release_task_worktree(
+        &treehouse,
+        &data_dir.join("worktrees"),
+        &metadata.worktree,
+        &format!("{task_id}-workspace-1"),
+    )
+    .map_err(|error| {
+        format!(
+            "cannot return worktree {} for task {task_id}: {error}",
+            metadata.worktree.display()
+        )
+    })?;
+    if released == Released::Dirty {
+        return Err(format!(
+            "refusing cleanup: treehouse kept worktree {} leased because it has uncommitted \
+             changes; inspect with `git -C {} status --short`",
+            metadata.worktree.display(),
+            metadata.worktree.display()
+        ));
+    }
     println!(
-        "removed clean, landed worktree {}",
+        "returned clean, landed worktree {} to the pool",
         metadata.worktree.display()
     );
     Ok(())
+}
+
+/// The treehouse program a CLI run leases with: `AGENT_ORCH_TREEHOUSE_PROGRAM`, then the
+/// one beside this executable, then PATH. A missing program surfaces when it is run.
+fn treehouse_for(data_dir: &Path) -> Result<Treehouse, String> {
+    let name = if cfg!(windows) {
+        "treehouse.exe"
+    } else {
+        "treehouse"
+    };
+    let program = std::env::var_os("AGENT_ORCH_TREEHOUSE_PROGRAM")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::current_exe()
+                .ok()
+                .map(|exe| exe.with_file_name(name))
+                .filter(|path| path.is_file())
+        })
+        .or_else(|| locate_program(Path::new(name)))
+        .unwrap_or_default();
+    Treehouse::new(program, data_dir).map_err(|error| format!("cannot prepare treehouse: {error}"))
 }
 
 fn validated_metadata(data_dir: &Path, task_id: &str) -> Result<TaskMetadata, String> {
@@ -2310,22 +2346,21 @@ mod tests {
         git_in(&repo, &["config", "user.name", "t"]);
         git_in(&repo, &["commit", "-q", "--allow-empty", "-m", "base"]);
         let repository = Repository::new(&repo).unwrap();
-        let worktree = data_dir.join("worktrees").join(task_id);
-        fs::create_dir_all(worktree.parent().unwrap()).unwrap();
-        let branch = format!("task/{task_id}");
-        git_in(
-            repository.path(),
-            &[
-                "worktree",
-                "add",
-                "-q",
-                "-b",
-                &branch,
-                worktree.to_str().unwrap(),
-                "main",
-            ],
-        );
-        let worktree = fs::canonicalize(&worktree).unwrap();
+        let worktrees = data_dir.join("worktrees");
+        fs::create_dir_all(&worktrees).unwrap();
+        let leased = create_task_worktree(
+            &repository,
+            task_id,
+            "main",
+            &worktrees,
+            &BranchPrefix::default(),
+            &treehouse_for(&data_dir).unwrap(),
+            &format!("{task_id}-workspace-1"),
+        )
+        .expect("lease a treehouse worktree; set AGENT_ORCH_TREEHOUSE_PROGRAM");
+        let branch = leased.branch().to_owned();
+        // Treehouse matches a returned path against its lease literally, so keep the spelling it gave.
+        let worktree = leased.path().to_path_buf();
         let store = open_store(&data_dir).unwrap();
         match owner {
             Some(identity) => {
@@ -2358,6 +2393,23 @@ mod tests {
         (root, data_dir, worktree)
     }
 
+    /// Whether a release returned `worktree` to the pool: the next lease gets it back.
+    fn returned_to_pool(data_dir: &Path, task_id: &str, worktree: &Path) -> bool {
+        let metadata = read_metadata(data_dir, task_id).unwrap();
+        let repository = Repository::new(&metadata.repository).unwrap();
+        let lease = create_task_worktree(
+            &repository,
+            "probe",
+            "main",
+            &data_dir.join("worktrees"),
+            &BranchPrefix::default(),
+            &treehouse_for(data_dir).unwrap(),
+            "probe-workspace-1",
+        )
+        .unwrap();
+        lease.path() == worktree
+    }
+
     /// Crashed-startup state: Running with an attempt and session but no owner.
     #[test]
     fn cleanup_refuses_clean_worktree_of_unsettled_task_without_a_published_owner() {
@@ -2377,7 +2429,7 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_removes_clean_landed_worktree_of_settled_task_without_an_owner() {
+    fn cleanup_releases_clean_landed_worktree_of_settled_task_without_an_owner() {
         let (_root, data_dir, worktree) = owned_clean_worktree("task-settled", None);
         let store = open_store(&data_dir).unwrap();
         let task = store.get("task-settled").unwrap();
@@ -2392,7 +2444,7 @@ mod tests {
             .transition("task-settled", TaskEvent::CandidateReady)
             .unwrap();
         cleanup_task(&data_dir, "task-settled").unwrap();
-        assert!(!worktree.exists());
+        assert!(returned_to_pool(&data_dir, "task-settled", &worktree));
     }
 
     #[test]
@@ -2468,7 +2520,7 @@ mod tests {
             .record_session_identity("task-dead-clean", &session, &dead)
             .unwrap();
         cleanup_task(&data_dir, "task-dead-clean").unwrap();
-        assert!(!worktree.exists());
+        assert!(returned_to_pool(&data_dir, "task-dead-clean", &worktree));
         // Cleanup never retires or rewrites the owner record.
         assert_eq!(store.open_cancellation_owners().unwrap().len(), 1);
     }

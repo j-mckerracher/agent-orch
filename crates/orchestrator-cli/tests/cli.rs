@@ -3,6 +3,10 @@
 
 #![cfg(unix)]
 
+mod support;
+
+use support::{leased_worktree, returned_to_pool};
+
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
@@ -153,7 +157,12 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
         .add_workspace(&Workspace {
             id: format!("{task_id}-workspace-1"),
             task_id: task_id.to_owned(),
-            path: task_worktree(fixture, task_id).display().to_string(),
+            path: fixture
+                .data
+                .join("worktrees")
+                .join(task_id)
+                .display()
+                .to_string(),
             branch: format!("mcao/{task_id}"),
             base_commit: git(&fixture.repo, &["rev-parse", "HEAD"]),
         })
@@ -192,7 +201,7 @@ fn seed_running_session(fixture: &Fixture, task_id: &str, identity: Option<Proce
 }
 
 fn task_worktree(fixture: &Fixture, task_id: &str) -> PathBuf {
-    fixture.data.join("worktrees").join(task_id)
+    leased_worktree(&fixture.data, task_id)
 }
 
 #[test]
@@ -672,7 +681,7 @@ fn cleanup_removes_only_clean_landed_worktree() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(!worktree.exists());
+    assert!(returned_to_pool(&fixture.data, &fixture.repo, &worktree));
 }
 
 #[test]

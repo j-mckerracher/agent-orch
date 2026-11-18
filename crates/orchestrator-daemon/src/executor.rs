@@ -39,8 +39,9 @@ use orchestrator_agents::cli_compat::{
 };
 use orchestrator_agents::workflow_agent::{self, WorkflowAgent};
 use orchestrator_agents::{
-    pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
-    ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
+    locate_program, pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle,
+    AgentLaunchRequest, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
+    COPILOT_AGENT,
 };
 use orchestrator_core::contract::{ModelSelection, TaskKind};
 use orchestrator_core::permission::PermissionLevel;
@@ -51,7 +52,8 @@ use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::verify::{pending_verifications, verify_attempt, Verified};
 use orchestrator_git::{
-    create_task_worktree, is_safe_branch_name, BranchPrefix, Error as GitError, Repository,
+    create_task_worktree, is_safe_branch_name, release_task_worktree, BranchPrefix,
+    Error as GitError, Released, Repository, Treehouse,
 };
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
@@ -82,6 +84,8 @@ pub(crate) struct ExecutorConfig {
     pub(crate) claude_program: Option<PathBuf>,
     pub(crate) pi_program: Option<PathBuf>,
     pub(crate) copilot_program: Option<PathBuf>,
+    /// The bundled treehouse program that leases each task's worktree.
+    pub(crate) treehouse_program: PathBuf,
     /// Whether Copilot runs pass `--max-ai-credits`, a soft cap. Off unless the
     /// daemon starts with `AGENT_ORCH_COPILOT_CREDIT_CAP=1` (DPES-1105 O2).
     pub(crate) copilot_credit_cap: bool,
@@ -268,6 +272,7 @@ impl ExecutorConfig {
             claude_program: std::env::var_os("AGENT_ORCH_CLAUDE_PROGRAM").map(PathBuf::from),
             pi_program: std::env::var_os("AGENT_ORCH_PI_PROGRAM").map(PathBuf::from),
             copilot_program: std::env::var_os("AGENT_ORCH_COPILOT_PROGRAM").map(PathBuf::from),
+            treehouse_program: treehouse_program(),
             copilot_credit_cap: std::env::var("AGENT_ORCH_COPILOT_CREDIT_CAP").as_deref()
                 == Ok("1"),
             copilot_sign_in: Arc::default(),
@@ -287,6 +292,43 @@ impl ExecutorConfig {
             locate_workflow_agent: workflow_agent::locate,
         }
     }
+}
+
+/// The bundled treehouse beside the daemon executable. Debug builds first honor
+/// `AGENT_ORCH_TREEHOUSE_PROGRAM` and then PATH, as the agent programs do. Release
+/// builds never run a path taken from the environment or PATH.
+fn treehouse_program() -> PathBuf {
+    let name = if cfg!(windows) {
+        "treehouse.exe"
+    } else {
+        "treehouse"
+    };
+    if cfg!(debug_assertions) {
+        if let Some(path) =
+            std::env::var_os("AGENT_ORCH_TREEHOUSE_PROGRAM").filter(|v| !v.is_empty())
+        {
+            return PathBuf::from(path);
+        }
+        if let Some(found) = locate_program(Path::new(name)) {
+            return found;
+        }
+    }
+    // An empty path never spawns, so a missing sidecar fails the lease, never falls back to PATH.
+    std::env::current_exe().map_or_else(|_| PathBuf::new(), |exe| exe.with_file_name(name))
+}
+
+/// The treehouse binary the tests lease worktrees with, from `AGENT_ORCH_TREEHOUSE_PROGRAM`.
+#[cfg(test)]
+pub(crate) fn test_treehouse_program() -> PathBuf {
+    std::env::var_os("AGENT_ORCH_TREEHOUSE_PROGRAM")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            panic!(
+                "AGENT_ORCH_TREEHOUSE_PROGRAM is not set; fetch treehouse with \
+                 `node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest target/treehouse` \
+                 and point the variable at the binary"
+            )
+        })
 }
 
 /// Last time each running session produced an agent event, in Unix ms. In memory only:
@@ -324,6 +366,8 @@ pub(crate) struct Executor {
 struct Inner {
     store: Arc<SqliteStore>,
     config: ExecutorConfig,
+    /// Leases every task worktree from the bundled pool.
+    treehouse: Treehouse,
     /// True from a wake request until the next scheduling pass begins.
     dirty: Mutex<bool>,
     wake: Condvar,
@@ -344,9 +388,12 @@ struct Inner {
 impl Executor {
     pub(crate) fn start(store: Arc<SqliteStore>, config: ExecutorConfig) -> Result<Self, String> {
         let admission = AdmissionGate::new(config.admission.clone(), config.data_dir.clone());
+        let treehouse = Treehouse::new(&config.treehouse_program, &config.data_dir)
+            .map_err(|error| format!("cannot prepare treehouse: {error}"))?;
         let inner = Arc::new(Inner {
             store,
             config,
+            treehouse,
             admission,
             dirty: Mutex::new(true),
             wake: Condvar::new(),
@@ -383,6 +430,43 @@ impl Executor {
     /// Asks the scheduler to run a pass now (task admitted, retried, finished).
     pub(crate) fn wake(&self) {
         self.inner.request_pass();
+    }
+
+    /// Returns the treehouse slots of finished tasks to the pool. An in-place workspace
+    /// holds no slot and is skipped. A dirty slot stays leased for inspection. Every
+    /// outcome is logged; none reaches the caller.
+    pub(crate) fn release_workspaces(&self, workspaces: &[Workspace]) {
+        let inner = &*self.inner;
+        let diagnostics = &inner.config.diagnostics;
+        for workspace in workspaces
+            .iter()
+            .filter(|workspace| !workspace.is_in_place())
+        {
+            let (task_id, workspace_id) = (workspace.task_id.as_str(), workspace.id.as_str());
+            let released = release_task_worktree(
+                &inner.treehouse,
+                &inner.config.worktrees_root,
+                Path::new(&workspace.path),
+                &workspace.id,
+            );
+            match released {
+                Ok(Released::Returned) => {}
+                Ok(Released::Dirty) => diagnostics.warn(
+                    LOG,
+                    "worktree_kept_leased",
+                    &[("task_id", task_id), ("workspace_id", workspace_id)],
+                ),
+                Err(error) => diagnostics.error(
+                    LOG,
+                    "worktree_release_failed",
+                    &[
+                        ("task_id", task_id),
+                        ("workspace_id", workspace_id),
+                        ("error", &error.to_string()),
+                    ],
+                ),
+            }
+        }
     }
 
     /// Interrupts the verification run of `task_id`, if one is in flight. The
@@ -857,6 +941,8 @@ impl Inner {
     ) -> Result<(), String> {
         let store = &*self.store;
         let task_id = job.task_id.clone();
+        // The lease holder of this attempt's worktree, and the workspace record that names it.
+        let workspace_id = format!("{task_id}-workspace-{number}");
         // The home directory is a project whose tasks run in the directory itself, unless the
         // directory has since become a Git repository: then it gets a worktree like any other.
         let mut in_place = store
@@ -900,8 +986,15 @@ impl Inner {
                     }
                     None => "HEAD".to_owned(),
                 };
-                let worktree =
-                    create_task_worktree(&repository, &task_id, &base_ref, &root, &prefix)?;
+                let worktree = create_task_worktree(
+                    &repository,
+                    &task_id,
+                    &base_ref,
+                    &root,
+                    &prefix,
+                    &self.treehouse,
+                    &workspace_id,
+                )?;
                 Ok(Checkout {
                     path: worktree.path().to_path_buf(),
                     branch: worktree.branch().to_string(),
@@ -952,7 +1045,6 @@ impl Inner {
             }
         };
         job.worktree = checkout.path.clone();
-        let workspace_id = format!("{task_id}-workspace-{number}");
         let path = checkout.path.display().to_string();
         let workspace = if in_place {
             Workspace::in_place(workspace_id, task_id.clone(), path)
@@ -1084,6 +1176,9 @@ fn preserved_work(job: &Job) -> (String, String) {
 /// Attempt failure reason when the directory of an in-place project is gone.
 const HOME_DIRECTORY_MISSING: &str =
     "The project directory no longer exists. Check the home directory in Settings, then retry.";
+/// Attempt failure reason when the bundled treehouse cannot be run.
+pub(crate) const WORKTREE_MANAGER_MISSING: &str =
+    "The worktree manager is missing or could not be started. Reinstall the app, then retry.";
 /// Attempt failure reason when the project's base branch no longer resolves.
 pub(crate) const BASE_BRANCH_MISSING: &str = "The project's base branch no longer exists. Set a base branch that exists in the project defaults, or clear it, then retry.";
 
@@ -1096,6 +1191,13 @@ fn worktree_failure_reason(error: &GitError) -> &'static str {
         }
         // Only a project's base branch reaches here: the reason never names it.
         GitError::InvalidBaseRef { .. } => BASE_BRANCH_MISSING,
+        GitError::WorktreePoolFull => {
+            "Every task worktree is in use. Archive finished tasks to free one, then retry."
+        }
+        GitError::TreehouseUnavailable { .. } => WORKTREE_MANAGER_MISSING,
+        GitError::TreehouseTimeout { .. } => {
+            "The worktree manager did not finish in time. Retry the task."
+        }
         GitError::CreationFailed { source, .. } => worktree_failure_reason(source),
         _ => {
             "The daemon could not prepare a task worktree. Check the daemon log for details, then retry."

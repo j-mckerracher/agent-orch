@@ -97,6 +97,7 @@ impl Fixture {
             copilot_credit_cap: false,
             // Never probe a real copilot from a test: a missing path is a fact.
             copilot_program: Some(self.root.path().join("no-such-copilot")),
+            treehouse_program: test_treehouse_program(),
             copilot_sign_in: Default::default(),
             compatibility: Default::default(),
             limits: SchedulerLimits::default(),
@@ -1670,17 +1671,21 @@ fn seed_interrupted_run(store: &SqliteStore, fixture: &Fixture, task_id: &str, p
     store.transition(task_id, TaskEvent::Admit).unwrap();
     let worktrees = fixture.data().join("worktrees");
     fs::create_dir_all(&worktrees).unwrap();
+    let treehouse = Treehouse::new(test_treehouse_program(), &fixture.data()).unwrap();
+    let workspace_id = format!("{task_id}-workspace-1");
     let worktree = create_task_worktree(
         &Repository::new(&fixture.repo).unwrap(),
         task_id,
         "HEAD",
         &fs::canonicalize(worktrees).unwrap(),
         &BranchPrefix::default(),
+        &treehouse,
+        &workspace_id,
     )
     .unwrap();
     store
         .add_workspace(&Workspace {
-            id: format!("{task_id}-workspace-1"),
+            id: workspace_id,
             task_id: task_id.into(),
             path: worktree.path().display().to_string(),
             branch: worktree.branch().to_string(),
@@ -2115,6 +2120,96 @@ fn a_task_is_created_from_the_projects_base_branch_and_prefix() {
         workspace.base_commit,
         String::from_utf8(tip.stdout).unwrap().trim()
     );
+    api.shutdown();
+}
+
+/// The worktree path a task's first workspace records.
+fn workspace_path(fixture: &Fixture, task_id: &str) -> String {
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|workspace| workspace.task_id == task_id)
+        .unwrap()
+        .path
+}
+
+/// Leases one more worktree from the same pool and returns its path. A slot that was
+/// returned is handed out again, so the path matches it; a slot still leased is not.
+fn lease_one_more(fixture: &Fixture) -> String {
+    let treehouse = Treehouse::new(test_treehouse_program(), &fixture.data()).unwrap();
+    let worktrees = fs::canonicalize(fixture.data().join("worktrees")).unwrap();
+    let worktree = create_task_worktree(
+        &Repository::new(&fixture.repo).unwrap(),
+        "lease-probe",
+        "HEAD",
+        &worktrees,
+        &BranchPrefix::default(),
+        &treehouse,
+        "lease-probe-workspace-1",
+    )
+    .unwrap();
+    worktree.path().display().to_string()
+}
+
+#[test]
+fn archiving_a_finished_task_returns_its_worktree_slot_to_the_pool() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let task_id = fixture.submit(&api, "archive-release", 0);
+    wait_state(&api, &task_id, "Succeeded");
+    let leased = workspace_path(&fixture, &task_id);
+
+    api.dispatch(
+        "tasks.archive",
+        json!({"task_ids": [task_id], "idempotency_key": "archive-release-call"}),
+    )
+    .unwrap();
+
+    assert_eq!(lease_one_more(&fixture), leased);
+    api.shutdown();
+}
+
+#[test]
+fn archiving_keeps_the_slot_of_a_task_whose_worktree_is_dirty() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let task_id = fixture.submit(&api, "archive-dirty", 0);
+    wait_state(&api, &task_id, "Succeeded");
+    let leased = workspace_path(&fixture, &task_id);
+    fs::write(Path::new(&leased).join("scratch.txt"), "uncommitted\n").unwrap();
+
+    let archived = api
+        .dispatch(
+            "tasks.archive",
+            json!({"task_ids": [task_id], "idempotency_key": "archive-dirty-call"}),
+        )
+        .unwrap();
+
+    assert_eq!(archived, json!({"archived": [task_id]}));
+    assert_eq!(
+        fs::read_to_string(Path::new(&leased).join("scratch.txt")).unwrap(),
+        "uncommitted\n"
+    );
+    assert_ne!(lease_one_more(&fixture), leased);
+    api.shutdown();
+}
+
+#[test]
+fn a_missing_treehouse_fails_the_attempt_with_a_stable_reason() {
+    let fixture = Fixture::new();
+    let api = fixture.api_with(&fixture.root.path().join("missing-codex"), |config| {
+        config.treehouse_program = fixture.root.path().join("no-such-treehouse");
+    });
+    let task_id = fixture.submit(&api, "no-treehouse", 0);
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(
+        failed["attempts"][0]["failure_reason"],
+        WORKTREE_MANAGER_MISSING
+    );
+    assert_eq!(failed["sessions"], json!([]));
     api.shutdown();
 }
 
