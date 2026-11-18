@@ -239,6 +239,21 @@ impl SqliteStore {
         })
     }
 
+    /// Removes the in-place flag from a project's settings and keeps its other settings. An
+    /// unknown project or one without the flag is left as it is.
+    pub fn clear_in_place(&self, project_id: &str) -> Result<(), StoreError> {
+        let project_id = project_id.to_owned();
+        self.call(move |pool| async move {
+            sqlx::query(
+                "UPDATE projects SET settings = json_remove(settings, '$.in_place') WHERE id = ?",
+            )
+            .bind(project_id)
+            .execute(&pool)
+            .await?;
+            Ok(())
+        })
+    }
+
     /// Counts tasks by state and reads at most `open_limit` of the newest
     /// non-terminal tasks ([`TERMINAL_TASK_STATES`]).
     pub fn task_overview(&self, open_limit: usize) -> Result<TaskOverview, StoreError> {

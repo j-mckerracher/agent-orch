@@ -249,6 +249,8 @@ impl DaemonApi {
             SqliteStore::new(&data_dir.join("store.sqlite"))
                 .map_err(|_| "cannot open daemon store".to_owned())?,
         );
+        home_directory::clear_stale_in_place_flags(&store)
+            .map_err(|_| "cannot clear stale in-place flags".to_owned())?;
         // The saved limits apply before anything can start a task.
         let settings = store
             .orchestrator_settings()

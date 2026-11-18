@@ -484,3 +484,23 @@ fn chat_pr_delivery_is_off_by_default_and_a_settings_patch_leaves_other_columns_
         vec!["[1,70]"]
     );
 }
+
+#[test]
+fn clearing_in_place_removes_only_the_flag_from_the_project_settings() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = SqliteStore::new(&directory.path().join("store.sqlite")).unwrap();
+    store
+        .register_project(&Project {
+            id: "p1".to_owned(),
+            root_path: "/work/p1".to_owned(),
+            settings: serde_json::json!({"in_place": true, "keep": 1}),
+        })
+        .unwrap();
+
+    store.clear_in_place("p1").unwrap();
+    store.clear_in_place("unknown").unwrap();
+
+    let project = store.get_project("p1").unwrap();
+    assert!(!project.is_in_place());
+    assert_eq!(project.settings, serde_json::json!({"keep": 1}));
+}

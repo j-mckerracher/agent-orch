@@ -4,6 +4,7 @@
 //! so no agent CLI starts (the executor run is in `executor_tests.rs`).
 
 use orchestrator_core::orchestrator_action::{parse_block, BlockScope};
+use orchestrator_core::records::IN_PLACE_SETTING;
 
 use super::actions::project_code;
 use super::actions_task_tests::{chat_submit, register_project, submit_queued, task_count, ALPHA};
@@ -16,6 +17,18 @@ fn directory() -> (tempfile::TempDir, String) {
     let directory = tempfile::tempdir().unwrap();
     let canonical = home_directory::resolve(directory.path().to_str().unwrap()).unwrap();
     (directory, canonical.to_str().unwrap().to_owned())
+}
+
+/// A Git repository and its canonical form as the daemon saves it.
+fn repository() -> (tempfile::TempDir, String) {
+    let (directory, path) = directory();
+    let status = std::process::Command::new("git")
+        .args(["init", "-q"])
+        .current_dir(&path)
+        .status()
+        .unwrap();
+    assert!(status.success());
+    (directory, path)
 }
 
 fn set_home(api: &DaemonApi, key: &str, home: Value) -> Result<Value, RpcError> {
@@ -149,6 +162,40 @@ fn a_directory_that_is_already_a_project_stays_the_project_it_is() {
         !api.store.get_project(&path).unwrap().is_in_place(),
         "a Git project stays a worktree project"
     );
+}
+
+#[test]
+fn a_git_home_directory_registers_as_a_worktree_project() {
+    let (_data, api) = new_api();
+    let (_repository, path) = repository();
+
+    set_home(&api, "home-10", json!(path)).unwrap();
+
+    assert_eq!(saved(&api), Some(path.clone()));
+    assert!(!api.store.get_project(&path).unwrap().is_in_place());
+}
+
+#[test]
+fn an_in_place_flag_on_a_git_repo_is_cleared_at_startup() {
+    let (data, api) = new_api();
+    let (_repository, repo) = repository();
+    let (_home, home) = directory();
+    for path in [&repo, &home] {
+        api.store
+            .register_project(&Project {
+                id: path.clone(),
+                root_path: path.clone(),
+                settings: json!({ IN_PLACE_SETTING: true }),
+            })
+            .unwrap();
+    }
+    api.shutdown();
+
+    let restarted = DaemonApi::new(data.path()).unwrap();
+
+    assert!(!restarted.store.get_project(&repo).unwrap().is_in_place());
+    assert!(restarted.store.get_project(&home).unwrap().is_in_place());
+    restarted.shutdown();
 }
 
 #[test]

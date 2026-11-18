@@ -3,8 +3,9 @@
 //! The user sets it on the Settings page (`settings.set` with `home_directory`). The daemon
 //! resolves what was typed (a leading `~` is the user's home) to a canonical absolute
 //! directory, registers that directory as an in-place project (no Git repository needed, no
-//! worktree, report-only tasks) and saves the canonical path. A directory that is already a
-//! registered project keeps the project it is, so a Git project stays a worktree project.
+//! worktree, report-only tasks) and saves the canonical path. A Git repository is registered as a
+//! worktree project instead. A directory that is already a registered project keeps the project
+//! it is, so a Git project stays a worktree project.
 //!
 //! A refusal is `InvalidParams` and carries no path.
 
@@ -74,13 +75,29 @@ fn strip_verbatim(path: PathBuf) -> PathBuf {
     path
 }
 
+/// Clears the in-place flag of each project whose root is now a Git repository, so its tasks
+/// get worktrees. Runs at startup: a flag set before `git init` would otherwise stay.
+pub(super) fn clear_stale_in_place_flags(store: &SqliteStore) -> Result<(), StoreError> {
+    for project in store.list_projects()? {
+        if project.is_in_place() && Repository::new(Path::new(&project.root_path)).is_ok() {
+            store.clear_in_place(&project.id)?;
+        }
+    }
+    Ok(())
+}
+
 impl DaemonApi {
     /// Makes sure `root` is a registered, unarchived project. A directory nobody registered
-    /// becomes an in-place project; one already registered is left as it is. The caller holds
-    /// the idempotency gate.
+    /// becomes an in-place project unless it is a Git repository, which runs in worktrees. One
+    /// already registered is left as it is, but a repository's in-place flag is cleared. The
+    /// caller holds the idempotency gate.
     pub(super) fn ensure_home_project(&self, root: &str) -> Result<(), RpcError> {
+        let is_repository = Repository::new(Path::new(root)).is_ok();
         match self.store.get_project(root) {
-            Ok(_) => {
+            Ok(project) => {
+                if project.is_in_place() && is_repository {
+                    self.store.clear_in_place(root).map_err(map_store_error)?;
+                }
                 self.store.restore_project(root).map_err(map_store_error)?;
                 Ok(())
             }
@@ -89,7 +106,7 @@ impl DaemonApi {
                 .register_project(&Project {
                     id: root.to_owned(),
                     root_path: root.to_owned(),
-                    settings: json!({ IN_PLACE_SETTING: true }),
+                    settings: json!({ IN_PLACE_SETTING: !is_repository }),
                 })
                 .map_err(map_store_error),
             Err(error) => Err(map_store_error(error)),

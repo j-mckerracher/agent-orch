@@ -857,10 +857,17 @@ impl Inner {
     ) -> Result<(), String> {
         let store = &*self.store;
         let task_id = job.task_id.clone();
-        // The home directory is a project whose tasks run in the directory itself.
-        let in_place = store
+        // The home directory is a project whose tasks run in the directory itself, unless the
+        // directory has since become a Git repository: then it gets a worktree like any other.
+        let mut in_place = store
             .get_project(&task.contract.project_id)
             .is_ok_and(|project| project.is_in_place());
+        if in_place && Repository::new(Path::new(&task.contract.project_id)).is_ok() {
+            store
+                .clear_in_place(&task.contract.project_id)
+                .map_err(|error| format!("cannot clear in-place flag: {error}"))?;
+            in_place = false;
+        }
         job.in_place = in_place;
         let checkout = if in_place {
             in_place_checkout(&task.contract.project_id)

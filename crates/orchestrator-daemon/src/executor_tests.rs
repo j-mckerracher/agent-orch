@@ -3028,5 +3028,55 @@ fn a_task_for_an_in_place_project_whose_directory_is_gone_fails_with_a_stable_re
     api.shutdown();
 }
 
+#[test]
+fn an_in_place_home_that_became_a_repository_runs_in_a_worktree() {
+    let fixture = Fixture::new();
+    let home = fs::canonicalize(fixture.root.path()).unwrap().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    store
+        .register_project(&Project {
+            id: home.display().to_string(),
+            root_path: home.display().to_string(),
+            settings: json!({"in_place": true}),
+        })
+        .unwrap();
+    // `git init` runs after the flag was set.
+    run_git(&home, &["init", "--initial-branch=main"]);
+    run_git(&home, &["config", "user.name", "executor test"]);
+    run_git(&home, &["config", "user.email", "executor@example.invalid"]);
+    fs::write(home.join("sample.txt"), "base\n").unwrap();
+    run_git(&home, &["add", "sample.txt"]);
+    run_git(&home, &["commit", "-m", "initial"]);
+    let mut contract = launch_contract(&fixture, "codex");
+    contract["project_id"] = json!(home.display().to_string());
+    let task_id = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "in-place-3", "contract": contract}),
+        )
+        .unwrap()["contract"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+
+    wait_state(&api, &task_id, "Succeeded");
+
+    assert!(!store
+        .get_project(&home.display().to_string())
+        .unwrap()
+        .is_in_place());
+    let workspace = store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .find(|workspace| workspace.task_id == task_id)
+        .unwrap();
+    assert!(!workspace.is_in_place());
+    assert!(!workspace.branch.is_empty());
+    api.shutdown();
+}
+
 #[path = "api_models_tests.rs"]
 mod model_selection;
