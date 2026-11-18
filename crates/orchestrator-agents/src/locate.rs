@@ -20,7 +20,7 @@ fn candidates(dir: &Path, program: &Path, windows: bool) -> Vec<PathBuf> {
 }
 
 /// An explicit path is used as-is; a bare name is resolved against `PATH`.
-pub(crate) fn locate_program(program: &Path) -> Option<PathBuf> {
+pub fn locate_program(program: &Path) -> Option<PathBuf> {
     if program.is_file() {
         return Some(program.to_path_buf());
     }
