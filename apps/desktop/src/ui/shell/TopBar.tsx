@@ -125,7 +125,7 @@ function FixtureCounts() {
     <CountsLine
       placeholder="D9, D11"
       values={{
-        workstreams: surfaceCount(workstreams.status, ws && activeCount(ws)),
+        workstreams: surfaceCount(workstreams.status, ws ? activeCount(ws) : undefined),
         tasks: surfaceCount(workstreams.status, ws?.reduce((total, item) => total + item.tasks.length, 0)),
         running: surfaceCount(activity.status, act?.running.length),
         attention: surfaceCount(activity.status, act?.attention.length),
