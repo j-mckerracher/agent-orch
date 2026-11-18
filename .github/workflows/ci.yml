@@ -172,6 +172,14 @@ jobs:
       - name: Touch the local sources after the cache restore
         run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
+      # The pinned treehouse worktree tool (DPES-1044) for the tests that lease worktrees. The debug daemon reads
+      # AGENT_ORCH_TREEHOUSE_PROGRAM before PATH. The staging script checks the archive and binary SHA-256 pins.
+      - name: Fetch pinned treehouse
+        run: |
+          node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"
+          exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
+          echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -268,6 +276,14 @@ jobs:
       - name: Touch the local sources after the cache restore
         run: find crates apps/desktop/src-tauri -type f -exec touch {} +
 
+      # The pinned treehouse worktree tool (DPES-1044) for the tests that lease worktrees. The debug daemon reads
+      # AGENT_ORCH_TREEHOUSE_PROGRAM before PATH. The staging script checks the archive and binary SHA-256 pins.
+      - name: Fetch pinned treehouse
+        run: |
+          node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"
+          exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
+          echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -363,6 +379,14 @@ jobs:
       # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
       - name: Touch the local sources after the cache restore
         run: find crates apps/desktop/src-tauri -type f -exec touch {} +
+
+      # The pinned treehouse worktree tool (DPES-1044) for the tests that lease worktrees. The debug daemon reads
+      # AGENT_ORCH_TREEHOUSE_PROGRAM before PATH. The staging script checks the archive and binary SHA-256 pins.
+      - name: Fetch pinned treehouse
+        run: |
+          node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"
+          exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
+          echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
 
       - name: Native gates
         run: |
@@ -555,6 +579,14 @@ jobs:
       # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
       - name: Touch the local sources after the cache restore
         run: find crates apps/desktop/src-tauri -type f -exec touch {} +
+
+      # The pinned treehouse worktree tool (DPES-1044) for the tests that lease worktrees. The debug daemon reads
+      # AGENT_ORCH_TREEHOUSE_PROGRAM before PATH. The staging script checks the archive and binary SHA-256 pins.
+      - name: Fetch pinned treehouse
+        run: |
+          node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"
+          exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
+          echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
 
       - name: Native gates
         run: |
@@ -805,6 +837,15 @@ jobs:
         run: |
           node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs" | tee "$RUNNER_TEMP/usage-smoke.tap"
           node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
+
+      # The pinned treehouse worktree tool (DPES-1044) for the tests that lease worktrees. The debug daemon reads
+      # AGENT_ORCH_TREEHOUSE_PROGRAM before PATH. The staging script checks the archive and binary SHA-256 pins.
+      - name: Fetch pinned treehouse
+        run: |
+          node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"
+          exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
+          echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
+
       # One step runs every gate once, in order, with its own target dir and test temp dir.
       # The evidence and target dirs are outside the checkout so the tree stays clean.
       - name: Native gates

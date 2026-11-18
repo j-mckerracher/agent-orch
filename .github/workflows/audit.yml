@@ -21,6 +21,10 @@ on:
       - crates/orchestrator-local-usage/**
       - scripts/smoke/usage-reader.smoke.mjs
       - docs/third-party/codeburn.md
+      # DPES-1044: the pinned treehouse worktree tool, its checksums, its staging script and its scan record.
+      - apps/desktop/src-tauri/sidecars/treehouse/**
+      - apps/desktop/scripts/prepare-treehouse-sidecar.mjs
+      - docs/third-party/treehouse.md
       - .github/workflows/audit.yml
   push:
     branches: [main]
@@ -98,10 +102,10 @@ jobs:
         run: npm audit --package-lock-only --audit-level=high
 
       # Exact totals: a skipped or failing test is never counted as a pass (see require-tap-totals.mjs).
-      - name: codeburn sidecar record (exact totals)
+      - name: sidecar records (codeburn and treehouse, exact totals)
         run: |
-          node --test --test-reporter=tap apps/desktop/src-tauri/sidecars/codeburn/codeburn-sidecar.test.mjs | tee "$RUNNER_TEMP/codeburn-record.tap"
-          node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/codeburn-record.tap" 8
+          node --test --test-reporter=tap apps/desktop/src-tauri/sidecars/codeburn/codeburn-sidecar.test.mjs apps/desktop/src-tauri/sidecars/treehouse/treehouse-sidecar.test.mjs | tee "$RUNNER_TEMP/sidecar-records.tap"
+          node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/sidecar-records.tap" 9
 
       # Installs the locked codeburn tree, rebuilds the bundle with the locked esbuild and checks it
       # against the pin on this runner (ubuntu). The harness runs the same test on Windows and macOS,

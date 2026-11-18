@@ -58,11 +58,18 @@ export const GROUPS = ["engine", "tauri", "desktop", "package", "smoke"];
 const SMOKE_INPUTS = [
   /^crates\/orchestrator-local-usage\//,
   /^scripts\/smoke\//,
-  /^apps\/desktop\/src-tauri\/sidecars\//,
+  /^apps\/desktop\/src-tauri\/sidecars\/codeburn\//,
   /^apps\/desktop\/scripts\/prepare-codeburn-sidecar\.mjs$/,
   /^crates\/orchestrator-daemon\/.*usage/i,
   /^crates\/orchestrator-agents\/.*usage/i,
   /^crates\/orchestrator-store\/.*usage/i,
+];
+
+// The pinned treehouse binary (DPES-1044) is what the engine's worktree tests lease from, and what the installer ships,
+// so a change to its pin or staging script selects the engine, Tauri and package groups.
+const TREEHOUSE_INPUTS = [
+  /^apps\/desktop\/src-tauri\/sidecars\/treehouse\//,
+  /^apps\/desktop\/scripts\/prepare-treehouse-sidecar\.mjs$/,
 ];
 
 // A file that no Windows gate reads: anything under docs/, and a Markdown file at the repository root.
@@ -100,6 +107,7 @@ export function selectGroups({ eventName, changedFiles }) {
     if (isDocumentation(file)) continue;
     if (RUNS_EVERYTHING.some((re) => re.test(file))) return { ...ALL, reason: `${file} runs every Windows gate` };
     if (SMOKE_INPUTS.some((re) => re.test(file))) selected.smoke = true;
+    if (TREEHOUSE_INPUTS.some((re) => re.test(file))) Object.assign(selected, { engine: true, tauri: true, package: true });
     if (file.startsWith("crates/")) Object.assign(selected, { engine: true, tauri: true, package: true });
     else if (file.startsWith("apps/desktop/src-tauri/")) Object.assign(selected, { tauri: true, package: true });
     else if (file.startsWith("apps/desktop/src/")) selected.desktop = true;
