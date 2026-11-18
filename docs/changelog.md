@@ -5,6 +5,13 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.6](https://github.com/mc-innersource/motif-mcao/compare/v0.1.5...v0.1.6) (2026-11-18)
+
+
+### Bug Fixes
+
+* **desktop:** DPES-1106 - Show the light-mode background and drop the duplicate Global target ([3cf6886](https://github.com/mc-innersource/motif-mcao/commit/3cf68866e7ce9a5c4b4e750f3cd2edcc0bd2038c))
+
 ## [0.1.5](https://github.com/mc-innersource/motif-mcao/compare/v0.1.4...v0.1.5) (2026-11-18)
 
 

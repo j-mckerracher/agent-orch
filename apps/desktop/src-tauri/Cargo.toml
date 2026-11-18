@@ -1,7 +1,7 @@
 [package]
 name = "agent-orch-desktop"
 description = "Tauri host for the agent orchestrator desktop app. Thin layer: window lifecycle and IPC forwarding to the engine; no orchestration logic lives here."
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 publish = false
 
