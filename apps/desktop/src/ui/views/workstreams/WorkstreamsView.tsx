@@ -13,6 +13,8 @@ import { useReviewEvidence } from "./evidence";
 import {
   ARCHIVED_REASON,
   AddObjectiveForm,
+  ArchiveFinished,
+  ArchiveTaskButton,
   LifecycleControls,
   LinkTaskForm,
   ListActions,
@@ -240,6 +242,9 @@ export function WorkstreamsView() {
           <NavLink className="ws-link-button" to={{ name: "projects" }}>
             Manage projects
           </NavLink>
+          {surfaces.workstreams.provenance.kind !== "fixture" && (
+            <ArchiveFinished run={mutations.run} busy={mutations.busy} />
+          )}
           {surfaces.workstreams.provenance.kind !== "fixture" && (
             <Button
               disabled={mutations.busy}
@@ -528,6 +533,7 @@ function Detail({
                     {!fixture && (
                       <td className="ws-table-action">
                         <UnlinkButton group={group} task={task} controls={controls} />
+                        <ArchiveTaskButton task={task} controls={controls} />
                       </td>
                     )}
                   </tr>

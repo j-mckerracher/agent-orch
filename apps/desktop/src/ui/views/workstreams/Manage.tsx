@@ -4,19 +4,16 @@
  * edit is a daemon conflict that the runner answers by reloading, never by overwriting.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import type { AppData } from "../../../daemon/appData";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
-import type {
-  GateState,
-  WorkstreamGate,
-  WorkstreamMutation,
-  WorkstreamObjective,
-} from "../../../sources/surfaces/types";
-import { useGate, useServices } from "../../services";
+import type { GateState, WorkstreamGate, WorkstreamObjective } from "../../../sources/surfaces/types";
+import { canArchive, stateLabel } from "../../format";
+import { useGate, useServices, useStore } from "../../services";
 import { Button, Pill } from "../../theme";
 import { ErrorNotice, Notice } from "../../widgets";
 import { reloadWorkstreams, taskLabelOf, type WsGroup, type WsTask } from "./model";
 
-export type Run = (action: string, send: () => Promise<WorkstreamMutation>) => Promise<WorkstreamMutation | null>;
+export type Run = <T>(action: string, send: () => Promise<T>) => Promise<T | null>;
 
 interface Outcome {
   action: string;
@@ -458,6 +455,73 @@ export function UnlinkButton({ group, task, controls }: { group: WsGroup; task: 
           Disabled: a gate cites this task as evidence. Change that gate first.
         </span>
       )}
+    </>
+  );
+}
+
+/** `AppData.archiveTasks` as a runner send: a refused call throws its daemon error, so the runner shows it. */
+export async function archiveSend(data: AppData, ids: string[]): Promise<string[]> {
+  const result = await data.archiveTasks(ids);
+  if (!result.ok) throw result.error;
+  return result.value;
+}
+
+/** Hidden once the daemon answers method-unavailable (DPES-1106); otherwise disabled with a reason when not finished. */
+export function ArchiveTaskButton({ task, controls }: { task: WsTask; controls: Controls }) {
+  const { data } = useServices();
+  const { archiveUnsupported } = useStore(data);
+  const reasonId = useId();
+  const finished = canArchive(task.state);
+  if (archiveUnsupported) return null;
+  return (
+    <>
+      <Button
+        disabled={controls.busy || controls.locked !== null || !finished}
+        aria-label={`Archive ${taskLabelOf(task)}`}
+        aria-describedby={finished ? undefined : reasonId}
+        onClick={() => void controls.run(`Archive task ${task.id}`, () => archiveSend(data, [task.id]))}
+      >
+        Archive
+      </Button>
+      {!finished && (
+        <span className="ws-reason" id={reasonId}>
+          Disabled: the task is {stateLabel(task.state)}. Only finished tasks can be archived.
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Archives every finished task, linked or not, behind the same two-step confirm as the lifecycle controls. */
+export function ArchiveFinished({ run, busy }: { run: Run; busy: boolean }) {
+  const { data } = useServices();
+  const gate = useGate();
+  const { tasks, archiveUnsupported } = useStore(data);
+  const [confirming, setConfirming] = useState(false);
+  const finished = (tasks.data ?? []).filter((task) => canArchive(task.state)).map((task) => task.contract.id);
+  if (archiveUnsupported) return null;
+  const off = busy || !gate.can("tasks") || finished.length === 0;
+  if (!confirming) {
+    return (
+      <Button disabled={off} onClick={() => setConfirming(true)}>
+        Archive finished ({finished.length})
+      </Button>
+    );
+  }
+  return (
+    <>
+      <Button
+        variant="danger"
+        disabled={off}
+        onClick={() => {
+          setConfirming(false);
+          void run(`Archive ${finished.length} finished tasks`, () => archiveSend(data, finished));
+        }}
+      >
+        Confirm archive
+      </Button>
+      <Button onClick={() => setConfirming(false)}>Keep</Button>
+      <span className="ws-reason">Archived tasks leave the lists; their history is kept.</span>
     </>
   );
 }

@@ -1854,6 +1854,7 @@ mod tests {
             "review.request_changes",
             "delivery.request",
             "tasks.cancel",
+            "tasks.archive",
         ] {
             assert!(
                 rpc_request(7, write, serde_json::json!({"decision": "approve"})).is_none(),

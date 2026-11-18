@@ -23,6 +23,9 @@ export type Failure = { code: number; message: string } | "hang";
 /** States the daemon accepts `tasks.cancel` from; mirrors the daemon, so the fake does not import UI code. */
 const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set(["Created", "Queued", "Running", "Verifying"]);
 
+/** States the daemon accepts `tasks.archive` for (the finished ones); mirrors the daemon, as above. */
+const ARCHIVABLE_STATES: ReadonlySet<TaskState> = new Set(["Succeeded", "VerificationFailed", "Failed", "Cancelled"]);
+
 export class FakeChannel implements RpcChannel {
   private messageListeners: Array<(message: unknown) => void> = [];
   private closeListeners: Array<(reason: DaemonError | null) => void> = [];
@@ -124,6 +127,8 @@ export const mkApproval = (id: string, taskId: string, state: "requested" | "rej
 export class FakeDaemon implements DaemonConnector {
   projects: ProjectRow[] = [];
   tasks: TaskRecord[] = [];
+  /** Ids archived by `tasks.archive`: `tasks.list` and workstream links leave them out; `tasks.get` still returns them. */
+  archived = new Set<string>();
   events: DaemonEvent[] = [];
   approvals: Approval[] = [];
   /** Scheduler limits and restart gate reported by `queue.snapshot`. */
@@ -259,7 +264,7 @@ export class FakeDaemon implements DaemonConnector {
         return reply(row);
       }
       case "tasks.list":
-        return reply(this.tasks);
+        return reply(this.tasks.filter((t) => !this.archived.has(t.contract.id)));
       case "tasks.get": {
         const task = this.tasks.find((t) => t.contract.id === params.task_id);
         return task ? reply(task) : fail(-32010, "task not found");
@@ -286,6 +291,19 @@ export class FakeDaemon implements DaemonConnector {
         }
         task.version += 1;
         return reply(task);
+      }
+      case "tasks.archive": {
+        const ids = params.task_ids as string[];
+        const found: TaskRecord[] = [];
+        for (const id of ids) {
+          const task = this.tasks.find((t) => t.contract.id === id);
+          if (!task) return fail(-32010, "task not found");
+          found.push(task);
+        }
+        if (found.some((task) => !ARCHIVABLE_STATES.has(task.state))) return fail(-32011, "task is not finished; it cannot be archived");
+        const archived = ids.filter((id) => !this.archived.has(id));
+        for (const id of archived) this.archived.add(id);
+        return reply({ archived });
       }
       case "sessions.list": {
         const entries: SessionEntry[] = this.tasks

@@ -152,6 +152,16 @@ fn every_rpc_method_rejects_malformed_parameters() {
         ("tasks.retry", json!({"task_id": "task-1"})),
         ("tasks.retry", json!({"idempotency_key": "k"})),
         ("tasks.retry", json!({"task_id": 4, "idempotency_key": "k"})),
+        ("tasks.archive", json!({"idempotency_key": "k"})),
+        (
+            "tasks.archive",
+            json!({"task_ids": [], "idempotency_key": "k"}),
+        ),
+        ("tasks.archive", json!({"task_ids": ["task-1"]})),
+        (
+            "tasks.archive",
+            json!({"task_ids": [4], "idempotency_key": "k"}),
+        ),
         ("agents.capabilities", json!({"extra": true})),
         ("agents.catalog", json!({"extra": true})),
         ("agents.validate_selection", json!({})),

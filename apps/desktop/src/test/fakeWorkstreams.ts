@@ -95,7 +95,7 @@ export function installFakeWorkstreams(
   fake.stub("workstreams.get", (params: Params) => {
     const ws = workstream(params.workstream_id);
     const tasks: WorkstreamTaskLinkWire[] = state.links
-      .filter((link) => link.workstream_id === ws.id)
+      .filter((link) => link.workstream_id === ws.id && !fake.archived.has(link.task_id))
       .map((link) => {
         const record = fake.tasks.find((task) => task.contract.id === link.task_id);
         return {

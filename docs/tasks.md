@@ -30,6 +30,10 @@ A task moves through Created, Queued, Running, and Verifying. It ends as Succeed
 
 New tasks wait while the machine is busy, and running tasks are never stopped. At most two tasks run at once, and at most two per project. Change the load limits in [Settings](settings.md#machine-load-limits).
 
+## Archive finished tasks
+
+A task that Succeeded, Failed, VerificationFailed, or Canceled can be archived. Archiving hides it from the task lists and from its workstream, and keeps its attempts, sessions, and timeline. Archive one task from its page or from the workstream table, or archive every finished task at once from the Workstreams view. Archived tasks are not restored from the desktop app. A task that is still queued or running cannot be archived.
+
 ## Review and retry
 
 Open the task to see attempts, sessions, and the timeline. Click Review candidate when the task has a pending approval. A Failed or VerificationFailed task can be retried from its page.
