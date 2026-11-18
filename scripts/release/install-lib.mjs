@@ -274,16 +274,18 @@ export const runMacos = (ctx) => {
     const { app, info } = entry;
     const plist = run("/usr/libexec/PlistBuddy", ["-c", "Print :CFBundleShortVersionString", join(app, "Contents", "Info.plist")]);
     steps.check(`${label}: bundle version`, plist.out.trim() === info.version ? [] : [`CFBundleShortVersionString is '${plist.out.trim()}', release-info says ${info.version}`], info.version);
-    const missing = ["MCAO", "orchestrator-daemon"].filter((f) => !ctx.exists(join(app, "Contents", "MacOS", f)));
-    steps.check(`${label}: the app executable and the daemon sidecar are in Contents/MacOS`, missing.map((f) => `${f} is missing`));
+    const missing = ["MCAO", "orchestrator-daemon", "treehouse"].filter((f) => !ctx.exists(join(app, "Contents", "MacOS", f)));
+    steps.check(`${label}: the app executable, the daemon sidecar and treehouse are in Contents/MacOS`, missing.map((f) => `${f} is missing`));
 
     const verify = run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
     const details = parseCodesignDetails(run("codesign", ["-dvv", app]).err);
     if (info.signed) {
       steps.check(`${label}: codesign --verify --deep --strict`, verify.code === 0 ? [] : [verify.err]);
       steps.check(`${label}: Developer ID signature, team and runtime flag`, checkDeveloperIdSignature(details, { notarized: info.notarized }), details.teamId);
-      const sidecar = parseCodesignDetails(run("codesign", ["-dvv", join(app, "Contents", "MacOS", "orchestrator-daemon")]).err);
-      steps.check(`${label}: the sidecar carries the app's team identifier`, sidecar.teamId && sidecar.teamId === details.teamId ? [] : [`sidecar team ${sidecar.teamId}, app team ${details.teamId}`]);
+      for (const name of ["orchestrator-daemon", "treehouse"]) {
+        const sidecar = parseCodesignDetails(run("codesign", ["-dvv", join(app, "Contents", "MacOS", name)]).err);
+        steps.check(`${label}: ${name} carries the app's team identifier`, sidecar.teamId && sidecar.teamId === details.teamId ? [] : [`${name} team ${sidecar.teamId}, app team ${details.teamId}`]);
+      }
       const spctl = assessQuarantined(run, app, ctx.work, label);
       steps.check(`${label}: Gatekeeper (spctl) accepts the quarantined app`, spctl.code === 0 && (!info.notarized || /Notarized Developer ID/.test(spctl.err)) ? [] : [`spctl exited ${spctl.code}: ${spctl.err}`]);
       if (info.notarized) {
@@ -337,12 +339,12 @@ export const runWindows = (ctx) => {
   const install = (label) => {
     const result = run(prepared[label].installer, ["/S", `/D=${installDir}`]);
     steps.check(`${label}: silent per-user install with no elevation prompt`, result.code === 0 ? [] : [`installer exited ${result.code}`], installDir);
-    const missing = ["MCAO", "orchestrator-daemon", "uninstall"].filter((f) => !ctx.exists(exe(f)));
-    steps.check(`${label}: the app, the daemon sidecar and the uninstaller are installed`, missing.map((f) => `${f}.exe is missing`));
+    const missing = ["MCAO", "orchestrator-daemon", "treehouse", "uninstall"].filter((f) => !ctx.exists(exe(f)));
+    steps.check(`${label}: the app, the daemon sidecar, treehouse and the uninstaller are installed`, missing.map((f) => `${f}.exe is missing`));
     const version = run("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `(Get-Item -LiteralPath '${exe("MCAO")}').VersionInfo.ProductVersion`]).out.trim();
     steps.check(`${label}: installed product version`, version.startsWith(prepared[label].info.version) ? [] : [`ProductVersion is '${version}', expected ${prepared[label].info.version}`], version);
     if (prepared[label].info.signed) {
-      for (const name of ["MCAO", "orchestrator-daemon"]) {
+      for (const name of ["MCAO", "orchestrator-daemon", "treehouse"]) {
         steps.check(`${label}: ${name}.exe Authenticode signature`, checkAuthenticode(authenticode(exe(name))));
       }
     }
