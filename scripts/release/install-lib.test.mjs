@@ -170,14 +170,16 @@ test("macOS: requiring a signature on an unsigned artifact fails", () => {
 
 const macRun = ({ oldVersion = "0.1.0" } = {}) => {
   const commands = [];
-  const run = (command, args) => {
+  const envs = new Map();
+  const run = (command, args, options) => {
     const line = [command, ...args].join(" ");
     commands.push(line);
+    envs.set(command, options?.env);
     if (line.startsWith("codesign -dvv")) return { code: 0, out: "", err: DEVID };
     if (line.includes("PlistBuddy")) return { code: 0, out: line.includes("Applications-old") ? oldVersion : "0.1.0", err: "" };
     return { code: 0, out: "", err: "accepted" };
   };
-  return { commands, run, exists: () => true };
+  return { commands, envs, run, exists: () => true };
 };
 const macCtx = (machine, over = {}) => ctxFor("macos", machine, {
   requireSigned: true, smokeBin: "/smoke", oldArtifactDir: "/old", readDir: readDirFor("macos", true, "0.0.9"), ...withSmoke(machine.run), ...over,
@@ -192,6 +194,7 @@ test("macOS signed with a genuinely older build: team ids compared, smoke gets b
   assert.ok(smoke.includes(`--old-daemon ${sidecarIn("Applications-old")} --expect-old-version 0.0.9`), smoke);
   assert.ok(smoke.includes(`--new-daemon ${sidecarIn("Applications-new")} `), smoke);
   assert.ok(smoke.endsWith("--expect-new-version 0.1.0 --out /w/result.json"), smoke);
+  assert.equal(machine.envs.get("/smoke").AGENT_ORCH_TREEHOUSE_PROGRAM, join("/w", "Applications-new", "MCAO.app", "Contents", "MacOS", "treehouse"));
   assert.equal(steps.upgrade, "upgrade");
   assert.ok(steps.items.some((s) => s.verdict === "PASS" && /\(upgrade: old sidecar then new sidecar/.test(s.name)));
   assert.ok(!steps.items.some((s) => /upgrade from a previous release/.test(s.name)));
@@ -291,7 +294,7 @@ test("macOS: a sidecar signed by another team fails", () => {
 test("macOS: treehouse signed by another team, or missing from Contents/MacOS, fails", () => {
   const run = (command, args) => {
     const line = [command, ...args].join(" ");
-    if (line.startsWith("codesign -dvv") && line.endsWith("/treehouse")) return { code: 0, out: "", err: DEVID.replaceAll("ABCDE12345", "ZZZZZ99999") };
+    if (line.startsWith("codesign -dvv") && /[\\/]treehouse$/.test(line)) return { code: 0, out: "", err: DEVID.replaceAll("ABCDE12345", "ZZZZZ99999") };
     if (line.startsWith("codesign -dvv")) return { code: 0, out: "", err: DEVID };
     if (line.includes("PlistBuddy")) return { code: 0, out: "0.1.0", err: "" };
     return { code: 0, out: "", err: "accepted" };
@@ -299,7 +302,7 @@ test("macOS: treehouse signed by another team, or missing from Contents/MacOS, f
   const ctx = (over) => ctxFor("macos", { run, exists: () => true }, { requireSigned: true, readDir: readDirFor("macos", true), ...over });
   const team = quiet(() => runMacos(ctx({})));
   assert.ok(team.items.some((s) => s.verdict === "FAIL" && /treehouse carries the app's team/.test(s.name)));
-  const missing = quiet(() => runMacos(ctx({ exists: (path) => !path.endsWith("/treehouse") ? true : false })));
+  const missing = quiet(() => runMacos(ctx({ exists: (path) => !/[\\/]treehouse$/.test(path) })));
   assert.ok(missing.items.some((s) => s.verdict === "FAIL" && /treehouse is missing/.test(s.detail)));
 });
 
@@ -307,12 +310,14 @@ test("macOS: treehouse signed by another team, or missing from Contents/MacOS, f
 // `copyCode` is the exit code of the Copy-Item of the old sidecar.
 const windowsMachine = ({ uninstallHook = () => {}, installHook = () => {}, copyCode = 0, authenticode = "Valid|CN=Example|True", oldVersion = "0.0.9" } = {}) => {
   const commands = [];
+  const envs = new Map();
   const userData = fakeUserData();
   let uninstalled = false;
   let installs = 0;
   let version = oldVersion;
-  const run = (command, args) => {
+  const run = (command, args, options) => {
     commands.push([command, ...args].join(" "));
+    envs.set(command, options?.env);
     const text = args.includes("-EncodedCommand") ? Buffer.from(args[args.indexOf("-EncodedCommand") + 1], "base64").toString("utf16le") : args.join(" ");
     if (text.includes("Get-AuthenticodeSignature")) return { code: 0, out: authenticode, err: "" };
     if (text.includes("ProductVersion")) return { code: 0, out: version, err: "" };
@@ -323,7 +328,7 @@ const windowsMachine = ({ uninstallHook = () => {}, installHook = () => {}, copy
   };
   // The old-sidecar copy only exists when Copy-Item succeeded; the app is gone once uninstalled.
   const exists = (path) => !(path.endsWith("MCAO.exe") && uninstalled) && !(path.endsWith("old-orchestrator-daemon.exe") && copyCode);
-  return { commands, run, exists, userData };
+  return { commands, envs, run, exists, userData };
 };
 const windowsCtx = (machine, over = {}) => ctxFor("windows", machine, {
   requireSigned: true, smokeBin: "C:/smoke.exe", oldArtifactDir: "/old", readDir: readDirFor("windows", true, "0.0.9"), userData: machine.userData, ...withSmoke(machine.run), ...over,
@@ -339,6 +344,7 @@ test("Windows: installs silently per user, upgrades over the same directory, uni
   assert.match(order[0], /-setup\.exe \/S \/D=.*AgentOrchestrator$/);
   assert.match(order[1], /-setup\.exe \/S \/D=.*AgentOrchestrator$/);
   assert.match(order[2], /smoke\.exe --new-daemon .*--old-daemon .*old-orchestrator-daemon\.exe.*--out \/w\/result\.json/);
+  assert.equal(machine.envs.get("C:/smoke.exe").AGENT_ORCH_TREEHOUSE_PROGRAM, join("/w", "AgentOrchestrator", "treehouse.exe"));
   assert.match(order[3], /uninstall\.exe \/S _\?=.*AgentOrchestrator$/);
   assert.ok(steps.items.some((s) => s.verdict === "UNPROVEN" && /CLEAN Windows/.test(s.name)));
   assert.ok(steps.items.some((s) => s.verdict === "PASS" && /sentinel in the real data directory survived the upgrade-over/.test(s.name)));
