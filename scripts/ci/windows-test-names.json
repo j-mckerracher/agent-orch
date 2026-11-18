@@ -812,7 +812,19 @@
    "executor::output_ring::tests::the_store_keeps_only_a_few_ended_sessions",
    "executor::output_ring::tests::a_flood_never_exceeds_the_line_or_byte_caps",
    "admission_is_off_by_default",
-   "configured_thresholds_are_reported"
+   "configured_thresholds_are_reported",
+   "api::conversation_agent::tests::a_settings_default_that_names_no_chat_agent_is_unavailable",
+   "api::conversation_agent::tests::provider_limit_names_spend_usage_rate_and_quota_limits_in_any_case",
+   "api::conversation_agent::tests::settings_changed_drops_the_cached_default_and_its_retry_window",
+   "api::wake::tests::a_completed_wake_turn_resets_the_agent_failure_streak",
+   "api::wake::tests::a_settings_change_lifts_the_pause_for_one_wake_turn",
+   "api::wake::tests::the_pause_lifts_thirty_minutes_after_the_newest_failure",
+   "api::wake::tests::three_failed_wake_turns_pause_automatic_updates_with_one_notice",
+   "a_settings_default_that_names_no_chat_agent_fails_closed",
+   "a_spend_cap_fails_the_turn_as_a_provider_limit_and_is_logged_with_its_reason",
+   "an_environment_agent_still_wins_over_the_settings_default",
+   "the_settings_default_runs_with_the_model_and_effort_saved_for_it",
+   "the_settings_default_agent_answers_a_message_without_a_choice_and_a_relay"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -1341,7 +1353,12 @@
    "pr_title_and_check_names_are_cleaned_and_capped_before_they_are_stored",
    "a_merge_grant_is_stored_whole_and_the_database_holds_its_rules",
    "migration_0052_rebuilds_the_grant_table_keeping_rows_and_triggers_and_allows_the_merge_kind",
-   "the_home_directory_is_unset_by_default_and_changes_only_by_a_patch_that_names_it"
+   "the_home_directory_is_unset_by_default_and_changes_only_by_a_patch_that_names_it",
+   "sqlite_wake::tests::a_failure_whose_ledger_row_was_pruned_has_no_start_time",
+   "sqlite_wake::tests::agent_failing_is_a_notice_kind_with_its_own_skip_reason",
+   "sqlite_wake::tests::agent_failing_migration_keeps_records_and_accepts_the_new_kind_and_skip_reason",
+   "sqlite_wake::tests::consecutive_failed_wake_turns_count_from_the_last_settled_turn",
+   "sqlite_wake::tests::consecutive_failed_wake_turns_ignore_user_turns_and_other_runtimes"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
