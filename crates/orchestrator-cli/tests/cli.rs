@@ -207,7 +207,7 @@ fn run_preserves_primary_checkout_and_records_candidate() {
     let base_tracked = fs::read(&tracked).unwrap();
     let base_untracked = fs::read(&untracked).unwrap();
     let output = run_success(&fixture, "run-preserves-primary");
-    assert!(String::from_utf8_lossy(&output.stdout).contains("status: Verifying"));
+    assert!(String::from_utf8_lossy(&output.stdout).contains("status: Succeeded"));
     assert_eq!(git(&fixture.repo, &["rev-parse", "HEAD"]), base_head);
     assert_eq!(git(&fixture.repo, &["status", "--porcelain"]), base_status);
     assert_eq!(fs::read(&tracked).unwrap(), base_tracked);
@@ -408,7 +408,7 @@ fn tasks_lists_state_from_store() {
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("listed-task"));
-    assert!(stdout.contains("Verifying"));
+    assert!(stdout.contains("Succeeded"));
 }
 
 #[test]
@@ -436,7 +436,7 @@ fn tasks_and_inspect_read_while_another_process_holds_the_data_lock() {
         "{}",
         String::from_utf8_lossy(&inspect.stderr)
     );
-    assert!(String::from_utf8_lossy(&inspect.stdout).contains("status: Verifying"));
+    assert!(String::from_utf8_lossy(&inspect.stdout).contains("status: Succeeded"));
 }
 
 #[test]
@@ -582,8 +582,8 @@ fn inspect_shows_attempt_session_and_worktree() {
         String::from_utf8_lossy(&output.stderr)
     );
     let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("status: Verifying"));
-    assert!(stdout.contains("CandidateReady"));
+    assert!(stdout.contains("status: Succeeded"));
+    assert!(stdout.contains("\tSucceeded"));
     assert!(stdout.contains("Exited"));
     assert!(stdout.contains(task_worktree(&fixture, "inspect-task").to_str().unwrap()));
 }

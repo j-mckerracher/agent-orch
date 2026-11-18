@@ -253,8 +253,8 @@ fn two_parallel_tasks_preserve_disjoint_worktrees_for_five_runs() {
             ("right-task", "right.txt", b"right bytes\n".as_slice()),
         ] {
             let record = store.get(task_id).unwrap();
-            assert_eq!(record.state, TaskState::Verifying);
-            assert_eq!(record.attempts[0].state, AttemptState::CandidateReady);
+            assert_eq!(record.state, TaskState::Succeeded);
+            assert_eq!(record.attempts[0].state, AttemptState::Succeeded);
             assert_eq!(record.sessions[0].state, SessionState::Exited);
             assert_eq!(
                 fs::read(fixture.data.join("worktrees").join(task_id).join(file)).unwrap(),
@@ -262,7 +262,7 @@ fn two_parallel_tasks_preserve_disjoint_worktrees_for_five_runs() {
             );
         }
         assert_audit_complete(&store);
-        println!("concurrent repeat {iteration}/5: both tasks Verifying; disjoint files preserved");
+        println!("concurrent repeat {iteration}/5: both tasks Succeeded; disjoint files preserved");
     }
 }
 
@@ -394,7 +394,7 @@ fn sigkill_reconciles_dead_task_while_parallel_task_completes() {
     assert_success(&survivor.wait().expect("surviving CLI exits"));
     assert_eq!(
         store.get("survivor-task").unwrap().state,
-        TaskState::Verifying
+        TaskState::Succeeded
     );
     let decisions = orchestrator_runtime::reconcile::reconcile_processes(&[
         orchestrator_runtime::reconcile::RecordedProcess {
