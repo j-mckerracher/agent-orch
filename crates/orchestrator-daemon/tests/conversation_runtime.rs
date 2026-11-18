@@ -1129,6 +1129,43 @@ fn a_chosen_agent_that_is_not_installed_fails_the_turn_without_another_agent() {
     stop(&layout, daemon, chat);
 }
 
+/// A relay turn runs the daemon's default agent. The desktop names an agent on every message,
+/// so the default is never settled by a message: the relay settles it itself.
+#[test]
+fn a_relay_runs_the_default_agent_after_messages_that_each_named_one() {
+    let layout = Layout::new();
+    seed_idle_task(&layout, "scout-1");
+    store_after_stop(&layout)
+        .capture_task_report(
+            "scout-1",
+            "attempt-1",
+            "The slow query is the report join.",
+            false,
+            "2026-01-01T00:00:00Z",
+        )
+        .unwrap();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    chat.send_choice(&global(), "hi", "m-1", json!({"agent": "codex"}));
+    assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
+    let params = json!({"task_id": "scout-1", "idempotency_key": "r-1"});
+    let mut relayed = chat.call("reports.relay", params.clone());
+    for _ in 0..50 {
+        if relayed["error"]["code"] != CONFLICT {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+        relayed = chat.call("reports.relay", params.clone());
+    }
+    assert!(relayed.get("error").is_none(), "{relayed}");
+    assert_eq!(
+        relayed["result"]["turn"]["runtime"]["name"], "codex",
+        "{relayed}"
+    );
+    assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
+    stop(&layout, daemon, chat);
+}
+
 #[test]
 fn pi_is_not_offered_to_a_message() {
     let layout = Layout::new();

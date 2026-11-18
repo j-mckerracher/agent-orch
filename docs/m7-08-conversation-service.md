@@ -191,7 +191,11 @@ no flag.
   catalog that has not been read yet are retryable `Conflict`s, but only for
   15 s (`conversations.send` calls `prepare()` before the idempotency gate);
   after that the turn fails `runtime_unavailable` too. The selection and
-  version are cached for 30 s.
+  version are cached for 30 s, per choice. Wake turns and report relays run
+  the default agent, not the user's last choice, so they settle the default
+  first: `reports.relay` calls `prepare()` before its idempotency gate, and the
+  wake loop leaves its windows due and retries on the next tick until the
+  default is settled.
 - **Verified versions.** Compiled in (`codex` 0.167.0 and 0.167.2,
   `claude-code` 2.1.311, `github-copilot` at its pinned version). 0.167.2 was
   checked against its `codex exec --json` event order and command lifecycle.

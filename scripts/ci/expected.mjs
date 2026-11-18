@@ -57,7 +57,8 @@ export const WINDOWS = {
   // The home directory and Global tasks add 13 portable daemon unit tests (the 2 executor tests are Unix-only): 612 becomes 625.
   // Dispatch defaults add two portable unit tests: 625 becomes 627.
   // Adaptive wakes add six portable daemon regressions.
-  daemon: { passed: 663, ignored: 1, sequence: [566, 82, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
+  daemon: { passed: 665, ignored: 1, sequence: [567, 83, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -149,7 +150,8 @@ export const MACOS = {
   // The home directory and Global tasks add 15 daemon unit tests (13 portable, 2 Unix-only executor): 707 becomes 722.
   // Dispatch defaults add two portable unit tests and three Unix fake-CLI tests: 722 becomes 727.
   // Adaptive wakes add six portable daemon regressions.
-  daemon: { passed: 780, ignored: 1, sequence: [656, 87, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
+  daemon: { passed: 782, ignored: 1, sequence: [657, 88, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -182,7 +184,8 @@ export const MACOS = {
   // Project coordinator replies add one runtime regression.
   // The home directory and Global tasks add 18 tests (15 daemon, 1 core, 1 store, 1 cli): 2087 becomes 2105.
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
-  workspace: { passed: 2202, ignored: 2 },
+  // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
+  workspace: { passed: 2204, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 22, sequence: [22, 0, 0] },
   gitLib: { passed: 99, sequence: [99] },

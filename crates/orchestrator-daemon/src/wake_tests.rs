@@ -54,6 +54,9 @@ struct Probe {
     held: Mutex<Vec<ReplySink>>,
     seen: Mutex<Vec<Seen>>,
     cancelled: Arc<AtomicBool>,
+    /// `prepare` answers `Conflict` while set: the agent is still being settled.
+    unsettled: AtomicBool,
+    prepared: Mutex<Vec<Option<Choice>>>,
 }
 
 impl Probe {
@@ -68,6 +71,8 @@ impl Probe {
             held: Mutex::new(Vec::new()),
             seen: Mutex::new(Vec::new()),
             cancelled: Arc::new(AtomicBool::new(false)),
+            unsettled: AtomicBool::new(false),
+            prepared: Mutex::new(Vec::new()),
         })
     }
 
@@ -98,6 +103,14 @@ impl Probe {
 impl ConversationRuntime for Probe {
     fn identity(&self, _choice: Option<&Choice>) -> RuntimeIdentity {
         self.identity.clone()
+    }
+
+    fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
+        if self.unsettled.load(Ordering::SeqCst) {
+            return Err(RpcError::Conflict);
+        }
+        self.prepared.lock().unwrap().push(choice.cloned());
+        Ok(())
     }
 
     fn start_turn(
@@ -1284,6 +1297,27 @@ fn wake_turns_are_deferred_while_the_load_gate_is_closed() {
         ledger_rows(&f),
         1,
         "the cap is spent only when the turn starts"
+    );
+}
+
+#[test]
+fn a_wake_turn_starts_only_once_the_default_agent_is_settled() {
+    let f = fixture();
+    f.probe.unsettled.store(true, Ordering::SeqCst);
+    fail_task(&f, "t-1", "one");
+    tick(&f);
+
+    assert_eq!(start_batch(&f).started, 0);
+    let record = &records_of(&f, WakeKind::TaskFailed)[0];
+    assert_eq!(record.state, WakeState::Pending, "nothing claimed");
+    assert_eq!(ledger_rows(&f), 0, "no cap spent");
+
+    f.probe.unsettled.store(false, Ordering::SeqCst);
+    assert_eq!(tick(&f).started, 1, "the next tick starts it");
+    assert_eq!(
+        *f.probe.prepared.lock().unwrap(),
+        [None],
+        "the default agent"
     );
 }
 
