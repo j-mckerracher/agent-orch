@@ -1,10 +1,11 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { createHash } from "node:crypto";
 import { afterEach, describe, expect, it } from "vitest";
 import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import { ALL_CAPABILITIES, type ActionProposalWire } from "../../../daemon/types";
 import { createServices } from "../../createServices";
-import { ALPHA, BETA, populate } from "../../../sources/surfaces/testkit";
+import { ALPHA, BETA, WORKSTREAM_STATE, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { FakeDaemon } from "../../../test/fakeDaemon";
@@ -23,7 +24,7 @@ import { CHOICE_PREFERENCE_KEY } from "./modelChoice";
 import { RESTRICTED_PREFERENCE_KEY } from "./permissionLevel";
 import { workspaceRegistration } from "./register";
 import { formatAt } from "./time";
-import { WorkspaceView } from "./WorkspaceView";
+import { GLOBAL_TASKS_WORKSTREAM_ID, WorkspaceView } from "./WorkspaceView";
 
 function memoryStorage(): DraftStorage & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -1429,5 +1430,46 @@ describe("workspace view, history actions", () => {
     expect(screen.getByRole("dialog")).toHaveTextContent("PLACEHOLDER DATA");
     await user.click(screen.getByRole("button", { name: "Clear history permanently" }));
     expect(await screen.findByText(/Simulated history clear: placeholder data, nothing was changed\./)).toBeInTheDocument();
+  });
+});
+
+describe("Global tasks workstream is not a target (DPES-1106)", () => {
+  /** The daemon's workstream for tasks Global proposes without naming one. It must not sit beside Global. */
+  function seedGlobalTasks(fake: FakeDaemon) {
+    WORKSTREAM_STATE.get(fake)!.workstreams.push({
+      id: GLOBAL_TASKS_WORKSTREAM_ID,
+      title: "Global tasks",
+      summary: "Tasks the global orchestrator proposed without naming a workstream.",
+      state: "active",
+      revision: 1,
+    });
+  }
+
+  it("lists Global orchestrator once and does not offer the Global tasks workstream", async () => {
+    const fake = liveDaemon();
+    seedGlobalTasks(fake);
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await user.click(await screen.findByRole("button", { name: /Choose conversation target/ }));
+    expect(await screen.findByRole("radio", { name: /alpha coordinator/ })).toBeInTheDocument();
+    expect(screen.getAllByRole("radio", { name: /Global orchestrator/ })).toHaveLength(1);
+    expect(screen.queryByRole("radio", { name: /Global tasks/ })).toBeNull();
+  });
+
+  it("opens Global, not the first project, when the stored selection is the Global tasks workstream", async () => {
+    const fake = liveDaemon();
+    seedGlobalTasks(fake);
+    const services = track(build({ fake, storage: memoryStorage() }));
+    services.drafts.setWorkspaceTarget(`workstream:${GLOBAL_TASKS_WORKSTREAM_ID}`);
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await user.click(await screen.findByRole("button", { name: /Choose conversation target/ }));
+    expect(await screen.findByRole("radio", { name: /alpha coordinator/ })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Talking to: Global orchestrator" })).toBeInTheDocument();
+  });
+
+  it("pins the id to the daemon's seed: workstream- plus sha256 of default:global-tasks", () => {
+    expect(GLOBAL_TASKS_WORKSTREAM_ID).toBe(`workstream-${createHash("sha256").update("default:global-tasks").digest("hex")}`);
   });
 });

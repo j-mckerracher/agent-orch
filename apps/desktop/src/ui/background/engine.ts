@@ -50,13 +50,18 @@ type Rgb = [number, number, number];
 
 const srgbToLinear = (value: number) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
 
-/** Parses `rgb()/rgba()` (0-255) or `color(srgb …)` (0-1) computed values into linear-light RGB. */
-export function parseBackground(value: string, dark: boolean): Rgb {
+/** sRGB channels (0-1) of `rgb()/rgba()` (0-255) or `color(srgb …)` (0-1) computed values; null when unparseable. */
+function parseSrgb(value: string): Rgb | null {
   const numbers = value.match(/[\d.]+/g)?.map(Number);
-  if (numbers && numbers.length >= 3 && numbers.slice(0, 3).every(Number.isFinite)) {
-    const scale = value.trim().startsWith("color(") ? 1 : 255;
-    return numbers.slice(0, 3).map((channel) => srgbToLinear(channel / scale)) as Rgb;
-  }
+  if (!numbers || numbers.length < 3 || !numbers.slice(0, 3).every(Number.isFinite)) return null;
+  const scale = value.trim().startsWith("color(") ? 1 : 255;
+  return numbers.slice(0, 3).map((channel) => channel / scale) as Rgb;
+}
+
+/** Parses a computed color into linear-light RGB, or the theme default when it cannot be parsed. */
+export function parseBackground(value: string, dark: boolean): Rgb {
+  const srgb = parseSrgb(value);
+  if (srgb) return srgb.map(srgbToLinear) as Rgb;
   return dark ? [0.005, 0.01, 0.018] : [1, 1, 1];
 }
 
@@ -114,6 +119,13 @@ export function mountAmbientBackground(host: HTMLElement, options: AmbientOption
   function colors() {
     const dark = isDark();
     return { fg: (dark ? [1, 1, 1] : [0, 0, 0]) as Rgb, bg: parseBackground(getComputedStyle(document.body).backgroundColor, dark) };
+  }
+
+  /** Light mode inverts the GPU canvas in CSS, so draw the dark palette with the sRGB-inverted paper. */
+  function gpuColors() {
+    if (isDark()) return colors();
+    const paper: Rgb = parseSrgb(getComputedStyle(document.body).backgroundColor) ?? [1, 1, 1];
+    return { fg: [1, 1, 1] as Rgb, bg: paper.map((channel) => srgbToLinear(1 - channel)) as Rgb };
   }
 
   function setEngine(value: AmbientEngine) {
@@ -251,7 +263,8 @@ export function mountAmbientBackground(host: HTMLElement, options: AmbientOption
       const ocean = await loadOcean();
       if (destroyed) return;
       gpuCanvas.hidden = false;
-      const created = ocean.createRenderer({ canvas: gpuCanvas, colors: colors(), fps, onError: useFallback });
+      gpuCanvas.style.filter = isDark() ? "" : "invert(1)";
+      const created = ocean.createRenderer({ canvas: gpuCanvas, colors: gpuColors(), fps, onError: useFallback });
       renderer = created;
       bindPointer();
       created.setPointer(pointer);
@@ -266,7 +279,8 @@ export function mountAmbientBackground(host: HTMLElement, options: AmbientOption
   }
 
   function updateTheme() {
-    renderer?.setColors(colors());
+    gpuCanvas.style.filter = isDark() ? "" : "invert(1)";
+    renderer?.setColors(gpuColors());
     if (!gpuReady || motion.matches) drawFallback(motion.matches ? 0 : (performance.now() - startTime) / 1000);
   }
 
