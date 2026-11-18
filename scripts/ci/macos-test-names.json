@@ -926,6 +926,10 @@
    "api::wake_events::tests::a_candidate_notice_counts_its_files_or_leaves_the_count_out",
    "api::wake_events::tests::a_failed_task_notice_names_the_stored_reason",
    "api::wake_events::tests::the_relay_failure_notice_names_the_report_and_keeps_the_id_plain",
+   "api::archive_tests::a_task_that_is_not_finished_refuses_the_whole_archive_and_writes_nothing",
+   "api::archive_tests::an_archived_task_drops_out_of_its_workstream_view_but_not_the_store_links",
+   "api::archive_tests::archived_tasks_leave_the_list_and_tasks_get_still_answers",
+   "api::archive_tests::archiving_again_is_a_no_op_and_an_unknown_task_is_not_found",
    "executor::tests::a_candidate_records_its_changed_file_count_and_last_message",
    "executor::tests::an_investigate_agent_that_changes_nothing_still_produces_a_candidate",
    "executor::tests::an_implement_agent_that_changes_nothing_fails_with_the_empty_change_set_reason",
@@ -1501,7 +1505,10 @@
    "failing_settlement_fails_the_attempt_with_its_reason",
    "passing_settlement_succeeds_the_attempt_and_records_the_run",
    "cancel_verifying_task_requires_verifying_and_no_live_session",
-   "settlement_after_cancel_is_superseded_and_writes_nothing"
+   "settlement_after_cancel_is_superseded_and_writes_nothing",
+   "an_unknown_task_is_not_found_and_writes_nothing",
+   "finished_tasks_archive_once_keep_their_rows_and_each_emit_one_event",
+   "a_task_that_is_not_finished_refuses_the_whole_call_and_writes_nothing"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
