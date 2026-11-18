@@ -26,6 +26,8 @@ export type DaemonErrorKind =
   | "replay-gap"
   | "epoch-mismatch"
   | "conversation-busy"
+  // Client-only: a send the daemon still answered with conflict after its retries. Nothing was recorded.
+  | "agent-starting"
   | "proposal-not-found"
   | "proposal-not-pending"
   | "proposal-invalid"
@@ -205,6 +207,10 @@ const PRESENTATION: Record<DaemonErrorKind, ErrorPresentation> = {
   "conversation-busy": {
     reason: "A reply to this conversation is still running.",
     nextStep: "Wait for the reply to finish or cancel it, then try again.",
+  },
+  "agent-starting": {
+    reason: "The orchestrator's agent is still starting. Your message was not sent.",
+    nextStep: "Try again in a moment.",
   },
   "proposal-not-found": {
     reason: "The proposal no longer exists.",
