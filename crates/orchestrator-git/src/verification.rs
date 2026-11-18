@@ -13,6 +13,7 @@ use std::fs;
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -174,6 +175,9 @@ pub struct VerificationRequest<'a> {
     pub recorded_commit: &'a str,
     /// Policy supplied by the caller, not loaded from the worktree.
     pub policy: &'a VerificationPolicy,
+    /// Set by the caller to cancel the run. A running command is killed and
+    /// the remaining commands are skipped.
+    pub cancel: Option<&'a AtomicBool>,
 }
 
 /// Overall outcome of one independent verification run.
@@ -337,11 +341,17 @@ pub fn verify(repository: &Repository, request: VerificationRequest<'_>) -> Veri
     let mut commands = Vec::with_capacity(request.policy.validation_commands.len());
     if prerequisites_pass {
         for configured in &request.policy.validation_commands {
+            let canceled = cancel_requested(request.cancel);
+            if canceled {
+                commands.push(skipped_command(configured, "verification canceled"));
+                continue;
+            }
             commands.push(evaluate_command(
                 repository,
                 request.worktree_path,
                 configured,
                 &request.policy.execution_trust,
+                request.cancel,
             ));
         }
     } else {
@@ -667,6 +677,7 @@ fn evaluate_command(
     worktree_path: &Path,
     configured: &ValidationCommand,
     trust_policy: &ExecutionTrustPolicy,
+    cancel: Option<&AtomicBool>,
 ) -> CommandResult {
     let digest = match configured.command.digest(repository) {
         Ok(digest) => digest,
@@ -703,7 +714,7 @@ fn evaluate_command(
             detail: Some("timeout exceeds the one-hour verifier limit".into()),
         };
     }
-    let mut result = run_command(worktree_path, configured);
+    let mut result = run_command(worktree_path, configured, cancel);
     result.digest = Some(digest);
     result.trust = TrustDecision::Trusted;
     result
@@ -743,7 +754,15 @@ fn skipped_command(configured: &ValidationCommand, reason: &str) -> CommandResul
     }
 }
 
-fn run_command(worktree_path: &Path, configured: &ValidationCommand) -> CommandResult {
+fn cancel_requested(cancel: Option<&AtomicBool>) -> bool {
+    cancel.is_some_and(|flag| flag.load(Ordering::Acquire))
+}
+
+fn run_command(
+    worktree_path: &Path,
+    configured: &ValidationCommand,
+    cancel: Option<&AtomicBool>,
+) -> CommandResult {
     let started = Instant::now();
     let mut command = Command::new(&configured.command.program);
     command
@@ -780,12 +799,18 @@ fn run_command(worktree_path: &Path, configured: &ValidationCommand) -> CommandR
     let stdout_reader = thread::spawn(move || capture_output(stdout));
     let stderr_reader = thread::spawn(move || capture_output(stderr));
     let mut timed_out = false;
+    let mut canceled = false;
     let mut wait_error = None;
     let exit_status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break Some(status),
             Ok(None) if started.elapsed() >= configured.timeout => {
                 timed_out = true;
+                kill_process(&mut child);
+                break child.wait().ok();
+            }
+            Ok(None) if cancel_requested(cancel) => {
+                canceled = true;
                 kill_process(&mut child);
                 break child.wait().ok();
             }
@@ -799,7 +824,11 @@ fn run_command(worktree_path: &Path, configured: &ValidationCommand) -> CommandR
     };
     let (stdout, stdout_truncated, stdout_error) = joined_output(stdout_reader);
     let (stderr, stderr_truncated, stderr_error) = joined_output(stderr_reader);
-    let detail = wait_error.or(stdout_error).or(stderr_error);
+    let detail = canceled
+        .then(|| "verification canceled".to_owned())
+        .or(wait_error)
+        .or(stdout_error)
+        .or(stderr_error);
     let status = if timed_out {
         CommandStatus::TimedOut
     } else if detail.is_some() {
@@ -1088,6 +1117,7 @@ mod tests {
                 workspace: &workspace,
                 recorded_commit,
                 policy,
+                cancel: None,
             },
         )
     }
@@ -1114,6 +1144,7 @@ mod tests {
                 workspace: &workspace,
                 recorded_commit: &recorded_commit,
                 policy: &policy,
+                cancel: None,
             },
         );
 
@@ -1144,6 +1175,7 @@ mod tests {
                 workspace: &workspace,
                 recorded_commit: &recorded_commit,
                 policy: &policy,
+                cancel: None,
             },
         );
 
@@ -1401,6 +1433,86 @@ mod tests {
         assert!(result.commands[0].duration_ms < 2_000);
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn canceled_command_is_killed_and_recorded() {
+        let temp = TempDir::new().unwrap();
+        let (repository, worktree) = setup_worktree(&temp, "task-a");
+        let candidate = git(worktree.path(), &["rev-parse", "HEAD"]);
+        let started = temp.path().join("command-started");
+        let marker = temp.path().join("skipped-after-cancel");
+        let slow = CommandSpec {
+            program: "/bin/sh".into(),
+            args: vec![
+                "-c".into(),
+                format!("touch '{}'; sleep 30", started.display()),
+            ],
+        };
+        let later = CommandSpec {
+            program: "/bin/sh".into(),
+            args: vec!["-c".into(), format!("touch '{}'", marker.display())],
+        };
+        let mut execution_trust = ExecutionTrustPolicy::default();
+        execution_trust
+            .trust_command(&repository, slow.clone())
+            .unwrap();
+        execution_trust
+            .trust_command(&repository, later.clone())
+            .unwrap();
+        let policy = VerificationPolicy {
+            validation_commands: vec![
+                ValidationCommand {
+                    command: slow,
+                    timeout: Duration::from_secs(20),
+                },
+                ValidationCommand {
+                    command: later,
+                    timeout: Duration::from_secs(2),
+                },
+            ],
+            execution_trust,
+            ..VerificationPolicy::default()
+        };
+        let workspace = workspace_record("task-a", &worktree);
+        let cancel = AtomicBool::new(false);
+
+        let result = thread::scope(|scope| {
+            scope.spawn(|| {
+                // Cancel only once the slow command runs, so the kill path is
+                // exercised rather than the skip before the command starts.
+                for _ in 0..500 {
+                    if started.exists() {
+                        break;
+                    }
+                    thread::sleep(Duration::from_millis(10));
+                }
+                cancel.store(true, Ordering::Release);
+            });
+            verify(
+                &repository,
+                VerificationRequest {
+                    run_id: "verification-canceled",
+                    task_id: "task-a",
+                    worktree_path: worktree.path(),
+                    workspace: &workspace,
+                    recorded_commit: &candidate,
+                    policy: &policy,
+                    cancel: Some(&cancel),
+                },
+            )
+        });
+
+        assert_eq!(result.status, VerificationStatus::Failed);
+        assert_eq!(result.commands[0].status, CommandStatus::Failed);
+        assert_eq!(
+            result.commands[0].detail.as_deref(),
+            Some("verification canceled")
+        );
+        assert!(result.commands[0].duration_ms < 5_000);
+        assert_eq!(result.commands[1].status, CommandStatus::Skipped);
+        assert!(!marker.exists());
+    }
+
     #[test]
     fn validation_commands_do_not_inherit_unlisted_environment() {
         let temp = TempDir::new().unwrap();
@@ -1423,6 +1535,7 @@ mod tests {
                 command,
                 timeout: Duration::from_secs(20),
             },
+            None,
         );
 
         assert_eq!(result.status, CommandStatus::Passed, "{:?}", result.detail);

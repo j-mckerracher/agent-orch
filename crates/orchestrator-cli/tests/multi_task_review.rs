@@ -296,6 +296,7 @@ fn verify_candidate(
             workspace: &workspace,
             recorded_commit: &candidate.sha,
             policy,
+            cancel: None,
         },
     )
 }
