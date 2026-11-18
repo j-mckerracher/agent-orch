@@ -1558,8 +1558,15 @@ fn live_codex_answers_a_global_message() {
 /// One line per launch, as the fake writes it: the working directory and the
 /// arguments. A launch that never happened leaves no line.
 fn launch_lines(log: &Path) -> Vec<String> {
+    // The fake agent writes a line in several pieces, so the last line may be half written: keep
+    // only newline-terminated lines.
     std::fs::read_to_string(log)
-        .map(|text| text.lines().map(str::to_owned).collect())
+        .map(|text| {
+            text.split_inclusive('\n')
+                .filter_map(|line| line.strip_suffix('\n'))
+                .map(str::to_owned)
+                .collect()
+        })
         .unwrap_or_default()
 }
 
