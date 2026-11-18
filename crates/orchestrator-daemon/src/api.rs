@@ -704,15 +704,20 @@ impl DaemonApi {
     ) -> Result<(), RpcError> {
         use orchestrator_agents::cli_compat::{CompatibilityError, Executable};
         let permission = submission.permission.unwrap_or_default();
-        let Some((_, args)) = agent_command(
+        // An agent without a daemon launcher has no CLI to check, so it is accepted before its
+        // executable is looked up or read.
+        if agent_command(
             &self.config,
             &submission.agent,
             "objective",
             submission.model_selection.as_ref(),
             permission,
-        ) else {
+            None,
+        )
+        .is_none()
+        {
             return Ok(());
-        };
+        }
         // Keep accepting work while a CLI is not installed. The executor
         // checks again before any launch, including after an update or retry.
         let Some(program) = self.config.locate_agent(&submission.agent) else {
@@ -724,11 +729,32 @@ impl DaemonApi {
             .map_err(|_| RpcError::Internal)?;
         let result = match Executable::read(&program) {
             Ok(executable) => runtime.block_on(async {
-                tokio::time::timeout(
-                    budget,
+                tokio::time::timeout(budget, async {
+                    // Measures the argv the launch will use, so a CLI without the agent flags is
+                    // checked plain, as the launch will run it.
+                    let (workflow_agent, _) = self
+                        .config
+                        .offered_workflow_agent(
+                            &submission.agent,
+                            &program,
+                            &executable,
+                            (self.config.locate_workflow_agent)(),
+                        )
+                        .await;
+                    let Some((_, args)) = agent_command(
+                        &self.config,
+                        &submission.agent,
+                        "objective",
+                        submission.model_selection.as_ref(),
+                        permission,
+                        workflow_agent.as_ref(),
+                    ) else {
+                        return Ok(());
+                    };
                     self.config
-                        .check_launch(&submission.agent, &program, &executable, &args),
-                )
+                        .check_launch(&submission.agent, &program, &executable, &args)
+                        .await
+                })
                 .await
                 .unwrap_or(Err(CompatibilityError::Unconfirmed))
             }),
@@ -1074,12 +1100,14 @@ impl DaemonApi {
     /// CLI. `RpcError` carries no detail, so the actionable message goes to the
     /// diagnostics log and the caller sees `InvalidParams`.
     fn check_agent_command_line(&self, contract: &TaskContract) -> Result<(), RpcError> {
+        let workflow_agent = (self.config.locate_workflow_agent)();
         let Some((program, args)) = agent_command(
             &self.config,
             &contract.agent,
             &contract.objective,
             contract.model_selection.as_ref(),
             contract.permission,
+            workflow_agent.as_ref(),
         ) else {
             return Ok(());
         };

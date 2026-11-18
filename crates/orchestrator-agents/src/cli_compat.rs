@@ -122,6 +122,8 @@ fn takes_value(agent: &str, flag: &str) -> bool {
                 | "--mcp-config"
                 | "--model"
                 | "--effort"
+                | "--agent"
+                | "--plugin-dir"
         ),
         "github-copilot" => matches!(
             flag,
@@ -134,6 +136,8 @@ fn takes_value(agent: &str, flag: &str) -> bool {
                 | "--deny-tool"
                 | "--model"
                 | "--max-ai-credits"
+                | "--agent"
+                | "--plugin-dir"
         ),
         _ => false,
     }
@@ -249,4 +253,31 @@ async fn read_help(agent: &str, program: &Path, limit: Duration) -> Option<Arc<C
         None
     };
     tokio::time::timeout(limit, probe).await.ok().flatten()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::workflow_agent::AGENT_ID;
+
+    fn argv(words: &[&str]) -> Vec<String> {
+        words.iter().map(|word| (*word).to_owned()).collect()
+    }
+
+    #[test]
+    fn agent_and_plugin_dir_values_are_not_read_as_flag_names() {
+        let help = CliHelp::from_text("  --agent <id>\n  --plugin-dir <dir>\n").unwrap();
+        for agent in ["claude-code", "github-copilot"] {
+            for flag in ["--agent", "--plugin-dir"] {
+                assert_eq!(help.check(agent, &argv(&[flag, "--unadvertised"])), Ok(()));
+            }
+        }
+        assert_eq!(
+            help.check(
+                "claude-code",
+                &argv(&["--agent", AGENT_ID, "--plugin-dir", "/x"])
+            ),
+            Ok(())
+        );
+    }
 }

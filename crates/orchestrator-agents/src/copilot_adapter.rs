@@ -38,6 +38,7 @@ use crate::copilot_parser::CopilotParser;
 use crate::copilot_sign_in::{record_for_exit, SignInRecord};
 use crate::copilot_usage::read_usage;
 use crate::routing::RoutableAdapter;
+use crate::workflow_agent::{WorkflowAgent, AGENT_ID};
 
 /// The wire id of this adapter family, as the daemon and the catalog name it.
 pub const COPILOT_AGENT: &str = "github-copilot";
@@ -204,12 +205,16 @@ impl CopilotAdapter {
     /// shell request is denied in `-p` with no judge. Auto sends a shell request
     /// with no allow rule to the judge, and denies `git push` by rule. Full passes
     /// `--allow-all`, the user's per-task choice.
+    ///
+    /// `agent`, when given, adds its plugin dir and runs it as the workflow
+    /// agent at every level.
     pub fn task_args(
         objective: &str,
         usage_file: &Path,
         worktree: &Path,
         level: PermissionLevel,
         credit_cap: bool,
+        agent: Option<&WorkflowAgent>,
     ) -> Vec<String> {
         let write_rule = format!("write({}/**)", path_text(worktree));
         let flags = match level {
@@ -240,6 +245,13 @@ impl CopilotAdapter {
         };
         let mut args = base_args(objective, usage_file, worktree, level, credit_cap);
         args.extend(flags);
+        if let Some(agent) = agent {
+            let plugin_dir = path_text(&agent.plugin_dir);
+            args.extend(pairs(&[
+                ("--plugin-dir", plugin_dir.as_str()),
+                ("--agent", AGENT_ID),
+            ]));
+        }
         args
     }
 

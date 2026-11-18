@@ -23,6 +23,7 @@ pub mod permission;
 pub mod pi_rpc_adapter;
 pub mod routing;
 pub mod usage;
+pub mod workflow_agent;
 
 pub use catalog::{
     pi_catalog, provider_of, AgentCatalog, CatalogState, Facet, ModelOption, SelectionError,

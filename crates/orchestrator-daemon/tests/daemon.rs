@@ -33,6 +33,8 @@ impl Daemon {
             .arg(data_dir)
             // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
             .env("AGENT_ORCH_LOAD_GATE", "off")
+            .env("HOME", data_dir.join("no-home"))
+            .env("USERPROFILE", data_dir.join("no-home"))
             .stdout(Stdio::piped());
         Self::spawn(&mut command, data_dir)
     }
@@ -47,6 +49,8 @@ impl Daemon {
             .arg("--approver-stdin")
             // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
             .env("AGENT_ORCH_LOAD_GATE", "off")
+            .env("HOME", data_dir.join("no-home"))
+            .env("USERPROFILE", data_dir.join("no-home"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped());
         let mut daemon = Self::spawn(&mut command, data_dir);
@@ -175,6 +179,8 @@ fn the_approver_flag_without_a_secret_fails_startup() {
         .arg("--approver-stdin")
         // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
         .env("AGENT_ORCH_LOAD_GATE", "off")
+        .env("HOME", dir.path().join("no-home"))
+        .env("USERPROFILE", dir.path().join("no-home"))
         .stdin(Stdio::null())
         .output()
         .unwrap();
@@ -239,6 +245,8 @@ fn second_daemon_reports_holder_and_shutdown_removes_resources() {
         .arg(dir.path())
         // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
         .env("AGENT_ORCH_LOAD_GATE", "off")
+        .env("HOME", dir.path().join("no-home"))
+        .env("USERPROFILE", dir.path().join("no-home"))
         .output()
         .unwrap();
     assert!(!second.status.success());
@@ -271,6 +279,8 @@ fn daemon_survives_accept_descriptor_exhaustion() {
         .arg(dir.path())
         // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
         .env("AGENT_ORCH_LOAD_GATE", "off")
+        .env("HOME", dir.path().join("no-home"))
+        .env("USERPROFILE", dir.path().join("no-home"))
         .stdout(Stdio::piped());
     let mut daemon = Daemon::spawn(&mut command, dir.path());
     wait_for_ipc(dir.path(), &mut daemon);
@@ -711,6 +721,8 @@ impl RunningAgentFixture {
             .arg(&self.data)
             // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
             .env("AGENT_ORCH_LOAD_GATE", "off")
+            .env("HOME", self.data.join("no-home"))
+            .env("USERPROFILE", self.data.join("no-home"))
             .env("AGENT_ORCH_CODEX_PROGRAM", &self.agent)
             // Never probe a real claude or pi: the report must not depend
             // on what is installed on the machine or on CPU load.

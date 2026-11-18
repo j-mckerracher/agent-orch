@@ -12,6 +12,7 @@ use orchestrator_agents::copilot_adapter::parse_copilot_version;
 use orchestrator_agents::copilot_parser::CopilotParser;
 use orchestrator_agents::copilot_sign_in::{classify_failure, CopilotSignIn};
 use orchestrator_agents::copilot_usage::parse_usage;
+use orchestrator_agents::workflow_agent::{WorkflowAgent, AGENT_ID};
 use orchestrator_agents::{
     provider_of, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentLaunchRequest,
     CatalogState, CopilotAdapter, CopilotRun, RoutableAdapter, SignInRecord, SignInState,
@@ -49,6 +50,13 @@ fn worktree_path() -> PathBuf {
     PathBuf::from("/var/tmp/task-worktree")
 }
 
+fn workflow_agent() -> WorkflowAgent {
+    WorkflowAgent {
+        plugin_dir: PathBuf::from("/p"),
+        codex_instructions: String::new(),
+    }
+}
+
 fn conversation(prompt: &str) -> Vec<String> {
     conversation_at(PermissionLevel::Restricted, prompt)
 }
@@ -63,7 +71,14 @@ fn task(objective: &str) -> Vec<String> {
 }
 
 fn task_at(level: PermissionLevel, objective: &str) -> Vec<String> {
-    CopilotAdapter::task_args(objective, &usage_path(), &worktree_path(), level, false)
+    CopilotAdapter::task_args(
+        objective,
+        &usage_path(),
+        &worktree_path(),
+        level,
+        false,
+        None,
+    )
 }
 
 fn sign_in_check() -> Vec<String> {
@@ -205,6 +220,14 @@ fn no_run_ever_passes_a_permission_widening_or_resume_flag() {
     for args in [
         conversation("hello"),
         task("fix the parser"),
+        CopilotAdapter::task_args(
+            "fix the parser",
+            &usage_path(),
+            &worktree_path(),
+            PermissionLevel::Restricted,
+            false,
+            Some(&workflow_agent()),
+        ),
         sign_in_check(),
     ] {
         for flag in FORBIDDEN {
@@ -221,6 +244,31 @@ fn no_run_ever_passes_a_permission_widening_or_resume_flag() {
         assert!(!args.iter().any(|arg| arg == "--reasoning-effort"));
         assert!(!args.iter().any(|arg| arg == "--sandbox"));
         assert!(args.iter().any(|arg| arg == "--disallow-temp-dir"));
+    }
+}
+
+/// With a workflow agent, every task level appends `--plugin-dir` and `--agent`
+/// after its own flags, and changes nothing else. The `None` argv is pinned
+/// exactly above.
+#[test]
+fn copilot_task_with_workflow_agent_appends_plugin_and_agent_at_every_level() {
+    for level in [
+        PermissionLevel::Restricted,
+        PermissionLevel::Extended,
+        PermissionLevel::Auto,
+        PermissionLevel::Full,
+    ] {
+        let with_agent = CopilotAdapter::task_args(
+            "do it",
+            &usage_path(),
+            &worktree_path(),
+            level,
+            false,
+            Some(&workflow_agent()),
+        );
+        let mut want = task_at(level, "do it");
+        want.extend(["--plugin-dir", "/p", "--agent", AGENT_ID].map(str::to_owned));
+        assert_eq!(with_agent, want, "{level:?}");
     }
 }
 
@@ -252,6 +300,7 @@ fn credit_cap_is_off_by_default_and_exactly_thirty_when_on() {
         &worktree_path(),
         PermissionLevel::Auto,
         true,
+        None,
     );
     let check_on = CopilotAdapter::sign_in_check_args(&usage_path(), &cwd_path(), true);
     for args in [&chat_on, &task_on, &check_on] {

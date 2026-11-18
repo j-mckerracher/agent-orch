@@ -37,6 +37,7 @@ use crate::api::admission::{AdmissionConfig, AdmissionGate};
 use orchestrator_agents::cli_compat::{
     CliHelp, CompatibilityCache, CompatibilityError, Executable,
 };
+use orchestrator_agents::workflow_agent::{self, WorkflowAgent};
 use orchestrator_agents::{
     pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn, COPILOT_AGENT,
@@ -112,6 +113,9 @@ pub(crate) struct ExecutorConfig {
     /// daemon starts with `AGENT_ORCH_LOAD_GATE=off`, so a spawned test daemon
     /// does not read the real machine's load.
     pub(crate) load_feed: bool,
+    /// Finds the pstack workflow agent each attempt runs as. Called per launch, so a
+    /// plugin installed after the daemon starts is picked up. Tests inject a fixture.
+    pub(crate) locate_workflow_agent: fn() -> Option<WorkflowAgent>,
 }
 
 /// No client waits on a launch, so its catalog check can wait for a slow CLI.
@@ -171,6 +175,35 @@ impl ExecutorConfig {
             .await
             .ok_or(CompatibilityError::Unconfirmed)?
             .check(agent, args)
+    }
+
+    /// The workflow agent the installed CLI for `agent` can take, and the flag it lacks when it
+    /// cannot. A CLI whose help lacks one of these flags cannot run the agent, so the attempt
+    /// launches plain. Codex takes the agent through `-c`, which every Codex CLI offers. Without
+    /// help (the probe failed) the agent is kept, and the launch check refuses the CLI.
+    pub(crate) async fn offered_workflow_agent(
+        &self,
+        agent: &str,
+        program: &Path,
+        executable: &Executable,
+        workflow_agent: Option<WorkflowAgent>,
+    ) -> (Option<WorkflowAgent>, Option<&'static str>) {
+        let Some(workflow_agent) = workflow_agent else {
+            return (None, None);
+        };
+        if !matches!(agent, CLAUDE_AGENT | COPILOT_AGENT) {
+            return (Some(workflow_agent), None);
+        }
+        let Some(help) = self.help_for(agent, program, executable).await else {
+            return (Some(workflow_agent), None);
+        };
+        match ["--plugin-dir", "--agent"]
+            .into_iter()
+            .find(|flag| !help.offers(flag))
+        {
+            Some(flag) => (None, Some(flag)),
+            None => (Some(workflow_agent), None),
+        }
     }
 
     /// Reads one agent's catalog from its installed CLI. An agent the daemon
@@ -251,6 +284,7 @@ impl ExecutorConfig {
             catalog_wait: Duration::from_millis(1100),
             load: Arc::default(),
             load_feed,
+            locate_workflow_agent: workflow_agent::locate,
         }
     }
 }
@@ -1129,13 +1163,14 @@ fn supervise_inner(inner: &Inner, job: &Job) {
 /// The program and argument vector the daemon launches for `agent`, or `None`
 /// when the agent has no daemon launcher. Shared by the launch and by the
 /// submit-time command-line check so the two cannot disagree; the selected
-/// model and effort are part of the vector, so the check measures them too.
+/// model, effort and workflow agent are part of the vector, so the check measures them too.
 pub(crate) fn agent_command(
     config: &ExecutorConfig,
     agent: &str,
     objective: &str,
     selection: Option<&ModelSelection>,
     permission: PermissionLevel,
+    workflow_agent: Option<&WorkflowAgent>,
 ) -> Option<(PathBuf, Vec<String>)> {
     let model = selection.and_then(|s| s.model.as_deref());
     let effort = selection.and_then(|s| s.effort.as_deref());
@@ -1145,14 +1180,14 @@ pub(crate) fn agent_command(
                 .codex_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("codex")),
-            CodexAdapter::args_for_task(permission, objective, model, effort)?,
+            CodexAdapter::args_for_task(permission, objective, model, effort, workflow_agent)?,
         )),
         CLAUDE_AGENT => Some((
             config
                 .claude_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("claude")),
-            ClaudeCodeAdapter::args_for_task(permission, objective, model, effort),
+            ClaudeCodeAdapter::args_for_task(permission, objective, model, effort, workflow_agent),
         )),
         // Submit-time length check only. The launch builds the real vector in
         // `spawn_copilot`, where the run directory and worktree are known; these
@@ -1168,6 +1203,7 @@ pub(crate) fn agent_command(
                 Path::new("<task-worktree>"),
                 permission,
                 config.copilot_credit_cap,
+                workflow_agent,
             ),
         )),
         _ => None,
@@ -1177,7 +1213,11 @@ pub(crate) fn agent_command(
 /// Launches a Copilot task. The run directory lives in the handle, so it is
 /// removed when the run ends. A model selection is refused, because Copilot
 /// offers none.
-async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
+async fn spawn_copilot(
+    inner: &Inner,
+    job: &Job,
+    workflow_agent: Option<WorkflowAgent>,
+) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
     if job.model_selection.is_some() {
         return Err(
             "model selection refused: GitHub Copilot offers no model or effort selection".into(),
@@ -1191,6 +1231,13 @@ async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>,
         .locate()
         .ok_or("the copilot executable was not found")?;
     let executable = Executable::read(&program).map_err(|_| CompatibilityError::Unconfirmed)?;
+    let (workflow_agent, missing) = inner
+        .config
+        .offered_workflow_agent(&job.agent, &program, &executable, workflow_agent)
+        .await;
+    if let Some(flag) = missing {
+        warn_unsupported_workflow_agent(job, flag);
+    }
     let run = CopilotRun::create(&inner.config.data_dir.join(COPILOT_RUNS_DIR))
         .map_err(|error| format!("cannot create the Copilot run directory: {error}"))?;
     let args = CopilotAdapter::task_args(
@@ -1199,6 +1246,7 @@ async fn spawn_copilot(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>,
         &job.worktree,
         job.permission,
         inner.config.copilot_credit_cap,
+        workflow_agent.as_ref(),
     );
     inner
         .config
@@ -1239,17 +1287,62 @@ impl From<&str> for LaunchFailure {
     }
 }
 
-async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
+/// The workflow agent for one launch. A missing agent only warns on the attempt;
+/// the attempt still launches, without it.
+fn launch_workflow_agent(inner: &Inner, job: &Job) -> Option<WorkflowAgent> {
+    let agent = (inner.config.locate_workflow_agent)();
+    if agent.is_none() {
+        job.diag.warn(
+            LOG,
+            "workflow_agent_missing",
+            &job.event_fields(&[(
+                "reason",
+                "pstack workflow agent not found; launching without it",
+            )]),
+        );
+    }
+    agent
+}
+
+/// Says the installed CLI cannot take the workflow agent, so the attempt launches plain.
+fn warn_unsupported_workflow_agent(job: &Job, flag: &str) {
+    let reason =
+        format!("installed CLI does not offer {flag}; launching without the pstack workflow agent");
+    job.diag.warn(
+        LOG,
+        "workflow_agent_unsupported",
+        &job.event_fields(&[("reason", &reason)]),
+    );
+}
+
+async fn spawn_agent(
+    inner: &Inner,
+    job: &Job,
+    workflow_agent: Option<WorkflowAgent>,
+) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
     if job.agent == COPILOT_AGENT {
-        return spawn_copilot(inner, job).await;
+        return spawn_copilot(inner, job, workflow_agent).await;
     }
     let selection = job.model_selection.as_ref();
+    let program = inner
+        .config
+        .locate_agent(&job.agent)
+        .ok_or("the agent executable was not found")?;
+    let executable = Executable::read(&program).map_err(|_| CompatibilityError::Unconfirmed)?;
+    let (workflow_agent, missing) = inner
+        .config
+        .offered_workflow_agent(&job.agent, &program, &executable, workflow_agent)
+        .await;
+    if let Some(flag) = missing {
+        warn_unsupported_workflow_agent(job, flag);
+    }
     let Some((_, mut args)) = agent_command(
         &inner.config,
         &job.agent,
         &job.objective,
         selection,
         job.permission,
+        workflow_agent.as_ref(),
     ) else {
         return Err(format!("agent {:?} has no daemon launcher", job.agent).into());
     };
@@ -1269,11 +1362,6 @@ async fn spawn_agent(inner: &Inner, job: &Job) -> Result<Box<dyn AgentHandle>, L
                 format!("model selection refused: {}", log_safe(&error.to_string()))
             })?;
     }
-    let program = inner
-        .config
-        .locate_agent(&job.agent)
-        .ok_or("the agent executable was not found")?;
-    let executable = Executable::read(&program).map_err(|_| CompatibilityError::Unconfirmed)?;
     let detect = match job.agent.as_str() {
         CODEX_AGENT => {
             let adapter = CodexAdapter::new().with_program(program.clone());
@@ -1312,7 +1400,7 @@ enum AdapterChoice {
 
 async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let store = &*inner.store;
-    let mut handle = match spawn_agent(inner, job).await {
+    let mut handle = match spawn_agent(inner, job, launch_workflow_agent(inner, job)).await {
         Ok(handle) => handle,
         Err(error) => {
             let (reason, detail) = match error {

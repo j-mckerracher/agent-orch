@@ -73,6 +73,7 @@ impl Fixture {
               printf '%s\\n' --json --sandbox --ignore-user-config --skip-git-repo-check --approve-for-me --ephemeral -m -c \
               -p --verbose --output-format --include-partial-messages --permission-mode --permission-prompts --restricted \
               --strict-mcp-config --tools --allowedTools --disallowedTools --allow-dangerously-skip-permissions --model --effort \
+              --plugin-dir --agent \
               --prompt --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir \
               --usage-output-file -C --allow-tool --deny-tool --allow-all --assisted-approval --max-ai-credits\n\
               exit 0\nfi\n"
@@ -108,6 +109,7 @@ impl Fixture {
             catalog_wait: Duration::from_secs(5),
             load: Default::default(),
             load_feed: false,
+            locate_workflow_agent: fixture_workflow_agent,
         }
     }
 
@@ -158,6 +160,32 @@ impl Fixture {
             .unwrap();
         task["contract"]["id"].as_str().unwrap().to_owned()
     }
+}
+
+/// The workflow agent every launch gets unless a test overrides the seam.
+fn fixture_workflow_agent() -> Option<WorkflowAgent> {
+    Some(WorkflowAgent {
+        plugin_dir: PathBuf::from("/fixture/pstack"),
+        codex_instructions: "fixture instructions".to_owned(),
+    })
+}
+
+fn no_workflow_agent() -> Option<WorkflowAgent> {
+    None
+}
+
+/// What the fixture workflow agent adds to the Claude and Copilot task argv, after the level's own
+/// flags.
+const FIXTURE_AGENT_FLAGS: [&str; 4] = [
+    "--plugin-dir",
+    "/fixture/pstack",
+    "--agent",
+    "pstack:workflow-agent",
+];
+
+fn with_flags<'a>(mut argv: Vec<&'a str>, flags: &[&'a str]) -> Vec<&'a str> {
+    argv.extend_from_slice(flags);
+    argv
 }
 
 fn run_git(repo: &Path, args: &[&str]) {
@@ -275,6 +303,67 @@ fn submitted_task_runs_to_succeeded_with_every_transition_journaled() {
         "session created, running and exited: {kinds:?}"
     );
     api.shutdown();
+}
+
+#[test]
+fn a_missing_workflow_agent_warns_on_the_attempt_and_still_launches_plain() {
+    let fixture = Fixture::new();
+    let mut diagnostics = None;
+    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+        config.locate_workflow_agent = no_workflow_agent;
+        diagnostics = Some(config.diagnostics.clone());
+    });
+    let task_id = fixture.submit(&api, "no-workflow-agent", 0);
+
+    let done = wait_state(&api, &task_id, "Succeeded");
+    assert_eq!(done["attempts"][0]["state"], "Succeeded");
+    let lines = diagnostics.unwrap().lines().join("\n");
+    assert!(
+        lines.contains("\"event\":\"workflow_agent_missing\"")
+            && lines.contains(&format!("\"task_id\":\"{task_id}\"")),
+        "{lines}"
+    );
+}
+
+#[test]
+fn a_claude_cli_without_the_agent_flags_launches_plain_and_warns_naming_the_flag() {
+    let fixture = Fixture::new();
+    let record = fixture.marker("argv");
+    // An older Claude CLI: its help offers none of the agent's flags.
+    let program = fixture.script(
+        "old-claude",
+        &format!(
+            "if [ \"$1\" = \"--help\" ]; then\n\
+             printf '%s\\n' -p --verbose --output-format --include-partial-messages --permission-mode \\\n\
+             --permission-prompts --restricted --strict-mcp-config --tools --allowedTools \\\n\
+             --disallowedTools --model --effort\n\
+             exit 0\nfi\n\
+             printf '%s\\n' \"$@\" > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
+             {THREAD_STARTED}{TURN_COMPLETED}",
+            record.display()
+        ),
+    );
+    let mut diagnostics = None;
+    let api = fixture.api_with(&program, |config| {
+        config.claude_program = Some(program.clone());
+        diagnostics = Some(config.diagnostics.clone());
+    });
+    // The submit-time check measures the plain argv, so the submission is accepted.
+    let task_id = fixture.submit_full(&api, "old-claude", "claude-code", 0, &[]);
+
+    wait_until("the agent to record its argv", || record.exists());
+    let argv = fs::read_to_string(&record).unwrap();
+    assert!(
+        !argv.contains("--plugin-dir") && !argv.contains("--agent"),
+        "{argv}"
+    );
+    let lines = diagnostics.unwrap().lines().join("\n");
+    assert!(
+        lines.contains("\"event\":\"workflow_agent_unsupported\"")
+            && lines.contains("--plugin-dir")
+            && lines.contains(&format!("\"task_id\":\"{task_id}\"")),
+        "{lines}"
+    );
 }
 
 /// A scripted agent that prints one final message before it finishes, in the event shape the
@@ -1052,6 +1141,39 @@ fn unlaunchable_task_fails_with_a_recorded_attempt_instead_of_hanging() {
 }
 
 #[test]
+fn an_agent_without_a_launcher_is_accepted_at_submit_when_its_cli_is_absent() {
+    let fixture = Fixture::new();
+    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+        config.pi_program = Some(fixture.root.path().join("no-such-pi"));
+    });
+    // Pi has no daemon launcher, so the submit-time check has no CLI to read or probe.
+    // submit_full panics on a refusal, so a returned id is the acceptance.
+    fixture.submit_full(&api, "no-launcher", "pi", 0, &[]);
+    api.shutdown();
+}
+
+#[test]
+fn extended_codex_is_invalid_params_even_when_its_cli_cannot_be_probed() {
+    let fixture = Fixture::new();
+    // A Codex CLI whose help cannot be read, so a probe of it is unconfirmed.
+    let silent = fixture.script(
+        "silent-codex",
+        "if [ \"$1\" = '--help' ]; then exit 1; fi\nexit 1\n",
+    );
+    let api = fixture.api(&silent);
+    let mut contract = launch_contract(&fixture, "codex");
+    contract["permission"] = json!("extended");
+    // Codex builds no argv for Extended, so the submit-time CLI check is skipped and the level
+    // is refused as invalid, not as a CLI conflict.
+    let refused = api.dispatch(
+        "tasks.submit",
+        json!({"idempotency_key": "extended-silent", "contract": contract}),
+    );
+    assert_eq!(refused, Err(RpcError::InvalidParams));
+    api.shutdown();
+}
+
+#[test]
 fn agents_capabilities_reports_installed_state_without_paths() {
     let fixture = Fixture::new();
     let api = fixture.api(&succeeding_agent(&fixture));
@@ -1211,12 +1333,15 @@ const CLAUDE_TASK_HEAD: [&str; 13] = [
 fn codex_task_argv_per_level_is_exact() {
     let objective = "objective of launch";
     let argv = |permission| launched_argv("codex", permission, |_| {});
+    // The fixture workflow agent is sent as developer instructions before the objective.
     let restricted = vec![
         "exec",
         "--json",
         "--sandbox",
         "workspace-write",
         "--ignore-user-config",
+        "-c",
+        "developer_instructions=\"fixture instructions\"",
         "--",
         objective,
     ];
@@ -1232,13 +1357,38 @@ fn codex_task_argv_per_level_is_exact() {
             "workspace-write",
             "--approve-for-me",
             "--ignore-user-config",
+            "-c",
+            "developer_instructions=\"fixture instructions\"",
             "--",
             objective,
         ]
     );
     assert_eq!(
         strs(&argv(Some("full"))),
-        ["exec", "--json", "--", objective]
+        [
+            "exec",
+            "--json",
+            "-c",
+            "developer_instructions=\"fixture instructions\"",
+            "--",
+            objective,
+        ]
+    );
+    // Without a workflow agent the vector is the one Codex launched before.
+    let plain = launched_argv("codex", None, |config| {
+        config.locate_workflow_agent = no_workflow_agent
+    });
+    assert_eq!(
+        strs(&plain),
+        [
+            "exec",
+            "--json",
+            "--sandbox",
+            "workspace-write",
+            "--ignore-user-config",
+            "--",
+            objective,
+        ]
     );
 }
 
@@ -1277,9 +1427,17 @@ fn claude_task_argv_per_level_is_exact() {
     };
     let mut restricted = CLAUDE_TASK_HEAD.to_vec();
     restricted.extend(["Read,Edit,Write", "--allowedTools", "Read,Edit,Write"]);
-    // Absent and Restricted both launch the vector a Claude task has always had.
-    assert_eq!(strs(&claude(None, |_| {})), restricted);
-    assert_eq!(strs(&claude(Some("restricted"), |_| {})), restricted);
+    // Every level ends with the fixture workflow agent's flags. Without one, Absent and
+    // Restricted launch the vector a Claude task has always had.
+    let restricted_agent = with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS);
+    assert_eq!(strs(&claude(None, |_| {})), restricted_agent);
+    assert_eq!(strs(&claude(Some("restricted"), |_| {})), restricted_agent);
+    assert_eq!(
+        strs(&claude(Some("restricted"), |config| {
+            config.locate_workflow_agent = no_workflow_agent
+        })),
+        restricted
+    );
 
     let mut extended = CLAUDE_TASK_HEAD.to_vec();
     extended.extend([
@@ -1291,7 +1449,10 @@ fn claude_task_argv_per_level_is_exact() {
         "Bash(git log *)",
         "Bash(git show *)",
     ]);
-    assert_eq!(strs(&claude(Some("extended"), |_| {})), extended);
+    assert_eq!(
+        strs(&claude(Some("extended"), |_| {})),
+        with_flags(extended, &FIXTURE_AGENT_FLAGS)
+    );
 
     let auto = [
         "-p",
@@ -1314,23 +1475,27 @@ fn claude_task_argv_per_level_is_exact() {
         "Bash(git push *)",
         "Bash(gh *)",
     ];
-    assert_eq!(strs(&claude(Some("auto"), |_| {})), auto);
+    assert_eq!(
+        strs(&claude(Some("auto"), |_| {})),
+        with_flags(auto.to_vec(), &FIXTURE_AGENT_FLAGS)
+    );
 
+    let full = [
+        "-p",
+        "objective of launch",
+        "--verbose",
+        "--output-format",
+        "stream-json",
+        "--include-partial-messages",
+        "--permission-mode",
+        "bypassPermissions",
+        "--permission-prompts",
+        "none",
+        "--allow-dangerously-skip-permissions",
+    ];
     assert_eq!(
         strs(&claude(Some("full"), |_| {})),
-        [
-            "-p",
-            "objective of launch",
-            "--verbose",
-            "--output-format",
-            "stream-json",
-            "--include-partial-messages",
-            "--permission-mode",
-            "bypassPermissions",
-            "--permission-prompts",
-            "none",
-            "--allow-dangerously-skip-permissions",
-        ]
+        with_flags(full.to_vec(), &FIXTURE_AGENT_FLAGS)
     );
 }
 
@@ -1368,12 +1533,16 @@ fn copilot_task_argv_per_level_is_exact() {
     let head = restricted[..restricted.len() - 10].to_vec();
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, None, |_| {})),
-        restricted
+        with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS)
     );
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("restricted"), |_| {})),
-        restricted
+        with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS)
     );
+    let plain = launched_argv(COPILOT_AGENT, None, |config| {
+        config.locate_workflow_agent = no_workflow_agent
+    });
+    assert_eq!(strs(&plain), restricted);
 
     let mut extended = head.clone();
     extended.extend([
@@ -1396,7 +1565,7 @@ fn copilot_task_argv_per_level_is_exact() {
     ]);
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("extended"), |_| {})),
-        extended
+        with_flags(extended, &FIXTURE_AGENT_FLAGS)
     );
 
     let mut auto = head.clone();
@@ -1415,7 +1584,7 @@ fn copilot_task_argv_per_level_is_exact() {
     ]);
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("auto"), |_| {})),
-        auto
+        with_flags(auto, &FIXTURE_AGENT_FLAGS)
     );
 
     let full = [
@@ -1435,7 +1604,7 @@ fn copilot_task_argv_per_level_is_exact() {
     ];
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("full"), |_| {})),
-        full
+        with_flags(full.to_vec(), &FIXTURE_AGENT_FLAGS)
     );
 }
 

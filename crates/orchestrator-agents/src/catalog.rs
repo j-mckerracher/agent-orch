@@ -38,6 +38,7 @@ use crate::copilot_sign_in::{
     SignInRecord, SignInState, NOT_CHECKED_DETAIL, NOT_SIGNED_IN_DETAIL, NO_SEAT_DETAIL,
 };
 use crate::mcp_wiring::McpWiring;
+use crate::workflow_agent::{WorkflowAgent, AGENT_ID};
 
 const CODEX_AGENT: &str = "codex";
 const CLAUDE_AGENT: &str = "claude-code";
@@ -889,11 +890,15 @@ impl CodexAdapter {
     /// requests go to automatic review. Both pin the sandbox and ignore the
     /// user's config. Full adds no sandbox or approval flag, so the user's
     /// `~/.codex/config.toml` decides.
+    ///
+    /// `agent`, when given, sends its instructions as `developer_instructions`
+    /// at every level. A `-c` override still applies under `--ignore-user-config`.
     pub fn args_for_task(
         level: PermissionLevel,
         objective: &str,
         model: Option<&str>,
         effort: Option<&str>,
+        agent: Option<&WorkflowAgent>,
     ) -> Option<Vec<String>> {
         let flags: &[&str] = match level {
             PermissionLevel::Restricted => {
@@ -913,10 +918,31 @@ impl CodexAdapter {
             .chain(flags.iter().copied())
             .map(str::to_owned)
             .collect();
+        if let Some(agent) = agent {
+            args.extend(codex_developer_instructions_arg(agent));
+        }
         args.extend(Self::selection_args(model, effort));
         args.extend(["--".to_owned(), objective.to_owned()]);
         Some(args)
     }
+}
+
+/// The `-c developer_instructions=...` pair that gives Codex the workflow
+/// agent's instructions. Codex has no named agents, so this is its only route.
+pub fn codex_developer_instructions_arg(agent: &WorkflowAgent) -> [String; 2] {
+    let instructions = toml_basic_string(&agent.codex_instructions);
+    [
+        "-c".to_owned(),
+        format!("developer_instructions={instructions}"),
+    ]
+}
+
+/// Codex reads `-c` values as TOML. JSON string escaping covers what a TOML
+/// basic string needs, except DEL, which TOML also requires escaped.
+fn toml_basic_string(text: &str) -> String {
+    Value::String(text.to_owned())
+        .to_string()
+        .replace('\u{7f}', "\\u007F")
 }
 
 impl ClaudeCodeAdapter {
@@ -946,11 +972,15 @@ impl ClaudeCodeAdapter {
     /// call, and denies `git push` and `gh`. Full drops every restriction. Tasks
     /// keep no session-persistence flag, because a task is not a chat turn. No
     /// spend cap is passed.
+    ///
+    /// `agent`, when given, loads its plugin dir and runs as its workflow agent
+    /// at every level. The flags go before the model and effort flags.
     pub fn args_for_task(
         level: PermissionLevel,
         objective: &str,
         model: Option<&str>,
         effort: Option<&str>,
+        agent: Option<&WorkflowAgent>,
     ) -> Vec<String> {
         let mut args: Vec<String> = match level {
             PermissionLevel::Restricted => Self::args_for_prompt(objective),
@@ -1020,6 +1050,12 @@ impl ClaudeCodeAdapter {
             .map(str::to_owned)
             .collect(),
         };
+        if let Some(agent) = agent {
+            args.push("--plugin-dir".into());
+            args.push(agent.plugin_dir.to_string_lossy().into_owned());
+            args.push("--agent".into());
+            args.push(AGENT_ID.into());
+        }
         if let Some(model) = model {
             args.push("--model".into());
             args.push(model.into());
@@ -1718,6 +1754,133 @@ mod tests {
             ),
             None
         );
+    }
+
+    fn fixture_agent() -> WorkflowAgent {
+        WorkflowAgent {
+            plugin_dir: "/p".into(),
+            codex_instructions: "Be brief.".into(),
+        }
+    }
+
+    /// The Codex task argv with and without a workflow agent. An agent adds one
+    /// `developer_instructions` override before the model flags, at every level.
+    #[test]
+    fn codex_task_argv_with_and_without_workflow_agent() {
+        let agent = fixture_agent();
+        let task = |level, agent: Option<&WorkflowAgent>| {
+            CodexAdapter::args_for_task(level, "do it", Some("m"), Some("low"), agent).unwrap()
+        };
+        assert_eq!(
+            task(PermissionLevel::Restricted, None),
+            [
+                "exec",
+                "--json",
+                "--sandbox",
+                "workspace-write",
+                "--ignore-user-config",
+                "-m",
+                "m",
+                "-c",
+                "model_reasoning_effort=\"low\"",
+                "--",
+                "do it",
+            ]
+        );
+        assert_eq!(
+            task(PermissionLevel::Restricted, Some(&agent)),
+            [
+                "exec",
+                "--json",
+                "--sandbox",
+                "workspace-write",
+                "--ignore-user-config",
+                "-c",
+                "developer_instructions=\"Be brief.\"",
+                "-m",
+                "m",
+                "-c",
+                "model_reasoning_effort=\"low\"",
+                "--",
+                "do it",
+            ]
+        );
+        assert_eq!(
+            task(PermissionLevel::Full, Some(&agent)),
+            [
+                "exec",
+                "--json",
+                "-c",
+                "developer_instructions=\"Be brief.\"",
+                "-m",
+                "m",
+                "-c",
+                "model_reasoning_effort=\"low\"",
+                "--",
+                "do it",
+            ]
+        );
+        assert_eq!(
+            CodexAdapter::args_for_task(PermissionLevel::Extended, "x", None, None, Some(&agent)),
+            None
+        );
+    }
+
+    #[test]
+    fn toml_basic_string_escapes_what_a_basic_string_requires() {
+        assert_eq!(
+            toml_basic_string("a\"b\\c\nd\u{7f}"),
+            r#""a\"b\\c\nd\u007F""#
+        );
+    }
+
+    /// The Claude task argv with and without a workflow agent. The agent flags
+    /// go before the model flag at every level, and `None` is the argv from
+    /// before the agent existed.
+    #[test]
+    fn claude_task_argv_with_and_without_workflow_agent() {
+        let agent = fixture_agent();
+        assert_eq!(
+            ClaudeCodeAdapter::args_for_task(PermissionLevel::Full, "do it", Some("m"), None, None),
+            [
+                "-p",
+                "do it",
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "bypassPermissions",
+                "--permission-prompts",
+                "none",
+                "--allow-dangerously-skip-permissions",
+                "--model",
+                "m",
+            ]
+        );
+        for level in [
+            PermissionLevel::Restricted,
+            PermissionLevel::Extended,
+            PermissionLevel::Auto,
+            PermissionLevel::Full,
+        ] {
+            let plain =
+                ClaudeCodeAdapter::args_for_task(level, "do it", Some("m"), Some("max"), None);
+            let with = ClaudeCodeAdapter::args_for_task(
+                level,
+                "do it",
+                Some("m"),
+                Some("max"),
+                Some(&agent),
+            );
+            let at = plain.iter().position(|arg| arg == "--model").unwrap();
+            let mut want = plain.clone();
+            want.splice(
+                at..at,
+                ["--plugin-dir", "/p", "--agent", AGENT_ID].map(str::to_owned),
+            );
+            assert_eq!(with, want, "{level:?}");
+        }
     }
 
     #[test]

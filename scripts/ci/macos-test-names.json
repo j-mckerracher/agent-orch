@@ -943,7 +943,11 @@
    "executor::tests::candidate_that_fails_its_checks_is_verification_failed_with_the_reason",
    "executor::tests::candidate_that_passes_its_checks_succeeds_with_a_passed_run",
    "executor::tests::restart_resumes_a_candidate_left_verifying_and_settles_it",
-   "executor::tests::submitted_task_runs_to_succeeded_with_every_transition_journaled"
+   "executor::tests::submitted_task_runs_to_succeeded_with_every_transition_journaled",
+   "executor::tests::a_claude_cli_without_the_agent_flags_launches_plain_and_warns_naming_the_flag",
+   "executor::tests::a_missing_workflow_agent_warns_on_the_attempt_and_still_launches_plain",
+   "executor::tests::an_agent_without_a_launcher_is_accepted_at_submit_when_its_cli_is_absent",
+   "executor::tests::extended_codex_is_invalid_params_even_when_its_cli_cannot_be_probed"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
