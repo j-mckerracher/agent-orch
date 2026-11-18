@@ -45,6 +45,11 @@ export function canCancel(state: TaskState): boolean {
   return CANCELLABLE_STATES.has(state);
 }
 
+/** `tasks.archive` takes only finished tasks; any other state is refused with Conflict. */
+export function canArchive(state: TaskState): boolean {
+  return TERMINAL_STATES.has(state);
+}
+
 export const FILTER_LABELS: Array<{ filter: TaskFilter; label: string }> = [
   { filter: "all", label: "All" },
   { filter: "queued", label: "Queued" },

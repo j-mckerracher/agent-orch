@@ -210,10 +210,16 @@ impl DaemonApi {
             .store
             .list_objectives(&request.workstream_id)
             .map_err(map_workstream_error)?;
-        let tasks = self
+        // Links to archived tasks are left out of the view. The store query keeps them, so the
+        // gates and the scheduler still see every link.
+        let archived = self.store.archived_task_ids().map_err(map_store_error)?;
+        let tasks: Vec<_> = self
             .store
             .list_workstream_tasks(&request.workstream_id)
-            .map_err(map_workstream_error)?;
+            .map_err(map_workstream_error)?
+            .into_iter()
+            .filter(|task| !archived.contains(&task.task_id))
+            .collect();
         let mut project_ids: Vec<&str> =
             tasks.iter().map(|task| task.project_id.as_str()).collect();
         project_ids.sort_unstable();

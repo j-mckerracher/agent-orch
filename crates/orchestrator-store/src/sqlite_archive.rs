@@ -5,13 +5,21 @@
 //!
 //! The marker is only a mark, so its text comes from the database and nothing reads it for
 //! logic other than "set or not".
+//!
+//! Finished tasks archive the same way (DPES-1106, migration 0062, `tasks.archived_at`): the row
+//! stays, and the daemon leaves it out of the task list and the workstream views.
 
+use std::collections::HashSet;
 use std::fmt;
 use std::io;
 
+use orchestrator_core::task::TaskState;
+use serde_json::json;
+
+use crate::sqlite_events::append_durable_event;
 use crate::{SqliteStore, StoreError};
 
-/// Why the store refused to archive a project. Carried inside a `StoreError::Io` of kind
+/// Why the store refused an archive. Carried inside a `StoreError::Io` of kind
 /// `InvalidInput`; [`ArchiveError::of`] reads it back so the daemon can fail the proposal
 /// closed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,6 +28,8 @@ pub enum ArchiveError {
     ActiveTasks,
     /// An approval of one of the project's tasks is still `requested`.
     PendingApprovals,
+    /// A task named for archiving is not `Succeeded`, `Failed`, `VerificationFailed` or `Cancelled`.
+    NotFinished,
 }
 
 impl fmt::Display for ArchiveError {
@@ -27,6 +37,7 @@ impl fmt::Display for ArchiveError {
         formatter.write_str(match self {
             Self::ActiveTasks => "the project has a task that is queued, running or verifying",
             Self::PendingApprovals => "the project has an approval that is still requested",
+            Self::NotFinished => "a task is not finished",
         })
     }
 }
@@ -162,6 +173,75 @@ impl SqliteStore {
                     entity: "project",
                     id: project_id,
                 })
+        })
+    }
+}
+
+impl SqliteStore {
+    /// Archives finished tasks, in one transaction. A task that is not `Succeeded`, `Failed`,
+    /// `VerificationFailed` or `Cancelled` refuses the whole call with [`ArchiveError::NotFinished`],
+    /// and an unknown id fails with `RecordNotFound`; either way nothing is written. A task that is
+    /// already archived is skipped. Each task this call archives gets one `task.archived` durable
+    /// event, in the same transaction. Returns the ids this call archived, in request order.
+    pub fn archive_tasks(&self, task_ids: &[String]) -> Result<Vec<String>, StoreError> {
+        let task_ids = task_ids.to_vec();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let mut archived = Vec::new();
+            for task_id in task_ids {
+                let (state, archived_at) = sqlx::query_as::<_, (String, Option<String>)>(
+                    "SELECT state, archived_at FROM tasks WHERE id = ?",
+                )
+                .bind(&task_id)
+                .fetch_optional(&mut *transaction)
+                .await?
+                .ok_or_else(|| StoreError::RecordNotFound {
+                    entity: "task",
+                    id: task_id.clone(),
+                })?;
+                if archived_at.is_some() {
+                    continue;
+                }
+                let state: TaskState = serde_json::from_str(&state)?;
+                if !matches!(
+                    state,
+                    TaskState::Succeeded
+                        | TaskState::Failed
+                        | TaskState::VerificationFailed
+                        | TaskState::Cancelled
+                ) {
+                    return Err(StoreError::from(ArchiveError::NotFinished));
+                }
+                sqlx::query("UPDATE tasks SET archived_at = CURRENT_TIMESTAMP WHERE id = ?")
+                    .bind(&task_id)
+                    .execute(&mut *transaction)
+                    .await?;
+                append_durable_event(
+                    &mut transaction,
+                    &task_id,
+                    None,
+                    "task.archived",
+                    &json!({}),
+                )
+                .await?;
+                archived.push(task_id);
+            }
+            transaction.commit().await?;
+            Ok(archived)
+        })
+    }
+
+    /// The ids of archived tasks. The daemon leaves these out of `tasks.list` and the workstream
+    /// views; `tasks.get` still answers for them.
+    pub fn archived_task_ids(&self) -> Result<HashSet<String>, StoreError> {
+        self.call(|pool| async move {
+            Ok(sqlx::query_scalar::<_, String>(
+                "SELECT id FROM tasks WHERE archived_at IS NOT NULL",
+            )
+            .fetch_all(&pool)
+            .await?
+            .into_iter()
+            .collect())
         })
     }
 }

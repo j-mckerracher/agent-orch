@@ -522,6 +522,82 @@ describe("live mutations", () => {
     expect(screen.getByRole("button", { name: "Unlink Wire the CLI" })).toBeEnabled();
   });
 
+  it("archives a finished task from its table row, and the task leaves the table and the sidebar", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    await user.click(screen.getByRole("button", { name: "Archive Ship the parser" }));
+    await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(1));
+    expect(paramsOf(fake, "tasks.archive")).toEqual([{ task_ids: ["a1"], idempotency_key: expect.any(String) }]);
+    expect(await screen.findByText(/Archive task a1: recorded by the daemon/)).toBeInTheDocument();
+    expect(within(tree()).queryByRole("treeitem", { name: /Ship the parser/ })).not.toBeInTheDocument();
+    expect(within(tree()).getByRole("treeitem", { name: /Wire the CLI/ })).toBeInTheDocument();
+  });
+
+  it("disables archive on a running task row and says why", async () => {
+    const fake = daemon();
+    await mount(fake);
+    const button = await screen.findByRole("button", { name: "Archive Wire the CLI" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription(/Only finished tasks can be archived/);
+    expect(paramsOf(fake, "tasks.archive")).toHaveLength(0);
+  });
+
+  it("shows the daemon's conflict as a notice when a finished task is refused", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    fake.failNext("tasks.archive", { code: -32011, message: "task is not finished" });
+    await user.click(screen.getByRole("button", { name: "Archive Ship the parser" }));
+    expect(await screen.findByText(/Archive task a1 failed/)).toBeInTheDocument();
+    expect(screen.getAllByTestId("task-row")).toHaveLength(2);
+  });
+
+  it("archives every finished task, linked or not, in one call after a confirmation", async () => {
+    const fake = daemon((f) => {
+      f.tasks.push(mkTask("a3", A, { state: "Failed" }), mkTask("c9", B, { state: "Cancelled" }));
+    });
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    await user.click(screen.getByRole("button", { name: "Archive finished (3)" }));
+    expect(paramsOf(fake, "tasks.archive")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Confirm archive" }));
+    expect(await screen.findByText(/Archive 3 finished tasks: recorded by the daemon/)).toBeInTheDocument();
+    expect(paramsOf(fake, "tasks.archive")).toEqual([{ task_ids: ["a1", "a3", "c9"], idempotency_key: expect.any(String) }]);
+    await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(1));
+    expect(await screen.findByRole("button", { name: "Archive finished (0)" })).toBeDisabled();
+  });
+
+  it("sends nothing when the bulk archive is kept", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    await user.click(screen.getByRole("button", { name: "Archive finished (1)" }));
+    await user.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.getByRole("button", { name: "Archive finished (1)" })).toBeEnabled();
+    expect(paramsOf(fake, "tasks.archive")).toHaveLength(0);
+  });
+
+  it("disables the bulk archive when no task is finished", async () => {
+    const fake = daemon((f) => {
+      f.tasks = f.tasks.filter((task) => task.contract.id !== "a1");
+    });
+    await mount(fake);
+    await screen.findAllByTestId("task-row");
+    expect(await screen.findByRole("button", { name: "Archive finished (0)" })).toBeDisabled();
+  });
+
+  it("hides every archive control once the daemon answers method-unavailable", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("task-row");
+    fake.failNext("tasks.archive", { code: -32601, message: "method not found" });
+    await user.click(screen.getByRole("button", { name: "Archive Ship the parser" }));
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Archive Ship the parser" })).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Archive finished/ })).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("task-row")).toHaveLength(2);
+  });
+
   describe("plan editing", () => {
     /** Adds a queued "Write docs" (under Docs) and a failed "Fix lexer" to Alpha stream: both can be replaced. */
     const planDaemon = () =>

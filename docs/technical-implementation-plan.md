@@ -888,6 +888,10 @@ tasks.retry
 
 Start a new attempt
 
+tasks.archive
+
+Hide finished tasks (soft archive; `tasks.get` still answers)
+
 agents.capabilities
 
 Discover installed agents

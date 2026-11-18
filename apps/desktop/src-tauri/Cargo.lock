@@ -10,7 +10,7 @@ checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
 name = "agent-orch-desktop"
-version = "0.1.4"
+version = "0.1.7"
 dependencies = [
  "objc2",
  "objc2-app-kit",
@@ -2412,14 +2412,14 @@ checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
 name = "orchestrator-diagnostics"
-version = "0.1.4"
+version = "0.1.7"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "orchestrator-ipc"
-version = "0.1.4"
+version = "0.1.7"
 dependencies = [
  "serde",
  "serde_json",
@@ -2430,7 +2430,7 @@ dependencies = [
 
 [[package]]
 name = "orchestrator-private-fs"
-version = "0.1.4"
+version = "0.1.7"
 dependencies = [
  "windows-sys 0.61.2",
 ]

@@ -572,7 +572,8 @@ impl SqliteStore {
 
     /// Counts a workstream's linked tasks by state and reads its `limit` newest tasks in
     /// any state, newest first. Terminal tasks are included, so a finished task still
-    /// shows in its workstream. Reads task rows only; an unknown workstream is empty.
+    /// shows in its workstream. Archived tasks are left out. Reads task rows only; an unknown
+    /// workstream is empty.
     pub fn workstream_task_overview(
         &self,
         workstream_id: &str,
@@ -584,7 +585,8 @@ impl SqliteStore {
             let mut counts = Vec::new();
             for row in sqlx::query(
                 "SELECT t.state AS state, COUNT(*) AS n FROM workstream_tasks l \
-                 JOIN tasks t ON t.id = l.task_id WHERE l.workstream_id = ? GROUP BY t.state",
+                 JOIN tasks t ON t.id = l.task_id WHERE l.workstream_id = ? AND t.archived_at IS NULL \
+                 GROUP BY t.state",
             )
             .bind(&workstream_id)
             .fetch_all(&pool)
@@ -608,7 +610,7 @@ impl SqliteStore {
                  LEFT JOIN attempts latest ON latest.task_id = t.id \
                  AND latest.attempt_number = (SELECT MAX(a.attempt_number) FROM attempts a WHERE a.task_id = t.id) \
                  LEFT JOIN task_reports r ON r.task_id = t.id \
-                 WHERE l.workstream_id = ? ORDER BY t.rowid DESC LIMIT ?",
+                 WHERE l.workstream_id = ? AND t.archived_at IS NULL ORDER BY t.rowid DESC LIMIT ?",
             )
             .bind(&workstream_id)
             .bind(limit)

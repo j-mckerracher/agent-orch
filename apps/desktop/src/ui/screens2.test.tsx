@@ -459,6 +459,37 @@ describe("S4 task and session detail", () => {
     expect(screen.queryByText(/Cancel request acknowledged/)).not.toBeInTheDocument();
   });
 
+  it("archives a finished task from its detail, once, and says what archive keeps", async () => {
+    const fake = seeded();
+    const { user } = await mount(fake, { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    expect(await screen.findByText(/Archived\. The task leaves the task lists; its history is kept\./)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Archive task" })).toBeDisabled();
+    expect(fake.callsTo("tasks.archive")).toHaveLength(1);
+    expect(fake.callsTo("tasks.archive")[0]!.params).toMatchObject({ task_ids: ["t-d"], idempotency_key: expect.any(String) });
+  });
+
+  it("disables archive on a running task and says why", async () => {
+    const fake = seeded();
+    await mount(fake, { route: taskRoute("t-r") });
+    await screen.findByTestId("task-state");
+    const button = screen.getByRole("button", { name: "Archive task" });
+    expect(button).toBeDisabled();
+    expect(button.parentElement).toHaveTextContent("Only finished tasks can be archived; this task is Running.");
+    expect(fake.callsTo("tasks.archive")).toHaveLength(0);
+  });
+
+  it("shows the daemon's reason when archive is refused", async () => {
+    const fake = seeded();
+    const { user } = await mount(fake, { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    fake.failNext("tasks.archive", { code: -32011, message: "task is not finished" });
+    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    expect(await screen.findByText(/Archiving the task failed/)).toBeInTheDocument();
+    expect(screen.queryByText(/Archived\. The task leaves/)).not.toBeInTheDocument();
+  });
+
   it("disables cancel for terminal tasks", async () => {
     const fake = seeded();
     await mount(fake, { route: taskRoute("t-d") });

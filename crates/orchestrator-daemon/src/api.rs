@@ -33,8 +33,8 @@ use orchestrator_git::Repository;
 use orchestrator_ipc::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
 use orchestrator_runtime::reconcile::observe_owner_process;
 use orchestrator_store::{
-    CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord, SqliteStore,
-    Store, StoreError,
+    ArchiveError, CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord,
+    SqliteStore, Store, StoreError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -155,6 +155,13 @@ struct TaskIdParams {
 #[serde(deny_unknown_fields)]
 struct CancelParams {
     task_id: String,
+    idempotency_key: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct ArchiveParams {
+    task_ids: Vec<String>,
     idempotency_key: String,
 }
 
@@ -403,6 +410,7 @@ impl RpcHandler for DaemonApi {
             "tasks.list" => self.list_tasks(params),
             "tasks.get" => self.get_task(params),
             "tasks.cancel" => self.cancel_task(params),
+            "tasks.archive" => self.archive_tasks(params),
             "tasks.retry" => self.retry_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
             "agents.catalog" => self.agents_catalog(params),
@@ -1116,8 +1124,16 @@ impl DaemonApi {
 
     fn list_tasks(&self, params: Value) -> Result<Value, RpcError> {
         require_empty_params(&params)?;
-        serde_json::to_value(self.store.list().map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        // Archived tasks are left out, as archived projects are left out of `projects.list`.
+        let archived = self.store.archived_task_ids().map_err(map_store_error)?;
+        let tasks: Vec<_> = self
+            .store
+            .list()
+            .map_err(map_store_error)?
+            .into_iter()
+            .filter(|task| !archived.contains(&task.contract.id))
+            .collect();
+        serde_json::to_value(tasks).map_err(|_| RpcError::Internal)
     }
 
     fn get_task(&self, params: Value) -> Result<Value, RpcError> {
@@ -1140,6 +1156,33 @@ fn canonical_agent_id(agent: &str) -> Option<&'static str> {
 }
 
 impl DaemonApi {
+    /// Archives finished tasks, all or none. An unknown id is `NotFound`; a task that is not
+    /// finished is `Conflict`, and nothing is written. Replies with the ids this call archived.
+    fn archive_tasks(&self, params: Value) -> Result<Value, RpcError> {
+        let request: ArchiveParams = parse_params(params)?;
+        if request.task_ids.is_empty() {
+            return Err(RpcError::InvalidParams);
+        }
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.archive",
+            &key,
+            &request,
+            || {
+                let archived = self
+                    .store
+                    .archive_tasks(&request.task_ids)
+                    .map_err(|error| match ArchiveError::of(&error) {
+                        Some(_) => RpcError::Conflict,
+                        None => map_store_error(error),
+                    })?;
+                Ok(json!({"archived": archived}))
+            },
+        )
+    }
+
     fn cancel_task(&self, params: Value) -> Result<Value, RpcError> {
         let request: CancelParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
@@ -2012,6 +2055,10 @@ mod workstream_plan_tests;
 #[cfg(test)]
 #[path = "api_workstreams_tests.rs"]
 mod workstreams_tests;
+
+#[cfg(test)]
+#[path = "api_archive_tests.rs"]
+mod archive_tests;
 
 #[cfg(test)]
 #[path = "api_tests.rs"]

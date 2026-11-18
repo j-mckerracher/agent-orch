@@ -62,6 +62,8 @@ export interface AppDataSnapshot {
   proposals: ProposalsSlice;
   /** `holds.list` (DPES-1105): a daemon without the method gives an empty loaded list, never an error. */
   holds: HoldsSlice;
+  /** Set when the daemon lacks `tasks.archive` (DPES-1106); the archive controls then stay disabled. */
+  archiveUnsupported: boolean;
   timelines: Record<string, Timeline>;
   /** `tasks.get` per watched task id. */
   taskDetails: Record<string, Loadable<TaskRecord>>;
@@ -115,6 +117,7 @@ export class AppData extends Store<AppDataSnapshot> {
       approvals: idle(),
       proposals: { status: "idle", data: null, error: null, more: false },
       holds: idle(),
+      archiveUnsupported: false,
       timelines: {},
       taskDetails: {},
       taskSessions: {},
@@ -376,6 +379,23 @@ export class AppData extends Store<AppDataSnapshot> {
     } catch (error) {
       const failure = asDaemonError(error);
       this.tracker.settle(scope, failure);
+      return { ok: false, error: failure };
+    }
+  }
+
+  /** Archives finished tasks (DPES-1106). Returns the ids this call newly archived. */
+  async archiveTasks(taskIds: string[]): Promise<MutationResult<string[]>> {
+    const scope = "archive";
+    const key = this.tracker.keyFor(scope, taskIds.join("\n"));
+    try {
+      const { archived } = await this.connection.api().tasksArchive(taskIds, key);
+      this.tracker.settle(scope, null);
+      void this.refreshAll();
+      return { ok: true, value: archived };
+    } catch (error) {
+      const failure = asDaemonError(error);
+      this.tracker.settle(scope, failure);
+      if (isMissingFeature(failure)) this.update({ archiveUnsupported: true });
       return { ok: false, error: failure };
     }
   }
