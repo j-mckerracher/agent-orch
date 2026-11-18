@@ -35,7 +35,7 @@ import { formatAt } from "./time";
 import { useActionDecisions } from "./useActionDecisions";
 import { useMonitoring, type MonitoringModel } from "./useMonitoring";
 import { useRetained } from "./useRetained";
-import { WakeLabel, WakeLines, WakeRecords } from "./WakeNotice";
+import { WakeLabel, WakeLines, WakeRecords, type WakeRuntime } from "./WakeNotice";
 import "./workspace.css";
 
 const globalOption = (live: boolean): TargetOption => ({
@@ -772,7 +772,11 @@ function Conversation({
             olderDaemon={olderDaemon}
             lastTurn={
               live && turn
-                ? { daemonLevel: turn.permissionLevel ?? null, sentLevel: sentLevels.current.get(turn.id) ?? null }
+                ? {
+                    daemonLevel: turn.permissionLevel ?? null,
+                    sentLevel: sentLevels.current.get(turn.id) ?? null,
+                    trigger: turn.trigger,
+                  }
                 : null
             }
           />
@@ -864,6 +868,8 @@ function TranscriptBody({
   }
   if (transcript.status !== "ok") return <>{sim}</>;
   const { truncated, repliesExpected, proposalsMore } = transcript.data;
+  // Only the latest turn carries its runtime, so only its entries can name the agent.
+  const latestTurn = transcript.data.turn ?? null;
   const wake = transcript.data.wake ?? [];
   // A quiet record shows one collapsed line, so its turn's own entries are not shown (DPES-1105 Phase 3).
   const quiet = quietTurnIds(wake);
@@ -886,7 +892,12 @@ function TranscriptBody({
       <WakeRecords records={placement.before} />
       {entries.map((entry, index) => (
         <Fragment key={entry.id}>
-          <EntryBubble entry={entry} label={label} wakeTurn={entry.turnId !== undefined && wakeTurns.has(entry.turnId)} />
+          <EntryBubble
+            entry={entry}
+            label={label}
+            wakeTurn={entry.turnId !== undefined && wakeTurns.has(entry.turnId)}
+            runtime={latestTurn && entry.turnId === latestTurn.id ? latestTurn.runtime : undefined}
+          />
           {afterTurn && entry.turnId !== undefined && entries[index + 1]?.turnId !== entry.turnId && afterTurn(entry.turnId)}
           <WakeRecords records={placement.after.get(entry.id) ?? []} />
         </Fragment>
@@ -896,9 +907,20 @@ function TranscriptBody({
   );
 }
 
-function EntryBubble({ entry, label, wakeTurn }: { entry: ConversationEntry; label: string; wakeTurn: boolean }) {
+function EntryBubble({
+  entry,
+  label,
+  wakeTurn,
+  runtime,
+}: {
+  entry: ConversationEntry;
+  label: string;
+  wakeTurn: boolean;
+  /** The runtime of this entry's turn, when the transcript has it (the latest turn only). */
+  runtime: WakeRuntime | undefined;
+}) {
   // The opening entry of an automatic turn is event lines inside an update, not something the user wrote.
-  if (entry.origin === "wake") return <WakeLines text={entry.text} />;
+  if (entry.origin === "wake") return <WakeLines text={entry.text} runtime={runtime} />;
   const human = entry.role === "user";
   // A daemon turn outcome is a system line, never a reply from the orchestrator.
   if (entry.kind === "status") {
@@ -936,7 +958,7 @@ function EntryBubble({ entry, label, wakeTurn }: { entry: ConversationEntry; lab
   // A reply to an automatic turn says it is an update, so it is never read as an answer to the user's last message.
   return wakeTurn && !human ? (
     <div className="ws-wake-reply">
-      <WakeLabel />
+      <WakeLabel runtime={runtime} />
       {bubble}
     </div>
   ) : (

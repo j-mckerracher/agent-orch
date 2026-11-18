@@ -124,7 +124,9 @@ Error codes on `turn_failed`: `runtime_unavailable`, `credentials_missing`,
 `permission_denied`, `version_mismatch` (a required flag is absent from a
 readable help; the entry's body names the flag), `runtime_changed`, `runtime_unpinned`,
 `runtime_failed`, `runtime_timeout`, `runtime_busy`, `reply_too_large`,
-`interrupted_by_restart`, and, for a choice the catalog refuses (DPES-1105), one code per refusal reason:
+`interrupted_by_restart`, `runtime_provider_limit` (the agent's provider refused the turn for a
+spend cap, usage, rate or quota limit; the entry's body is `provider_limit`), and, for a choice the
+catalog refuses (DPES-1105), one code per refusal reason:
 `selection_agent_unavailable`, `selection_authentication_failed`,
 `selection_agent_state_unknown`, `selection_agent_unsupported`,
 `selection_models_unsupported`, `selection_models_unknown`,
@@ -176,9 +178,13 @@ M7-06 adapters. It is bound in `DaemonApi::with_config`; the daemon binary needs
 no flag.
 
 - **Selection.** `AGENT_ORCH_CONVERSATION_AGENT` (`codex` or `claude-code`)
-  names the agent; without it the first launchable one in catalog order is used
-  (`codex`, then `claude-code`). `AGENT_ORCH_CONVERSATION_MODEL` and
-  `AGENT_ORCH_CONVERSATION_EFFORT` are checked against the catalog; an option
+  names the agent and keeps the environment's model and effort. Without it, the
+  Settings default agent (`dispatch_defaults.default_agent`) runs alone, with the
+  model and effort saved for it; an environment model or effort replaces that
+  pair. With no Settings default, the first launchable one in catalog order is
+  used (`codex`, then `claude-code`). A Settings default that names no chat agent
+  fails `runtime_unavailable` and no other agent runs. `AGENT_ORCH_CONVERSATION_MODEL`
+  and `AGENT_ORCH_CONVERSATION_EFFORT` are checked against the catalog; an option
   the catalog does not offer fails closed. Agent program paths are the existing
   `AGENT_ORCH_CODEX_PROGRAM` / `AGENT_ORCH_CLAUDE_PROGRAM`.
 - **Launchable.** The adapter's `detect()` must succeed, a bounded
@@ -195,7 +201,9 @@ no flag.
   the default agent, not the user's last choice, so they settle the default
   first: `reports.relay` calls `prepare()` before its idempotency gate, and the
   wake loop leaves its windows due and retries on the next tick until the
-  default is settled.
+  default is settled. Saving the settings calls `settings_changed`, which drops
+  the cached default and its retry window, so the next selection reads the new
+  default agent at once instead of after the 30 s window.
 - **Verified versions.** Compiled in (`codex` 0.167.0 and 0.167.2,
   `claude-code` 2.1.311, `github-copilot` at its pinned version). 0.167.2 was
   checked against its `codex exec --json` event order and command lifecycle.
@@ -220,6 +228,15 @@ no flag.
   carries it, and the desktop names the agent, version and flag. When the help
   times out, fails, or shows no flags, the version is not refused and the turn
   runs with the warning.
+- **Provider limits (DPES-1106).** A failed turn whose agent reports a spend
+  cap, usage limit, rate limit, quota, insufficient quota, HTTP 429 or billing
+  refusal fails `runtime_provider_limit`, and its entry's body is
+  `provider_limit`. The match is case-insensitive over the agent's own failure
+  text, so one list serves Codex and Claude Code. Every other failure the agent
+  reports fails `runtime_failed`. The daemon writes one line to its log for each
+  such failure: the agent, the code and the agent's reason, cut to 200
+  characters. The log holds no operator text and no prompt. The transcript
+  stores only the code and body, never the reason.
 - **Output the parser cannot read.** The parser stays fail-closed. An unverified
   turn whose output the parser rejects fails `runtime_failed`, and the turn's
   recorded version names what ran. An unverified turn that exits cleanly with

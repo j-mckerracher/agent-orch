@@ -98,6 +98,8 @@ const FAILURE_TEXT: Record<string, string> = {
   runtime_changed: "The orchestrator's agent changed before this message was sent, so no reply was produced. Send the message again.",
   runtime_unpinned: "The orchestrator runtime is not pinned to a version. No reply was produced.",
   runtime_failed: "The orchestrator runtime failed. The reply is incomplete or missing.",
+  runtime_provider_limit:
+    "The orchestrator's agent refused the turn: its usage or spending limit is reached. Raise the limit or choose another agent in Settings. No reply was produced.",
   runtime_timeout: "The orchestrator took too long to answer and was stopped. The reply is incomplete or missing.",
   runtime_busy: "The orchestrator is already answering other conversations. Try again in a moment.",
   reply_too_large: "The reply was larger than the daemon allows and was dropped.",

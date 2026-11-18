@@ -1,17 +1,28 @@
 import type { ReactNode } from "react";
+import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import type { WakeRecord } from "../../../sources/surfaces/types";
 import { WAKE_LABEL, isQuiet, quietLine, skipText } from "./monitoringModel";
 
-/** The visible words that say an update is the orchestrator's own doing, so it is never read as an answer. */
-export function WakeLabel() {
-  return <span className="ws-wake-label">{WAKE_LABEL}</span>;
+/** The agent an automatic turn ran with, named in the label when the turn is known. */
+export interface WakeRuntime {
+  name: string;
+  version: string;
+}
+
+/**
+ * The visible words that say an update is the orchestrator's own doing, so it is never read as an answer. With the
+ * turn's runtime it also names the agent that ran the update.
+ */
+export function WakeLabel({ runtime }: { runtime?: WakeRuntime }) {
+  const text = runtime ? `${WAKE_LABEL} · ${agentDisplayName(runtime.name)} ${runtime.version}` : WAKE_LABEL;
+  return <span className="ws-wake-label">{text}</span>;
 }
 
 /** The opening entry of an automatic turn: the event lines, inside the update, never a "You" bubble. */
-export function WakeLines({ text }: { text: string }) {
+export function WakeLines({ text, runtime }: { text: string; runtime?: WakeRuntime }) {
   return (
     <div className="ws-wake">
-      <WakeLabel />
+      <WakeLabel runtime={runtime} />
       <p className="ws-wake-lines">{text}</p>
     </div>
   );

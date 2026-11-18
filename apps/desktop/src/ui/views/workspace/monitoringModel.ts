@@ -83,6 +83,8 @@ export function skipText(reason: string | null): string {
     case "limit_daily":
     case "limit_tokens":
       return PAUSED_TEXT;
+    case "agent_failing":
+      return "Automatic updates are paused while the agent is failing";
     default:
       return "Not handled for a reason this app does not know";
   }

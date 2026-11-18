@@ -141,6 +141,9 @@ pub(crate) enum RuntimeFailure {
     /// message is not sent; a new message gets the current selection.
     RuntimeChanged,
     Failed,
+    /// The agent's provider refused the turn for a spend, usage, rate or quota limit.
+    /// The agent's own text decides it (DPES-1106); only the code is stored.
+    ProviderLimit,
     Timeout,
     Busy,
     /// The catalog refused the message's choice; the reason sets the code.
@@ -159,6 +162,7 @@ impl RuntimeFailure {
             Self::Unpinned => "runtime_unpinned",
             Self::RuntimeChanged => "runtime_changed",
             Self::Failed => "runtime_failed",
+            Self::ProviderLimit => "runtime_provider_limit",
             Self::Timeout => "runtime_timeout",
             Self::Busy => "runtime_busy",
             Self::Refused(reason) => refusal_code(*reason),
@@ -170,6 +174,7 @@ impl RuntimeFailure {
     pub(crate) fn detail(&self) -> String {
         match self {
             Self::MissingFlag(flag) => flag.clone(),
+            Self::ProviderLimit => "provider_limit".to_owned(),
             _ => String::new(),
         }
     }
@@ -236,6 +241,10 @@ pub(crate) trait ConversationRuntime: Send + Sync {
         Ok(())
     }
 
+    /// The daemon's settings were saved. A runtime that caches the configured default
+    /// agent drops it, so the next selection reads the settings again.
+    fn settings_changed(&self) {}
+
     fn start_turn(
         &self,
         request: TurnRequest,
@@ -276,9 +285,18 @@ impl Shared {
     }
 
     /// Close a running turn, then release its control. Returns the control
-    /// only when this call ended the turn.
-    fn finish(&self, turn_id: &str, outcome: &TurnOutcome) -> Option<Box<dyn TurnControl>> {
-        match self.store.finish_conversation_turn(turn_id, outcome) {
+    /// only when this call ended the turn. `detail` is the terminal entry's body
+    /// (see [`RuntimeFailure::detail`]), empty when the outcome has none.
+    fn finish(
+        &self,
+        turn_id: &str,
+        outcome: &TurnOutcome,
+        detail: &str,
+    ) -> Option<Box<dyn TurnControl>> {
+        match self
+            .store
+            .finish_conversation_turn_with_detail(turn_id, outcome, detail)
+        {
             Ok(Some(_)) => self.controls().remove(turn_id),
             _ => None,
         }
@@ -301,7 +319,7 @@ impl Shared {
             Ok(None) => {}
             Err(_) => {
                 let outcome = TurnOutcome::Failed(RuntimeFailure::Failed.code().to_owned());
-                if let Some(control) = self.finish(turn_id, &outcome) {
+                if let Some(control) = self.finish(turn_id, &outcome, "") {
                     control.cancel();
                 }
             }
@@ -375,7 +393,7 @@ impl ReplySink {
                 Ok(_) => {}
                 Err(ConversationError::ReplyTooLarge) => {
                     let outcome = TurnOutcome::Failed("reply_too_large".to_owned());
-                    if let Some(control) = self.shared.finish(&self.turn_id, &outcome) {
+                    if let Some(control) = self.shared.finish(&self.turn_id, &outcome, "") {
                         control.cancel();
                     }
                     return Err(SinkClosed);
@@ -508,7 +526,13 @@ impl ReplySink {
 
     pub(crate) fn fail(&self, failure: RuntimeFailure) {
         let outcome = TurnOutcome::Failed(failure.code().to_owned());
-        self.shared.finish(&self.turn_id, &outcome);
+        self.shared
+            .finish(&self.turn_id, &outcome, &failure.detail());
+    }
+
+    /// The turn this sink writes to.
+    pub(crate) fn turn_id(&self) -> &str {
+        &self.turn_id
     }
 }
 
@@ -593,6 +617,12 @@ impl ConversationService {
     /// See [`ConversationRuntime::prepare`].
     pub(crate) fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
         self.runtime.prepare(choice)
+    }
+
+    /// See [`ConversationRuntime::settings_changed`]. Called after the daemon's settings are
+    /// saved, so the configured default agent is read again on the next selection.
+    pub(crate) fn settings_changed(&self) {
+        self.runtime.settings_changed();
     }
 
     /// Whether a turn that recorded `identity` ran a verified version. Read when a
@@ -972,9 +1002,9 @@ impl ConversationService {
             return None;
         }
         let failure = RuntimeFailure::Failed;
-        if let Some(control) = self
-            .shared
-            .finish(turn_id, &TurnOutcome::Failed(failure.code().to_owned()))
+        if let Some(control) =
+            self.shared
+                .finish(turn_id, &TurnOutcome::Failed(failure.code().to_owned()), "")
         {
             control.cancel();
         }
@@ -1031,6 +1061,12 @@ impl ConversationService {
             .conversation_turn(turn_id)?
             .ok_or(ConversationError::TurnNotFound)?;
         Ok((turn, applied))
+    }
+
+    /// The identity the default agent reports, which wake turns record. It is `unavailable`
+    /// until `prepare` has settled the default.
+    pub(crate) fn default_identity(&self) -> RuntimeIdentity {
+        self.runtime.identity(None)
     }
 }
 

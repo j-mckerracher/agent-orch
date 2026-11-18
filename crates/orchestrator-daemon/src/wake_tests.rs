@@ -2151,3 +2151,139 @@ fn the_return_brief_never_enters_a_wake_snapshot_or_prompt() {
         assert!(!seen.prompt.contains(needle), "{needle} in prompt");
     }
 }
+
+/// Records one failing task, starts its wake turn and fails that turn.
+fn failing_wake_turn(f: &Fixture, id: &str) {
+    fail_task(f, id, "Fix it");
+    tick(f);
+    assert_eq!(start_batch(f).started, 1, "{id} starts a wake turn");
+    fail_newest_turn(f);
+}
+
+/// Fails the newest wake turn the probe holds, the way an agent that cannot answer does.
+fn fail_newest_turn(f: &Fixture) {
+    let sink = f
+        .probe
+        .held
+        .lock()
+        .unwrap()
+        .last()
+        .cloned()
+        .expect("a held turn");
+    sink.fail(RuntimeFailure::Failed);
+    tick(f);
+}
+
+/// Records one failing task and waits out its debounce. Returns how many turns started.
+fn event_then_start(f: &Fixture, id: &str) -> usize {
+    fail_task(f, id, "Fix it");
+    tick(f);
+    start_batch(f).started
+}
+
+#[test]
+fn three_failed_wake_turns_pause_automatic_updates_with_one_notice() {
+    let f = fixture();
+    for id in ["t-0", "t-1", "t-2"] {
+        failing_wake_turn(&f, id);
+    }
+    assert_eq!(f.probe.started(), 3);
+
+    assert_eq!(event_then_start(&f, "t-3"), 0, "the fourth turn is held");
+    assert_eq!(f.probe.started(), 3);
+    assert_eq!(ledger_rows(&f), 3, "a held turn spends no cap");
+    let held = records_of(&f, WakeKind::TaskFailed)
+        .into_iter()
+        .find(|record| record.subject == "t-3")
+        .unwrap();
+    assert_eq!(held.state, WakeState::Skipped);
+    assert_eq!(held.skip_reason, Some(SkipReason::AgentFailing));
+
+    let notices = records_of(&f, WakeKind::AgentFailing);
+    assert_eq!(notices.len(), 1);
+    assert_eq!(notices[0].state, WakeState::Noticed);
+    assert_eq!(
+        notices[0].notice,
+        "Automatic updates are paused: probe failed 3 times in a row (runtime_failed). \
+         Fix the agent or change the default agent in Settings."
+    );
+
+    // A later event inside the same pause is held too, and adds no notice.
+    assert_eq!(event_then_start(&f, "t-4"), 0);
+    assert_eq!(f.probe.started(), 3);
+    assert_eq!(records_of(&f, WakeKind::AgentFailing).len(), 1);
+    let logged = f
+        .wake
+        .diagnostics
+        .lines()
+        .iter()
+        .filter(|line| line.contains("wake_paused_agent_failing"))
+        .count();
+    assert_eq!(logged, 1, "one log line per streak");
+}
+
+#[test]
+fn a_completed_wake_turn_resets_the_agent_failure_streak() {
+    let f = fixture();
+    failing_wake_turn(&f, "t-0");
+    failing_wake_turn(&f, "t-1");
+    f.probe.replying(Some("Done."));
+    assert_eq!(event_then_start(&f, "t-2"), 1);
+    f.probe.replying(None);
+    tick(&f);
+    failing_wake_turn(&f, "t-3");
+    failing_wake_turn(&f, "t-4");
+
+    assert_eq!(
+        event_then_start(&f, "t-5"),
+        1,
+        "two failures after the reset do not pause"
+    );
+    assert_eq!(f.probe.started(), 6);
+    assert!(records_of(&f, WakeKind::AgentFailing).is_empty());
+}
+
+#[test]
+fn a_settings_change_lifts_the_pause_for_one_wake_turn() {
+    let f = fixture();
+    for id in ["t-0", "t-1", "t-2"] {
+        failing_wake_turn(&f, id);
+    }
+    assert_eq!(event_then_start(&f, "t-3"), 0);
+
+    f.wake.settings_changed();
+    assert_eq!(event_then_start(&f, "t-4"), 1, "the lifted turn runs");
+    assert_eq!(f.probe.started(), 4);
+    fail_newest_turn(&f);
+
+    assert_eq!(event_then_start(&f, "t-5"), 0, "its failure pauses again");
+    assert_eq!(f.probe.started(), 4);
+    assert_eq!(
+        records_of(&f, WakeKind::AgentFailing).len(),
+        2,
+        "one notice for each streak"
+    );
+}
+
+#[test]
+fn the_pause_lifts_thirty_minutes_after_the_newest_failure() {
+    let f = fixture();
+    for id in ["t-0", "t-1", "t-2"] {
+        failing_wake_turn(&f, id);
+    }
+    assert_eq!(event_then_start(&f, "t-3"), 0);
+
+    advance(&f, 27 * MINUTE);
+    assert_eq!(
+        event_then_start(&f, "t-4"),
+        0,
+        "still paused 29 minutes after the failure"
+    );
+    advance(&f, MINUTE);
+    assert_eq!(
+        event_then_start(&f, "t-5"),
+        1,
+        "resumes once the cooldown has passed"
+    );
+    assert_eq!(f.probe.started(), 4);
+}

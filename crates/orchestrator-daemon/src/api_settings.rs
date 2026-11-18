@@ -408,6 +408,14 @@ impl DaemonApi {
                     fields.push(("dispatch_defaults", "updated".to_owned()));
                 }
                 let saved = self.store.update_orchestrator_settings(&patch);
+                // The default agent may have changed: its cached selection goes, and a wake
+                // pause on the old agent lifts.
+                if saved.is_ok() && request.dispatch_defaults.is_some() {
+                    self.conversations.settings_changed();
+                    if let Some(wake) = &self.wake {
+                        wake.settings_changed();
+                    }
+                }
                 self.finish(saved, request.load.is_some(), &fields)
             },
         )

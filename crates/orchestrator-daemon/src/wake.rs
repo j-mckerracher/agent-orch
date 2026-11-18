@@ -62,6 +62,10 @@ const PROPOSAL_WAIT_MS: u64 = 30 * 60 * 1000;
 const LEDGER_KEEP_MS: u64 = 48 * HOUR_MS;
 /// Bytes of a reply read to recognize the quiet token.
 const QUIET_PROBE_BYTES: usize = 64;
+/// Consecutive failed wake turns of the default agent that pause automatic updates.
+const WAKE_FAIL_PAUSE_AFTER: u32 = 3;
+/// How long a pause holds after the newest failed wake turn started, in seconds.
+const WAKE_FAIL_PAUSE_SECS: u64 = 30 * 60;
 
 /// The conversation id the wake tables use for a target.
 pub(crate) fn scope_of(target: &ConversationTarget) -> String {
@@ -107,6 +111,10 @@ struct State {
     debounce: Debounce,
     last_check_ms: HashMap<String, u64>,
     last_prune_ms: u64,
+    /// The failed wake turn whose pause was logged last, so each pause is logged once.
+    agent_pause_announced: Option<String>,
+    /// Set by a settings change: the next wake turn runs even inside a pause.
+    agent_pause_lifted: bool,
 }
 
 /// What one pass did.
@@ -335,6 +343,12 @@ impl WakeService {
                 self.diagnostics.warn(LOG, "mode_cancel_failed", &[]);
             }
         }
+    }
+
+    /// Called by `settings.set` after the default agent may have changed. The next wake turn
+    /// runs even inside a pause. A failure after it pauses again.
+    pub(crate) fn settings_changed(&self) {
+        self.state().agent_pause_lifted = true;
     }
 
     fn settings(&self) -> Result<OrchestratorSettings, String> {
@@ -706,6 +720,10 @@ impl WakeService {
         if self.conversations.prepare(None).is_err() {
             return Ok(());
         }
+        // Repeated failures of the default agent hold the pending records; see `agent_pause`.
+        if let Some(pause) = self.agent_pause(now)? {
+            self.hold_for_agent(&pause, now)?;
+        }
         let pending: HashMap<String, WakeRecord> = self
             .store
             .pending_wake_records()
@@ -822,7 +840,10 @@ impl WakeService {
                 .conversations
                 .start_wake(&target, &turn_id, &brief, relay.as_deref())
             {
-                Ok(_) => report.started += 1,
+                Ok(_) => {
+                    report.started += 1;
+                    self.state().agent_pause_lifted = false;
+                }
                 Err(ConversationError::TurnRunning { .. }) => {
                     // A user turn slipped in: the records go back, no attempt is spent.
                     self.settle(
@@ -839,6 +860,84 @@ impl WakeService {
                 }
             }
         }
+        Ok(())
+    }
+
+    /// The pause that holds wake turns: the default agent failed `WAKE_FAIL_PAUSE_AFTER` wake
+    /// turns in a row, and the newest one started less than `WAKE_FAIL_PAUSE_SECS` ago. The
+    /// count and the newest failure come from the store, and the age uses this pass's clock.
+    /// `None` when wake turns may run.
+    fn agent_pause(&self, now: u64) -> Result<Option<AgentPause>, String> {
+        if self.state().agent_pause_lifted {
+            return Ok(None);
+        }
+        let runtime = self.conversations.default_identity().name;
+        let (count, newest) = self
+            .store
+            .consecutive_failed_wake_turns(&runtime)
+            .map_err(|_| "cannot read wake failures".to_owned())?;
+        let Some(newest) = newest else {
+            return Ok(None);
+        };
+        let recent = newest
+            .started_ms
+            .is_some_and(|started| now.saturating_sub(started) < WAKE_FAIL_PAUSE_SECS * 1000);
+        if count < WAKE_FAIL_PAUSE_AFTER || !recent {
+            return Ok(None);
+        }
+        Ok(Some(AgentPause {
+            runtime,
+            count,
+            code: newest.error_code,
+            turn_id: newest.turn_id,
+        }))
+    }
+
+    /// Logs a pause once per failure, then skips every pending record and writes one notice in
+    /// each scope they came from. The notice is keyed on the failure, so it is written once.
+    /// It is written before the skip, so a failed skip leaves the records pending with a notice.
+    fn hold_for_agent(&self, pause: &AgentPause, now: u64) -> Result<(), String> {
+        let announce = {
+            let mut state = self.state();
+            let fresh = state.agent_pause_announced.as_deref() != Some(pause.turn_id.as_str());
+            if fresh {
+                state.agent_pause_announced = Some(pause.turn_id.clone());
+            }
+            fresh
+        };
+        if announce {
+            self.diagnostics.warn(
+                LOG,
+                "wake_paused_agent_failing",
+                &[
+                    ("agent", pause.runtime.as_str()),
+                    ("code", pause.code.as_str()),
+                ],
+            );
+        }
+        let pending = self
+            .store
+            .pending_wake_records()
+            .map_err(|_| "cannot read wake records".to_owned())?;
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let ids: Vec<String> = pending.iter().map(|record| record.id.clone()).collect();
+        let scopes: BTreeSet<String> = pending.into_iter().map(|record| record.scope).collect();
+        let settings = self.settings()?;
+        let notices: Vec<NewWakeRecord> = scopes
+            .into_iter()
+            .map(|scope| NewWakeRecord {
+                scope,
+                kind: WakeKind::AgentFailing,
+                subject: "agent".to_owned(),
+                dedupe_key: format!("agent_failing:{}:{}", pause.runtime, pause.turn_id),
+                notice: pause_notice(pause),
+                needs_model: false,
+            })
+            .collect();
+        self.record(&settings, &notices, now)?;
+        self.skip(&ids, SkipReason::AgentFailing)?;
         Ok(())
     }
 
@@ -886,6 +985,33 @@ impl WakeService {
         {
             self.diagnostics.warn(LOG, "wake_prune_failed", &[]);
         }
+    }
+}
+
+/// A paused default agent: the failure streak that paused it and its newest failure.
+struct AgentPause {
+    runtime: String,
+    count: u32,
+    code: String,
+    turn_id: String,
+}
+
+/// The notice that names the paused agent. It is far under the notice limit.
+fn pause_notice(pause: &AgentPause) -> String {
+    format!(
+        "Automatic updates are paused: {} failed {} times in a row ({}). Fix the agent or change the default agent in Settings.",
+        agent_display_name(&pause.runtime),
+        pause.count,
+        pause.code
+    )
+}
+
+fn agent_display_name(runtime: &str) -> &str {
+    match runtime {
+        "claude-code" => "Claude Code",
+        "codex" => "Codex",
+        "github-copilot" => "GitHub Copilot",
+        other => other,
     }
 }
 

@@ -187,6 +187,7 @@ impl CodexHandle {
             self.code,
             self.parser.turn_finished(),
             self.parser.violation().map(ToString::to_string),
+            self.parser.turn_failure().map(str::to_owned),
             self.parser.last_message().map(str::to_owned),
         )
     }
@@ -197,6 +198,7 @@ fn terminal_outcome(
     code: Option<i32>,
     turn_finished: bool,
     violation: Option<String>,
+    turn_failure: Option<String>,
     last_message: Option<String>,
 ) -> AgentExit {
     if cancelled {
@@ -207,6 +209,10 @@ fn terminal_outcome(
         if let Some(violation) = violation.as_deref() {
             reason.push_str("; protocol violation: ");
             reason.push_str(violation);
+        }
+        if let Some(failure) = turn_failure.as_deref() {
+            reason.push_str("; turn failed: ");
+            reason.push_str(failure);
         }
         if let Some(message) = last_message.as_deref() {
             reason.push_str("; last message: ");
@@ -224,6 +230,11 @@ fn terminal_outcome(
         }
     } else if turn_finished {
         AgentExit::Completed { code, last_message }
+    } else if turn_failure.is_some() {
+        AgentExit::Failed {
+            code,
+            reason: turn_failure,
+        }
     } else {
         AgentExit::Failed { code, reason: None }
     }
@@ -245,7 +256,7 @@ mod tests {
 
     #[test]
     fn nonzero_exit_after_completed_turn_fails_and_keeps_last_message() {
-        let exit = terminal_outcome(false, Some(7), true, None, Some("done".to_owned()));
+        let exit = terminal_outcome(false, Some(7), true, None, None, Some("done".to_owned()));
         match exit {
             AgentExit::Failed {
                 code: Some(7),
@@ -255,6 +266,44 @@ mod tests {
                 assert!(reason.contains("last message: done"), "reason: {reason}");
             }
             other => panic!("expected a failed exit with code 7, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn clean_exit_without_a_completed_turn_reports_the_turn_failure() {
+        let failure = "You hit your spend cap".to_owned();
+        let exit = terminal_outcome(false, Some(0), false, None, Some(failure.clone()), None);
+        assert_eq!(
+            exit,
+            AgentExit::Failed {
+                code: Some(0),
+                reason: Some(failure),
+            }
+        );
+    }
+
+    #[test]
+    fn nonzero_exit_includes_the_turn_failure_in_the_reason() {
+        let exit = terminal_outcome(
+            false,
+            Some(1),
+            false,
+            None,
+            Some("You hit your spend cap".to_owned()),
+            None,
+        );
+        match exit {
+            AgentExit::Failed {
+                code: Some(1),
+                reason: Some(reason),
+            } => {
+                assert!(reason.contains("code 1"), "reason: {reason}");
+                assert!(
+                    reason.contains("turn failed: You hit your spend cap"),
+                    "reason: {reason}"
+                );
+            }
+            other => panic!("expected a failed exit with code 1, got {other:?}"),
         }
     }
 }

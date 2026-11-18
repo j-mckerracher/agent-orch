@@ -211,10 +211,19 @@ enum Outcome {
     Pending,
 }
 
+/// The agents the default selection tries, in order, and the model and effort they run with.
+struct ConfiguredDefault {
+    agents: Vec<&'static str>,
+    model: Option<String>,
+    effort: Option<String>,
+}
+
 pub(crate) struct AgentRuntime {
     exec: ExecutorConfig,
     cache: Arc<CatalogCache>,
     config: ConversationConfig,
+    /// Read for the Settings default agent (see `configured_default`).
+    store: Arc<SqliteStore>,
     /// One resolved selection per choice; `None` is the configured default.
     selections: Mutex<HashMap<Option<Choice>, (Instant, Selection)>>,
     /// When a selection first could not be established; cleared by any
@@ -230,16 +239,31 @@ impl AgentRuntime {
         exec: ExecutorConfig,
         cache: Arc<CatalogCache>,
         config: ConversationConfig,
+        store: Arc<SqliteStore>,
     ) -> Self {
         Self {
             exec,
             cache,
             config,
+            store,
             selections: Mutex::new(HashMap::new()),
             pending_since: Mutex::new(None),
             running: Arc::new(AtomicUsize::new(0)),
             helps: HelpCache::default(),
         }
+    }
+
+    /// The Settings default agent may have changed. Drops the cached default and its
+    /// retry window, so the next selection reads the settings again (DPES-1106).
+    pub(crate) fn settings_changed(&self) {
+        self.selections
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .remove(&None);
+        *self
+            .pending_since
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = None;
     }
 
     /// Every identity a selected agent may report.
@@ -295,6 +319,65 @@ impl AgentRuntime {
             _ => ClaudeCodeAdapter::new().with_program(&explicit).locate(),
         };
         located.unwrap_or(explicit)
+    }
+
+    /// The agents the default selection tries, in order, and the model and effort they run
+    /// with (DPES-1106). `AGENT_ORCH_CONVERSATION_AGENT` names one agent and keeps the
+    /// environment's model and effort. Otherwise the Settings default agent alone runs, with
+    /// the model and effort saved for it, unless the environment names a model or an effort.
+    /// Without a Settings default, Codex then Claude Code is tried.
+    fn configured_default(&self) -> Result<ConfiguredDefault, RuntimeFailure> {
+        let environment = |agents: Vec<&'static str>| ConfiguredDefault {
+            agents,
+            model: self.config.model.clone(),
+            effort: self.config.effort.clone(),
+        };
+        if let Some(name) = self.config.agent.as_deref() {
+            let agents = match name {
+                CODEX => vec![CODEX],
+                CLAUDE => vec![CLAUDE],
+                // Copilot is opt-in only: the default order below never reaches it.
+                GITHUB_COPILOT => vec![GITHUB_COPILOT],
+                other => {
+                    eprintln!(
+                        "orchestrator-daemon: conversation agent {} is not supported",
+                        log_safe(other)
+                    );
+                    return Err(RuntimeFailure::Unavailable);
+                }
+            };
+            return Ok(environment(agents));
+        }
+        let settings = match self.store.orchestrator_settings() {
+            Ok(settings) => settings,
+            Err(_) => {
+                eprintln!(
+                    "orchestrator-daemon: conversation default agent unavailable: \
+                     cannot read orchestrator settings"
+                );
+                return Err(RuntimeFailure::Unavailable);
+            }
+        };
+        let defaults = settings.dispatch_defaults;
+        let Some(name) = defaults.default_agent.as_deref() else {
+            return Ok(environment(vec![CODEX, CLAUDE]));
+        };
+        let Some(agent) = super::canonical_agent_id(name).and_then(chat_agent) else {
+            eprintln!(
+                "orchestrator-daemon: default agent {} in Settings is not a chat agent",
+                log_safe(name)
+            );
+            return Err(RuntimeFailure::Unavailable);
+        };
+        if self.config.model.is_some() || self.config.effort.is_some() {
+            return Ok(environment(vec![agent]));
+        }
+        let saved = defaults.providers.get(agent);
+        Ok(ConfiguredDefault {
+            agents: vec![agent],
+            model: saved.and_then(|saved| saved.model.clone()),
+            effort: saved.and_then(|saved| saved.effort.clone()),
+        })
     }
 
     /// Picks the first agent that is installed, signed in, launchable and
@@ -396,19 +479,13 @@ impl AgentRuntime {
     }
 
     fn select_configured(&self) -> Outcome {
-        let agents: Vec<&'static str> = match self.config.agent.as_deref() {
-            None => vec![CODEX, CLAUDE],
-            Some(CODEX) => vec![CODEX],
-            Some(CLAUDE) => vec![CLAUDE],
-            // Copilot is opt-in only: the default order above never reaches it.
-            Some(GITHUB_COPILOT) => vec![GITHUB_COPILOT],
-            Some(other) => {
-                eprintln!(
-                    "orchestrator-daemon: conversation agent {} is not supported",
-                    log_safe(other)
-                );
-                return Outcome::Decided(Selection::Missing(RuntimeFailure::Unavailable));
-            }
+        let ConfiguredDefault {
+            agents,
+            model,
+            effort,
+        } = match self.configured_default() {
+            Ok(default) => default,
+            Err(failure) => return Outcome::Decided(Selection::Missing(failure)),
         };
         let mut slow = false;
         let launchable: Vec<(&'static str, PathBuf, String)> = agents
@@ -444,7 +521,7 @@ impl AgentRuntime {
         } else {
             self.cache.read(&self.exec, &names)
         };
-        let wants_selection = self.config.model.is_some() || self.config.effort.is_some();
+        let wants_selection = model.is_some() || effort.is_some();
         let mut pending = slow;
         let mut missing = RuntimeFailure::Unavailable;
         for ((agent, program, version), catalog) in launchable.into_iter().zip(&catalogs) {
@@ -468,7 +545,14 @@ impl AgentRuntime {
                 }
                 CatalogState::Unavailable | CatalogState::Unsupported => continue,
             }
-            if wants_selection && !self.selection_offered(catalog, &mut pending) {
+            if wants_selection
+                && !self.selection_offered(
+                    catalog,
+                    model.as_deref(),
+                    effort.as_deref(),
+                    &mut pending,
+                )
+            {
                 continue;
             }
             return Outcome::Decided(Selection::Ready(Selected {
@@ -478,8 +562,8 @@ impl AgentRuntime {
                     name: agent.to_owned(),
                     version,
                 },
-                model: self.config.model.clone(),
-                effort: self.config.effort.clone(),
+                model: model.clone(),
+                effort: effort.clone(),
                 help: None,
             }));
         }
@@ -490,12 +574,18 @@ impl AgentRuntime {
         }
     }
 
-    fn selection_offered(&self, catalog: &AgentCatalog, pending: &mut bool) -> bool {
+    fn selection_offered(
+        &self,
+        catalog: &AgentCatalog,
+        model: Option<&str>,
+        effort: Option<&str>,
+        pending: &mut bool,
+    ) -> bool {
         if !catalog.is_definitive() {
             *pending = true;
             return false;
         }
-        match catalog.validate(self.config.model.as_deref(), self.config.effort.as_deref()) {
+        match catalog.validate(model, effort) {
             Ok(()) => true,
             Err(error) => {
                 eprintln!(
@@ -549,6 +639,10 @@ impl ConversationRuntime for AgentRuntime {
     /// Only a selected agent produces output and so needs a pin.
     fn verified(&self, identity: &RuntimeIdentity) -> bool {
         AgentRuntime::verified(self, identity)
+    }
+
+    fn settings_changed(&self) {
+        AgentRuntime::settings_changed(self);
     }
 
     fn requires_pin(&self, choice: Option<&Choice>) -> bool {
@@ -1210,6 +1304,49 @@ async fn spawn_copilot(
     CopilotAdapter::new().spawn_run(launch, Some(run)).await
 }
 
+/// How much of an agent's reason a failed turn logs (DPES-1106).
+const REASON_LOG_CHARS: usize = 200;
+
+/// Closes a failed turn. Logs one line that names the agent, the failure code and the agent's
+/// reason, cut to [`REASON_LOG_CHARS`]. The reason is the agent's text, so it is classified and
+/// logged here and never stored. A provider limit gets its own code so the desktop can say so.
+fn fail_turn(agent: &str, sink: &ReplySink, reason: Option<&str>) {
+    let failure = match reason {
+        Some(text) if provider_limit(text) => RuntimeFailure::ProviderLimit,
+        _ => RuntimeFailure::Failed,
+    };
+    let shown: String = reason
+        .unwrap_or_default()
+        .chars()
+        .take(REASON_LOG_CHARS)
+        .collect();
+    eprintln!(
+        "orchestrator-daemon: conversation turn {} failed: agent={agent} code={} reason={}",
+        sink.turn_id(),
+        failure.code(),
+        log_safe(&shown)
+    );
+    sink.fail(failure);
+}
+
+/// Whether an agent's failure text names a provider limit: a spend cap, a usage, rate or quota
+/// limit, or a billing refusal. Case does not matter, so one list serves every agent.
+fn provider_limit(reason: &str) -> bool {
+    const LIMITS: [&str; 9] = [
+        "spend cap",
+        "usage limit",
+        "rate limit",
+        "quota",
+        "insufficient_quota",
+        "http 429",
+        "status 429",
+        "error 429",
+        "billing",
+    ];
+    let lower = reason.to_ascii_lowercase();
+    LIMITS.iter().any(|limit| lower.contains(limit))
+}
+
 /// Drives one agent process to the end of the turn and reports through `sink`.
 /// A closed sink (canceled, too large) or a set cancel flag stops the agent.
 fn run_turn(turn: Turn, sink: &ReplySink) {
@@ -1279,10 +1416,10 @@ async fn drive(turn: Turn, sink: &ReplySink) {
             Err(_) => continue,
             Ok(Ok(Some(event))) => event,
             Ok(Ok(None)) => break,
-            Ok(Err(_)) => {
+            Ok(Err(error)) => {
                 let _ = handle.cancel().await;
                 drain(&mut *handle, sink);
-                sink.fail(RuntimeFailure::Failed);
+                fail_turn(turn.agent, sink, Some(&error.to_string()));
                 return;
             }
         };
@@ -1306,12 +1443,14 @@ async fn drive(turn: Turn, sink: &ReplySink) {
                 }
             }
             AgentEvent::SessionExited { .. } => break,
-            AgentEvent::ProtocolError { .. } => {
+            AgentEvent::ProtocolError { message } => {
                 let _ = handle.cancel().await;
                 drain(&mut *handle, sink);
-                sink.fail(RuntimeFailure::Failed);
+                fail_turn(turn.agent, sink, Some(&message));
                 return;
             }
+            // A failed turn's text arrives with the exit, not with this event, so the loop
+            // reads on until the agent ends, still bounded by the deadline.
             _ => {}
         }
     }
@@ -1324,12 +1463,13 @@ async fn drive(turn: Turn, sink: &ReplySink) {
     }
     match exit {
         Ok(AgentExit::Completed { .. }) if turn.unverified && !any_text => {
-            sink.fail(RuntimeFailure::Failed);
+            fail_turn(turn.agent, sink, None);
         }
         Ok(AgentExit::Completed { .. }) => sink.complete(),
         Ok(AgentExit::Cancelled { .. }) => {}
         _ if turn.agent == GITHUB_COPILOT => sink.fail(copilot_failure(&turn.sign_in)),
-        _ => sink.fail(RuntimeFailure::Failed),
+        Ok(AgentExit::Failed { reason, .. }) => fail_turn(turn.agent, sink, reason.as_deref()),
+        Err(error) => fail_turn(turn.agent, sink, Some(&error.to_string())),
     }
 }
 
@@ -1349,6 +1489,7 @@ impl WorkstreamDirectory for StoreWorkstreams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use orchestrator_store::{DispatchDefaults, SettingsPatch};
 
     fn request(text: &str, history: Vec<HistoryTurn>) -> TurnRequest {
         TurnRequest {
@@ -1396,7 +1537,13 @@ mod tests {
             ExecutorConfig::for_data_dir(dir),
             Arc::default(),
             ConversationConfig::for_data_dir(dir),
+            store_in(dir),
         )
+    }
+
+    /// The store a runtime reads its Settings default agent from.
+    fn store_in(dir: &Path) -> Arc<SqliteStore> {
+        Arc::new(SqliteStore::new(&dir.join("store.sqlite")).unwrap())
     }
 
     #[test]
@@ -1637,7 +1784,7 @@ mod tests {
             config.model = None;
             config.effort = None;
             config.retry_window = window;
-            AgentRuntime::new(exec, Arc::default(), config)
+            AgentRuntime::new(exec, Arc::default(), config, store_in(dir))
         }
 
         #[test]
@@ -1882,5 +2029,90 @@ mod tests {
         assert!(Slot::take(&running).is_none());
         drop(slots);
         assert!(Slot::take(&running).is_some());
+    }
+
+    /// A runtime that reads its default from `store`, with no environment selection.
+    fn settings_runtime(dir: &Path, store: Arc<SqliteStore>) -> AgentRuntime {
+        let mut config = ConversationConfig::for_data_dir(dir);
+        config.agent = None;
+        config.model = None;
+        config.effort = None;
+        AgentRuntime::new(
+            ExecutorConfig::for_data_dir(dir),
+            Arc::default(),
+            config,
+            store,
+        )
+    }
+
+    /// Saves `agent` as the Settings default agent.
+    fn set_default_agent(store: &SqliteStore, agent: &str) {
+        let defaults = DispatchDefaults {
+            default_agent: Some(agent.to_owned()),
+            ..DispatchDefaults::default()
+        };
+        store
+            .update_orchestrator_settings(&SettingsPatch {
+                dispatch_defaults: Some(defaults),
+                ..SettingsPatch::default()
+            })
+            .unwrap();
+    }
+
+    #[test]
+    fn a_settings_default_that_names_no_chat_agent_is_unavailable() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        for name in ["gemini", "pi"] {
+            set_default_agent(&store, name);
+            let runtime = settings_runtime(dir.path(), store.clone());
+            assert!(
+                matches!(
+                    runtime.select_configured(),
+                    Outcome::Decided(Selection::Missing(RuntimeFailure::Unavailable))
+                ),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn settings_changed_drops_the_cached_default_and_its_retry_window() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = store_in(dir.path());
+        set_default_agent(&store, "gemini");
+        let runtime = settings_runtime(dir.path(), store.clone());
+        runtime.prepare(None).unwrap();
+        assert!(matches!(
+            runtime.current(None),
+            Some(Selection::Missing(RuntimeFailure::Unavailable))
+        ));
+        *runtime.pending_since.lock().unwrap() = Some(Instant::now());
+        runtime.settings_changed();
+        assert!(runtime.current(None).is_none());
+        assert!(runtime.pending_since.lock().unwrap().is_none());
+    }
+
+    #[test]
+    fn provider_limit_names_spend_usage_rate_and_quota_limits_in_any_case() {
+        for reason in [
+            "agent exited with code 1; turn failed: You hit spend cap.",
+            "Claude Code result reported a failed turn (error): Usage Limit reached",
+            "RATE LIMIT exceeded",
+            "quota exhausted for this key",
+            "insufficient_quota",
+            "HTTP 429 Too Many Requests",
+            "Billing hard limit reached",
+        ] {
+            assert!(provider_limit(reason), "{reason}");
+        }
+        for reason in [
+            "protocol violation: unknown event type 'error'",
+            "task-14290 failed",
+            "agent exited with code 1",
+            "",
+        ] {
+            assert!(!provider_limit(reason), "{reason}");
+        }
     }
 }

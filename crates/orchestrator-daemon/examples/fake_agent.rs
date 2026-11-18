@@ -16,6 +16,8 @@
 //! - `[fake:control]` replies with control, bidirectional and invisible characters.
 //! - `[fake:flood]` replies with more text than a turn may store.
 //! - `[fake:unreadable]` prints an event the parser does not know, so the turn fails.
+//! - `[fake:limit]` ends a Codex turn the way an exhausted spend cap does: an error
+//!   event, then `turn.failed`, then exit code 1.
 //! - `[fake:echo]` replies with the prompt's context and history lines.
 //! - `[fake:script]` replies with the file named by `FAKE_AGENT_REPLY`, cut
 //!   into pieces at each `---split---`, then completes.
@@ -239,6 +241,15 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
     }
     started(dialect);
     let message = prompt.rsplit_once(MARKER).map_or(prompt, |(_, tail)| tail);
+    if message.contains("[fake:limit]") {
+        // What the Codex CLI prints when the account is over its spend cap (DPES-1106).
+        let text = "You hit spend cap. Upgrade your plan or try again later.";
+        emit(&format!(r#"{{"type":"error","message":"{text}"}}"#));
+        emit(&format!(
+            r#"{{"type":"turn.failed","error":{{"message":"{text}"}}}}"#
+        ));
+        std::process::exit(1);
+    }
     if message.contains("[fake:unreadable]") {
         // An event type the parser does not know: the turn must fail, never end
         // as an empty reply (DPES-1106).

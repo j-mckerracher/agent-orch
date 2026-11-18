@@ -73,6 +73,7 @@ Rules:
 
 - **Debounce.** Events coalesce per target for 60 seconds. One wake turn per target runs at a time. A user turn takes precedence and the wake waits until it ends.
 - **Limits.** None by default (N9). The user may set hourly and daily wake-turn caps per target and a daily wake token budget, enforced from usage receipts that chat turns must start writing (phase 3 prerequisite). Debounce and one wake turn per target at a time still bound the rate. When a set cap is reached the loop falls back to deterministic notices and the header says "Monitoring paused: limit reached".
+- **Agent failures.** When the default agent fails three wake turns in a row, automatic updates pause. Pending records are skipped, and each scope with held work gets one notice that names the agent and the error code. The pause lifts 30 minutes after the newest failed turn started, or as soon as Settings change the default agent. A completed or cancelled wake turn ends the run.
 - **Level.** Wake turns run at Restricted, whatever the user's last choice. Nobody watches a wake turn, and it needs no tools.
 - **Output.** A wake turn may reply, propose, or answer with the quiet token. A quiet answer stores one collapsed line, "Checked 3 updates. Nothing needs you." An empty-looking transcript never hides a failure: failures are deterministic notices first.
 - **Records.** `wake_records` hold the event, the coalesced set, and the turn that handled it. A record closes when its turn completes, or when the user dismisses it.

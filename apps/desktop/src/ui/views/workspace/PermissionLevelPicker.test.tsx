@@ -133,6 +133,18 @@ describe("permission level notes below the composer", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("ran at Restricted, not Auto.");
   });
 
+  it("says the last automatic update ran at its level, and never shows the mismatch alert for it", () => {
+    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: "restricted", sentLevel: "auto", trigger: "wake" }} />);
+    expect(screen.getByText("The last automatic update ran at Restricted, as automatic updates always do.")).toBeInTheDocument();
+    expect(screen.queryByText(/last reply ran at/)).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the reply wording for a turn the user sent", () => {
+    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: "auto", sentLevel: "auto", trigger: "user" }} />);
+    expect(screen.getByText("The daemon reports the last reply ran at Auto.")).toBeInTheDocument();
+  });
+
   it("says so when the daemon recorded no level for the last turn", () => {
     render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: null, sentLevel: "auto" }} />);
     expect(screen.getByText("The daemon has not recorded a permission level for the last turn.")).toBeInTheDocument();

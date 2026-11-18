@@ -22,8 +22,8 @@ use orchestrator_core::records::Project;
 use orchestrator_core::task::{Attempt, AttemptState, TaskEvent};
 use orchestrator_ipc::{ApproverSecret, Capability, Relay, RelayEvent, USER_ONLY_METHODS};
 use orchestrator_store::{
-    ActionBlockOutcome, ConversationTarget, ConversationUsageReceipt, ReceiptOutcome, SqliteStore,
-    Store, TurnTrigger,
+    ActionBlockOutcome, ConversationTarget, ConversationUsageReceipt, DispatchDefaults,
+    ReceiptOutcome, SettingsPatch, SqliteStore, Store, TurnTrigger,
 };
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -1164,6 +1164,173 @@ fn a_relay_runs_the_default_agent_after_messages_that_each_named_one() {
     );
     assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
     stop(&layout, daemon, chat);
+}
+
+/// Saves the Settings dispatch defaults before the daemon starts.
+fn seed_dispatch_defaults(layout: &Layout, defaults: Value) {
+    let defaults: DispatchDefaults = serde_json::from_value(defaults).unwrap();
+    store_after_stop(layout)
+        .update_orchestrator_settings(&SettingsPatch {
+            dispatch_defaults: Some(defaults),
+            ..SettingsPatch::default()
+        })
+        .unwrap();
+}
+
+/// Settings name Claude Code as the default agent, and Codex is installed too. A message with
+/// no choice and a relay both run the default (DPES-1106).
+#[test]
+fn the_settings_default_agent_answers_a_message_without_a_choice_and_a_relay() {
+    let layout = Layout::new();
+    seed_idle_task(&layout, "scout-1");
+    store_after_stop(&layout)
+        .capture_task_report(
+            "scout-1",
+            "attempt-1",
+            "The slow query is the report join.",
+            false,
+            "2026-01-01T00:00:00Z",
+        )
+        .unwrap();
+    seed_dispatch_defaults(
+        &layout,
+        json!({"default_agent": "claude-code", "providers": {}}),
+    );
+    let claude = text(&fake_agent());
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_CLAUDE_PROGRAM", claude.as_str()),
+            (
+                "AGENT_ORCH_CONVERSATION_PINS",
+                "codex@0.0.0-fake,claude-code@0.0.0-fake",
+            ),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hi", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["runtime"]["name"], "claude-code", "{page}");
+
+    let params = json!({"task_id": "scout-1", "idempotency_key": "r-1"});
+    let mut relayed = chat.call("reports.relay", params.clone());
+    for _ in 0..50 {
+        if relayed["error"]["code"] != CONFLICT {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+        relayed = chat.call("reports.relay", params.clone());
+    }
+    assert!(relayed.get("error").is_none(), "{relayed}");
+    assert_eq!(
+        relayed["result"]["turn"]["runtime"]["name"], "claude-code",
+        "{relayed}"
+    );
+    assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
+    stop(&layout, daemon, chat);
+}
+
+#[test]
+fn an_environment_agent_still_wins_over_the_settings_default() {
+    let layout = Layout::new();
+    seed_dispatch_defaults(
+        &layout,
+        json!({"default_agent": "claude-code", "providers": {}}),
+    );
+    let claude = text(&fake_agent());
+    let daemon = start(
+        &layout,
+        &[
+            ("AGENT_ORCH_CONVERSATION_AGENT", "codex"),
+            ("AGENT_ORCH_CLAUDE_PROGRAM", claude.as_str()),
+            (
+                "AGENT_ORCH_CONVERSATION_PINS",
+                "codex@0.0.0-fake,claude-code@0.0.0-fake",
+            ),
+        ],
+    );
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hi", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(page["turn"]["runtime"]["name"], "codex", "{page}");
+    stop(&layout, daemon, chat);
+}
+
+/// The Settings default runs with the model and effort saved for its agent.
+#[test]
+fn the_settings_default_runs_with_the_model_and_effort_saved_for_it() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    seed_dispatch_defaults(
+        &layout,
+        json!({
+            "default_agent": "codex",
+            "providers": {"codex": {"model": "fake-model", "effort": "high"}},
+        }),
+    );
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hi", "m-1");
+    assert_eq!(chat.settled(&global())["turn"]["state"], "completed");
+    let launched = std::fs::read_to_string(&log).unwrap();
+    assert!(launched.contains("fake-model"), "{launched}");
+    assert!(
+        launched.contains(r#"model_reasoning_effort=\"high\""#),
+        "{launched}"
+    );
+    stop(&layout, daemon, chat);
+}
+
+/// A Settings default that names no chat agent fails the turn, and Codex is not tried instead.
+#[test]
+fn a_settings_default_that_names_no_chat_agent_fails_closed() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    seed_dispatch_defaults(&layout, json!({"default_agent": "gemini", "providers": {}}));
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "hi", "m-1");
+    assert_eq!(sent["turn"]["state"], "failed", "{sent}");
+    assert_eq!(sent["turn"]["error_code"], "runtime_unavailable", "{sent}");
+    assert!(!log.exists(), "an agent was launched");
+    stop(&layout, daemon, chat);
+}
+
+/// A spend cap ends the turn as a provider limit. The terminal entry says so, and the daemon
+/// log names the agent, the code and the agent's reason, never the operator's message.
+#[test]
+fn a_spend_cap_fails_the_turn_as_a_provider_limit_and_is_logged_with_its_reason() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "[fake:limit]", "m-1");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "failed", "{page}");
+    assert_eq!(
+        page["turn"]["error_code"], "runtime_provider_limit",
+        "{page}"
+    );
+
+    let page = chat.get(&global(), 0);
+    let terminal = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["kind"] == "turn_failed")
+        .unwrap_or_else(|| panic!("no terminal entry: {page}"));
+    assert_eq!(terminal["body"], "provider_limit", "{page}");
+    stop(&layout, daemon, chat);
+
+    let log = std::fs::read_to_string(&layout.log).unwrap();
+    assert!(
+        log.contains("conversation turn ")
+            && log.contains("failed: agent=codex code=runtime_provider_limit reason="),
+        "{log}"
+    );
+    assert!(log.contains("spend cap"), "{log}");
+    assert!(!log.contains("[fake:limit]"), "{log}");
 }
 
 #[test]
