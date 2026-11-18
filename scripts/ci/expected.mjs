@@ -256,7 +256,8 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // Dispatch defaults add five tests in existing files: 2275 becomes 2280.
 // Queued-task feedback, with the reported disk hold and wait reasons in task lists, adds 23 tests in existing files. A full
 // `npm --prefix apps/desktop test` after integrating main measured 125 files and 2303 tests.
-export const VITEST = { files: 125, tests: 2303 };
+// Popovers that stay open while WebKit moves focus during a press add two tests to ConversationActions.test.tsx: 2305.
+export const VITEST = { files: 125, tests: 2305 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

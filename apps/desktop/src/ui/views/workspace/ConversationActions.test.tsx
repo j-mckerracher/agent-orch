@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -93,6 +93,37 @@ describe("conversation actions menu", () => {
     await u.keyboard("{Escape}");
     expect(screen.getByRole("menu", { hidden: true })).not.toBeVisible();
     expect(document.activeElement).toBe(trigger());
+  });
+
+  it("stays open when a press moves focus to the scrolling main region, as WebKit does, so the item opens its dialog", async () => {
+    const u = user();
+    render(
+      <div tabIndex={-1} data-testid="main">
+        <ConversationActions option={global} live connected supported running={false} busy={false} onClear={vi.fn()} />
+      </div>,
+    );
+    await openMenu(u);
+    const clear = screen.getByRole("menuitem", { name: "Clear history…" });
+    // WebKit does not focus a pressed button; it focuses the nearest focusable ancestor instead.
+    fireEvent.pointerDown(clear);
+    act(() => screen.getByTestId("main").focus());
+    fireEvent.pointerUp(clear);
+    expect(screen.getByRole("menu")).toBeVisible();
+    fireEvent.click(clear);
+    expect(screen.getByRole("dialog", { name: "Clear history for Global orchestrator?" })).toBeVisible();
+  });
+
+  it("closes when focus leaves without a press, as with Tab", async () => {
+    const u = user();
+    render(
+      <>
+        <ConversationActions option={global} live connected supported running={false} busy={false} onClear={vi.fn()} />
+        <button type="button">Outside</button>
+      </>,
+    );
+    await openMenu(u);
+    act(() => screen.getByRole("button", { name: "Outside" }).focus());
+    expect(screen.getByRole("menu", { hidden: true })).not.toBeVisible();
   });
 
   it("moves between items with the arrow keys", async () => {
