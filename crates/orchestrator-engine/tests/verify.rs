@@ -120,6 +120,8 @@ fn create_task(store: &SqliteStore, project: &Project, verification: Verificatio
                 attempt_number: 1,
                 state: AttemptState::Pending,
                 failure_reason: None,
+                summary: None,
+                changed_files: None,
             },
         )
         .expect("add attempt");

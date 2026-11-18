@@ -379,8 +379,8 @@ fn an_investigate_agent_that_changes_nothing_still_produces_a_candidate() {
     let api = fixture.api(&messaging_agent(&fixture, "The loader is the slow part."));
     let scout = submit_kind(&fixture, &api, "scout-no-change", "Investigate");
 
-    let done = wait_state(&api, &scout, "Verifying");
-    assert_eq!(done["attempts"][0]["state"], "CandidateReady");
+    let done = wait_state(&api, &scout, "Succeeded");
+    assert_eq!(done["attempts"][0]["state"], "Succeeded");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let attempt = &store.attempts_for_task(&scout).unwrap()[0];
     assert_eq!(attempt.failure_reason, None);
@@ -445,7 +445,7 @@ fn a_candidate_records_its_changed_file_count_and_last_message() {
     let api = fixture.api(&agent);
     let task_id = fixture.submit(&api, "two-files-1", 0);
 
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
     assert_eq!(attempt.changed_files, Some(2));
