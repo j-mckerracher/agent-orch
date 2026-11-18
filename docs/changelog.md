@@ -5,6 +5,13 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.12](https://github.com/mc-innersource/motif-mcao/compare/v0.1.11...v0.1.12) (2026-11-18)
+
+
+### Bug Fixes
+
+* **desktop:** DPES-1044 - Fill settings page width and space out settings items ([cfeadc2](https://github.com/mc-innersource/motif-mcao/commit/cfeadc26a2e564222c03f9a7f43ed348dc454af5))
+
 ## [0.1.11](https://github.com/mc-innersource/motif-mcao/compare/v0.1.10...v0.1.11) (2026-11-18)
 
 
