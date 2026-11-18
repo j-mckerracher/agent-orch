@@ -13,10 +13,11 @@ import { NodeConnector, noAgentsEnv, startDaemon } from "./harness";
 
 afterEach(cleanup);
 
-// The Workstreams view over the real daemon: create, add an objective, link a task and set a
-// gate through the real workstreams.* methods, then confirm the daemon holds exactly that.
+// The Workstreams view over the real daemon: add an objective, link a task, set a gate and
+// prioritize through the real workstreams.* methods, then confirm the daemon holds exactly that.
+// Workstreams are created by the orchestrator, so the test creates them directly.
 describe("WorkstreamsView over the real daemon", () => {
-  it("creates, adds an objective, links a task and verifies a gate, all persisted by the daemon", async () => {
+  it("adds an objective, links a task, verifies a gate and prioritizes, all persisted by the daemon", async () => {
     const daemon = await startDaemon(noAgentsEnv());
     const connector = new NodeConnector(daemon.dataDir);
     const direct = new DaemonSession(await connector.open(M5_03_CAPABILITIES));
@@ -49,9 +50,15 @@ describe("WorkstreamsView over the real daemon", () => {
       await screen.findByText(/No workstreams exist yet/, undefined, { timeout: 15000 });
       expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER/);
 
-      await user.type(screen.getByLabelText("New workstream title"), "Real stream");
-      await user.click(screen.getByRole("button", { name: "Create workstream" }));
-      expect((await screen.findByTestId("ws-detail", undefined, { timeout: 15000 })).getAttribute("aria-label")).toBe("Workstream Real stream");
+      const other = await api.workstreamsCreate("Other stream", undefined, "ws-view-create-0");
+      const created = await api.workstreamsCreate("Real stream", undefined, "ws-view-create-1");
+      await user.click(screen.getByRole("button", { name: "Refresh" }));
+      await user.click(await screen.findByRole("button", { name: /2\. Real stream/ }, { timeout: 15000 }));
+      expect(screen.getByTestId("ws-detail").getAttribute("aria-label")).toBe("Workstream Real stream");
+
+      await user.click(within(screen.getByRole("group", { name: "Selected initiative" })).getByRole("button", { name: "Prioritize" }));
+      await screen.findByRole("button", { name: /1\. Real stream/ }, { timeout: 15000 });
+      expect((await api.workstreamsList()).map((item) => item.id)).toEqual([created.id, other.id]);
 
       const addForm = screen.getByRole("form", { name: "Add objective" });
       await user.type(within(addForm).getByLabelText("New objective title"), "Ship");
@@ -71,8 +78,7 @@ describe("WorkstreamsView over the real daemon", () => {
         { timeout: 15000 },
       );
 
-      const [stored] = await api.workstreamsList();
-      const detail = await api.workstreamsGet(stored!.id);
+      const detail = await api.workstreamsGet(created.id);
       expect(detail.workstream.title).toBe("Real stream");
       expect(detail.tasks.map((link) => link.task_id)).toEqual([task.contract.id]);
       expect(detail.objectives[0]!.gates[0]).toMatchObject({ description: "It works", state: "verified", evidence_task_id: task.contract.id });

@@ -96,6 +96,72 @@ fn create_get_and_list_round_trip_in_creation_order() {
         .is_empty());
 }
 
+fn listed_ids(store: &SqliteStore) -> Vec<String> {
+    store
+        .list_workstreams(None)
+        .unwrap()
+        .into_iter()
+        .map(|w| w.id)
+        .collect()
+}
+
+#[test]
+fn prioritize_moves_a_workstream_to_the_top_and_new_ones_go_last() {
+    let (_directory, store) = new_store();
+    for id in ["wa", "wb", "wc"] {
+        store
+            .create_workstream(&Workstream::new(id, id, "").unwrap(), "user")
+            .unwrap();
+    }
+    let moved = store.prioritize_workstream("wc").unwrap();
+    assert_eq!((moved.id.as_str(), moved.revision), ("wc", 1));
+    assert_eq!(listed_ids(&store), ["wc", "wa", "wb"]);
+
+    // Already on top: nothing changes, so a retry is harmless.
+    store.prioritize_workstream("wc").unwrap();
+    assert_eq!(listed_ids(&store), ["wc", "wa", "wb"]);
+
+    store
+        .create_workstream(&Workstream::new("wd", "wd", "").unwrap(), "user")
+        .unwrap();
+    store.prioritize_workstream("wb").unwrap();
+    assert_eq!(listed_ids(&store), ["wb", "wc", "wa", "wd"]);
+    // Priority is list order, not workstream content: no revision is written.
+    assert_eq!(store.get_workstream("wb").unwrap().revision, 1);
+    assert_eq!(
+        store
+            .workstream_revisions("workstream", "wb")
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn prioritize_refuses_archived_and_missing_workstreams() {
+    let (_directory, store) = seeded();
+    store
+        .create_workstream(&Workstream::new("w2", "Second", "").unwrap(), "user")
+        .unwrap();
+    store
+        .update_workstream("w2", 1, None, None, Some(WorkstreamState::Archived), "user")
+        .unwrap();
+    assert!(matches!(
+        store.prioritize_workstream("w2"),
+        Err(WorkstreamStoreError::Rule(
+            WorkstreamRuleError::WorkstreamArchived
+        ))
+    ));
+    assert!(matches!(
+        store.prioritize_workstream("nope"),
+        Err(WorkstreamStoreError::NotFound {
+            entity: "workstream",
+            ..
+        })
+    ));
+    assert_eq!(listed_ids(&store), ["w1", "w2"]);
+}
+
 #[test]
 fn duplicate_and_missing_workstreams_are_typed_errors() {
     let (_directory, store) = seeded();

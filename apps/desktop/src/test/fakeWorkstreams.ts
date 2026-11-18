@@ -134,6 +134,15 @@ export function installFakeWorkstreams(
     return { ...ws };
   });
 
+  // The daemon lists in priority order; prioritize moves one to the front without a new revision.
+  mutation("workstreams.prioritize", (params) => {
+    const ws = workstream(params.workstream_id);
+    if (ws.state === "archived") throw new StubRpcError(CONFLICT, "workstream is archived");
+    state.workstreams.splice(state.workstreams.indexOf(ws), 1);
+    state.workstreams.unshift(ws);
+    return { ...ws };
+  });
+
   mutation("workstreams.add_objective", (params) => {
     const ws = workstream(params.workstream_id);
     writable(ws);

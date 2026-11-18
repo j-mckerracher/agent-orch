@@ -39,14 +39,6 @@
   flex-basis: 100%;
 }
 
-.ws-create {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: end;
-  gap: 8px 12px;
-}
-
-.ws-create label,
 .ws-filter {
   display: grid;
   gap: 4px;
@@ -638,8 +630,7 @@
   line-height: 1.45;
 }
 
-.ws-head-actions,
-.ws-head-reason {
+.ws-head-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

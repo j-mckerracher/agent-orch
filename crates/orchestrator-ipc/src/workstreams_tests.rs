@@ -10,11 +10,12 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
 
-const WORKSTREAM_METHODS: [&str; 15] = [
+const WORKSTREAM_METHODS: [&str; 16] = [
     "workstreams.create",
     "workstreams.list",
     "workstreams.get",
     "workstreams.update",
+    "workstreams.prioritize",
     "workstreams.add_objective",
     "workstreams.revise_objective",
     "workstreams.set_gate",

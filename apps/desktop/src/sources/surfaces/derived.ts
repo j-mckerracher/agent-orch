@@ -105,7 +105,6 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const workstreams: WorkstreamSource = {
     provenance: wsProvenance,
     ...createLiveWorkstreams(connection, now, keys, guarded, wsProvenance),
-    simulateCreate: () => Promise.reject(fixtureOnly("workstream creation")),
   };
 
   const conversationProvenance = prov("D10", ["coordinator.get", ...LIVE_METHODS]);

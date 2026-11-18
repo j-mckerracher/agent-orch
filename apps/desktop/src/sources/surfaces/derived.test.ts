@@ -329,7 +329,6 @@ describe("fixture ids cannot reach a real mutation", () => {
     const s = await live(fake);
     const before = fake.calls.length;
     const attempts = [
-      s.workstreams.simulateCreate("x"),
       s.activity.simulatePauseDispatch(),
       s.activity.simulateStop("fixture:task-auth-2"),
       s.decisions.simulatePostpone("fixture:approval-1"),

@@ -18,6 +18,7 @@ type Write = { method: string; run: (source: WorkstreamSource, id: string) => Pr
 // Every ID position, including objective, gate and evidence IDs.
 const idWrites: Write[] = [
   { method: "update", run: (s, id) => s.update({ id, revision: 2 }, { title: "x" }) },
+  { method: "prioritize", run: (s, id) => s.prioritize(id) },
   { method: "add_objective", run: (s, id) => s.addObjective(id, { title: "x" }) },
   { method: "revise_objective", run: (s, id) => s.reviseObjective({ id, revision: 3 }, { title: "x" }) },
   { method: "set_gate", run: (s, id) => s.setGate({ id, revision: 3 }, "gate-1", "verified", "t-run") },
@@ -29,10 +30,7 @@ const idWrites: Write[] = [
   { method: "unlink_task", run: (s, id) => s.unlinkTask(id, "t-run") },
   { method: "unlink_task", run: (s, id) => s.unlinkTask("ws-1", id) },
 ];
-const writes: Write[] = [
-  { method: "create", run: (s) => s.create("New workstream") },
-  ...idWrites.filter((_, i) => [0, 1, 2, 3, 6, 9].includes(i)),
-];
+const writes: Write[] = idWrites.filter((_, i) => [0, 1, 2, 3, 4, 7, 10].includes(i));
 
 describe("D9 mutation safety", () => {
   it.each(["fixture:item", "fixture0001", " FIXTURE0001 "])("refuses every ID position for %s, connected or disconnected", async (id) => {

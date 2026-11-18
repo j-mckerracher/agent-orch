@@ -78,7 +78,7 @@ describe("live workstreams adapter over the real daemon", () => {
 
   it("runs the full lifecycle through the real workstreams.* methods", async () => {
     const [t1, t2, t3] = taskIds as [string, string, string];
-    const created = await source.create("E2E stream", "Proves the adapter");
+    const created = await api.workstreamsCreate("E2E stream", "Proves the adapter", "ws-e2e-create-1");
     expect(created.revision).toBe(1);
 
     const withObjective = await source.addObjective(created.id, {
@@ -132,11 +132,15 @@ describe("live workstreams adapter over the real daemon", () => {
     // A task cited as gate evidence cannot be unlinked.
     await expect(source.unlinkTask(created.id, t1)).rejects.toMatchObject({ kind: "conflict" });
     // A task already linked elsewhere cannot be linked to a second workstream.
-    const other = await source.create("Other stream");
+    const other = await api.workstreamsCreate("Other stream", undefined, "ws-e2e-create-2");
+
+    // Prioritize moves a workstream to the top without a new revision.
+    expect((await source.prioritize(other.id)).revision).toBe(1);
+    expect((await read()).map((item) => item.id)).toEqual([other.id, created.id]);
     await expect(source.linkTask(other.id, t2)).rejects.toMatchObject({ kind: "conflict" });
 
     await source.unlinkTask(created.id, t2);
-    [stream] = await read();
+    stream = (await read()).find((item) => item.id === created.id)!;
     expect(stream!.tasks.map((t) => t.id)).toEqual([t1]);
 
     const suspended = await source.update({ id: created.id, revision: stream!.revision }, { state: "suspended" });

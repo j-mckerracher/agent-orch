@@ -411,7 +411,7 @@ fn workstreams(store: &SqliteStore, actions: bool) -> Block {
                 .map(|(workstream, objectives)| workstream_line(workstream, objectives, actions))
                 .collect();
             Block {
-                head: format!("Workstreams ({}):", items.len()),
+                head: format!("Workstreams ({}, highest priority first):", items.len()),
                 total: items.len(),
                 items,
                 rank: RANK_WORKSTREAMS,
@@ -681,12 +681,13 @@ fn load_one(
     Ok((workstream, objectives))
 }
 
-/// Every workstream, newest first, with its objectives.
+/// Every workstream in the operator's priority order, highest first, with its
+/// objectives. A cut snapshot keeps the highest-priority ones.
 fn load_workstreams(
     store: &SqliteStore,
 ) -> Result<Vec<(Workstream, Vec<Objective>)>, WorkstreamStoreError> {
     let mut loaded = Vec::new();
-    for workstream in store.list_workstreams(None)?.into_iter().rev() {
+    for workstream in store.list_workstreams(None)? {
         let objectives = store.list_objectives(&workstream.id)?;
         loaded.push((workstream, objectives));
     }
@@ -1047,7 +1048,7 @@ mod tests {
         assert_eq!(snapshot.lines().last(), Some("END APP STATE"));
         assert!(snapshot.contains("Scope: the global orchestrator.\n"));
         assert!(snapshot.contains("Projects (0):\n"));
-        assert!(snapshot.contains("Workstreams (0):\n"));
+        assert!(snapshot.contains("Workstreams (0, highest priority first):\n"));
         assert!(snapshot.contains("Actions: none yet\n"));
         assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
     }
@@ -1176,7 +1177,7 @@ mod tests {
     }
 
     #[test]
-    fn workstreams_are_capped_and_newest_kept() {
+    fn workstreams_are_capped_and_highest_priority_kept() {
         let (_directory, store) = store();
         for index in 0..200 {
             make_workstream(
@@ -1187,12 +1188,15 @@ mod tests {
             );
         }
 
+        store.prioritize_workstream("ws-199").unwrap();
+
         let snapshot = snapshot_for_global(&store);
 
         assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
-        assert!(snapshot.contains("Workstreams (200):\n- Workstream 199 "));
+        assert!(snapshot.contains("Workstreams (200, highest priority first):\n- Workstream 199 "));
         assert!(snapshot.contains("[id ws-199] state active"));
-        assert!(!snapshot.contains("[id ws-000]"));
+        assert!(snapshot.contains("[id ws-000] state active"));
+        assert!(!snapshot.contains("[id ws-198]"));
         assert!(snapshot
             .lines()
             .any(|line| line.starts_with("- and ") && line.ends_with(" more")));

@@ -48,6 +48,13 @@ struct GetParams {
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
+struct PrioritizeParams {
+    workstream_id: String,
+    idempotency_key: String,
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub(super) struct UpdateParams {
     pub(super) workstream_id: String,
     pub(super) expected_revision: i64,
@@ -235,6 +242,26 @@ impl DaemonApi {
                 self.update_inner(&request, LOCAL_USER)
                     .map_err(map_workstream_error)
                     .and_then(|updated| to_json(&updated))
+            },
+        )
+    }
+
+    /// Moves a workstream to the top of the priority order. Advisory, like
+    /// `suspended`: the scheduler does not consult it.
+    pub(super) fn workstreams_prioritize(&self, params: Value) -> Result<Value, RpcError> {
+        let request: PrioritizeParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "workstreams.prioritize",
+            &key,
+            &request,
+            || {
+                self.store
+                    .prioritize_workstream(&request.workstream_id)
+                    .map_err(map_workstream_error)
+                    .and_then(|workstream| to_json(&workstream))
             },
         )
     }

@@ -465,6 +465,7 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "workstreams.list"
         | "workstreams.get"
         | "workstreams.update"
+        | "workstreams.prioritize"
         | "workstreams.add_objective"
         | "workstreams.revise_objective"
         | "workstreams.set_gate"

@@ -114,6 +114,74 @@ fn create_get_list_and_update_round_trip() {
 }
 
 #[test]
+fn prioritize_moves_a_workstream_to_the_top_of_the_list() {
+    let (_dir, api) = new_api();
+    let ids: Vec<String> = ["k1", "k2", "k3"]
+        .iter()
+        .map(|key| {
+            create_workstream(&api, key)["id"]
+                .as_str()
+                .unwrap()
+                .to_owned()
+        })
+        .collect();
+    let listed = |api: &DaemonApi| -> Vec<String> {
+        call(api, "workstreams.list", json!({}))
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|workstream| workstream["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    assert_eq!(listed(&api), ids);
+
+    let prioritize = |key: &str, id: &str| {
+        call(
+            &api,
+            "workstreams.prioritize",
+            json!({"workstream_id": id, "idempotency_key": key}),
+        )
+    };
+    let moved = prioritize("p1", &ids[2]).unwrap();
+    assert_eq!(moved["id"], ids[2].as_str());
+    assert_eq!(moved["revision"], 1);
+    assert_eq!(
+        listed(&api),
+        [ids[2].clone(), ids[0].clone(), ids[1].clone()]
+    );
+    // A replayed key returns the first answer and moves nothing again.
+    prioritize("p2", &ids[1]).unwrap();
+    assert_eq!(prioritize("p1", &ids[2]).unwrap(), moved);
+    assert_eq!(
+        listed(&api),
+        [ids[1].clone(), ids[2].clone(), ids[0].clone()]
+    );
+
+    assert_eq!(prioritize("p3", "nope"), Err(RpcError::NotFound));
+    call(
+        &api,
+        "workstreams.update",
+        json!({
+            "workstream_id": ids[0],
+            "expected_revision": 1,
+            "state": "archived",
+            "idempotency_key": "k4"
+        }),
+    )
+    .unwrap();
+    assert_eq!(prioritize("p4", &ids[0]), Err(RpcError::Conflict));
+    assert_eq!(
+        call(
+            &api,
+            "workstreams.prioritize",
+            json!({"workstream_id": ids[1]})
+        ),
+        Err(RpcError::InvalidParams)
+    );
+}
+
+#[test]
 fn stale_revision_is_a_conflict_and_writes_nothing() {
     let (_dir, api) = new_api();
     let id = create_workstream(&api, "k1")["id"]

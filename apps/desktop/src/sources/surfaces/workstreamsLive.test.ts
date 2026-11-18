@@ -46,8 +46,8 @@ describe("live workstreams adapter", () => {
     expect(result.status).toBe("unsupported");
     expect(result.provenance.kind).toBe("daemon");
     expect(fake.callsTo("workstreams.list")).toHaveLength(0);
-    await expect(source.create("x")).rejects.toMatchObject({ kind: "capability-not-negotiated" });
-    expect(fake.callsTo("workstreams.create")).toHaveLength(0);
+    await expect(source.prioritize("ws-1")).rejects.toMatchObject({ kind: "capability-not-negotiated" });
+    expect(fake.callsTo("workstreams.prioritize")).toHaveLength(0);
   });
 
   it("keeps M5 activity when daemon refuses optional M7 capabilities", async () => {
@@ -73,12 +73,18 @@ describe("live workstreams adapter", () => {
     expect(fake.callsTo("approvals.list")).toHaveLength(1);
   });
 
-  it("creates a workstream and returns the daemon's id and revision", async () => {
+  it("prioritizes a workstream and the next read lists it first", async () => {
     const fake = populate(new FakeDaemon());
-    const receipt = await (await live(fake)).create("Gamma", "why");
-    expect(receipt).toMatchObject({ revision: 1 });
-    expect(receipt.id).toMatch(/^ws-/);
-    expect(paramsOf(fake, "workstreams.create")).toEqual([{ title: "Gamma", summary: "why", idempotency_key: expect.any(String) }]);
+    const source = await live(fake);
+    const before = await source.workstreams();
+    if (before.status !== "ok") throw new Error(`expected ok, got ${before.status}`);
+    const last = before.data[before.data.length - 1]!.id;
+    const receipt = await source.prioritize(last);
+    expect(receipt).toMatchObject({ id: last });
+    expect(paramsOf(fake, "workstreams.prioritize")).toEqual([{ workstream_id: last, idempotency_key: expect.any(String) }]);
+    const after = await source.workstreams();
+    if (after.status !== "ok") throw new Error(`expected ok, got ${after.status}`);
+    expect(after.data[0]!.id).toBe(last);
   });
 
   it("passes the revision the caller read and maps camelCase fields to the wire", async () => {
