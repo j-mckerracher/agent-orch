@@ -1,8 +1,10 @@
+export { Markdown, type MarkdownProps } from "./Markdown";
 export { ThemeToggle } from "./ThemeToggle";
 export {
   Badge,
   Bubble,
   Button,
+  CopyButton,
   Disclosure,
   EmptyState,
   Meter,
@@ -11,6 +13,7 @@ export {
   type BadgeProps,
   type BubbleProps,
   type ButtonProps,
+  type CopyButtonProps,
   type DisclosureProps,
   type EmptyStateProps,
   type MeterProps,

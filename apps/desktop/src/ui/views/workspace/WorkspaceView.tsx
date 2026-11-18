@@ -16,7 +16,7 @@ import type { Route } from "../../router";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
-import { Badge, Bubble, Button, EmptyState } from "../../theme";
+import { Badge, Bubble, Button, CopyButton, EmptyState, Markdown } from "../../theme";
 import { ErrorNotice, Notice } from "../../widgets";
 import { useWorkstreamsVersion } from "../workstreams/model";
 import { ActionCard } from "./ActionCard";
@@ -844,8 +844,9 @@ function TranscriptBody({
           <time dateTime={entry.at}>{formatAt(entry.at)}</time> <Badge tone="placeholder">SIMULATED, not recorded</Badge>
         </>
       }
+      actions={<CopyButton text={entry.text} />}
     >
-      {entry.text}
+      <Markdown text={entry.text} />
     </Bubble>
   ));
   if (transcript.status === "unavailable") {
@@ -929,12 +930,15 @@ function EntryBubble({
   // The opening entry of an automatic turn is event lines inside an update, not something the user wrote.
   if (entry.origin === "wake") return <WakeLines text={entry.text} runtime={runtime} />;
   const human = entry.role === "user";
-  // A daemon turn outcome is a system line, never a reply from the orchestrator.
+  // A daemon turn outcome is a system line, never a reply from the orchestrator. It is daemon text, so it stays plain.
   if (entry.kind === "status") {
     return (
-      <p role="status" className="ws-state ws-turn-status">
-        {entry.text}
-      </p>
+      <div className="ws-state ws-turn-status">
+        <p role="status" className="ws-turn-status-text">
+          {entry.text}
+        </p>
+        <CopyButton text={entry.text} label="Copy status" />
+      </div>
     );
   }
   const bubble = (
@@ -958,8 +962,9 @@ function EntryBubble({
           )}
         </>
       }
+      actions={<CopyButton text={entry.text} />}
     >
-      {entry.text}
+      <Markdown text={entry.text} />
     </Bubble>
   );
   // A reply to an automatic turn says it is an update, so it is never read as an answer to the user's last message.

@@ -388,6 +388,26 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.queryByText(/runtime unavailable/i)).toBeNull();
   });
 
+  it("renders a recorded reply's markdown and copies its source with one click", async () => {
+    const fake = liveDaemon();
+    const convo = stubConversation(fake, "running");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "plan it");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    await screen.findByText(/Waiting for the orchestrator.s reply…/);
+
+    act(() => convo.finishRunning(null, "**Done**: shipped `v2`."));
+    const done = await screen.findByText("Done", {}, { timeout: 3000 });
+    expect(done.tagName).toBe("STRONG");
+    expect(screen.getByRole("log").textContent).not.toContain("**");
+    await user.click(within(done.closest("article") as HTMLElement).getByRole("button", { name: "Copy message" }));
+    expect(await navigator.clipboard.readText()).toBe("**Done**: shipped `v2`.");
+  });
+
   it.each([
     { label: "Global orchestrator", target: /Global orchestrator/ },
     { label: "Session hardening orchestrator", target: /Session hardening orchestrator/ },
