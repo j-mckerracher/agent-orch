@@ -51,6 +51,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "tasks.list": "tasks",
   "tasks.get": "tasks",
   "tasks.cancel": "tasks",
+  "tasks.archive": "tasks",
   "sessions.list": "sessions",
   "sessions.get": "sessions",
   "sessions.events": "sessions",

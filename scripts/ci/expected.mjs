@@ -274,7 +274,7 @@ export const NODE_SELF_TESTS = { passed: 146 };
 // Removing the ResourceStrip color-scale note test drops one.
 // The Cancel allowlist (DPES-1106) adds 5 tests across the agents, task detail and activity panel views, as the Windows desktop gate measured: 2326.
 // Chat markdown and one-click copy add seven tests in existing files (primitives, WakeNotice, WorkspaceView): 2333.
-export const VITEST = { files: 125, tests: 2333 };
+export const VITEST = { files: 125, tests: 2347 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

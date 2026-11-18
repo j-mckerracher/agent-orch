@@ -4,7 +4,7 @@ import { timelineKey } from "../daemon/appData";
 import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
-import { basename, canCancel, pendingApprovals, stateLabel } from "./format";
+import { basename, canArchive, canCancel, pendingApprovals, stateLabel } from "./format";
 import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
@@ -134,12 +134,15 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
 
 export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: string }) {
   const { data, router } = useServices();
-  const { taskDetails, taskSessions, sessionDetails, timelines, tasks, approvals } = useStore(data);
+  const { taskDetails, taskSessions, sessionDetails, timelines, tasks, approvals, archiveUnsupported } = useStore(data);
   const gate = useGate();
   const [chosen, setChosen] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<DaemonError | null>(null);
   const [cancelNote, setCancelNote] = useState<string | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [archiveError, setArchiveError] = useState<DaemonError | null>(null);
+  const [archived, setArchived] = useState(false);
+  const [archiving, setArchiving] = useState(false);
 
   useEffect(() => {
     void data.watchTask(taskId);
@@ -161,6 +164,15 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
   const sessionDetail = sessionId ? sessionDetails[timelineKey(taskId, sessionId)]?.data : null;
   const candidateApprovals = pendingApprovals(approvals.data ?? []).filter((a) => a.action.task_id === taskId);
   const dependencyKnown = (id: string) => tasks.data?.some((t) => t.contract.id === id) ?? false;
+
+  const archive = async () => {
+    setArchiveError(null);
+    setArchiving(true);
+    const result = await data.archiveTasks([taskId]);
+    setArchiving(false);
+    if (result.ok) setArchived(true);
+    else setArchiveError(result.error);
+  };
 
   const cancel = async () => {
     setCancelError(null);
@@ -372,6 +384,21 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 <p role="status">The outcome is unknown. Requesting again reuses the same request key.</p>
               )}
             </section>
+            {!archiveUnsupported && (
+              <section aria-label="Archive" className="ps-section">
+                <Button
+                  disabled={!gate.can("tasks") || archiving || archived || !canArchive(record.state)}
+                  onClick={() => void archive()}
+                >
+                  Archive task
+                </Button>
+                {!canArchive(record.state) && (
+                  <span className="muted"> Only finished tasks can be archived; this task is {stateLabel(record.state)}.</span>
+                )}
+                {archived && <p role="status">Archived. The task leaves the task lists; its history is kept.</p>}
+                {archiveError && <ErrorNotice error={archiveError} action="Archiving the task" />}
+              </section>
+            )}
             <PlaceholderPanels taskRef={{ origin: "real", taskId, state: record.state }} />
           </div>
         )}

@@ -196,6 +196,14 @@ export class DaemonApi {
     });
   }
 
+  /** Archives finished tasks (DPES-1106). The result lists only the ids this call newly archived. */
+  async tasksArchive(taskIds: string[], idempotencyKey: string): Promise<{ archived: string[] }> {
+    return this.session.request("tasks.archive", {
+      task_ids: taskIds.map(realId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
   async sessionsList(taskId: string | null): Promise<SessionEntry[]> {
     return this.session.request("sessions.list", { task_id: taskId === null ? null : realId(taskId) });
   }

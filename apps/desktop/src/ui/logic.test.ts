@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptySubmitDraft, type SubmitDraft } from "./drafts";
-import { TASK_STATES, canCancel, decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
+import { TASK_STATES, canArchive, canCancel, decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
 import { RouterStore, formatRoute, parseRoute, type Route } from "./router";
 import { buildSubmission } from "./submission";
 import { NO_HELD } from "../sources/surfaces/holds";
@@ -140,6 +140,12 @@ describe("matchesFilter", () => {
 describe("canCancel", () => {
   it("allows cancel only in the states the daemon accepts it from", () => {
     expect(TASK_STATES.filter(canCancel)).toEqual(["Created", "Queued", "Running", "Verifying"]);
+  });
+});
+
+describe("canArchive", () => {
+  it("allows archive only for finished tasks", () => {
+    expect(TASK_STATES.filter(canArchive)).toEqual(["Succeeded", "VerificationFailed", "Failed", "Cancelled"]);
   });
 });
 

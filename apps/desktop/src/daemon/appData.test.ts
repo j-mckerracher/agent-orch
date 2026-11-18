@@ -422,6 +422,19 @@ describe("AppData", () => {
     await until(() => data.getSnapshot().tasks.data?.[0]?.state === "Cancelled");
   });
 
+  it("archives finished tasks with one call, returns the newly archived ids and refreshes", async () => {
+    const fake = new FakeDaemon();
+    fake.tasks = [mkTask("task-1", "/repo", { state: "Succeeded" }), mkTask("task-2", "/repo", { state: "Failed" })];
+    const { connection, data } = setup(fake);
+    connection.start();
+    await until(() => status(connection) === "connected");
+    const result = await data.archiveTasks(["task-1", "task-2"]);
+    expect(result).toEqual({ ok: true, value: ["task-1", "task-2"] });
+    expect(fake.callsTo("tasks.archive")).toHaveLength(1);
+    expect(fake.callsTo("tasks.archive")[0]!.params).toMatchObject({ task_ids: ["task-1", "task-2"] });
+    await until(() => data.getSnapshot().tasks.data?.length === 0);
+  });
+
   describe("timelines", () => {
     function seeded() {
       const fake = new FakeDaemon();
