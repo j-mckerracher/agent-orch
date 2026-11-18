@@ -25,7 +25,7 @@
 //! its task `Running` until the next daemon start reconciles it, and agent
 //! output is consumed but not persisted beyond the lifecycle events.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -48,6 +48,7 @@ use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
+use orchestrator_engine::verify::{pending_verifications, verify_attempt, Verified};
 use orchestrator_git::{
     create_task_worktree, is_safe_branch_name, BranchPrefix, Error as GitError, Repository,
 };
@@ -61,6 +62,9 @@ use output_ring::{EndOnDrop, OutputStore, Stream};
 use crate::api::load::LoadHandle;
 
 const CODEX_AGENT: &str = "codex";
+
+/// How long shutdown waits for interrupted verification runs to unregister.
+const VERIFICATION_SHUTDOWN_WAIT: Duration = Duration::from_secs(2);
 const CLAUDE_AGENT: &str = "claude-code";
 const BLOCKED_RETRY: Duration = Duration::from_secs(5);
 const LOG: &str = "executor";
@@ -299,6 +303,8 @@ struct Inner {
     pulse: Arc<SessionPulse>,
     admission: AdmissionGate,
     output: Arc<OutputStore>,
+    /// Cancel flags of the verification runs in flight, keyed by task id.
+    verifying: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
 }
 
 impl Executor {
@@ -315,6 +321,7 @@ impl Executor {
             cursor: Mutex::new(None),
             pulse: Arc::new(SessionPulse::default()),
             output: Arc::default(),
+            verifying: Mutex::default(),
         });
         // A weak reference: the gate outlives the executor and must not keep it alive.
         let weak = Arc::downgrade(&inner);
@@ -342,6 +349,14 @@ impl Executor {
     /// Asks the scheduler to run a pass now (task admitted, retried, finished).
     pub(crate) fn wake(&self) {
         self.inner.request_pass();
+    }
+
+    /// Interrupts the verification run of `task_id`, if one is in flight. The
+    /// run records nothing; the caller settles the cancellation.
+    pub(crate) fn cancel_verification(&self, task_id: &str) {
+        if let Some(flag) = lock(&self.inner.verifying).get(task_id) {
+            flag.store(true, Ordering::SeqCst);
+        }
     }
 
     /// True while a requested pass has not started, so the daemon cannot idle
@@ -401,6 +416,7 @@ impl Executor {
         }
         self.inner.stop.store(true, Ordering::SeqCst);
         self.inner.request_pass();
+        self.inner.interrupt_verifications();
         if let Some(handle) = lock(&self.scheduler).take() {
             let _ = handle.join();
         }
@@ -469,10 +485,147 @@ fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|error| error.into_inner())
 }
 
+/// A verification run registered in `Inner::verifying`. Dropping it removes the
+/// entry, so a run that panics cannot leave one behind.
+struct VerificationSlot<'a> {
+    inner: &'a Inner,
+    task_id: String,
+    cancel: Arc<AtomicBool>,
+}
+
+impl Drop for VerificationSlot<'_> {
+    fn drop(&mut self) {
+        lock(&self.inner.verifying).remove(&self.task_id);
+    }
+}
+
 impl Inner {
     fn request_pass(&self) {
         *lock(&self.dirty) = true;
         self.wake.notify_all();
+    }
+
+    /// Registers a verification run for `task_id`, or returns `None` when one is
+    /// already in flight. The entry exists before the run reads any state.
+    fn claim_verification(&self, task_id: &str) -> Option<VerificationSlot<'_>> {
+        let mut verifying = lock(&self.verifying);
+        if verifying.contains_key(task_id) {
+            return None;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        verifying.insert(task_id.to_owned(), cancel.clone());
+        Some(VerificationSlot {
+            inner: self,
+            task_id: task_id.to_owned(),
+            cancel,
+        })
+    }
+
+    /// Starts verification for every candidate a stopped daemon left `Verifying`.
+    /// Runs once, when the restart gate first opens: no supervisor of this
+    /// process exists yet, so nothing else settles those attempts.
+    fn resume_verifications(self: &Arc<Self>) {
+        let pending = match pending_verifications(&self.store) {
+            Ok(pending) => pending,
+            Err(error) => {
+                self.config.diagnostics.error(
+                    LOG,
+                    "verification_resume_unreadable",
+                    &[("error", &error)],
+                );
+                return;
+            }
+        };
+        for (task_id, attempt_id) in pending {
+            let inner = self.clone();
+            let name = format!("verify-{task_id}");
+            let spawned = thread::Builder::new()
+                .name(name.clone())
+                .spawn(move || inner.verify_candidate(&task_id, &attempt_id));
+            if let Err(error) = spawned {
+                self.config.diagnostics.error(
+                    LOG,
+                    "verification_resume_failed",
+                    &[
+                        ("thread", &name),
+                        ("error", &error.to_string()),
+                        (
+                            "recovery",
+                            "task stays Verifying; the next daemon start resumes verification",
+                        ),
+                    ],
+                );
+            }
+        }
+    }
+
+    /// Runs and settles the verification of one candidate attempt. Blocks for
+    /// as long as the checks run, so it is never called on the async runtime.
+    fn verify_candidate(&self, task_id: &str, attempt_id: &str) {
+        let outcome = {
+            let Some(slot) = self.claim_verification(task_id) else {
+                return;
+            };
+            verify_attempt(&self.store, task_id, attempt_id, &slot.cancel)
+        };
+        let diag = &self.config.diagnostics;
+        match outcome {
+            Ok(Verified::Passed { run_id }) => diag.info(
+                LOG,
+                "verification_passed",
+                &[
+                    ("task_id", task_id),
+                    ("attempt_id", attempt_id),
+                    ("run_id", &run_id),
+                ],
+            ),
+            Ok(Verified::Failed { run_id, reason }) => diag.info(
+                LOG,
+                "verification_failed",
+                &[
+                    ("task_id", task_id),
+                    ("attempt_id", attempt_id),
+                    ("run_id", &run_id),
+                    ("reason", &reason),
+                ],
+            ),
+            Ok(Verified::Superseded) => diag.info(
+                LOG,
+                "verification_superseded",
+                &[("task_id", task_id), ("attempt_id", attempt_id)],
+            ),
+            Ok(Verified::Interrupted) => diag.info(
+                LOG,
+                "verification_interrupted",
+                &[("task_id", task_id), ("attempt_id", attempt_id)],
+            ),
+            Err(error) => diag.error(
+                LOG,
+                "verification_error",
+                &[
+                    ("task_id", task_id),
+                    ("attempt_id", attempt_id),
+                    ("error", &error),
+                    (
+                        "recovery",
+                        "task stays Verifying; the next daemon start resumes verification",
+                    ),
+                ],
+            ),
+        }
+        self.request_pass();
+    }
+
+    /// Sets the cancel flag of every verification run in flight, then waits up
+    /// to [`VERIFICATION_SHUTDOWN_WAIT`] for them to unregister.
+    fn interrupt_verifications(&self) {
+        for flag in lock(&self.verifying).values() {
+            flag.store(true, Ordering::SeqCst);
+        }
+        let deadline = Instant::now() + VERIFICATION_SHUTDOWN_WAIT;
+        while !lock(&self.verifying).is_empty() && Instant::now() < deadline {
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     fn run(self: Arc<Self>) {
@@ -505,6 +658,7 @@ impl Inner {
                         } else {
                             diag.warn(LOG, "recovery_gate_open", &fields);
                         }
+                        self.resume_verifications();
                     }
                     Err(reason) => {
                         let mut blocked = lock(&self.blocked);
@@ -953,17 +1107,22 @@ fn supervise_inner(inner: &Inner, job: &Job) {
             return;
         }
     };
-    if let Err(error) = runtime.block_on(run_agent(inner, job)) {
-        let (worktree, uncommitted) = preserved_work(job);
-        job.diag.error(
-            LOG,
-            "supervision_error",
-            &job.event_fields(&[
-                ("error", &error),
-                ("worktree", &worktree),
-                ("uncommitted_paths", &uncommitted),
-            ]),
-        );
+    match runtime.block_on(run_agent(inner, job)) {
+        // The cancellation owner is closed by now, so verification never races
+        // the agent's own settlement.
+        Ok(()) => inner.verify_candidate(&job.task_id, &job.attempt_id),
+        Err(error) => {
+            let (worktree, uncommitted) = preserved_work(job);
+            job.diag.error(
+                LOG,
+                "supervision_error",
+                &job.event_fields(&[
+                    ("error", &error),
+                    ("worktree", &worktree),
+                    ("uncommitted_paths", &uncommitted),
+                ]),
+            );
+        }
     }
 }
 
@@ -1553,8 +1712,9 @@ fn describe_exit(exit: &AgentExit) -> (&'static str, String, String) {
     }
 }
 
-/// Maps a reaped agent to exactly one terminal record set. Success requires a
-/// completed turn and exit code zero; every other outcome fails the attempt.
+/// Maps a reaped agent to exactly one record set. A completed turn with exit
+/// code zero leaves a candidate for verification; every other outcome fails the
+/// attempt.
 fn finish(
     store: &SqliteStore,
     job: &Job,
@@ -1712,7 +1872,7 @@ fn finish(
 /// the record of what it did), leaves one, and only when the agent wrote a message. The text is
 /// untrusted agent output: it is redacted and capped before it is stored, and nothing here
 /// puts it in a log line. A failure to store it is logged without the text and never
-/// fails the task, which has already succeeded.
+/// changes no outcome: verification alone decides whether the task succeeds.
 fn capture_report(store: &SqliteStore, job: &Job, last_message: Option<&str>) {
     record_report(
         store,

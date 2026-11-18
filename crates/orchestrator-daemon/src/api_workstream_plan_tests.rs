@@ -5,7 +5,7 @@
 use orchestrator_store::LineageRelation;
 
 use super::actions_task_tests::{
-    failed_task, register_project, running_task, submit_queued, task_count, ALPHA,
+    failed_task, register_project, running_task, submit_queued, task_count, verifying_task, ALPHA,
 };
 use super::actions_tests::{call, create_workstream, new_api};
 use super::*;
@@ -385,6 +385,31 @@ fn remove_cancels_and_unlinks_a_queued_task_and_unlinks_a_failed_one() {
     link(&api, &workstream, &running, None);
     assert_eq!(remove(&running, "r-4"), Err(RpcError::Conflict));
     assert!(link_of(&api, &running).is_some());
+}
+
+#[test]
+fn remove_cancels_and_unlinks_a_verifying_task() {
+    use orchestrator_core::task::AttemptState;
+
+    let (_directory, api) = new_api();
+    let (workstream, _, _) = plan(&api);
+    let verifying = verifying_task(&api, "s-verifying");
+    link(&api, &workstream, &verifying, None);
+
+    let removed = call(
+        &api,
+        "workstreams.remove_task",
+        json!({"workstream_id": workstream, "task_id": verifying, "idempotency_key": "r-v"}),
+    );
+
+    assert_eq!(
+        removed,
+        Ok(json!({"task_id": verifying, "cancelled": true, "removed": true}))
+    );
+    let task = api.store.get(&verifying).unwrap();
+    assert_eq!(task.state, TaskState::Cancelled);
+    assert_eq!(task.attempts[0].state, AttemptState::Cancelled);
+    assert!(link_of(&api, &verifying).is_none());
 }
 
 #[test]

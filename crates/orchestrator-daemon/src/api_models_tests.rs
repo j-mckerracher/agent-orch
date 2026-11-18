@@ -108,7 +108,7 @@ fn dispatch_defaults_reach_the_agent_and_survive_restart_without_changing_existi
         submitted["contract"]["model_selection"],
         dispatch_defaults()["providers"]["codex"]
     );
-    wait_state(&api, task_id, "Verifying");
+    wait_state(&api, task_id, "Succeeded");
     let argv = fs::read_to_string(&agents.codex_argv).unwrap();
     assert!(argv.contains("-m\ngpt-6-luna\n"), "{argv}");
     assert!(argv.contains("model_reasoning_effort=\"low\""), "{argv}");
@@ -744,7 +744,7 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
         submitted["contract"]["model_selection"],
         json!({"model": "gpt-6-luna", "effort": "low"})
     );
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
 
     let argv = fs::read_to_string(&agents.codex_argv).unwrap();
     assert_eq!(
@@ -800,7 +800,7 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
     let submitted = submit_with(&fixture, &api, "plain-1", "codex", Value::Null).unwrap();
     let task_id = submitted["contract"]["id"].as_str().unwrap().to_owned();
     assert!(submitted["contract"].get("model_selection").is_none());
-    wait_state(&api, &task_id, "Verifying");
+    wait_state(&api, &task_id, "Succeeded");
 
     let argv = fs::read_to_string(&agents.codex_argv).unwrap();
     assert_eq!(

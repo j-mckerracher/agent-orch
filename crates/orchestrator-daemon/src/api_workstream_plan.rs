@@ -291,12 +291,12 @@ impl DaemonApi {
                 let (task, _) = self.linked_task(&request.workstream_id, &request.task_id)?;
                 self.refuse_gate_evidence(&request.workstream_id, &[&request.task_id])?;
                 let cancel = match task.state {
-                    TaskState::Created | TaskState::Queued => true,
+                    TaskState::Created | TaskState::Queued | TaskState::Verifying => true,
                     TaskState::Succeeded
                     | TaskState::Failed
                     | TaskState::VerificationFailed
                     | TaskState::Cancelled => false,
-                    TaskState::Running | TaskState::Verifying => return Err(RpcError::Conflict),
+                    TaskState::Running => return Err(RpcError::Conflict),
                 };
                 if cancel {
                     self.refuse_live_sessions(&task)?;
