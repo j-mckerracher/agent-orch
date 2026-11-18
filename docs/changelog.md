@@ -5,6 +5,19 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.16](https://github.com/mc-innersource/motif-mcao/compare/v0.1.15...v0.1.16) (2026-11-18)
+
+
+### Bug Fixes
+
+* **release:** DPES-1044 - Point the install smoke at the packaged treehouse ([a46090e](https://github.com/mc-innersource/motif-mcao/commit/a46090e9ee470f9019e2cccda71fba2bec4051c7))
+* **release:** DPES-1044 - Point the install smoke at the packaged treehouse ([ea100d7](https://github.com/mc-innersource/motif-mcao/commit/ea100d7a74b5b29054e8f70d6ed02cb311c42aa1))
+
+
+### Tests
+
+* **ci:** DPES-1044 - Resync test-count pins after the treehouse merge ([7562e9d](https://github.com/mc-innersource/motif-mcao/commit/7562e9d85818c5fd20a572f5f6990196fe6d8939))
+
 ## [0.1.15](https://github.com/mc-innersource/motif-mcao/compare/v0.1.14...v0.1.15) (2026-11-18)
 
 
