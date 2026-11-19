@@ -858,9 +858,11 @@ jobs:
       # One step runs this leg's gates once, in order, with its own target dir and test temp dir.
       # The evidence and target dirs are outside the checkout so the tree stays clean.
       - name: Native gates
+        env:
+          LEG: ${{ matrix.job }}
         run: |
           node scripts/ci/run-gates.mjs \
-            --only "$(node scripts/ci/windows-jobs.mjs macos-gates ${{ matrix.job }})" \
+            --only "$(node scripts/ci/windows-jobs.mjs macos-gates "$LEG")" \
             --evidence-dir "$RUNNER_TEMP/evidence" \
             --target-dir "$RUNNER_TEMP/target" \
             --test-tmp "$RUNNER_TEMP/tt"
