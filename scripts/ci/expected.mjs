@@ -62,7 +62,7 @@ export const WINDOWS = {
   // The shared compatibility policy replaces six obsolete chat-only helper tests.
   // DPES-1108 phase 3 user decisions (CI run 44475972106, measured on Windows): the unit binary 593 becomes 600, so 696 becomes 703.
   // DPES-1108 phase 4 adds one portable wake classification test (the executor tests are Unix-only): 703 becomes 704.
-  daemon: { passed: 704, ignored: 1, sequence: [601, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 711, ignored: 1, sequence: [608, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -163,7 +163,7 @@ export const MACOS = {
   // Six chat-only helper tests removed; the Unix executable-replacement regression adds one.
   // Running task attempts as the pstack workflow agent (DPES-1044) adds four Unix-only executor tests: 820 becomes 824 (CI run 44356323793, measured on macOS).
   // DPES-1108 phase 4 worker status adds 5 Unix executor tests and 1 wake classification test: 710 becomes 716 (CI run 44494162204, measured on macOS).
-  daemon: { passed: 846, ignored: 1, sequence: [716, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  daemon: { passed: 853, ignored: 1, sequence: [723, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -199,7 +199,7 @@ export const MACOS = {
   // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
   // The workflow agent (DPES-1044) adds 13 tests (4 daemon, 7 agents unit, 1 agents integration, 1 cli), as the macOS gate measured them in CI run 44356323793: 2281 becomes 2294.
   // DPES-1108 phase 4 worker status, measured by the macOS gate in CI run 44494162204: 2368.
-  workspace: { passed: 2368, ignored: 2 },
+  workspace: { passed: 2382, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
