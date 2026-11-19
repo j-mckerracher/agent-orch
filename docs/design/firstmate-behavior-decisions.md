@@ -429,7 +429,7 @@ DPES-1108, branch `feat/DPES-1108_integration`, based on phase 4. It merges phas
 
 ### CI pins in the integration
 
-- **I17.** `expected.mjs` counts and the two name lists were merged as each phase's change over phase 4 (three-way, by test name). The cargo counts are estimates until the first CI run of the integration PR, then re-synced with `scripts/ci/sync-expected.mjs` from that run's evidence.
+- **I17.** `expected.mjs` counts and the two name lists were merged as each phase's change over phase 4 (three-way, by test name). The cargo counts are estimates until the first CI run of the integration PR, then re-synced with `scripts/ci/sync-expected.mjs` from that run's evidence. After the main merge the macOS workspace pin was estimated at 2,468 (2,454 plus main's stated +14) and measured 2,466; the sync needed `--allow-removals` for that one number. No test is missing: every name-listed gate (daemon, store and the rest) matched its list in CI run 44553453694, and main's own pin explains the 2: main measured 2,311 on main before adding its 12 tests (2,323), while this branch's merge base pinned 2,309.
 
 ### Not verified locally in the integration
 
