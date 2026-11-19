@@ -2,7 +2,10 @@
 //!
 //! When a turn completes, the store looks up the recorded pull request of each task the turn
 //! acted on (its action block) or reported (its wake records) and keeps up to
-//! [`MAX_TURN_LINKS`] links on the turn. A URL is built only from `pull_requests.number` and the
+//! [`MAX_TURN_LINKS`] links on the turn. A coordinator's report and a routed request stand for
+//! their tasks (DPES-1108 integration): a report names its task, and a routed request is served
+//! by the tasks its coordinator owns for it, so the global turn that reads a coordinator's
+//! answer and the coordinator turn that answers both link the pull requests of that work. A URL is built only from `pull_requests.number` and the
 //! repository in `pull_request_repos`, never from reply text, so a correct link never depends on
 //! the model copying it.
 
@@ -48,9 +51,10 @@ fn link_of(task_id: String, number: i64, owner: &str, name: &str) -> Option<Pull
 }
 
 /// Writes the links of `turn_id` from the tasks its block named (`block_tasks`, in block order)
-/// and then the subjects of its wake records. A subject that is not a task, or a task with no
-/// recorded pull request or no bound repository, gives no link. Nothing is written when there
-/// are none.
+/// and then the subjects of its wake records. Each name also stands for the tasks of the
+/// coordinator report or routed request it names ([`tasks_named_by`]). A name that is no such
+/// record, or a task with no recorded pull request or no bound repository, gives no link.
+/// Nothing is written when there are none.
 pub(crate) async fn record_turn_links(
     connection: &mut SqliteConnection,
     turn_id: &str,
@@ -62,9 +66,11 @@ pub(crate) async fn record_turn_links(
             .fetch_all(&mut *connection)
             .await?;
     let mut tasks: Vec<String> = Vec::new();
-    for task in block_tasks.iter().chain(&subjects) {
-        if !tasks.contains(task) {
-            tasks.push(task.clone());
+    for name in block_tasks.iter().chain(&subjects) {
+        for task in tasks_named_by(connection, name).await? {
+            if !tasks.contains(&task) {
+                tasks.push(task);
+            }
         }
     }
     let mut links = Vec::new();
@@ -95,6 +101,38 @@ pub(crate) async fn record_turn_links(
         .execute(&mut *connection)
         .await?;
     Ok(())
+}
+
+/// The tasks `name` stands for, in order: itself (a task id, or nothing if it is not one), then
+/// the task a coordinator report of that id names, then the tasks serving the routed request it
+/// is, or that the report names, oldest first. Each id is derived in its own namespace (a routed
+/// request id also starts with `r-`), so a name matches at most one kind of record.
+async fn tasks_named_by(
+    connection: &mut SqliteConnection,
+    name: &str,
+) -> Result<Vec<String>, sqlx::Error> {
+    let mut tasks = vec![name.to_owned()];
+    let report: Option<(Option<String>, Option<String>)> =
+        sqlx::query_as("SELECT task_id, request_id FROM coordinator_reports WHERE id = ?")
+            .bind(name)
+            .fetch_optional(&mut *connection)
+            .await?;
+    let request = match report {
+        Some((task, request)) => {
+            tasks.extend(task);
+            request
+        }
+        None => Some(name.to_owned()),
+    };
+    if let Some(request) = request {
+        let serving: Vec<String> =
+            sqlx::query_scalar("SELECT id FROM tasks WHERE routed_request_id = ? ORDER BY rowid")
+                .bind(&request)
+                .fetch_all(&mut *connection)
+                .await?;
+        tasks.extend(serving);
+    }
+    Ok(tasks)
 }
 
 impl SqliteStore {

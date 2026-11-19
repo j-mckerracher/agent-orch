@@ -1016,15 +1016,20 @@ where
         .map_err(ConversationError::Store)?
 }
 
-/// The tasks an accepted block names, in block order: the target of each action, and the task a
-/// `workstream.link_task` links. Their recorded pull requests become the turn's links.
+/// The tasks an accepted block names, in block order: the target of each action, the task a
+/// `workstream.link_task` links, and the routed request a `task.propose` or a
+/// `coordinator.report` names, which [`record_turn_links`] reads as the tasks serving it
+/// (DPES-1108 integration). Their recorded pull requests become the turn's links.
 fn block_task_ids(block: &ActionBlock) -> Vec<String> {
     block
         .actions()
         .iter()
         .filter_map(|action| match action {
             Action::WorkstreamLinkTask(link) => Some(link.task_id.clone()),
-            other => other.target_task().map(str::to_owned),
+            other => other
+                .target_task()
+                .or_else(|| other.routed_request())
+                .map(str::to_owned),
         })
         .collect()
 }

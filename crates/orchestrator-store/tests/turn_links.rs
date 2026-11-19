@@ -282,3 +282,107 @@ fn a_wake_turn_links_the_pull_requests_of_the_tasks_it_reports_and_keeps_at_most
             .collect::<Vec<_>>()
     );
 }
+
+/// A coordinator's report and a routed request stand for the tasks serving the request
+/// (DPES-1108 integration). The route and the report are approved by the orchestrator itself
+/// (`agent`), as the autonomy pass approves them: the store's origin proofs accept that. The
+/// coordinator turn that answers, and the global wake turn that reads the answer, both link the
+/// pull request of the coordinator's task.
+#[test]
+fn a_coordinator_report_links_the_pull_requests_of_the_tasks_serving_its_request() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = seeded(
+        directory.path(),
+        &[("task-cccc0001", Some(21), Some(("octo", "demo")))],
+    );
+    store.restore_coordinator("p1").unwrap();
+
+    // Global routes work on its own: the route is approved as the agent and runs.
+    store
+        .begin_conversation_turn(&ConversationTarget::Global, "g1", "route it", "rt", "1.0.0")
+        .unwrap();
+    let route = store
+        .complete_conversation_turn(
+            "g1",
+            block(r#"{"kind": "coordinator.route", "project": "p-3fa9c1d2", "work": "Fix it."}"#),
+        )
+        .unwrap()
+        .unwrap();
+    store.approve_action_proposal(&route[0], "agent").unwrap();
+    let request = store
+        .create_routed_request("r-0123456789abcdef", "p1", "Fix it.", &route[0])
+        .unwrap();
+    store
+        .set_task_coordinator("task-cccc0001", "p1", Some(&request.id))
+        .unwrap();
+
+    // The coordinator answers on its own; its turn links the task serving the request.
+    let project = ConversationTarget::Project("p1".to_owned());
+    store
+        .begin_conversation_turn_as(&project, "c1", "update", "rt", "1.0.0", TurnTrigger::Wake)
+        .unwrap();
+    let held = "```mcao-actions\n{\"mcao_actions\": 1, \"actions\": [{\"kind\": \
+                \"coordinator.report\", \"verb\": \"answer\", \"note\": \"Done.\", \"request\": \
+                \"r-0123456789abcdef\"}]}\n```";
+    let report = store
+        .complete_conversation_turn(
+            "c1",
+            TurnBlock::Accepted(parse_block(held, BlockScope::Project("p-3fa9c1d2")).unwrap()),
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        store.turn_pull_request_links("c1").unwrap(),
+        vec![link("task-cccc0001", 21, "octo/demo")]
+    );
+    store.approve_action_proposal(&report[0], "agent").unwrap();
+    let answer = store
+        .record_coordinator_report(
+            "rep-1",
+            "p1",
+            orchestrator_core::charter::ReportVerb::Answer,
+            Some(&request.id),
+            None,
+            "Done.",
+            &report[0],
+        )
+        .unwrap();
+
+    // Global's wake turn for the report links the same pull request.
+    let stored = store
+        .record_wake_events(
+            &[NewWakeRecord {
+                scope: "conversation:global".to_owned(),
+                kind: WakeKind::CoordinatorReport,
+                subject: answer.id.clone(),
+                dedupe_key: format!("coordinator_report:{}", answer.id),
+                notice: "A coordinator answered.".to_owned(),
+                needs_model: true,
+            }],
+            MonitoringMode::On,
+            0,
+        )
+        .unwrap();
+    let ids: Vec<String> = stored.iter().map(|record| record.id.clone()).collect();
+    store
+        .claim_wake_batch("conversation:global", &ids, "b1", "w1", true, NOW)
+        .unwrap();
+    store
+        .begin_conversation_turn_as(
+            &ConversationTarget::Global,
+            "w1",
+            "update",
+            "rt",
+            "1.0.0",
+            TurnTrigger::Wake,
+        )
+        .unwrap();
+    store
+        .complete_conversation_turn("w1", TurnBlock::None)
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        store.turn_pull_request_links("w1").unwrap(),
+        vec![link("task-cccc0001", 21, "octo/demo")]
+    );
+}
