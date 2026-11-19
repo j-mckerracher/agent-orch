@@ -56,6 +56,7 @@ mod sqlite_actions;
 mod sqlite_approvals;
 mod sqlite_archive;
 mod sqlite_attempts;
+mod sqlite_authority;
 mod sqlite_brief;
 mod sqlite_conversation_usage;
 mod sqlite_conversations;
@@ -82,6 +83,7 @@ pub use sqlite_actions::{
     RoutedTask, TurnBlock, DEPENDENCY_NOT_EXECUTED,
 };
 pub use sqlite_archive::ArchiveError;
+pub use sqlite_authority::{AuthorityError, OriginKind, TaskOrigin, TaskOverride};
 pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
 pub use sqlite_conversations::{
     BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
