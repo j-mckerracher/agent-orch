@@ -81,7 +81,7 @@ export function ProposedActions({ decisions, held = NO_HELD }: { decisions: Surf
           {items.map((item) => (
             <li key={item.proposal.id} className="pa-row">
               <span className="rd-row-title">
-                {cardTitle(item.proposal.kind)}
+                {cardTitle(item.proposal.kind, item.proposal.params)}
                 <span>
                   <Pill tone="info">Pending approval</Pill>
                   {fixture && <Badge tone="placeholder">Fixture data</Badge>}

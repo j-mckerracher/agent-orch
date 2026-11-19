@@ -103,8 +103,9 @@ const ROWS: Row[] = [
   row("decisionsDefer", "decisions.defer", (a) => a.decisionsDefer(FX, "2026-11-21", "k"), (a) => a.decisionsDefer(REAL, "2026-11-21", "k")),
   row("decisionsReconcile", "decisions.reconcile", (a) => a.decisionsReconcile(FX, "moot", "k"), (a) => a.decisionsReconcile(REAL, "moot", "k")),
   row("pullsRefresh", "pulls.refresh", (a) => a.pullsRefresh(FX), (a) => a.pullsRefresh(REAL)),
-  row("notesList", "notes.list", (a) => a.notesList(`workstream:${FX}`), (a) => a.notesList("workstream:ws-1")),
-  row("notesSet", "notes.set", (a) => a.notesSet(`workstream:${FX}`, ["a"], "k"), (a) => a.notesSet("workstream:ws-1", ["a"], "k")),
+  row("memoryList", "memory.list", (a) => a.memoryList("preference", `workstream:${FX}`), (a) => a.memoryList("preference", "workstream:ws-1")),
+  row("memorySet", "memory.set", (a) => a.memorySet("learning", `project:${FX}`, "k", "t", "k"), (a) => a.memorySet("learning", "project:/p", "k", "t", "k")),
+  row("memoryRemove", "memory.remove", (a) => a.memoryRemove("preference", `project:${FX}`, "k", "k"), (a) => a.memoryRemove("preference", "workstream:ws-1", "k", "k")),
   row("grantsRevoke", "grants.revoke", (a) => a.grantsRevoke(FX, "k"), (a) => a.grantsRevoke(REAL, "k")),
   row(
     "grantsCreate",
@@ -154,6 +155,8 @@ const NO_ID_METHODS = new Set<string>([
   "decisionsList",
   "pullsList",
   "grantsList",
+  // The archive id is a daemon row number; no placeholder string can stand in for it.
+  "memoryRestore",
   "settingsWorkClassesGet",
   "intakeNormalize",
 ]);

@@ -824,6 +824,7 @@ export type ActionKindWire =
   | "decision.hold"
   | "decision.ask"
   | "task.message"
+  | "memory.set"
   | "project.remove";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
@@ -1242,24 +1243,72 @@ export interface GrantRevokeResultWire {
   stopped: number;
 }
 
-/** One orchestrator note on the wire (capability `standing_approvals`, DPES-1105 5b). */
-export interface NoteWire {
-  position: number;
-  body: string;
+/** A memory document's kind (capability `standing_approvals`, DPES-1108 phase 6). */
+export type MemoryKindWire = "preference" | "learning";
+
+/** Who wrote a memory entry: the user in Settings, or the orchestrator through an approved proposal. */
+export type MemoryAuthorWire = "user" | "orchestrator";
+
+/** One keyed, one-line memory entry. `stale` is the daemon's: unconfirmed for longer than `stale_after_days`. */
+export interface MemoryEntryWire {
+  key: string;
+  text: string;
+  written_by: MemoryAuthorWire;
+  created_at_ms: number;
+  confirmed_at_ms: number;
+  stale: boolean;
 }
 
-/** `notes.list` and `notes.set` result: one scope's notes in order and the limits the editor must respect. */
-export interface NotesWire {
-  /** `global`, or `workstream:` plus a workstream id. */
-  scope: string;
-  notes: NoteWire[];
-  limits: { max_notes: number; max_bytes: number };
+/** A removed or replaced entry. Nothing is deleted: a row can be restored once. */
+export interface MemoryArchivedWire {
+  id: number;
+  key: string;
+  text: string;
+  written_by: MemoryAuthorWire;
+  archived_at_ms: number;
+  reason: "removed" | "replaced";
+  restored: boolean;
 }
 
-/** `notes.set` result: the scope and how many notes it now holds. It carries no note text (the reply is cached). */
-export interface NotesSetWire {
+/**
+ * `memory.list` result: one (kind, scope) document. `scope` is `global`, `workstream:` plus an id, or `project:` plus a
+ * project id. Entries are most recently confirmed first; archived rows newest first, at most 50.
+ */
+export interface MemoryListWire {
+  kind: MemoryKindWire;
   scope: string;
-  count: number;
+  entries: MemoryEntryWire[];
+  /** Bytes used: the sum of key bytes plus text bytes of every entry. */
+  bytes: number;
+  budget: number;
+  archived: MemoryArchivedWire[];
+  limits: { max_key_bytes: number; max_text_bytes: number; stale_after_days: number | null };
+}
+
+/** `memory.set` result. It never echoes the text. `over_budget` wrote nothing; `bytes` is what the document would have been. */
+export interface MemorySetWire {
+  kind: MemoryKindWire;
+  scope: string;
+  key: string;
+  outcome: "created" | "updated" | "confirmed" | "over_budget";
+  bytes: number;
+  budget: number;
+}
+
+/** `memory.remove` result. A removed entry moves to the archive. */
+export interface MemoryRemoveWire {
+  kind: MemoryKindWire;
+  scope: string;
+  key: string;
+  removed: boolean;
+}
+
+/** `memory.restore` result. `bytes` and `budget` come with `over_budget`. */
+export interface MemoryRestoreWire {
+  archive_id: number;
+  outcome: "restored" | "over_budget";
+  bytes?: number;
+  budget?: number;
 }
 
 /** A task the global conversation routed to this workstream (DPES-1105 6a). `title` is the daemon's short objective. */

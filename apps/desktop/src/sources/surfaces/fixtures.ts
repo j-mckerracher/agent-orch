@@ -23,7 +23,7 @@ import { wallClockMs, zoneDayStart } from "./localDay";
 import { mapLocalTools, parseLocalTools } from "./localToolsLive";
 import { createSearchSource } from "./search";
 import { createFixtureGrants } from "./grants";
-import { createFixtureNotes } from "./notes";
+import { createFixtureMemory } from "./memory";
 import { createFixturePulls } from "./pulls";
 import { createFixtureHolds } from "./holds";
 import { createFixtureQuestions } from "./questions";
@@ -729,6 +729,6 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     pulls: createFixturePulls(ctx.scenario, ctx.now),
     projectDefaults: projectDefaultsSource(ctx),
     grants: createFixtureGrants(ctx.scenario, ctx.now),
-    notes: createFixtureNotes(ctx.scenario, ctx.now),
+    memory: createFixtureMemory(ctx.scenario, ctx.now),
   };
 }

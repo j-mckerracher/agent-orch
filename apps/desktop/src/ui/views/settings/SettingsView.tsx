@@ -34,7 +34,7 @@ import { HomeDirectorySection } from "./HomeDirectorySection";
 import { McpToolsSection } from "./McpToolsSection";
 import { DispatchDefaultsSection } from "./DispatchDefaultsSection";
 import { GrantsSection } from "./GrantsSection";
-import { NotesSection } from "./NotesSection";
+import { PreferencesSection } from "./PreferencesSection";
 import { RepositoriesSection } from "./RepositoriesSection";
 import { SupervisionSections } from "./SupervisionSection";
 import { useSettings, type SettingsModel } from "./useSettings";
@@ -210,7 +210,7 @@ export function SettingsView() {
       <RepositoriesSection />
       <HomeDirectorySection model={model} />
       <GrantsSection />
-      <NotesSection />
+      <PreferencesSection />
     </div>
   );
 }
