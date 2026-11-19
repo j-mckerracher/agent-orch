@@ -969,7 +969,15 @@
    "executor::tests::a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it",
    "executor::tests::a_waiting_task_is_cancelled_without_an_owner",
    "executor::tests::a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_with_the_answer",
-   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level"
+   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level",
+   "api::conversation_agent::tests::a_coordinator_turn_carries_its_charter_outside_the_app_state",
+   "api::coordinator_tests::a_coordinator_never_routes_and_the_global_conversation_never_reports",
+   "api::coordinator_tests::the_scope_sentence_is_set_by_the_user_and_shown_in_the_coordinator_view",
+   "api::coordinator_tests::routed_work_runs_under_its_coordinator_and_returns_only_through_reports",
+   "api::coordinator_tests::work_routed_to_a_project_without_a_coordinator_fails_as_not_found",
+   "api::wake::tests::a_coordinator_task_wakes_its_coordinator_and_reaches_global_only_as_a_report",
+   "api::wake::tests::an_idle_coordinator_gets_no_work_check_and_a_busy_one_gets_its_own",
+   "api::wake_events::tests::a_coordinator_report_notice_is_fixed_text_or_a_labelled_bounded_note"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1559,7 +1567,15 @@
    "an_agent_session_id_is_written_once",
    "answers_queue_replies_and_a_resume_delivers_them_once_in_a_new_session",
    "migration_0064_applies_to_a_0063_style_database_and_keeps_every_row",
-   "status_lines_are_stored_once_per_line_and_reads_continue_after_the_last"
+   "status_lines_are_stored_once_per_line_and_reads_continue_after_the_last",
+   "an_owned_task_is_supervised_by_its_coordinator_and_an_idle_coordinator_gets_no_check",
+   "a_scope_sentence_needs_an_active_coordinator_and_one_clean_line",
+   "a_task_owner_is_its_own_coordinator_written_once_with_an_open_request",
+   "a_coordinator_with_open_work_cannot_be_removed",
+   "a_request_stays_open_until_its_coordinator_answers_it_once",
+   "daemon_facts_land_only_for_owned_tasks_once_and_carry_the_request",
+   "only_an_approved_global_route_creates_a_request_and_only_for_an_active_coordinator",
+   "migrations_0069_and_0070_apply_to_a_0068_style_database_and_keep_every_row"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
