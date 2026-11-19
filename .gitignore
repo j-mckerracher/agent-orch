@@ -7,3 +7,5 @@ target/
 
 .claude/plans/
 .npmrc
+.DS_Store
+.idea/
