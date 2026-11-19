@@ -75,6 +75,7 @@ mod sqlite_settings;
 mod sqlite_supervision;
 mod sqlite_verification;
 mod sqlite_wake;
+mod sqlite_worker_status;
 mod sqlite_workstreams;
 pub use sqlite_actions::{
     ActionBlockOutcome, ActionOutcome, ActionProposal, ProposalEvent, ProposalState, ResolveError,
@@ -113,6 +114,10 @@ pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
 pub use sqlite_wake::{
     NewWakeRecord, Settle, SkipReason, StaleProposal, WakeFailure, WakeKind, WakeOutcome,
     WakeRecord, WakeState, WAKE_PAGE_SIZE,
+};
+pub use sqlite_worker_status::{
+    PendingReply, ReplyKind, ResumeTarget, StatusEvent, WaitError, WorkerQuestion,
+    MAX_QUEUED_MESSAGES,
 };
 pub use sqlite_workstreams::{
     WorkstreamRevision, WorkstreamStoreError, WorkstreamTask, WorkstreamTasks,

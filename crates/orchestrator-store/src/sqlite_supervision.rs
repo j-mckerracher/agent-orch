@@ -63,6 +63,9 @@ pub struct TaskWakeFacts {
     /// Whether the task leaves a report rather than a change. This is the executor's test for
     /// storing a report: an Investigate task, or a task of a project that runs in place.
     pub report_only: bool,
+    /// The note of the latest attempt's newest `needs-decision` or `blocked` status line, cut
+    /// to 160 bytes. Worker text, already redacted when stored. `None` when there is none.
+    pub wait_note: Option<String>,
 }
 
 /// Longest failure reason a wake fact carries, in bytes.
@@ -234,7 +237,11 @@ impl SqliteStore {
                         COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective, \
                         t.contract_json, p.id AS project_id, p.root_path AS project_root, \
                         p.settings AS project_settings, \
-                        latest.failure_reason, latest.changed_files, latest.summary \
+                        latest.failure_reason, latest.changed_files, latest.summary, \
+                        (SELECT e.note FROM task_status_events e \
+                          WHERE e.task_id = t.id AND e.attempt_id = latest.id \
+                            AND e.verb IN ('needs-decision', 'blocked') \
+                          ORDER BY e.line_no DESC LIMIT 1) AS wait_note \
                  FROM tasks t LEFT JOIN workstream_tasks ws ON ws.task_id = t.id \
                  LEFT JOIN projects p ON p.id = t.project_id \
                  LEFT JOIN attempts latest ON latest.task_id = t.id \
@@ -278,6 +285,9 @@ impl SqliteStore {
                         .try_get::<Option<String>, _>("summary")?
                         .map(|summary| cut_bytes(summary, SUMMARY_BYTES)),
                     report_only: contract.kind == TaskKind::Investigate || in_place,
+                    wait_note: row
+                        .try_get::<Option<String>, _>("wait_note")?
+                        .map(|note| cut_bytes(note, FAILURE_REASON_BYTES)),
                 })
             })
             .transpose()

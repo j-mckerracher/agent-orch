@@ -45,6 +45,10 @@ pub enum WakeKind {
     AgentFailing,
     /// A task's agent exited with changes ready for review. A wake turn reports it.
     CandidateReady,
+    /// A task's worker asked a question only the user can answer and waits (DPES-1108 phase 4).
+    WorkerNeedsDecision,
+    /// A task's worker reported that it is blocked and waits for help.
+    WorkerBlocked,
 }
 
 impl WakeKind {
@@ -60,6 +64,8 @@ impl WakeKind {
             Self::ScoutReportReady => "scout_report_ready",
             Self::AgentFailing => "agent_failing",
             Self::CandidateReady => "candidate_ready",
+            Self::WorkerNeedsDecision => "worker_needs_decision",
+            Self::WorkerBlocked => "worker_blocked",
         }
     }
 
@@ -75,6 +81,8 @@ impl WakeKind {
             "scout_report_ready" => Some(Self::ScoutReportReady),
             "agent_failing" => Some(Self::AgentFailing),
             "candidate_ready" => Some(Self::CandidateReady),
+            "worker_needs_decision" => Some(Self::WorkerNeedsDecision),
+            "worker_blocked" => Some(Self::WorkerBlocked),
             _ => None,
         }
     }
@@ -90,6 +98,8 @@ impl WakeKind {
                 | Self::WorkCheck
                 | Self::ScoutReportReady
                 | Self::CandidateReady
+                | Self::WorkerNeedsDecision
+                | Self::WorkerBlocked
         )
     }
 }

@@ -162,12 +162,23 @@ impl SqliteStore {
     /// Any other task state fails with `IllegalTransition`. A live session fails
     /// with `CancellationConflict`.
     pub fn cancel_verifying_task(&self, task_id: &str) -> Result<(), StoreError> {
+        self.cancel_without_agent(task_id, TaskState::Verifying)
+    }
+
+    /// Cancels a task whose worker is waiting (DPES-1108 phase 4), the same way as
+    /// [`Self::cancel_verifying_task`]: no process runs, so no owner confirms. The waiting
+    /// attempt ends `Cancelled`. An open question it raised stays open: only the user closes it.
+    pub fn cancel_waiting_task(&self, task_id: &str) -> Result<(), StoreError> {
+        self.cancel_without_agent(task_id, TaskState::Waiting)
+    }
+
+    fn cancel_without_agent(&self, task_id: &str, expected: TaskState) -> Result<(), StoreError> {
         validate_task_id(task_id)?;
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let state = current_task_state(&mut transaction, &task_id).await?;
-            if state != TaskState::Verifying {
+            if state != expected {
                 return Err(StoreError::IllegalTransition(TransitionError::Illegal {
                     from: state,
                     event: TaskEvent::CancelRequested,

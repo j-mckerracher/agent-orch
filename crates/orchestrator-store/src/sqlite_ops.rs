@@ -2343,6 +2343,14 @@ pub(crate) async fn apply_task_event_in(
 ) -> Result<AuditEvent, StoreError> {
     let current = current_task_state(transaction, task_id).await?;
     let (next, audit) = task_transition(current, event)?;
+    // A worker's own question must be closed before its work counts as done: the guard behind
+    // the brief's "end your turn" rule (DPES-1108 phase 4). The executor parks such a run in
+    // `Waiting`, so this refuses only a run that skipped that.
+    if event == TaskEvent::CandidateReady
+        && crate::sqlite_questions::worker_question_open(transaction, task_id).await?
+    {
+        return Err(crate::sqlite_questions::QuestionError::WorkerQuestionOpen.into());
+    }
     let state = encode(&next)?;
     let updated = sqlx::query("UPDATE tasks SET state = ?, version = version + 1 WHERE id = ?")
         .bind(state)

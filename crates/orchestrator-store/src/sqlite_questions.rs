@@ -389,6 +389,14 @@ impl SqliteStore {
             let saved = read_question(&mut transaction, &question_id)
                 .await?
                 .ok_or_else(|| corrupt("the closed question is missing".to_owned()))?;
+            // A waiting worker gets the reply when its task resumes (DPES-1108 phase 4).
+            crate::sqlite_worker_status::queue_reply_if_waiting(
+                &mut transaction,
+                &saved.task_id,
+                &question_id,
+                kind,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(saved)
         })
@@ -396,7 +404,8 @@ impl SqliteStore {
 }
 
 /// Whether `task_id` has an open question its worker raised. A scout's report is not relayed
-/// while it has one (`mark_task_report_relayed`).
+/// while it has one (`mark_task_report_relayed`), and no candidate is recorded while it has one
+/// (`apply_task_event_in`, DPES-1108 phase 4).
 pub(crate) async fn worker_question_open(
     connection: &mut SqliteConnection,
     task_id: &str,

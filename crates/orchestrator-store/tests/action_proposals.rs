@@ -1074,8 +1074,8 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         ]
     );
 
-    // Core knows exactly these thirteen kinds, and the database takes each of them.
-    const KINDS: [&str; 13] = [
+    // Core knows exactly these fourteen kinds, and the database takes each of them.
+    const KINDS: [&str; 14] = [
         "workstream.create",
         "workstream.update",
         "objective.add",
@@ -1089,6 +1089,7 @@ fn the_new_kinds_pass_the_kind_check_and_an_unknown_kind_does_not() {
         "project.remove",
         "decision.hold",
         "decision.ask",
+        "task.message",
     ];
     const RAW_KIND: &str = "INSERT INTO action_proposals \
         (id, scope, turn_id, idx, kind, params_json, digest, subject) \
