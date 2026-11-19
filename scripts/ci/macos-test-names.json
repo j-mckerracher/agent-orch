@@ -697,7 +697,6 @@
    "api::wake::tests::settings_set_with_only_a_supervision_group_leaves_the_load_limits_and_the_gate_alone",
    "api::wake::tests::the_brief_methods_take_no_unknown_parameters",
    "api::wake::tests::stall_fires_once_per_attempt_and_rule",
-   "api::wake::tests::six_wake_turns_an_hour_then_paused",
    "api::wake::tests::the_limits_survive_a_restart_for_the_new_groups_too",
    "api::wake::tests::the_return_brief_is_null_then_open_while_away_then_closed_until_acknowledged",
    "api::wake::tests::the_return_brief_never_enters_a_wake_snapshot_or_prompt",
@@ -969,7 +968,12 @@
    "executor::tests::a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it",
    "executor::tests::a_waiting_task_is_cancelled_without_an_owner",
    "executor::tests::a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_with_the_answer",
-   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level"
+   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level",
+   "api::conversation_agent::tests::every_turn_gets_the_etiquette_block_once_before_the_current_message",
+   "api::conversation_agent::tests::the_etiquette_block_is_bounded_and_uses_no_title_for_the_user",
+   "api::wake::tests::a_wake_turn_entry_carries_the_recorded_pull_request_link_of_its_task",
+   "api::wake::tests::a_work_check_past_its_share_of_the_cap_is_not_recorded_and_an_outcome_still_wakes",
+   "api::wake::tests::wake_turns_stop_at_the_default_hourly_cap"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1559,7 +1563,12 @@
    "an_agent_session_id_is_written_once",
    "answers_queue_replies_and_a_resume_delivers_them_once_in_a_new_session",
    "migration_0064_applies_to_a_0063_style_database_and_keeps_every_row",
-   "status_lines_are_stored_once_per_line_and_reads_continue_after_the_last"
+   "status_lines_are_stored_once_per_line_and_reads_continue_after_the_last",
+   "sqlite_turn_links::tests::a_link_is_built_only_from_plain_parts_and_a_positive_number",
+   "a_new_store_reads_the_new_default_wake_caps",
+   "a_turn_keeps_the_recorded_pull_requests_of_the_tasks_its_block_names",
+   "a_wake_turn_links_the_pull_requests_of_the_tasks_it_reports_and_keeps_at_most_five",
+   "migration_0071_moves_the_old_default_wake_caps_and_keeps_chosen_ones"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
