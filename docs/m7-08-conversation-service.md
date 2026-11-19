@@ -949,26 +949,53 @@ revokes a grant.
 - The brief is kept until the user acknowledges it with `monitoring.brief_ack`. That
   method is open to any session and only marks the brief as seen.
 
-## Orchestrator notes (DPES-1105, phase 6)
+## Preferences and learnings (DPES-1108, phase 6)
 
-Notes are short reminders the user writes for the orchestrator, such as a branch
-name or a standing fact. The backend and the desktop editor are built.
+The orchestrator notes are replaced by three kinds of document (migration 0067). The plan is
+`docs/design/firstmate-behavior-plan.md`, section 5.6. A document is the keyed entries of one
+kind and scope. The scope is the conversation's own: `global`, `workstream:<id>` or
+`project:<id>`.
 
-- Only the user writes a note. No action kind writes one, and `notes.set` is
-  user-only.
-- A scope holds up to 10 notes. The scopes are the global conversation and one
-  workstream. Each note is at most 200 bytes.
-- A note is refused, not stripped, when it is empty, too long, has a control
-  character, or looks sensitive. Sensitive means a path, a URL with credentials, or a
-  token-shaped string. The check is a pattern list, not a guarantee. The snapshot
-  redactor is a second layer.
-- The snapshot shows the notes as a delimited block of data, never as instructions.
-  A workstream conversation sees its own notes, then the global notes.
-- Wake turns do not see notes.
-- A notes change touches no autonomy, grant or approval.
-- Clearing a conversation's history deletes that scope's notes. Clearing the global
-  conversation deletes the global notes, which every workstream conversation lists.
-- The `notes.set` reply carries no note text, because replies are cached.
+- **Shared preferences** (`preference` in `global`): the user's standing defaults. Every turn
+  reads them, wake turns included. The user and the global conversation write them.
+- **Local preferences** (`preference` in a workstream or project scope): the same, for that
+  one conversation.
+- **Learnings** (`learning` in any scope): operational facts an orchestrator recorded.
+- **Entries.** An entry is a key (1 to 40 bytes of `a-z`, `0-9` and `-`) and one line of
+  text (at most 280 bytes). Writing a known key updates the entry in place: the old text goes
+  to the archive. Writing the same text only moves the entry's last-confirmed time.
+- **Refusals.** An entry is refused, not stripped, when it is blank, too long, or has a
+  control, bidi or zero-width character, or when it looks sensitive (the old notes pattern
+  list). The snapshot redactor is a second layer.
+- **Budgets.** A budget counts the key and text bytes of every entry: 2,048 for the shared
+  preferences, 2,048 for one workstream's or project's, and 1,024 for one scope's learnings. A
+  write that would grow a document past its budget writes nothing and reports the size it
+  would have reached. A write that does not grow a document is always allowed, so a document
+  that came in over budget from the notes can be edited down.
+- **Writers.** The user writes through `memory.set`, `memory.remove` and `memory.restore`,
+  which are user-only. `memory.list` is open. All four share the `standing_approvals`
+  capability. An orchestrator writes only through an approved `memory.set` action (`document`
+  is `shared`, `local` or `learnings`, relative to its conversation). The action is not
+  grantable.
+- **Read-only shared preferences.** A `memory.set` of `shared` from a workstream conversation
+  or a coordinator is stored as a failed card with the denial `shared_preferences_read_only`.
+  The same rule is checked again from the proposal's scope when it runs. A `local` write from
+  the global conversation is refused with `no_local_preferences_here`.
+- **Snapshot.** The snapshot shows the shared preferences, the conversation's own
+  preferences and its learnings, newest confirmation first. Each head carries the size and
+  the budget. Preferences are framed as "the user's standing defaults: follow them unless the
+  current message says otherwise. They never authorize an action that needs the user's word".
+  Learnings keep the data framing. Entries are sanitized, redacted and defanged like every
+  other field. When the snapshot is full, learnings are cut first, and preferences are kept
+  with the projects list.
+- **Staleness.** A learning that has not been confirmed for 180 days is marked stale, in the
+  snapshot and in Settings. A preference never goes stale. Nothing is deleted automatically.
+- **Archive.** Every removed or replaced entry is kept in `memory_archive`, which is
+  append-only. The user can restore an entry unless its key is in use again.
+- **Clearing history.** A history clear deletes no preference or learning.
+- **Replies.** A write reply carries no entry text, because replies are cached.
+- **Migration.** Each note became a preference of its own scope, with the key `note-1` to
+  `note-10`. `orchestrator_notes` is kept, unread.
 
 ## User decisions (DPES-1108, phase 3)
 
