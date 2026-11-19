@@ -7,7 +7,8 @@ use orchestrator_core::orchestrator_action::{parse_block, BlockScope, MAX_AUTONO
 use orchestrator_core::question::MAX_REPLY_BYTES;
 use orchestrator_core::task::{Session, SessionState, WaitReason};
 use orchestrator_store::{
-    ConversationTarget, ProposalState, ReplyKind, TurnBlock, TurnPermission, TurnTrigger,
+    ConversationTarget, ProposalState, QuestionRaiser, ReplyKind, TurnBlock, TurnPermission,
+    TurnTrigger,
 };
 
 use super::actions::project_code;
@@ -379,8 +380,8 @@ fn waiting_task(api: &DaemonApi, key: &str) -> String {
     id
 }
 
-/// `tasks.message` queues the user's words for a waiting task only, and the same key queues
-/// once.
+/// `tasks.message` queues the user's words for a waiting task with no open question, and the
+/// same key queues once.
 #[test]
 fn tasks_message_takes_a_waiting_task_and_refuses_the_rest() {
     let (_directory, api) = new_api();
@@ -416,6 +417,27 @@ fn tasks_message_takes_a_waiting_task_and_refuses_the_rest() {
             "{key}"
         );
     }
+
+    // A worker that waits on an open question takes no user message until it closes.
+    let asked = waiting_task(&api, "waiting-2");
+    api.store
+        .raise_question(
+            "q-asked",
+            &asked,
+            "Which?",
+            &[],
+            None,
+            QuestionRaiser::Worker,
+        )
+        .unwrap();
+    assert_eq!(
+        call(
+            &api,
+            "tasks.message",
+            json!({"task_id": asked, "text": "Hello.", "idempotency_key": "m-7"})
+        ),
+        Err(RpcError::Conflict)
+    );
 
     let sent = json!({"task_id": task, "text": "Use the other branch.", "idempotency_key": "m-6"});
     let reply = call(&api, "tasks.message", sent.clone()).unwrap();

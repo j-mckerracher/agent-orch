@@ -1288,8 +1288,9 @@ impl DaemonApi {
 
     /// `tasks.message` (DPES-1106, user-only): the user's own words to a waiting task. They
     /// queue as the user's, not the orchestrator's, and the scheduler resumes the worker with
-    /// them. An unknown task is `NotFound`. A task that does not wait, or a full queue of the
-    /// user's messages, is `Conflict`. Text the reply rules refuse is `InvalidParams`.
+    /// them. An unknown task is `NotFound`. A task that does not wait, a task with an open
+    /// question, or a full queue of the user's messages, is `Conflict`. Text the reply rules
+    /// refuse is `InvalidParams`.
     fn message_task(&self, params: Value) -> Result<Value, RpcError> {
         let request: UserMessageParams = parse_params(params)?;
         let key = request.idempotency_key.clone();
@@ -1309,7 +1310,9 @@ impl DaemonApi {
                         MessageAuthor::User,
                     )
                     .map_err(|error| match WaitError::of(&error) {
-                        Some(WaitError::NotWaiting | WaitError::QueueFull) => RpcError::Conflict,
+                        Some(
+                            WaitError::NotWaiting | WaitError::QueueFull | WaitError::QuestionOpen,
+                        ) => RpcError::Conflict,
                         Some(WaitError::BadLine) => RpcError::InvalidParams,
                         _ => map_store_error(error),
                     })?;

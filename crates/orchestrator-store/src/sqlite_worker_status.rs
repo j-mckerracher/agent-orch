@@ -122,6 +122,12 @@ pub enum WaitError {
     NotWaiting,
     /// The task already holds [`MAX_QUEUED_MESSAGES`] undelivered messages.
     QueueFull,
+    /// The task has an open question, which holds the task until it closes. A user's message
+    /// is refused rather than left to wait behind it.
+    QuestionOpen,
+    /// The task's undelivered replies are not the ones its resume was planned with: one was
+    /// queued after they were read. Nothing is written, and the next pass plans the resume again.
+    ReplyChanged,
     /// A reply named for delivery is not an undelivered reply of the task.
     UnknownReply,
     /// A worker question or a status line breaks a rule of the core parser.
@@ -133,6 +139,8 @@ impl fmt::Display for WaitError {
         formatter.write_str(match self {
             Self::NotWaiting => "the task is not waiting for a reply",
             Self::QueueFull => "the task already holds the most messages it can wait with",
+            Self::QuestionOpen => "the task is waiting on a question",
+            Self::ReplyChanged => "the task's replies changed before its resume started",
             Self::UnknownReply => "a reply is not an undelivered reply of the task",
             Self::BadLine => "a status line or a worker question is not accepted",
         })
@@ -421,6 +429,18 @@ impl SqliteStore {
             let Some(attempt_id) = waiting_attempt(&mut transaction, &task_id).await? else {
                 return Err(WaitError::NotWaiting.into());
             };
+            // A worker resumes only once its questions close (`tasks_ready_to_resume`), so a
+            // user's message sent now would wait behind the question. Refuse it instead.
+            let asked: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM decision_holds WHERE subject_kind = 'question' \
+                 AND state = 'active' AND subject_id = ?)",
+            )
+            .bind(&task_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if asked && author == MessageAuthor::User {
+                return Err(WaitError::QuestionOpen.into());
+            }
             let queued: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM task_messages WHERE task_id = ? AND kind = 'message' \
                  AND author = ? AND delivered_session_id IS NULL",
@@ -503,7 +523,7 @@ impl SqliteStore {
                             "orchestrator" => ReplyKind::Message,
                             "user" => ReplyKind::UserMessage,
                             other => {
-                                return Err(corrupt(format!("unknown message author {other:?}")))
+                                return Err(corrupt(format!("unknown message author {other:?}")));
                             }
                         },
                         other => return Err(corrupt(format!("unknown reply kind {other:?}"))),
@@ -557,6 +577,19 @@ impl SqliteStore {
                     session_id: session.id,
                     state: session.state,
                 });
+            }
+            // The caller read the replies before this transaction. One queued since would be
+            // left undelivered by this resume, so the resume is refused until it is planned again.
+            let undelivered: BTreeSet<i64> = sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM task_messages WHERE task_id = ? AND delivered_session_id IS NULL",
+            )
+            .bind(&task_id)
+            .fetch_all(&mut *transaction)
+            .await?
+            .into_iter()
+            .collect();
+            if undelivered != reply_ids.iter().copied().collect::<BTreeSet<i64>>() {
+                return Err(WaitError::ReplyChanged.into());
             }
             sqlx::query(
                 "INSERT INTO sessions (id, task_id, attempt_id, adapter, state, agent_session_id) \
@@ -706,8 +739,11 @@ pub(crate) async fn queue_reply_if_waiting(
         crate::sqlite_questions::ClosingKind::Answer => ReplyKind::Answer,
         crate::sqlite_questions::ClosingKind::Reconcile => ReplyKind::Reconcile,
     };
+    // Only the user's own RPCs close a question (`decisions.answer`, `decisions.reconcile`), so
+    // the reply is the user's.
     sqlx::query(
-        "INSERT INTO task_messages (task_id, attempt_id, kind, question_id) VALUES (?, ?, ?, ?)",
+        "INSERT INTO task_messages (task_id, attempt_id, kind, question_id, author) \
+         VALUES (?, ?, ?, ?, 'user')",
     )
     .bind(task_id)
     .bind(&attempt_id)
