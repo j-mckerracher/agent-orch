@@ -1779,7 +1779,9 @@ mod tests {
         assert!(!mixed.contains(PROCEDURE_FAILURE));
         let quiet = prompt(vec![WakeKind::WorkCheck, WakeKind::DaemonStart]);
         assert!(!quiet.contains("Procedure,"));
-        assert!(!build_prompt(&request("x", vec![])).content.contains("Procedure,"));
+        assert!(!build_prompt(&request("x", vec![]))
+            .content
+            .contains("Procedure,"));
     }
 
     fn mcp_view(dir: &Path) -> Arc<crate::mcp_server::McpView> {
