@@ -19,8 +19,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use orchestrator_core::scheduler::StartGate;
 use orchestrator_core::supervision::{
-    admit, stalled, Activity, Admission, Clock, Debounce, MonitoringMode, PauseReason, Stall,
-    HOUR_MS, STALL_QUIET_FLOOR,
+    admit, admits_heartbeat, stalled, Activity, Admission, Clock, Debounce, MonitoringMode,
+    PauseReason, Stall, HOUR_MS, STALL_QUIET_FLOOR,
 };
 use orchestrator_core::task::TaskState;
 use orchestrator_diagnostics::Diagnostics;
@@ -715,7 +715,18 @@ impl WakeService {
                     continue;
                 }
                 state.last_check_ms.insert(load.scope.clone(), now);
-                if settings.mode.runs_wake_turns() && !outstanding.contains(&load.scope) {
+                // A work check past its share of the caps is not recorded at all, so it leaves
+                // no skipped line behind; the next one is an interval later (DPES-1108 phase 8).
+                if settings.mode.runs_wake_turns()
+                    && !outstanding.contains(&load.scope)
+                    && admits_heartbeat(
+                        &settings.wake_limits,
+                        &self
+                            .store
+                            .wake_usage(&load.scope, now)
+                            .map_err(|_| "cannot read wake usage".to_owned())?,
+                    )
+                {
                     records.push(NewWakeRecord {
                         scope: load.scope.clone(),
                         kind: WakeKind::WorkCheck,

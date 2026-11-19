@@ -73,6 +73,7 @@ mod sqlite_reports;
 mod sqlite_review;
 mod sqlite_settings;
 mod sqlite_supervision;
+mod sqlite_turn_links;
 mod sqlite_verification;
 mod sqlite_wake;
 mod sqlite_worker_status;
@@ -111,6 +112,7 @@ pub use sqlite_settings::{
     SettingsPatch, SupervisionPatch, SupervisionSettings, WakeLimitsPatch,
 };
 pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
+pub use sqlite_turn_links::{PullRequestLink, MAX_TURN_LINKS};
 pub use sqlite_wake::{
     NewWakeRecord, Settle, SkipReason, StaleProposal, WakeFailure, WakeKind, WakeOutcome,
     WakeRecord, WakeState, WAKE_PAGE_SIZE,

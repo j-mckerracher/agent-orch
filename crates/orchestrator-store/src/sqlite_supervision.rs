@@ -737,7 +737,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(cleared.wake_limits.hourly, None);
-        assert_eq!(cleared.wake_limits.daily, Some(40));
+        assert_eq!(cleared.wake_limits.daily, Some(160));
         assert_eq!(cleared.wake_limits.daily_tokens, Some(5_000));
         let back = store
             .update_orchestrator_settings(&SettingsPatch {
@@ -751,7 +751,7 @@ mod tests {
             .unwrap();
         assert_eq!(back.wake_limits.hourly, Some(3));
         assert_eq!(back.wake_limits.daily_tokens, None);
-        assert_eq!(back.wake_limits.daily, Some(40));
+        assert_eq!(back.wake_limits.daily, Some(160));
     }
 
     #[test]
