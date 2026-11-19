@@ -26,6 +26,7 @@ import { createFixtureGrants } from "./grants";
 import { createFixtureNotes } from "./notes";
 import { createFixturePulls } from "./pulls";
 import { createFixtureHolds } from "./holds";
+import { createFixtureQuestions } from "./questions";
 import type {
   ActionProposal,
   ActivitySnapshot,
@@ -724,6 +725,7 @@ export function createFixtureSurfaces(options: SurfaceFixtureOptions = {}): Surf
     settings: settingsSource(ctx, options.settingsGate ?? "open"),
     monitoring: monitoringSource(ctx),
     holds: createFixtureHolds(ctx.scenario, ctx.now),
+    questions: createFixtureQuestions(ctx.scenario, ctx.now),
     pulls: createFixturePulls(ctx.scenario, ctx.now),
     projectDefaults: projectDefaultsSource(ctx),
     grants: createFixtureGrants(ctx.scenario, ctx.now),

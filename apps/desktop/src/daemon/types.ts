@@ -819,6 +819,7 @@ export type ActionKindWire =
   | "workstream.link_task"
   | "task.revise"
   | "decision.hold"
+  | "decision.ask"
   | "project.remove";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
@@ -1080,6 +1081,36 @@ export interface HoldResultWire {
 /** `holds.list` result: the holds in force now. */
 export interface HoldsListWire {
   holds: HoldWire[];
+}
+
+/** One question for the user, bound to a task (capability `holds`). Kinds and states stay strings so a new value degrades. */
+export interface QuestionWire {
+  id: string;
+  task_id: string;
+  task_title: string;
+  /** A `p-xxxxxxxx` project code, or "". */
+  project: string;
+  question: string;
+  options: string[];
+  key: string | null;
+  /** `orchestrator` or `worker`. */
+  raised_by: string;
+  /** `open`, `answered` or `reconciled`. */
+  state: string;
+  /** `YYYY-MM-DD` while a deferral is in the future, else null. */
+  deferred_until: string | null;
+  created_at: string;
+  closing: { kind: string; text: string; recorded_at: string } | null;
+}
+
+/** `decisions.list` result: every open question, oldest first. */
+export interface QuestionsListWire {
+  questions: QuestionWire[];
+}
+
+/** `decisions.answer`, `decisions.defer` and `decisions.reconcile` result. */
+export interface QuestionResultWire {
+  question: QuestionWire;
 }
 
 /** One check of a pull request. `name` is remote text; `result` is the host's word for the outcome (pass, fail, pending). */

@@ -33,6 +33,7 @@ import { createLiveGrants, GRANTS_METHODS } from "./grants";
 import { createLiveNotes, NOTES_METHODS } from "./notes";
 import { createLivePulls, PULLS_METHODS } from "./pulls";
 import { createLiveHolds, HOLDS_METHODS } from "./holds";
+import { createLiveQuestions, QUESTIONS_METHODS } from "./questions";
 import { createLiveProjectDefaults, PROJECT_DEFAULTS_METHODS } from "./projectDefaults";
 import { createLiveSettings, SETTINGS_METHODS } from "./settingsLive";
 import { createLiveLocalToolsSource } from "./localToolsLive";
@@ -287,6 +288,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const monitoring = createLiveMonitoring(connection, prov("D10", MONITORING_METHODS), keys, now);
   // Holds hide decisions, so they carry the decision queue's id (D16).
   const holds = createLiveHolds(connection, prov("D16", HOLDS_METHODS), keys, now);
+  const questions = createLiveQuestions(connection, prov("D16", QUESTIONS_METHODS), keys, now);
   const pulls = createLivePulls(connection, prov("D16", PULLS_METHODS), now);
   const projectDefaults = createLiveProjectDefaults(connection, prov("D17", PROJECT_DEFAULTS_METHODS), keys, now);
   const grants = createLiveGrants(connection, prov("D17", GRANTS_METHODS), keys, now);
@@ -305,6 +307,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     settings,
     monitoring,
     holds,
+    questions,
     pulls,
     projectDefaults,
     grants,

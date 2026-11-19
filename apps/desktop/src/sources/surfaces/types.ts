@@ -983,6 +983,36 @@ export interface HoldsSource {
   release(holdId: string): Promise<HoldReceipt>;
 }
 
+// Questions for the user (DPES-1108). Derived: decisions.list / decisions.answer / decisions.defer (capability `holds`).
+/** One open question bound to a task. Only the user answers it. */
+export interface QuestionItem {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  question: string;
+  options: string[];
+  /** `YYYY-MM-DD` while a deferral is in the future, else null. A deferred question stays open. */
+  deferredUntil: string | null;
+  state: string;
+}
+
+export interface QuestionReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  question: QuestionItem;
+}
+
+export interface QuestionsSource {
+  readonly provenance: Provenance;
+  /** Every open question, oldest first. Derived: `decisions.list`. Fixture: one question. */
+  list(): Promise<SurfaceResult<QuestionItem[]>>;
+  /** Derived: `decisions.answer`, user-only; the answer is sent exactly as given. It rejects on failure. */
+  answer(questionId: string, answer: string): Promise<QuestionReceipt>;
+  /** Derived: `decisions.defer`, user-only (`until` is `YYYY-MM-DD`). It rejects on failure. */
+  defer(questionId: string, until: string): Promise<QuestionReceipt>;
+}
+
 // Project defaults (DPES-1105 Phase 4). Derived: projects.get_defaults / projects.set_defaults (capability `projects`).
 /** A project's delivery defaults. The mode and merge method stay the daemon's strings; the form offers the known ones. */
 export interface ProjectDefaults {
@@ -1132,6 +1162,7 @@ export interface SurfaceSources {
   settings: SettingsSource;
   monitoring: MonitoringSource;
   holds: HoldsSource;
+  questions: QuestionsSource;
   pulls: PullsSource;
   projectDefaults: ProjectDefaultsSource;
   grants: GrantsSource;

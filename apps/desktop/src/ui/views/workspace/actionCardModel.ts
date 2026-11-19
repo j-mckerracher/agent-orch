@@ -32,6 +32,7 @@ const KINDS: Readonly<Record<string, KindCopy>> = {
   "workstream.link_task": { heading: "Link task", done: "Linked" },
   "task.revise": { heading: "Revise task", done: "Revision started" },
   "decision.hold": { heading: "Hold decision", done: "Held" },
+  "decision.ask": { heading: "Ask for your decision", done: "Asked" },
   "project.remove": { heading: "Remove project", done: "Removed" },
   "delivery.merge": { heading: "Merge pull request", done: "Merged" },
 };
@@ -233,7 +234,8 @@ function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
     p.kind === "task.retry" ||
     p.kind === "workstream.link_task" ||
     p.kind === "task.revise" ||
-    p.kind === "decision.hold"
+    p.kind === "decision.hold" ||
+    p.kind === "decision.ask"
   ) {
     return shorten(p.target?.taskTitle || text(p.params.task_id));
   }
@@ -371,6 +373,14 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("What happens", HOLD_EFFECT),
         field("Task id", text(x.task_id)),
       ];
+    case "decision.ask":
+      return [
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task state now", p.target?.taskState ?? "(not available)"),
+        field("Question", linesOf(text(x.question))),
+        field("Options", Array.isArray(x.options) ? x.options.map(text) : []),
+        field("Task id", text(x.task_id)),
+      ];
     case "delivery.merge": {
       const pull = p.target?.pull;
       const verdict = mergeVerdict(pull, p.denial);
@@ -483,6 +493,7 @@ export function openTaskId(p: ActionProposal): string | null {
     case "task.cancel":
     case "task.retry":
     case "decision.hold":
+    case "decision.ask":
     case "delivery.merge":
       return text(p.params.task_id) || null;
     case "task.revise":
@@ -507,6 +518,8 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
       return `Revision started for “${subjectOf(p, names)}”. The old attempt is stopping and a new task is queued.`;
     case "decision.hold":
       return `Held the decision for “${subjectOf(p, names)}” until ${formatHoldDay(text(p.params.until), true)}.`;
+    case "decision.ask":
+      return `Asked you about “${subjectOf(p, names)}”. Answer it under Needs your decision in Review & Decisions.`;
     case "project.remove":
       return `Removed project “${subjectOf(p, names)}”. Its tasks stay in history.`;
     case "delivery.merge":

@@ -78,6 +78,8 @@ import type {
   NotesWire,
   HoldResultWire,
   HoldsListWire,
+  QuestionResultWire,
+  QuestionsListWire,
   PullsListWire,
   PullsRefreshWire,
 } from "./types";
@@ -736,6 +738,26 @@ export class DaemonApi {
   /** DPES-1105 Phase 4. The holds in force now. A read. */
   async holdsList(): Promise<HoldsListWire> {
     return this.session.request("holds.list", {});
+  }
+
+  /** DPES-1108. Every open question for the user, oldest first. A read; needs `holds`. */
+  async decisionsList(): Promise<QuestionsListWire> {
+    return this.session.request("decisions.list", {});
+  }
+
+  /** DPES-1108. Answers a question with the user's exact words, sent as typed. User-only. */
+  async decisionsAnswer(questionId: string, answer: string, idempotencyKey: string): Promise<QuestionResultWire> {
+    return this.session.request("decisions.answer", { question_id: realId(questionId), answer, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108. Defers a question until a date (`YYYY-MM-DD`); it stays open. User-only. */
+  async decisionsDefer(questionId: string, until: string, idempotencyKey: string): Promise<QuestionResultWire> {
+    return this.session.request("decisions.defer", { question_id: realId(questionId), until, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108. Closes a question that became moot, with evidence text. User-only. */
+  async decisionsReconcile(questionId: string, evidence: string, idempotencyKey: string): Promise<QuestionResultWire> {
+    return this.session.request("decisions.reconcile", { question_id: realId(questionId), evidence, idempotency_key: idempotencyKey });
   }
 
   /** DPES-1105 Phase 4c. The pull requests the daemon watches. A read; needs `landing`. */
