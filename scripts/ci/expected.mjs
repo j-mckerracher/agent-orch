@@ -106,7 +106,7 @@ export const WINDOWS = {
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 352 becomes 353 passed.
   // Workstream priority adds 2 portable workstreams.rs tests: 13 becomes 15, so 359 becomes 361 passed.
   // DPES-1108 phase 3 user decisions add the decision_questions binary (8 tests): 378 becomes 386 (CI run 44475972106).
-  store: { passed: 386, ignored: 1, sequence: [113, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 15, 0] },
+  store: { passed: 399, ignored: 1, sequence: [113, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 3, 2, 7, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 112 },
@@ -216,7 +216,7 @@ export const MACOS = {
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 356 becomes 357 passed.
   // Workstream priority adds 2 workstreams.rs tests: 13 becomes 15, so 363 becomes 365 passed.
   // DPES-1108 phase 3 user decisions add the decision_questions binary (8 tests): 382 becomes 390 (CI run 44475972106).
-  store: { passed: 390, ignored: 1, sequence: [115, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 4, 2, 5, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 15, 0] },
+  store: { passed: 403, ignored: 1, sequence: [115, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 4, 2, 7, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 114 },
@@ -285,7 +285,7 @@ export const NODE_SELF_TESTS = { passed: 147 };
 // Windows desktop-vitest gate measured them in CI run 44380025826.
 // DPES-1108 phase 3 (Needs your decision list, decision.ask card) adds one file: 127 files, 2379 tests (CI run 44475972106).
 // DPES-1108 phase 4 (the task.message card) adds one test in actionCardModel.test.ts: 2380 tests.
-export const VITEST = { files: 127, tests: 2380 };
+export const VITEST = { files: 127, tests: 2391 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
