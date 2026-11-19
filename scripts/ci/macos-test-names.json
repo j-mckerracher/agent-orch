@@ -963,7 +963,13 @@
    "api::decisions_tests::an_answer_is_stored_verbatim_closes_once_and_frees_the_task",
    "api::decisions_tests::an_approved_ask_raises_one_question_that_holds_its_task",
    "api::decisions_tests::an_ask_on_a_missing_task_fails_and_raises_nothing",
-   "api::decisions_tests::the_methods_refuse_unknown_questions_and_bad_text"
+   "api::decisions_tests::the_methods_refuse_unknown_questions_and_bad_text",
+   "api::wake_events::tests::a_worker_wait_wakes_with_its_kind_and_its_note_as_redacted_data",
+   "executor::tests::a_failed_report_fails_the_attempt_and_a_done_claim_does_not_make_a_candidate",
+   "executor::tests::a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it",
+   "executor::tests::a_waiting_task_is_cancelled_without_an_owner",
+   "executor::tests::a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_with_the_answer",
+   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
