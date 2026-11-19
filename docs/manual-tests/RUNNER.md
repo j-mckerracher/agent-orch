@@ -105,7 +105,7 @@ P7. Do 00-setup.md sections 5 and 6. The screenshots show Claude Code, "Sonnet (
     "medium" in Settings > Agent dispatch defaults and in the Workspace model settings chip.
 P8. Start the prompt capture (00-setup.md section 7). In Workspace, with Global chosen, send
     `Reply with exactly: pong`. A reply containing pong appears within 4 minutes. In
-    ~/agent-orch-manual-test/logs/prompts.log, the newest entry has --model sonnet and --effort
+    $HOME/agent-orch-manual-test/logs/prompts.log, the newest entry has --model sonnet and --effort
     medium. If the log is empty, P8 still passes, but every Prompt log check in the run is
     BLOCKED with "prompt capture found no command line". Save the reply as
     replies/PREFLIGHT-P8-a1.txt.
