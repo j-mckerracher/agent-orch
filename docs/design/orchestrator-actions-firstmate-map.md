@@ -1,6 +1,6 @@
 # Firstmate capability map (DPES-1105)
 
-Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `347c7ab`. Refreshed from `89bfc8b2d`; rows D16, D17, F8, W1 and I6 are new. The firstmate behavior plan is [firstmate-behavior-plan.md](firstmate-behavior-plan.md).
+Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `347c7ab`. Refreshed from `89bfc8b2d`; rows D16, D17, F8, W1 and I6 are new. Rows H2 and D11 were updated by DPES-1108 phase 3 and phase 4 (worker status, waits, steering by resume). The firstmate behavior plan is [firstmate-behavior-plan.md](firstmate-behavior-plan.md).
 
 ## Source and method
 
@@ -21,8 +21,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | Status | Count |
 | --- | --- |
-| HAVE | 48 |
-| PARTIAL | 17 |
+| HAVE | 49 |
+| PARTIAL | 16 |
 | GAP | 8 |
 | Total | 73 |
 
@@ -40,7 +40,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | D8 | Turn-end guard: no turn ends blind while work runs | HAVE | Obligations live in the store, not model memory: the service arms a `work_check` per scope while work exists and re-raises `proposal_waiting` and `delivery_waiting` from `pending_wake_records`. A notice is committed before any turn starts. |
 | D9 | Durable wake queue, acknowledged only after handling | HAVE | `wake_records` states noticed, pending, running, handled, skipped, failed; a record closes only after its turn settles; `monitoring.ack` marks it seen. Dedupe and debounce: `orchestrator-core/src/supervision.rs`. |
 | D10 | Stuck and wedged worker detection | HAVE | `supervision::stalled`: over wall time (default 120 min) or no session event for `max(interval, 5 min)`. Deterministic, no model call, yields a `task_stalled` notice. There is no worktree-change signal. |
-| D11 | Steer a running worker with text | PARTIAL | `task.revise` (never grantable) cancels the task and creates a new one with the added intent (max 2 KiB), linked in `task_lineage`. Still no steering of a live process and no `task.message`. Plan: `firstmate-behavior-plan.md` phase 4. |
+| D11 | Steer a running worker with text | PARTIAL | A worker that reports `needs-decision` or `blocked` on its status file ends its turn and its task waits (`TaskState::Waiting`, no process, slot kept). The user's answer (`decisions.answer`, `decisions.reconcile`) or an approved `task.message` resumes the same CLI session with the reply as the next prompt (`claude --resume`, `codex exec resume`, `copilot --resume`; DPES-1108 phase 4, `executor.rs`, `task_messages`). `task.revise` (never grantable) still cancels and replaces a task for a change of scope. Missing: text for a worker that is still running (only a waiting one takes a message), and a Codex Auto task cannot resume at its level, so it fails closed. |
 | D12 | Interrupt, exit and relaunch a worker | HAVE | `tasks.cancel`, `tasks.retry` and the `task.cancel`, `task.retry` proposals. |
 | D13 | Busy state is semantic, per adapter | HAVE | Adapter parsers (`codex_parser.rs`, `copilot_parser.rs`, Claude stream JSON) feed `sessions.events`. |
 | D15 | Watch live worker output | HAVE | Agents and Sessions view over `sessions.list`, `sessions.events` with replay. |
@@ -76,7 +76,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | H1 | Escalate only real decisions, in outcome words | HAVE | `wake_events.rs::classify` is pure and runs in code; `needs_model` is false for `delivery_waiting`, so the user is notified without a model turn. |
-| H2 | A decision is a task held for the user | PARTIAL | Approvals (`approvals.*`), action cards (`actions.*`), `decision_holds` (`decision.hold`, `holds.*`) and, since DPES-1108 phase 3, questions: `decision_holds` rows of kind `question` bound to a task, raised by `decision.ask`, closed only by the user's verbatim answer (`decisions.answer`) or evidence (`decisions.reconcile`), recorded append-only in `decision_answers`. An open question blocks scheduling (`AwaitingDecision`) and is listed under Needs your decision. Missing: worker `needs-decision` and the `Waiting` state. Plan phase 4. |
+| H2 | A decision is a task held for the user | HAVE | Approvals (`approvals.*`), action cards (`actions.*`), `decision_holds` (`decision.hold`, `holds.*`) and questions: `decision_holds` rows of kind `question` bound to a task, raised by `decision.ask` (phase 3) or by the task's own worker when it reports `needs-decision` (phase 4), closed only by the user's verbatim answer (`decisions.answer`) or evidence (`decisions.reconcile`), recorded append-only in `decision_answers`. An open question blocks scheduling (`AwaitingDecision`) and holds its task in `Waiting`, and the answer resumes the worker. No candidate is recorded while a worker's own question is open. Listed under Needs your decision. |
 | H3 | Never merge without the user's explicit word | HAVE | Approval integrity: the approval binds kind, parameter digest, candidate commit and task, and agents cannot approve (`orchestrator-core/src/approval.rs`). |
 | H4 | Never tear down unlanded work | PARTIAL | `orchestrator_git::delivery::check_worktree_safe_to_delete` guards the CLI `cleanup`, and delivery never merges. The daemon returns a task slot on archive or merge (`slot_returned`, `api.rs`) with no check for finished-but-unlanded local work. Plan phase 5. |
 | H5 | Policy for validation findings that ask the user | PARTIAL | A `candidate_ready` wake runs a turn that reads the attempt summary and changed-file count. Review findings (`review.request_changes`) are not routed to the orchestrator as decision cards. |

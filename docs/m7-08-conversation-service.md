@@ -915,7 +915,7 @@ revokes a grant.
   `workstream.update` (title and summary only, never a change of `state`),
   `objective.add`, `objective.revise`, `task.propose`, `task.retry` and
   `workstream.link_task`. A grant names at most 16 kinds. `decision.hold`,
-  `decision.ask` and `workstream.create` are not grantable in this build.
+  `decision.ask`, `task.message` and `workstream.create` are not grantable in this build.
 - **Never grantable.** The code's `NEVER_GRANTABLE` list has three entries:
   `project.remove`, `task.cancel` and `task.revise`. `delivery.merge` is covered only by
   a merge grant, which may name no other kind (see `orchestrator-actions.md`).
@@ -978,8 +978,8 @@ A user decision is a question held for the user and bound to one task. It is a
 
 - **Raising.** The orchestrator proposes `decision.ask` (`task_id`, `question`, optional
   `options`, optional `key`). Like every action it waits for the user's approval in this
-  build. A later phase raises a question from a worker with `SqliteStore::raise_question`
-  and `QuestionRaiser::Worker`. A question is at most 1,024 bytes, up to 6 one-line
+  build. A worker raises one when it reports `needs-decision` (phase 4, below); the
+  store records it with `QuestionRaiser::Worker`. A question is at most 1,024 bytes, up to 6 one-line
   options of at most 200 bytes, and a key of lowercase letters, digits and `-`. One
   open question per task and key: asking again with the key returns the open one.
 - **Holding.** While a question is open, deferred or not, its task does not start. The
@@ -1010,6 +1010,50 @@ A user decision is a question held for the user and bound to one task. It is a
 - **Snapshot.** The chat snapshot lists open questions as data: the count, then one
   line per question with its id, its task and the question cut to 80 bytes. The
   answers are never shown.
+
+## Worker status, waits and steering (DPES-1108, phase 4)
+
+A task worker is a headless CLI run with no input channel. It reports on a status file and
+waits by ending its turn; a reply reaches it by resuming its own CLI session. The plan is
+`docs/design/firstmate-behavior-plan.md`, section 5.3; the judgment calls are in
+`docs/design/firstmate-behavior-decisions.md`.
+
+- **Status file.** `<data dir>/task-status/<task id>/<attempt number>/status`, owner-only,
+  created empty before the agent starts and named in the brief. It is the one path outside
+  the worktree the run may write: Claude and Codex `exec` get `--add-dir <dir>`, Copilot gets
+  `--add-dir <dir>` and, below Full, `--allow-tool write(<dir>/**)`. A CLI whose `--help` lacks
+  one of these flags still runs, without the channel, and the attempt logs
+  `status_channel_unsupported`.
+- **Lines.** One per event: `<verb> [key=<slug>] <text>`, verbs `working`, `needs-decision`
+  (the text is the question), `blocked`, `done`, `failed`. The daemon reads the file about
+  once a second while the run lives and once more at exit (`orchestrator_core::worker_status`):
+  at most 1,120 bytes a line, 20 lines a read, 200 lines an attempt. A line is refused, never
+  repaired; only its number and refusal code are logged. Accepted lines are redacted and
+  stored in `task_status_events`. A link or a non-regular file is not read.
+- **Settling a clean exit.** A `needs-decision` line (or else a `blocked` line) in the run
+  parks the task: the session ends, the attempt and the task go to `Waiting`, and up to three
+  of the worker's questions are raised for the user, in one transaction. A `failed` line
+  fails the attempt with the worker's reason. A `done` line is only a claim: the candidate
+  commit and verification decide, so an Implement task that changed nothing still fails. A
+  pending cancel wins over all of these. A run that exited with an error fails as before.
+- **Waiting.** No process runs and no worker slot is counted; the worktree stays leased.
+  Stall detection and work checks ignore the task. A restart keeps it waiting. It can be
+  cancelled at once (`tasks.cancel`), and it cannot be archived. Wakes:
+  `worker_needs_decision` and `worker_blocked`, with the worker's note in the notice as
+  redacted data.
+- **Replies.** Closing a question of a waiting task (`decisions.answer`,
+  `decisions.reconcile`) queues the reply in the same transaction (`task_messages`). The
+  orchestrator may propose `task.message` (`task_id`, `text` up to 4,096 bytes); like every
+  action it waits for the user's approval in this build, and only a waiting task takes one,
+  at most two undelivered at a time.
+- **Resume.** A waiting task with a reply and no open question is planned by the scheduler
+  under the same caps and load gate as a start. The daemon resumes the same CLI session in
+  the same worktree at the same permission level, with the replies as the next prompt (at
+  most 28,000 bytes): `claude -p ... --resume <id>`, `copilot --prompt=... --resume=<id>`,
+  `codex exec resume ... -- <id> <prompt>`. Each resume is a new session record of the same
+  attempt, and the replies are marked delivered in the transaction that starts it. A run
+  that cannot resume at the same level fails closed with a reason: Codex at Auto (`exec
+  resume` has no `--approve-for-me`), or a session whose CLI id is unknown.
 
 ## Not covered here
 

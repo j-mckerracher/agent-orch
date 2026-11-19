@@ -180,7 +180,7 @@ Each phase is one PR with its prose and its guard together, and is useful on its
 | 1 | Instruction layering | `core/instructions.rs`, `api_conversation_agent.rs` | Core contract plus trigger-selected procedures; ceilings asserted; existing behavior unchanged. |
 | 2 | Worker brief and role contract | `core/brief.rs`, `core/contract.rs`, `executor.rs`, task form in `apps/desktop` | Every attempt launches from a rendered brief; intent stored verbatim; golden tests per kind and mode. |
 | 3 | User decisions | migration on `decision_holds`, `core`, `store`, decisions list in UI | Question records with verbatim answers; open question blocks scheduling; close guard tested. |
-| 4 | Worker status, waits, steering | `executor.rs`, `agents/catalog.rs` (session resume), `core/task.rs` (`Waiting`), `wake.rs` | A worker can ask, wait at zero cost, and continue with the answer on all three CLIs. |
+| 4 | Worker status, waits, steering. Built in DPES-1108 `feat/DPES-1108_worker-status`: status file, `task_status_events`, `Waiting`, `task.message`, resume for Claude, Copilot and Codex (Restricted and Full); Codex Auto fails closed. See [decisions](firstmate-behavior-decisions.md#phase-4-worker-status-waits-and-steering-dpes-1108-branch-featdpes-1108_worker-status) | `executor.rs`, `agents/catalog.rs` (session resume), `core/task.rs` (`Waiting`), `wake.rs` | A worker can ask, wait at zero cost, and continue with the answer on all three CLIs. |
 | 5 | Authority model | `core/orchestrator_action.rs`, `api_conversation_runtime.rs`, `store` archive guard, security docs | Autonomous actions run directly within bounds; user-word list still proposes; unlanded-work guard refuses. |
 | 6 | Preferences and learnings | migration from `orchestrator_notes`, `core/notes.rs`, settings UI | Three documents, budgets, read in wake turns, write guards. |
 | 7 | Coordinators | `api_coordinator.rs`, `core/decomposition.rs`, `wake.rs`, new `coordinator_reports` | Routed work runs under a coordinator and returns only through the parent channel. |
@@ -190,8 +190,8 @@ Order reasoning: 1 first because nothing else fits in 3 KiB. 3 before 4 because 
 
 ## 7. Open items to settle before the phase that needs them
 
-1. **Status file under sandbox** (phase 4): confirm each CLI at Restricted can append to one extra directory outside the worktree; if not, grant that single path.
-2. **Session resume** (phase 4): confirm resume flags and session storage location for Claude, Codex and Copilot in headless mode, and that a resumed run keeps the same permission level.
+1. **Status file under sandbox** (phase 4): settled by granting that single path (`--add-dir`, plus a Copilot write rule). See the phase 4 decisions.
+2. **Session resume** (phase 4): settled from each CLI's `--help`; see the phase 4 decisions. Codex Auto cannot resume at its level and fails closed.
 3. **Wake budget** (phase 8): 6/hour and 40/day were sized for proposals; measure before choosing new numbers.
 4. **Security review** (phase 5): required, see 5.5.
 5. **Jira keys**: one per phase is needed for branches and commits; none are assigned here.
