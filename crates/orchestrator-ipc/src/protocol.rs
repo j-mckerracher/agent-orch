@@ -67,7 +67,8 @@ pub enum Capability {
     Holds,
     /// `grants.list` (open) and the user-only `grants.create` and `grants.revoke`: standing
     /// approvals, plus the open `monitoring.brief` and `monitoring.brief_ack` return brief and
-    /// the open `notes.list` with the user-only `notes.set` (DPES-1105). Not advertised by an older daemon.
+    /// the open `memory.list` with the user-only `memory.set`, `memory.remove` and
+    /// `memory.restore` (DPES-1105, DPES-1108). Not advertised by an older daemon.
     StandingApprovals,
     /// `pulls.list` and `pulls.refresh` (both open, read-only): the pull requests the daemon
     /// watches. Merging is not a method: it is the `delivery.merge` action kind, resolved through

@@ -30,7 +30,7 @@ import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import { createLiveMonitoring, MONITORING_METHODS } from "./monitoringLive";
 import { createLiveGrants, GRANTS_METHODS } from "./grants";
-import { createLiveNotes, NOTES_METHODS } from "./notes";
+import { createLiveMemory, MEMORY_METHODS } from "./memory";
 import { createLivePulls, PULLS_METHODS } from "./pulls";
 import { createLiveHolds, HOLDS_METHODS } from "./holds";
 import { createLiveQuestions, QUESTIONS_METHODS } from "./questions";
@@ -292,7 +292,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const pulls = createLivePulls(connection, prov("D16", PULLS_METHODS), now);
   const projectDefaults = createLiveProjectDefaults(connection, prov("D17", PROJECT_DEFAULTS_METHODS), keys, now);
   const grants = createLiveGrants(connection, prov("D17", GRANTS_METHODS), keys, now);
-  const notes = createLiveNotes(connection, prov("D17", NOTES_METHODS), keys, now);
+  const memory = createLiveMemory(connection, prov("D17", MEMORY_METHODS), keys, now);
 
   return {
     workstreams,
@@ -311,6 +311,6 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     pulls,
     projectDefaults,
     grants,
-    notes,
+    memory,
   };
 }

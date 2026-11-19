@@ -8,14 +8,15 @@
 
 use std::sync::MutexGuard;
 
+use orchestrator_core::memory::{self, MemoryKind, MemoryScope};
 use orchestrator_core::orchestrator_action::{Action, AutonomyRefusal, ProposeTask, ReviseTask};
 use orchestrator_core::task::AuditEvent;
 use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES};
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
     ActionOutcome, ActionProposal, ArchiveError, AuthorityError, ConversationTarget, GrantOutcome,
-    HoldSubject, LineageError, LineageRelation, ProposalState, ResolveError, TaskOverride,
-    TaskRecord, WaitError, WorkstreamStoreError,
+    HoldSubject, LineageError, LineageRelation, MemoryWriteOutcome, MemoryWriter, ProposalState,
+    ResolveError, TaskOverride, TaskRecord, WaitError, WorkstreamStoreError,
 };
 
 use super::authority::AUTONOMOUS_ACTOR;
@@ -35,6 +36,8 @@ const PROPOSAL_BYTES: usize = 256 * 1024;
 const TARGET_TITLE_BYTES: usize = 80;
 /// Failure code for a proposal the daemon will not run as stored.
 const INVALID: &str = "invalid";
+/// A `memory.set` that would grow its document past the budget (DPES-1108 phase 6).
+const OVER_BUDGET: &str = "over_budget";
 /// Failure codes of a proposal a grant approved but that did not start: the grant was revoked,
 /// or had expired, by then.
 pub(super) const GRANT_REVOKED: &str = "grant_revoked";
@@ -71,6 +74,8 @@ pub(super) enum ActionError {
     Rpc(RpcError),
     /// A write failed that the next start can repeat. The proposal stays `approved`.
     Retry,
+    /// A refusal with its own stable code, such as `over_budget`.
+    Code(&'static str),
 }
 
 impl ActionError {
@@ -80,6 +85,7 @@ impl ActionError {
             Self::Store(error) => error_code(error),
             Self::Rpc(error) => rpc_error_code(error),
             Self::Retry => "internal",
+            Self::Code(code) => code,
         }
     }
 }
@@ -118,6 +124,7 @@ enum Execution {
     HoldDecision(HoldParams),
     AskDecision(AskParams),
     MessageTask(MessageParams),
+    SetMemory(MemoryParams),
 }
 
 /// A `task.propose`: the `tasks.submit` request it stands for, and the workstream
@@ -195,6 +202,20 @@ struct MessageParams {
     idempotency_key: String,
 }
 
+/// A `memory.set` (DPES-1108 phase 6): the document the proposal's conversation reaches, and
+/// the entry. The document is resolved from the proposal's scope when it runs, so the
+/// read-only rule for the shared preferences holds at execution too.
+#[derive(Serialize)]
+struct MemoryParams {
+    kind: &'static str,
+    scope: String,
+    key: String,
+    text: String,
+    #[serde(skip)]
+    document: (MemoryKind, MemoryScope),
+    idempotency_key: String,
+}
+
 impl Execution {
     /// The method the execution key is claimed under.
     fn method(&self) -> &'static str {
@@ -212,6 +233,7 @@ impl Execution {
             Self::HoldDecision(_) => "holds.set",
             Self::AskDecision(_) => "decisions.ask",
             Self::MessageTask(_) => "tasks.message",
+            Self::SetMemory(_) => "memory.set",
         }
     }
 
@@ -238,6 +260,7 @@ impl Execution {
             Self::HoldDecision(request) => serde_json::to_value(request),
             Self::AskDecision(request) => serde_json::to_value(request),
             Self::MessageTask(request) => serde_json::to_value(request),
+            Self::SetMemory(request) => serde_json::to_value(request),
         };
         value.map_err(|_| RpcError::Internal)
     }
@@ -321,6 +344,20 @@ impl Execution {
                     }),
                 }
             }
+            Self::SetMemory(request) => {
+                let (kind, scope) = &request.document;
+                match api.store.set_memory_entry(
+                    *kind,
+                    scope,
+                    &request.key,
+                    &request.text,
+                    MemoryWriter::Orchestrator,
+                    crate::executor::unix_now_ms(),
+                )? {
+                    MemoryWriteOutcome::OverBudget(_) => Err(ActionError::Code(OVER_BUDGET)),
+                    _ => Ok(memory_result(*kind, &request.key)),
+                }
+            }
         }
     }
 
@@ -393,6 +430,15 @@ impl Execution {
                     .store
                     .task_message_queued(&request.idempotency_key)?
                     .then(|| format!("message:{}", request.task_id)));
+            }
+            // The write is done when the entry holds this text.
+            Self::SetMemory(request) => {
+                let (kind, scope) = &request.document;
+                let entries = api.store.memory_entries(*kind, scope)?;
+                return Ok(entries
+                    .iter()
+                    .any(|entry| entry.key == request.key && entry.text == request.text)
+                    .then(|| memory_result(*kind, &request.key)));
             }
         };
         match found {
@@ -651,6 +697,23 @@ fn promotable_scout(store: &SqliteStore, task_id: &str) -> Result<Option<String>
 }
 
 /// The id of the hold an execution under `key` makes.
+/// The result a `memory.set` names: the kind and key it wrote.
+fn memory_result(kind: MemoryKind, key: &str) -> String {
+    format!("{}:{key}", kind.as_str())
+}
+
+/// The document scope of the conversation a proposal came from: `conversation:global`,
+/// `conversation:workstream:<id>` or `conversation:project:<id>`.
+pub(super) fn proposal_memory_scope(
+    proposal: &ActionProposal,
+) -> Result<MemoryScope, &'static str> {
+    proposal
+        .scope
+        .strip_prefix("conversation:")
+        .and_then(MemoryScope::parse)
+        .ok_or(INVALID)
+}
+
 fn hold_id(key: &str) -> String {
     idempotency::stable_id("hold", key)
 }
@@ -1140,6 +1203,11 @@ impl DaemonApi {
             Execution::MessageTask(request) => {
                 self.task_in_workstream(&request.task_id, workstream)?
             }
+            // A workstream conversation writes only its own documents; the shared ones were
+            // refused when the execution was built.
+            Execution::SetMemory(request) => {
+                request.document.1 == MemoryScope::Workstream(workstream.to_owned())
+            }
             // Removing a project reaches outside any one workstream.
             Execution::RemoveProject(_) => false,
         })
@@ -1330,6 +1398,19 @@ impl DaemonApi {
                 text: message.text,
                 idempotency_key: key,
             }),
+            Action::MemorySet(set) => {
+                let (kind, scope) =
+                    memory::resolve(set.document, &proposal_memory_scope(proposal)?)
+                        .map_err(|denial| denial.as_str())?;
+                Execution::SetMemory(MemoryParams {
+                    kind: kind.as_str(),
+                    scope: scope.as_string(),
+                    key: set.key,
+                    text: set.text,
+                    document: (kind, scope),
+                    idempotency_key: key,
+                })
+            }
         })
     }
 

@@ -459,9 +459,12 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         // DPES-1105 phase 5b: the return brief shares the grants capability. Both are open: the
         // brief reads, and the ack only clears the window the user has seen.
         "monitoring.brief" | "monitoring.brief_ack" => Some(Capability::StandingApprovals),
-        // DPES-1105 phase 5b: the user's notes share the grants capability. `notes.list` is
-        // open; `notes.set` is user-only because a note is persistent text the next prompt carries.
-        "notes.list" | "notes.set" => Some(Capability::StandingApprovals),
+        // DPES-1108 phase 6: preferences and learnings share the grants capability, as the notes
+        // they replace did. `memory.list` is open; the writes are user-only because an entry is
+        // persistent text every later prompt carries.
+        "memory.list" | "memory.set" | "memory.remove" | "memory.restore" => {
+            Some(Capability::StandingApprovals)
+        }
         // DPES-1105: watched pull requests. Both only read (a refresh asks the daemon for one
         // fresh view, which it rate limits), so neither is user-only.
         "pulls.list" | "pulls.refresh" => Some(Capability::Landing),

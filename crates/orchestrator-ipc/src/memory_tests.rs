@@ -1,5 +1,5 @@
-//! The notes methods through the public `Client` and
-//! `Server` API (DPES-1105 phase 5b). Each case uses a call-counting handler, so a test can
+//! The preference and learning methods through the public `Client` and
+//! `Server` API (DPES-1108 phase 6). Each case uses a call-counting handler, so a test can
 //! tell a refusal at the gate from a call that reached the handler. No
 //! platform-specific socket code, so these also compile and run on Windows.
 
@@ -48,7 +48,7 @@ fn serve(dir: &Path, recorder: &Arc<Recorder>, approver: &Arc<ApproverSecret>) -
     let approver = ApproverSecret::from_wire(&approver.to_wire()).unwrap();
     thread::spawn(move || {
         Server::serve_with_handler(
-            ServerConfig::new(dir, "notes-test")
+            ServerConfig::new(dir, "memory-test")
                 .with_idle_timeout(Duration::from_secs(30))
                 .with_stream_timeout(Duration::from_secs(5))
                 .with_approver(approver),
@@ -90,21 +90,33 @@ fn stop(dir: &Path, daemon: JoinHandle<()>) {
 use crate::session::method_capability;
 use crate::USER_ONLY_METHODS;
 
+const WRITES: [&str; 3] = ["memory.set", "memory.remove", "memory.restore"];
+
 #[test]
-fn the_notes_methods_route_to_standing_approvals_and_only_the_write_is_user_only() {
-    for method in ["notes.list", "notes.set"] {
+fn the_memory_methods_route_to_standing_approvals_and_only_the_writes_are_user_only() {
+    for method in [
+        "memory.list",
+        "memory.set",
+        "memory.remove",
+        "memory.restore",
+    ] {
         assert_eq!(
             method_capability(method),
             Some(Capability::StandingApprovals),
             "{method}"
         );
     }
-    assert!(USER_ONLY_METHODS.contains(&"notes.set"));
-    assert!(!USER_ONLY_METHODS.contains(&"notes.list"));
+    for method in WRITES {
+        assert!(USER_ONLY_METHODS.contains(&method), "{method}");
+    }
+    assert!(!USER_ONLY_METHODS.contains(&"memory.list"));
+    // The notes methods are gone: one source of truth.
+    assert_eq!(method_capability("notes.list"), None);
+    assert_eq!(method_capability("notes.set"), None);
 }
 
 #[test]
-fn a_token_only_session_cannot_set_notes_but_lists_them() {
+fn a_token_only_session_cannot_write_memory_but_lists_it() {
     let dir = TempDir::new().unwrap();
     let recorder = Arc::new(Recorder::default());
     let approver = Arc::new(ApproverSecret::generate().unwrap());
@@ -115,19 +127,30 @@ fn a_token_only_session_cannot_set_notes_but_lists_them() {
         &[Capability::Health, Capability::StandingApprovals],
         None,
     );
-    assert!(token_only.notes_list(json!({"scope": "global"})).is_ok());
+    let list = json!({"kind": "preference", "scope": "global"});
+    assert!(token_only.memory_list(list).is_ok());
+    let entry = json!({"kind": "preference", "scope": "global", "key": "k", "text": "x",
+        "idempotency_key": "key-1"});
     assert!(matches!(
-        token_only.notes_set(json!({"scope": "global", "notes": [], "idempotency_key": "key-1"})),
+        token_only.memory_set(entry.clone()),
         Err(IpcError::Forbidden)
     ));
-    // The handler saw the list and nothing else: the write stopped at the gate.
-    assert_eq!(recorder.calls(), ["notes.list"]);
+    assert!(matches!(
+        token_only.memory_remove(entry),
+        Err(IpcError::Forbidden)
+    ));
+    assert!(matches!(
+        token_only.memory_restore(json!({"archive_id": 1, "idempotency_key": "key-2"})),
+        Err(IpcError::Forbidden)
+    ));
+    // The handler saw the list and nothing else: the writes stopped at the gate.
+    assert_eq!(recorder.calls(), ["memory.list"]);
     drop(token_only);
     stop(dir.path(), daemon);
 }
 
 #[test]
-fn an_approver_session_reaches_the_handler_for_both_notes_methods() {
+fn an_approver_session_reaches_the_handler_for_every_memory_method() {
     let dir = TempDir::new().unwrap();
     let recorder = Arc::new(Recorder::default());
     let approver = Arc::new(ApproverSecret::generate().unwrap());
@@ -138,11 +161,25 @@ fn an_approver_session_reaches_the_handler_for_both_notes_methods() {
         &[Capability::Health, Capability::StandingApprovals],
         Some(&approver),
     );
+    let entry = json!({"kind": "preference", "scope": "global", "key": "k", "text": "x",
+        "idempotency_key": "key-1"});
+    assert!(user.memory_set(entry.clone()).is_ok());
+    assert!(user.memory_remove(entry).is_ok());
     assert!(user
-        .notes_set(json!({"scope": "global", "notes": [], "idempotency_key": "key-1"}))
+        .memory_restore(json!({"archive_id": 1, "idempotency_key": "key-2"}))
         .is_ok());
-    assert!(user.notes_list(json!({"scope": "global"})).is_ok());
-    assert_eq!(recorder.calls(), ["notes.set", "notes.list"]);
+    assert!(user
+        .memory_list(json!({"kind": "preference", "scope": "global"}))
+        .is_ok());
+    assert_eq!(
+        recorder.calls(),
+        [
+            "memory.set",
+            "memory.remove",
+            "memory.restore",
+            "memory.list"
+        ]
+    );
     drop(user);
     stop(dir.path(), daemon);
 }

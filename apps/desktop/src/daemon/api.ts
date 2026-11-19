@@ -74,8 +74,11 @@ import type {
   GrantRevokeResultWire,
   GrantsCreateParams,
   GrantsListWire,
-  NotesSetWire,
-  NotesWire,
+  MemoryKindWire,
+  MemoryListWire,
+  MemoryRemoveWire,
+  MemoryRestoreWire,
+  MemorySetWire,
   HoldResultWire,
   HoldsListWire,
   QuestionResultWire,
@@ -100,9 +103,11 @@ function realId(id: string): string {
   return id;
 }
 
-/** A notes scope is `global` or `workstream:` plus an id; the id must not be a placeholder. */
+/** A memory scope is `global`, `workstream:` plus an id, or `project:` plus an id; the id must not be a placeholder. */
 function realScope(scope: string): string {
-  if (scope.startsWith("workstream:")) realId(scope.slice("workstream:".length));
+  for (const prefix of ["workstream:", "project:"]) {
+    if (scope.startsWith(prefix)) realId(scope.slice(prefix.length));
+  }
   return scope;
 }
 
@@ -797,14 +802,24 @@ export class DaemonApi {
     return this.session.request("grants.revoke", { grant_id: realId(grantId), idempotency_key: idempotencyKey });
   }
 
-  /** DPES-1105 5b. One scope's orchestrator notes and their limits. A read; needs `standing_approvals`. */
-  async notesList(scope: string): Promise<NotesWire> {
-    return this.session.request("notes.list", { scope: realScope(scope) });
+  /** DPES-1108 phase 6. One memory document with its archive and limits. A read; needs `standing_approvals`. */
+  async memoryList(kind: MemoryKindWire, scope: string): Promise<MemoryListWire> {
+    return this.session.request("memory.list", { kind, scope: realScope(scope) });
   }
 
-  /** DPES-1105 5b. Replaces one scope's whole list of notes. User-only. */
-  async notesSet(scope: string, notes: string[], idempotencyKey: string): Promise<NotesSetWire> {
-    return this.session.request("notes.set", { scope: realScope(scope), notes, idempotency_key: idempotencyKey });
+  /** DPES-1108 phase 6. Adds, changes or confirms one entry by key. User-only. */
+  async memorySet(kind: MemoryKindWire, scope: string, key: string, text: string, idempotencyKey: string): Promise<MemorySetWire> {
+    return this.session.request("memory.set", { kind, scope: realScope(scope), key, text, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108 phase 6. Moves one entry to the archive. User-only. */
+  async memoryRemove(kind: MemoryKindWire, scope: string, key: string, idempotencyKey: string): Promise<MemoryRemoveWire> {
+    return this.session.request("memory.remove", { kind, scope: realScope(scope), key, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108 phase 6. Puts one archived entry back. User-only. */
+  async memoryRestore(archiveId: number, idempotencyKey: string): Promise<MemoryRestoreWire> {
+    return this.session.request("memory.restore", { archive_id: archiveId, idempotency_key: idempotencyKey });
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

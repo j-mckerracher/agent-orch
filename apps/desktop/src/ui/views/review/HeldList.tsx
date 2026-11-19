@@ -25,7 +25,7 @@ function subjectOf(hold: HoldItem, approvals: readonly Approval[], proposals: re
   }
   const item = proposals.find((candidate) => candidate.proposal.id === hold.subjectId);
   return {
-    label: item === undefined ? `Proposed action ${hold.subjectId}` : cardTitle(item.proposal.kind),
+    label: item === undefined ? `Proposed action ${hold.subjectId}` : cardTitle(item.proposal.kind, item.proposal.params),
     sub: "Proposed action waiting for your decision",
     review: null,
   };

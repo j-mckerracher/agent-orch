@@ -119,6 +119,9 @@ pub enum Denial {
     /// A `delivery.merge` that would be refused now. The key is the refusal's code, such as
     /// `checks_red`.
     Merge(MergeRefusal),
+    /// A `memory.set` naming a document this conversation may not write, such as the shared
+    /// preferences from a project coordinator (DPES-1108 phase 6). The key is the denial's own.
+    Memory(crate::memory::MemoryDenial),
 }
 
 impl Denial {
@@ -130,6 +133,7 @@ impl Denial {
             Self::Delivery => "delivery_not_authorized",
             Self::Contract => "contract_invalid",
             Self::Merge(refusal) => refusal.code(),
+            Self::Memory(denial) => denial.as_str(),
         }
     }
 }

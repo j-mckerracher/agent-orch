@@ -50,6 +50,45 @@ const dependent = proposal({
   dependsOn: "proposal-1",
 });
 
+describe("memory.set card", () => {
+  const text = "Prefer small pull requests, one concern each, with a test for every fix and no drive-by refactors in the same change.";
+  const memory = (document: string, over: Partial<ActionProposal> = {}) =>
+    proposal({ kind: "memory.set", params: { kind: "memory.set", document, key: "small-prs-with-tests", text }, ...over });
+
+  it("names the document in the heading and shows the full key and text", () => {
+    expect(cardTitle("memory.set", memory("shared").params)).toBe("Proposed: Save a shared preference");
+    expect(cardTitle("memory.set", memory("local").params)).toBe("Proposed: Save a preference for this conversation");
+    expect(cardTitle("memory.set", memory("learnings").params)).toBe("Proposed: Record a learning");
+    expect(fieldsOf(memory("shared"), NAMES, null)).toEqual([
+      { label: "Saves to", value: "Shared preferences" },
+      { label: "Key", value: "small-prs-with-tests" },
+      { label: "Text", value: text },
+    ]);
+    expect(actionPhrase(memory("learnings"), NAMES)).toBe("record a learning small-prs-with-tests");
+  });
+
+  it("says Saved once executed and is a normal approvable proposal", () => {
+    expect(viewOf(memory("local", { state: "executed" }), null, LIVE).pill.text).toBe("Saved");
+    expect(viewOf(memory("learnings", { state: "executed" }), null, LIVE).message.text).toBe("Recorded the learning “small-prs-with-tests”.");
+    const pending = viewOf(memory("shared"), null, LIVE);
+    expect(pending.approve).toMatchObject({ enabled: true, variant: "primary" });
+  });
+
+  it("explains each denial and the budget failure in plain words", () => {
+    const denied = (denial: string | null) => memory("shared", { state: "failed", errorCode: "action_denied", denial });
+    expect(failureText(denied("shared_preferences_read_only"))).toBe(
+      "Shared preferences are read-only here. Report it to the global conversation, or set it in Settings.",
+    );
+    expect(failureText(denied("no_local_preferences_here"))).toBe(
+      "The global conversation has no local preferences. Use a shared preference instead.",
+    );
+    expect(failureText(denied("something_new"))).toBe("The app refused this entry. Nothing was saved.");
+    expect(failureText(memory("shared", { state: "failed", errorCode: "over_budget" }))).toBe(
+      "The document is over its byte budget. Nothing was saved.",
+    );
+  });
+});
+
 describe("approval card copy", () => {
   it("shows a task.message with its text and the task it resumes", () => {
     const message = proposal({
@@ -57,7 +96,7 @@ describe("approval card copy", () => {
       params: { task_id: "task-9", text: "The database is back.\nRun the suite again." },
       target: { taskTitle: "Run the suite", taskState: "Waiting" },
     });
-    expect(cardTitle("task.message")).toBe("Proposed: Message the waiting worker");
+    expect(cardTitle("task.message", {})).toBe("Proposed: Message the waiting worker");
     expect(fieldsOf(message, NAMES, null)).toEqual([
       { label: "Task title", value: "Run the suite" },
       { label: "Task state now", value: "Waiting" },
@@ -68,7 +107,7 @@ describe("approval card copy", () => {
   });
 
   it("names each kind's heading, fields and button action", () => {
-    expect(cardTitle("workstream.create")).toBe("Proposed: Create workstream");
+    expect(cardTitle("workstream.create", {})).toBe("Proposed: Create workstream");
     expect(actionPhrase(create, NAMES)).toBe("create workstream Post-MVP work");
     expect(fieldsOf(create, NAMES, null)).toEqual([
       { label: "Title", value: "Post-MVP work" },
@@ -79,7 +118,7 @@ describe("approval card copy", () => {
       kind: "workstream.update",
       params: { workstream_id: "ws-1", expected_revision: 3, state: "archived" },
     });
-    expect(cardTitle(update.kind)).toBe("Proposed: Update workstream");
+    expect(cardTitle(update.kind, {})).toBe("Proposed: Update workstream");
     expect(actionPhrase(update, NAMES)).toBe("update workstream Alpha stream");
     expect(fieldsOf(update, NAMES, null).map((field) => field.label)).toEqual([
       "Workstream",
@@ -99,7 +138,7 @@ describe("approval card copy", () => {
 
   it("shows the canonical fields of an unknown kind as sorted JSON", () => {
     const unknown = proposal({ kind: "workstream.delete", params: { zeta: 1, alpha: "x" } });
-    expect(cardTitle(unknown.kind)).toBe("Proposed: Unknown action");
+    expect(cardTitle(unknown.kind, {})).toBe("Proposed: Unknown action");
     expect(fieldsOf(unknown, NAMES, null)).toEqual([
       { label: "alpha", value: '"x"' },
       { label: "zeta", value: "1" },
@@ -289,10 +328,10 @@ const executedOf = (p: ActionProposal, over: Partial<ActionProposal> = {}): Acti
 
 describe("task card copy", () => {
   it("names each task kind's heading and button phrase", () => {
-    expect(cardTitle("task.propose")).toBe("Proposed: Create task");
-    expect(cardTitle("task.cancel")).toBe("Proposed: Cancel task");
-    expect(cardTitle("task.retry")).toBe("Proposed: Retry task");
-    expect(cardTitle("workstream.link_task")).toBe("Proposed: Link task");
+    expect(cardTitle("task.propose", {})).toBe("Proposed: Create task");
+    expect(cardTitle("task.cancel", {})).toBe("Proposed: Cancel task");
+    expect(cardTitle("task.retry", {})).toBe("Proposed: Retry task");
+    expect(cardTitle("workstream.link_task", {})).toBe("Proposed: Link task");
     expect(actionPhrase(propose, NAMES)).toBe("create task Add unit tests for the retry module. Run them locally and re…");
     expect(actionPhrase(cancel, NAMES)).toBe("cancel task Add refresh-token expiry");
     expect(actionPhrase(retry, NAMES)).toBe("retry task Add refresh-token expiry");
@@ -492,9 +531,9 @@ const failedWith = (p: ActionProposal, errorCode: string): ActionProposal => ({ 
 
 describe("revise, hold and remove card copy", () => {
   it("phase4d_names_the_three_kinds_headings_button_phrases_and_done_labels", () => {
-    expect(cardTitle("task.revise")).toBe("Proposed: Revise task");
-    expect(cardTitle("decision.hold")).toBe("Proposed: Hold decision");
-    expect(cardTitle("project.remove")).toBe("Proposed: Remove project");
+    expect(cardTitle("task.revise", {})).toBe("Proposed: Revise task");
+    expect(cardTitle("decision.hold", {})).toBe("Proposed: Hold decision");
+    expect(cardTitle("project.remove", {})).toBe("Proposed: Remove project");
     expect(actionPhrase(revise, NAMES)).toBe("revise task Add refresh-token expiry");
     expect(actionPhrase(hold, NAMES)).toBe("hold decision Add refresh-token expiry");
     expect(actionPhrase(remove, NAMES)).toBe("remove project alpha");

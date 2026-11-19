@@ -1138,31 +1138,77 @@ export interface GrantsSource {
   revoke(grantId: string): Promise<GrantReceipt>;
 }
 
-// Orchestrator notes (DPES-1105 5b). Derived: notes.list / notes.set (capability `standing_approvals`).
-/** One scope's notes in order and the limits the editor must respect. `scope` is `global` or `workstream:` plus an id. */
-export interface NotesSnapshot {
+// Preferences and learnings (DPES-1108 phase 6). Derived: memory.list / set / remove / restore (capability `standing_approvals`).
+export type MemoryKind = "preference" | "learning";
+export type MemoryAuthor = "user" | "orchestrator";
+
+export interface MemoryEntry {
+  key: string;
+  text: string;
+  writtenBy: MemoryAuthor;
+  createdAtMs: number;
+  confirmedAtMs: number;
+  /** The daemon's: not confirmed for longer than `staleAfterDays`. */
+  stale: boolean;
+}
+
+export interface MemoryArchived {
+  id: number;
+  key: string;
+  text: string;
+  writtenBy: MemoryAuthor;
+  archivedAtMs: number;
+  reason: "removed" | "replaced";
+  restored: boolean;
+}
+
+/** One document: a kind at a scope (`global`, `workstream:` plus an id, or `project:` plus a project id). */
+export interface MemorySnapshot {
+  kind: MemoryKind;
   scope: string;
-  notes: string[];
-  maxNotes: number;
-  maxBytes: number;
+  /** Most recently confirmed first. */
+  entries: MemoryEntry[];
+  bytes: number;
+  budget: number;
+  /** Newest first, at most 50. */
+  archived: MemoryArchived[];
+  maxKeyBytes: number;
+  maxTextBytes: number;
+  staleAfterDays: number | null;
 }
 
-export interface NotesReceipt {
-  /** True for fixture data: nothing was sent and nothing was saved. */
-  simulated: boolean;
-  provenance: Provenance;
-  /** "Fixture data: nothing was saved." for a simulated receipt; null from the daemon. */
-  notice: string | null;
-  /** The list as the daemon holds it now. Fixture: the list as sent, which was not saved. */
-  snapshot: NotesSnapshot;
+export interface MemorySetResult {
+  /** `over_budget` wrote nothing: `bytes` is what the document would have been. */
+  outcome: "created" | "updated" | "confirmed" | "over_budget";
+  bytes: number;
+  budget: number;
 }
 
-export interface NotesSource {
+export interface MemoryRemoveResult {
+  removed: boolean;
+}
+
+export interface MemoryRestoreResult {
+  outcome: "restored" | "over_budget";
+  bytes: number | null;
+  budget: number | null;
+}
+
+/** A change's answer. A fixture receipt sent nothing and saved nothing, and says so. */
+export type MemoryReceipt<T> =
+  | { simulated: true; provenance: Provenance; notice: string }
+  | { simulated: false; provenance: Provenance; notice: null; result: T };
+
+export interface MemorySource {
   readonly provenance: Provenance;
-  /** Derived: `notes.list`. Fixture: two sample notes, or none for the `empty` scenario. */
-  list(scope: string): Promise<SurfaceResult<NotesSnapshot>>;
-  /** Derived: `notes.set`, a user-only method that replaces the whole list; it rejects on failure. Fixture: saves nothing. */
-  set(scope: string, notes: string[]): Promise<NotesReceipt>;
+  /** Derived: `memory.list`. Fixture: sample entries, or none for the `empty` scenario. */
+  list(kind: MemoryKind, scope: string): Promise<SurfaceResult<MemorySnapshot>>;
+  /** Derived: `memory.set`, user-only; it rejects on failure. Fixture: saves nothing. */
+  set(kind: MemoryKind, scope: string, key: string, text: string): Promise<MemoryReceipt<MemorySetResult>>;
+  /** Derived: `memory.remove`, user-only. The entry moves to the archive. Fixture: saves nothing. */
+  remove(kind: MemoryKind, scope: string, key: string): Promise<MemoryReceipt<MemoryRemoveResult>>;
+  /** Derived: `memory.restore`, user-only. Fixture: saves nothing. */
+  restore(archiveId: number): Promise<MemoryReceipt<MemoryRestoreResult>>;
 }
 
 export interface SurfaceSources {
@@ -1182,5 +1228,5 @@ export interface SurfaceSources {
   pulls: PullsSource;
   projectDefaults: ProjectDefaultsSource;
   grants: GrantsSource;
-  notes: NotesSource;
+  memory: MemorySource;
 }

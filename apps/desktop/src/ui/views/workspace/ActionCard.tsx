@@ -94,7 +94,7 @@ export function ActionCard({
       aria-describedby={pillId}
     >
       <header className="ws-action-head">
-        <h3 id={headingId}>{cardTitle(proposal.kind)}</h3>
+        <h3 id={headingId}>{cardTitle(proposal.kind, proposal.params)}</h3>
         <Pill id={pillId} tone={view.pill.tone}>
           {view.pill.text}
         </Pill>

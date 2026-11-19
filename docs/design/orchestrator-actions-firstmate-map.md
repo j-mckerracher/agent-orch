@@ -151,7 +151,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | --- | --- | --- | --- |
 | M1 | Self-update the running instance | PARTIAL | Release pipeline (`release.yml`, `docs/RELEASE.md`). Missing: an in-app "update available" prompt. Not from chat. |
 | M2 | Patch its own code and publish upstream only with consent | GAP | Decision N7: not now. The orchestrator gets no self-patching or self-publishing support. |
-| M3 | Curate durable operational memory (stow) | HAVE | `orchestrator_notes` (`notes.list`, `notes.set`): at most 10 notes of 200 bytes per scope, shown in the snapshot as data. UI `NotesSection.tsx`. |
+| M3 | Curate durable operational memory (stow) | HAVE | DPES-1108 phase 6: `memory_entries` and the append-only `memory_archive` (0067). Shared preferences (2,048 bytes, read by every turn including wakes, read-only outside the global conversation), workstream or project preferences (2,048), learnings per scope (1,024, stale after 180 days unconfirmed). Keyed entries update in place. `memory.list` / `memory.set` / `memory.remove` / `memory.restore`, and the `memory.set` action. UI `PreferencesSection.tsx` lists stale entries for the user, never deletes them. |
 | M4 | Unattended push to a protected branch | HAVE | A merge grant (see P5) is the opt-in unattended merge; none exists until the user creates one. |
 
 ## Firstmate rules and what they protect
