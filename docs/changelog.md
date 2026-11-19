@@ -5,6 +5,14 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.22](https://github.com/mc-innersource/motif-mcao/compare/v0.1.21...v0.1.22) (2026-11-19)
+
+
+### Bug Fixes
+
+* **agents:** DPES-1044 - Let the CLI help probe outlive the capabilities RPC ([64423c0](https://github.com/mc-innersource/motif-mcao/commit/64423c01ce70151adf0bfad10e7747474d442cbc))
+* **agents:** DPES-1044 - Let the CLI help probe outlive the capabilities RPC ([7a62922](https://github.com/mc-innersource/motif-mcao/commit/7a62922c5efb29036a5607f3828946615237fe01))
+
 ## [0.1.21](https://github.com/mc-innersource/motif-mcao/compare/v0.1.20...v0.1.21) (2026-11-19)
 
 
