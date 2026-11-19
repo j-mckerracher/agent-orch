@@ -7,9 +7,9 @@ The docs describe this role through these surfaces:
 - Wake notices and relayed scout reports (workers' results reach the user through Global).
 - The "Routed here by the global orchestrator" strip (Global's routing is visible in the workstream).
 
-The docs do not say that Global forwards chat messages to workers. These tests do not expect that.
+The docs do not say that Global forwards chat messages to workers. These tests do not expect that. Questions for the user (`05-decisions.md`) and coordinator reports (`09-coordinators.md`) are two more of these surfaces.
 
-Setup: [00-setup.md](00-setup.md).
+Setup: [00-setup.md](00-setup.md). Run these tests with **Let the orchestrator act on its own** off (setup section 5, step 5).
 
 ---
 
@@ -34,12 +34,12 @@ Setup: [00-setup.md](00-setup.md).
 
 ## TC-I-03 A project coordinator answers
 
-**Source:** `docs/chat.md` ("Project coordinators answer through the same runtime").
-**Preconditions:** TC-I-01.
+**Source:** `docs/chat.md` ("Project coordinators answer through the same runtime"; "A message you send in its conversation is answered there").
+**Preconditions:** TC-I-01. `next-reply.txt` holds only a short text reply, with no action block. A coordinator can now propose actions (TC-D-15), so a block would add a card.
 
 1. Choose `manual-test-project`. Send `Status?`.
 
-**Expected:** A reply appears. No approval card appears.
+**Expected:** A reply appears in the coordinator's conversation. No card appears. Nothing appears in the Global conversation.
 
 ## TC-I-04 A ready scout report wakes Global
 
@@ -126,7 +126,7 @@ Setup: [00-setup.md](00-setup.md).
 ## TC-I-11 Wake and relay turns are Restricted
 
 **Source:** `orchestrator-actions.md` (wake turns always run at Restricted); `docs/permission-levels.md`.
-**Preconditions:** Set the Global permission control (model picker) to the highest level, for example Auto.
+**Preconditions:** Acting on its own is off. Set the Global permission control (model picker) to the highest level, for example Auto.
 
 1. Cause a wake event.
 2. Open the wake notice details if shown.
