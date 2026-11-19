@@ -628,10 +628,7 @@ fn questions(store: &SqliteStore) -> Block {
         })
         .collect();
     Block {
-        head: format!(
-            "{HEAD}: {} (each holds its task; only the user answers)",
-            items.len()
-        ),
+        head: format!("{HEAD}: {}", items.len()),
         total: items.len(),
         items,
         rank: RANK_REPORTS,
@@ -1265,7 +1262,7 @@ mod tests {
         make_task(&store, "task-q", "Pick a database");
         let empty = snapshot_for_global(&store);
         assert!(
-            empty.contains("Questions waiting for the user: 0 (each holds its task"),
+            empty.contains("Questions waiting for the user: 0\n"),
             "{empty}"
         );
         let ask = |id: &str, text: &str| {
