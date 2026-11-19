@@ -101,6 +101,8 @@ const VERSION_WAIT: Duration = Duration::from_millis(500);
 const VERSION_READ_LIMIT: Duration = Duration::from_secs(10);
 /// Time allowed to read the output of a CLI that exited just before its limit.
 const VERSION_OUTPUT_GRACE: Duration = Duration::from_millis(100);
+/// How long a daemon shutdown waits for the `--version` reads to end their children.
+const VERSION_SHUTDOWN_GRACE: Duration = Duration::from_secs(2);
 const MAX_VERSION_LEN: usize = 64;
 /// More than any real `--version` line; longer output is not a version probe.
 const MAX_VERSION_OUTPUT: usize = 1024;
@@ -235,6 +237,9 @@ pub(crate) struct AgentRuntime {
     /// `--version` reads per installed executable, shared in the background
     /// (`version_probe`). A changed executable is a new key, so it is read again.
     versions: Arc<SharedReads<Executable, Probe>>,
+    /// Set at shutdown: a `--version` child still running is killed, so none
+    /// outlives the daemon.
+    closing: Arc<AtomicBool>,
     /// When a selection first could not be established; cleared by any
     /// definitive outcome. Bounds the `Conflict` retries.
     pending_since: Mutex<Option<Instant>>,
@@ -255,6 +260,7 @@ impl AgentRuntime {
             store,
             selections: Mutex::new(HashMap::new()),
             versions: Arc::default(),
+            closing: Arc::default(),
             pending_since: Mutex::new(None),
             running: Arc::new(AtomicUsize::new(0)),
         }
@@ -645,13 +651,14 @@ impl AgentRuntime {
             );
             return Probe::Rejected;
         };
-        let (path, agent_name) = (program.to_owned(), agent.to_owned());
+        let (path, agent_name, closing) =
+            (program.to_owned(), agent.to_owned(), self.closing.clone());
         match self.versions.source(
             executable.clone(),
             SELECTION_TTL,
             |probe| *probe != Probe::TimedOut,
             Probe::TimedOut,
-            move || read_version(&path, &agent_name, VERSION_READ_LIMIT),
+            move || read_version(&path, &agent_name, VERSION_READ_LIMIT, &closing),
         ) {
             Source::Cached(probe) => probe,
             Source::Reading(flight) => flight.wait_until(deadline).unwrap_or(Probe::TimedOut),
@@ -710,6 +717,11 @@ impl AgentRuntime {
 }
 
 impl ConversationRuntime for AgentRuntime {
+    fn shutdown(&self) {
+        self.closing.store(true, Ordering::Release);
+        self.versions.wait_idle(VERSION_SHUTDOWN_GRACE);
+    }
+
     fn identity(&self, choice: Option<&Choice>) -> RuntimeIdentity {
         match self.current(choice) {
             Some(Selection::Ready(selected)) => selected.identity,
@@ -1082,9 +1094,10 @@ enum Probe {
     TimedOut,
 }
 
-/// `--version` of the agent, read within `limit`. The child leads its own
-/// process group on Unix so a wrapper script cannot outlive the limit.
-fn read_version(program: &Path, agent: &str, limit: Duration) -> Probe {
+/// `--version` of the agent, read within `limit` or until `closing` is set. The
+/// child leads its own process group on Unix so a wrapper script cannot outlive
+/// the limit.
+fn read_version(program: &Path, agent: &str, limit: Duration, closing: &AtomicBool) -> Probe {
     let mut command = Command::new(program);
     command
         .arg("--version")
@@ -1108,7 +1121,9 @@ fn read_version(program: &Path, agent: &str, limit: Duration) -> Probe {
     let status = loop {
         match child.try_wait() {
             Ok(Some(status)) => break status,
-            Ok(None) if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(10)),
+            Ok(None) if Instant::now() < deadline && !closing.load(Ordering::Acquire) => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
             Ok(None) => {
                 kill_probe(&mut child);
                 eprintln!(
@@ -1958,12 +1973,12 @@ mod tests {
         /// The probe of a program that answers; a loaded machine can outlast
         /// the probe once.
         fn answered(path: &Path) -> Probe {
-            let mut probe = read_version(path, CODEX, VERSION_READ_LIMIT);
+            let mut probe = read_version(path, CODEX, VERSION_READ_LIMIT, &AtomicBool::new(false));
             for _ in 0..20 {
                 if probe != Probe::TimedOut {
                     break;
                 }
-                probe = read_version(path, CODEX, VERSION_READ_LIMIT);
+                probe = read_version(path, CODEX, VERSION_READ_LIMIT, &AtomicBool::new(false));
             }
             probe
         }
@@ -2007,13 +2022,13 @@ mod tests {
             for (name, body) in [("hang", "exec sleep 30"), ("flood", "yes codex-cli")] {
                 let path = program(dir.path(), name, body, 0o755);
                 // A script written while another test forks can be "busy".
-                let mut probe = read_version(&path, CODEX, limit);
+                let mut probe = read_version(&path, CODEX, limit, &AtomicBool::new(false));
                 for _ in 0..40 {
                     if probe == Probe::TimedOut {
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(50));
-                    probe = read_version(&path, CODEX, limit);
+                    probe = read_version(&path, CODEX, limit, &AtomicBool::new(false));
                 }
                 assert_eq!(probe, Probe::TimedOut, "{name}");
             }
@@ -2141,11 +2156,55 @@ mod tests {
             // The background child inherits stdout and outlives the CLI's own exit.
             let path = startable(dir.path(), "held", "(sleep 30) &\necho codex-cli 1.2.3");
             let started = Instant::now();
-            let probe = read_version(&path, CODEX, Duration::from_secs(20));
+            let probe = read_version(
+                &path,
+                CODEX,
+                Duration::from_secs(20),
+                &AtomicBool::new(false),
+            );
             assert_eq!(probe, Probe::Version("1.2.3".into()));
             assert!(
                 started.elapsed() < Duration::from_secs(10),
                 "waited on the held pipe"
+            );
+        }
+
+        #[test]
+        fn a_version_read_in_flight_is_killed_at_shutdown() {
+            let dir = tempfile::tempdir().unwrap();
+            let (armed, pid) = (dir.path().join("armed"), dir.path().join("pid"));
+            let path = startable(
+                dir.path(),
+                "hang-once-armed",
+                &format!(
+                    "[ -f '{armed}' ] && {{ echo $$ > '{pid}'; exec sleep 30; }}\necho codex-cli 1.2.3",
+                    armed = armed.display(),
+                    pid = pid.display(),
+                ),
+            );
+            fs::write(&armed, "").unwrap();
+            let runtime = runtime(dir.path(), &path, Duration::from_secs(20));
+            let choice = Choice {
+                agent: CODEX.into(),
+                model: None,
+                effort: None,
+            };
+
+            // The read outlasts the send's wait, so it keeps running in the background.
+            assert!(matches!(
+                runtime.prepare(Some(&choice)),
+                Err(RpcError::Conflict)
+            ));
+            let child: i32 = fs::read_to_string(&pid).unwrap().trim().parse().unwrap();
+            // SAFETY: signal 0 only checks that the process exists.
+            assert_eq!(unsafe { libc::kill(child, 0) }, 0, "the read is running");
+
+            runtime.shutdown();
+            // SAFETY: as above. The probe reaps its child, so it is gone, not a zombie.
+            assert_eq!(
+                unsafe { libc::kill(child, 0) },
+                -1,
+                "the child outlived shutdown"
             );
         }
 
