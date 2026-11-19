@@ -130,6 +130,15 @@ describe("monitoring model", () => {
     expect(isTaskEvent(record("p", 1, { event: "proposal_waiting" }))).toBe(false);
   });
 
+  it("monitoring_model_coordinator_kinds_are_never_quiet_and_not_linked_to_a_task", () => {
+    const quiet = { state: "handled", outcome: "quiet" } as const;
+    for (const event of ["routed_request", "coordinator_report"]) {
+      expect(isQuiet(record("q", 1, { ...quiet, event, subject: "r-0123456789abcdef" }))).toBe(false);
+      // The subject is a request or report id, so the notice never links it as a task.
+      expect(isTaskEvent(record("t", 1, { event, subject: "r-0123456789abcdef" }))).toBe(false);
+    }
+  });
+
   it("monitoring_model_skip_text_names_the_reason_in_words", () => {
     expect(skipText("mode_off")).toBe("Monitoring was off");
     expect(skipText("limit_daily")).toBe("Monitoring paused: limit reached");

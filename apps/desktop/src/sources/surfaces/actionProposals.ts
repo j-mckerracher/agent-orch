@@ -50,6 +50,9 @@ export function mapProposal(wire: ActionProposalWire): ActionProposal {
           taskCount: wire.target.task_count,
           runningTasks: wire.target.running_tasks,
           pull: wire.target.pull === undefined ? undefined : mapPullFacts(wire.target.pull),
+          coordinatorActive: wire.target.coordinator_active,
+          requestWork: wire.target.request_work,
+          requestAnswered: wire.target.request_answered,
         }
       : null,
     updatedAt: wire.updated_at,

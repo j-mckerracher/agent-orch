@@ -267,12 +267,17 @@ export interface ProposalTarget {
   runningTasks?: number;
   /** Only on a `delivery.merge` card: the pull request as the daemon last read it. */
   pull?: PullFacts;
+  /** Only on a `coordinator.route` card (DPES-1108): whether the project has an active coordinator. */
+  coordinatorActive?: boolean;
+  /** Only on a `coordinator.report` card that names a routed request: its work and whether it is answered. */
+  requestWork?: string;
+  requestAnswered?: boolean;
 }
 
 /** A pending proposal and the conversation that holds its card (DPES-1105). */
 export interface ProposalItem {
   proposal: ActionProposal;
-  scope: { kind: "global" } | { kind: "workstream"; workstreamId: string };
+  scope: { kind: "global" } | { kind: "workstream"; workstreamId: string } | { kind: "project"; projectId: string };
 }
 
 /** Outcome of approve or reject. `simulated` receipts changed nothing; `proposal` is what the daemon confirmed. */
@@ -323,6 +328,42 @@ export interface ConversationTranscript {
   wakeMore?: boolean;
   /** Workstream targets only: tasks the global conversation routed here, newest first (DPES-1105). Absent when none. */
   routedIn?: RoutedIn[];
+  /** Project targets only: the coordinator's scope, open work and parent channel (DPES-1108). Absent from older daemons. */
+  coordinator?: CoordinatorState;
+}
+/** A project coordinator's state (DPES-1108). Lists are newest first. Ids, verbs and counts only, plus agent notes. */
+export interface CoordinatorState {
+  scopeSentence: string | null;
+  openTasks: number;
+  openRequests: number;
+  routedRequests: RoutedRequest[];
+  reports: CoordinatorReport[];
+}
+/** Work the global orchestrator routed to a coordinator. `id` is the correlation id (`r-…`). */
+export interface RoutedRequest {
+  id: string;
+  work: string;
+  answered: boolean;
+  createdAt: string;
+}
+/** One parent-channel entry. A `daemon` row is an app fact; a `coordinator` note is agent text, shown as plain text. */
+export interface CoordinatorReport {
+  id: string;
+  author: string;
+  verb: string;
+  requestId: string | null;
+  taskId: string | null;
+  key: string | null;
+  note: string | null;
+  createdAt: string;
+}
+/** Outcome of a scope change. `simulated` receipts changed nothing. */
+export interface ScopeReceipt {
+  simulated: boolean;
+  provenance: Provenance;
+  /** The sentence the daemon stored; null when cleared or simulated. */
+  scopeSentence: string | null;
+  notice: string;
 }
 /** A task routed to a workstream by the global conversation (DPES-1105). Titles only: no path, token or output. */
 export interface RoutedIn {
@@ -374,6 +415,8 @@ export interface ConversationSource {
   removeCoordinator?(projectId: string): Promise<CoordinatorChangeReceipt>;
   /** DPES-1105. Restores a removed coordinator; it starts empty. */
   restoreCoordinator?(projectId: string): Promise<CoordinatorChangeReceipt>;
+  /** DPES-1108. Sets or clears (null) a coordinator's scope sentence. User-only. Fixture: simulated. */
+  setCoordinatorScope?(projectId: string, scopeSentence: string | null): Promise<ScopeReceipt>;
 }
 
 /** Outcome of a history clear. `simulated` receipts deleted nothing. */
@@ -791,11 +834,11 @@ export interface WakeRecord {
   id: string;
   /**
    * The daemon's event word: `task_failed`, `task_stalled`, `delivery_waiting`, `sign_in_needed`, `proposal_waiting`,
-   * `scout_report_ready`, `candidate_ready`, `worker_needs_decision`, `worker_blocked`, `work_check` or `daemon_start`.
-   * An unknown word is kept.
+   * `scout_report_ready`, `candidate_ready`, `worker_needs_decision`, `worker_blocked`, `work_check`, `daemon_start`,
+   * `routed_request` or `coordinator_report` (DPES-1108). An unknown word is kept.
    */
   event: string;
-  /** The task id for a task event. */
+  /** The task id for a task event; the request or report id for `routed_request` and `coordinator_report`. */
   subject: string;
   notice: string;
   /** `noticed`, `pending`, `running`, `handled`, `skipped` or `failed`; kept as the daemon's string. */

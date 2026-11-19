@@ -62,6 +62,7 @@ import type {
   ConversationClearResult,
   CoordinatorChangeResult,
   CoordinatorClearResult,
+  CoordinatorSetScopeResult,
   CopilotSignInRecord,
   LoadLimitsWire,
   SettingsWire,
@@ -370,6 +371,15 @@ export class DaemonApi {
   async coordinatorRestore(projectId: string, idempotencyKey: string): Promise<CoordinatorChangeResult> {
     return this.session.request("coordinator.restore", {
       project_id: realId(projectId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** DPES-1108. Sets or clears (null) the scope sentence of an active coordinator. User-only: needs the approver session. */
+  async coordinatorSetScope(projectId: string, scopeSentence: string | null, idempotencyKey: string): Promise<CoordinatorSetScopeResult> {
+    return this.session.request("coordinator.set_scope", {
+      project_id: realId(projectId),
+      scope_sentence: scopeSentence,
       idempotency_key: idempotencyKey,
     });
   }

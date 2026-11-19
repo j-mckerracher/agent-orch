@@ -8,6 +8,7 @@ import type { ActionProposal } from "../../../sources/surfaces/types";
 import type { Tone } from "../../theme";
 import { formatHoldDay } from "../review/holdDates";
 import { agoText, checkLine, mergeMethodText, mergeVerdict, plainRemote, shortSha } from "../review/pullsModel";
+import { verbText } from "./coordinatorModel";
 
 export type CardState = "pending" | "approved" | "executed" | "rejected" | "failed" | "superseded" | "expired" | "unknown";
 
@@ -36,6 +37,8 @@ const KINDS: Readonly<Record<string, KindCopy>> = {
   "task.message": { heading: "Message the waiting worker", done: "Sent" },
   "project.remove": { heading: "Remove project", done: "Removed" },
   "delivery.merge": { heading: "Merge pull request", done: "Merged" },
+  "coordinator.route": { heading: "Route work to the project coordinator", done: "Routed" },
+  "coordinator.report": { heading: "Report to the orchestrator", done: "Reported" },
 };
 
 /** The kinds that act on a task. Their failures read in task words. */
@@ -92,6 +95,16 @@ const KIND_FAILURE_TEXT: Readonly<Record<string, Readonly<Record<string, string>
     conflict: "The task is not in a state that allows a merge. Nothing was merged.",
     invalid: "The app could not read this merge request. Nothing was merged. Ask the orchestrator to propose again.",
   },
+  "coordinator.route": {
+    not_found: "The project has no active coordinator. Nothing was routed. Add its coordinator, then ask again.",
+    conflict: "The coordinator cannot take this work now. Nothing was routed.",
+    invalid: "The request is outside this conversation, or the work is not valid. Nothing was routed.",
+  },
+  "coordinator.report": {
+    not_found: "This coordinator is no longer active. Nothing was reported.",
+    conflict: "The routed request this names is unknown or already answered. Nothing was reported.",
+    invalid: "The request is outside this conversation, or the note is not valid. Nothing was reported.",
+  },
   "project.remove": {
     not_found: "The project is gone. Nothing was changed.",
     conflict: "The project still has running work or decisions waiting, so it was not removed. Nothing was changed.",
@@ -115,6 +128,10 @@ const REVISE_EFFECT =
   "The current attempt stops. Its work is kept. A new task starts with the old objective plus this instruction.";
 const HOLD_EFFECT = "It stays in Review and Decisions, marked Held, and comes back on that day.";
 const MERGE_WARNING = "Approving merges exactly this commit on GitHub and cannot be undone from here.";
+const ROUTE_EFFECT =
+  "The project coordinator gets this work as a routed request and reports back here. Its tasks wake the coordinator, not this conversation.";
+const REPORT_EFFECT = "The global orchestrator reads this report. An answer closes the routed request it names.";
+
 const REMOVE_EFFECT =
   "The project leaves the project list. Its folder, worktrees and branches are not touched. Register the folder again to bring it back.";
 
@@ -241,7 +258,8 @@ function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
   ) {
     return shorten(p.target?.taskTitle || text(p.params.task_id));
   }
-  if (p.kind === "project.remove") return shorten(p.target?.projectName || text(p.params.project));
+  if (p.kind === "project.remove" || p.kind === "coordinator.route") return shorten(p.target?.projectName || text(p.params.project));
+  if (p.kind === "coordinator.report") return text(p.params.request) || shorten(text(p.params.note));
   // The number and the commit name the merge in a button, so the title (remote text) stays out of it.
   if (p.kind === "delivery.merge") return `${text(p.params.pr_number)} at commit ${shortSha(text(p.params.head_sha))}`;
   return text(p.params.title);
@@ -341,6 +359,39 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("Verification", "None, fixed by the app"),
         ...(workstream !== "" ? [field("Workstream", workstream)] : []),
         ...(objective !== "" ? [field("Objective", objective)] : []),
+        ...(text(x.request) !== "" ? [field("Routed request", text(x.request))] : []),
+      ];
+    }
+    case "coordinator.route": {
+      const project = text(x.project);
+      const name = p.target?.projectName;
+      const active = p.target?.coordinatorActive;
+      return [
+        field("Project", name ? `${name} (${project})` : project),
+        field(
+          "Coordinator",
+          active === undefined ? "(not available)" : active ? "Active" : "Not active. Add the coordinator before approving.",
+        ),
+        field("Work", linesOf(text(x.work))),
+        field("What happens", ROUTE_EFFECT),
+      ];
+    }
+    case "coordinator.report": {
+      const request = text(x.request);
+      const work = p.target?.requestWork;
+      const answered = p.target?.requestAnswered;
+      return [
+        field("Report", verbText(text(x.verb))),
+        field("Note", linesOf(text(x.note))),
+        ...(request !== ""
+          ? [
+              field("Routed request", request),
+              field("Request work", work === undefined ? "(not available)" : linesOf(work)),
+              field("Request answered", answered === undefined ? "(not available)" : answered ? "Yes" : "No"),
+            ]
+          : []),
+        ...(text(x.key) !== "" ? [field("Key", text(x.key))] : []),
+        field("What happens", REPORT_EFFECT),
       ];
     }
     case "task.cancel":
@@ -534,6 +585,10 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
       return `Sent the message to the waiting worker of “${subjectOf(p, names)}”. It continues with it.`;
     case "project.remove":
       return `Removed project “${subjectOf(p, names)}”. Its tasks stay in history.`;
+    case "coordinator.route":
+      return `Routed the work to the “${subjectOf(p, names)}” coordinator. It reports back in this conversation.`;
+    case "coordinator.report":
+      return "Reported to the global orchestrator.";
     case "delivery.merge":
       return `Merged pull request ${text(p.params.pr_number)} at commit ${shortSha(text(p.params.head_sha))}.`;
     case "workstream.create":

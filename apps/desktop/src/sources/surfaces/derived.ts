@@ -44,6 +44,7 @@ import type {
   ConversationSource,
   ConversationTarget,
   CoordinatorChangeReceipt,
+  ScopeReceipt,
   DecisionItem,
   DecisionQueueSource,
   ModelCatalogSource,
@@ -95,7 +96,12 @@ function projectOf(tasks: readonly TaskRecord[]): Map<string, string> {
 function proposalItemOf(wire: ActionsPendingWire["proposals"][number]): ProposalItem {
   return {
     proposal: mapProposal(wire),
-    scope: wire.scope.kind === "global" ? { kind: "global" } : { kind: "workstream", workstreamId: wire.scope.workstream_id },
+    scope:
+      wire.scope.kind === "global"
+        ? { kind: "global" }
+        : wire.scope.kind === "project"
+          ? { kind: "project", projectId: wire.scope.project_id }
+          : { kind: "workstream", workstreamId: wire.scope.workstream_id },
   };
 }
 
@@ -114,6 +120,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     "coordinator.clear",
     "coordinator.remove",
     "coordinator.restore",
+    "coordinator.set_scope",
   ]);
   const liveConversation = createLiveConversation(connection, prov("D10", LIVE_METHODS), keys, now);
   const conversation: ConversationSource = {
@@ -205,7 +212,28 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     },
     removeCoordinator: (projectId: string) => changeCoordinator(projectId, "remove"),
     restoreCoordinator: (projectId: string) => changeCoordinator(projectId, "restore"),
+    setCoordinatorScope,
   };
+
+  /** Sets or clears a coordinator's scope sentence (DPES-1108). A retry of the same sentence reuses its key. */
+  async function setCoordinatorScope(projectId: string, scopeSentence: string | null): Promise<ScopeReceipt> {
+    if (isFixtureLikeId(projectId)) throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
+    const scope = `set_scope:${projectId}`;
+    const key = keys.keyFor(scope, JSON.stringify(scopeSentence));
+    try {
+      const result = await connection.api().coordinatorSetScope(projectId, scopeSentence, key);
+      keys.settle(scope, null);
+      return {
+        simulated: false,
+        provenance: projectProvenance,
+        scopeSentence: result.scope_sentence,
+        notice: result.scope_sentence === null ? "Scope cleared." : "Scope saved. The coordinator works from it from its next turn.",
+      };
+    } catch (error) {
+      keys.settle(scope, asDaemonError(error));
+      throw error;
+    }
+  }
 
   /** Removes or restores a project coordinator (DPES-1105). The project itself is never changed. */
   async function changeCoordinator(projectId: string, action: "remove" | "restore"): Promise<CoordinatorChangeReceipt> {

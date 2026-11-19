@@ -35,6 +35,7 @@ import type {
   ClearReceipt,
   ConversationSource,
   CoordinatorChangeReceipt,
+  CoordinatorState,
   ConversationTarget,
   DecisionQueue,
   DecisionQueueSource,
@@ -46,6 +47,7 @@ import type {
   Provenance,
   ProposalItem,
   ResolveReceipt,
+  ScopeReceipt,
   SendReceipt,
   Brief,
   MonitoringMode,
@@ -266,7 +268,13 @@ const FIXTURE_WAKE_RECORDS: WakeRecord[] = [
   },
 ];
 
-type ConversationData = { global: ConversationEntry[]; project: ConversationEntry[]; proposals: ActionProposal[] };
+type ConversationData = {
+  global: ConversationEntry[];
+  project: ConversationEntry[];
+  proposals: ActionProposal[];
+  /** Every fixture project coordinator shows this state (DPES-1108). */
+  coordinator?: CoordinatorState;
+};
 
 type TaskCardFields = Pick<ActionProposal, "kind" | "params" | "target"> & Partial<Pick<ActionProposal, "state" | "errorCode" | "denial">>;
 
@@ -358,7 +366,12 @@ function conversationSource(ctx: Ctx): ConversationSource {
   const cleared = new Set<string>();
   const keyOf = (target: ConversationTarget) => JSON.stringify(target);
   // The fixture has no workstream transcripts; project notes must not stand in for one. Proposals are Global only.
-  const transcriptOf = (target: ConversationTarget, entries: ConversationEntry[], proposals: ActionProposal[] = []) =>
+  const transcriptOf = (
+    target: ConversationTarget,
+    entries: ConversationEntry[],
+    proposals: ActionProposal[] = [],
+    coordinator?: CoordinatorState,
+  ) =>
     target.kind === "workstream"
       ? null
       : {
@@ -375,6 +388,7 @@ function conversationSource(ctx: Ctx): ConversationSource {
           proposalsMore: false,
           wake: target.kind === "global" && !cleared.has(keyOf(target)) ? FIXTURE_WAKE_RECORDS : [],
           wakeMore: false,
+          ...(target.kind === "project" && coordinator ? { coordinator } : {}),
         };
   return {
     provenance: provenance("D10", envelope),
@@ -390,12 +404,14 @@ function conversationSource(ctx: Ctx): ConversationSource {
           proposalsMore: boolean;
           wake: WakeRecord[];
           wakeMore: boolean;
+          coordinator?: CoordinatorState;
         }
       >(
         "D10",
         envelope,
         ctx,
-        (data) => transcriptOf(target, data[target.kind === "global" ? "global" : "project"], conversationProposals(data)),
+        (data) =>
+          transcriptOf(target, data[target.kind === "global" ? "global" : "project"], conversationProposals(data), data.coordinator),
         () => transcriptOf(target, []),
       ),
     // DPES-1105. Fixture cards stay pending: nothing is sent and the daemon is never asked.
@@ -429,6 +445,10 @@ function conversationSource(ctx: Ctx): ConversationSource {
     restoreCoordinator: (projectId: string): Promise<CoordinatorChangeReceipt> => {
       const base = receipt("D10", envelope, ctx, counter, `restore of the ${projectId} coordinator`);
       return Promise.resolve({ simulated: true, provenance: base.provenance, changed: true, removed: false, notice: base.notice });
+    },
+    setCoordinatorScope: (projectId: string): Promise<ScopeReceipt> => {
+      const base = receipt("D10", envelope, ctx, counter, `scope change of the ${projectId} coordinator`);
+      return Promise.resolve({ simulated: true, provenance: base.provenance, scopeSentence: null, notice: base.notice });
     },
   };
 }
