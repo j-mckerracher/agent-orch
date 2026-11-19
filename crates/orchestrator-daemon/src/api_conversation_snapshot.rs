@@ -1027,7 +1027,7 @@ mod tests {
                 "Action kinds: workstream.create, workstream.update, objective.add, ",
                 "objective.revise, task.propose, task.cancel, task.retry, workstream.link_task, ",
                 "task.revise, delivery.merge, project.remove, decision.hold, decision.ask, ",
-                "task.message\n"
+                "task.message, memory.set\n"
             )),
             "{actions}"
         );
@@ -1814,8 +1814,8 @@ mod tests {
             },
             Block {
                 head: "Recent proposals:".to_owned(),
-                items: (0..30).map(|index| format!("- p{index} {long}")).collect(),
-                total: 30,
+                items: (0..40).map(|index| format!("- p{index} {long}")).collect(),
+                total: 40,
                 rank: RANK_PROPOSALS,
             },
             Block {
@@ -1833,7 +1833,7 @@ mod tests {
 
         let count = |prefix: &str| text.lines().filter(|line| line.starts_with(prefix)).count();
         assert_eq!(count("- s"), 8, "preferences keep every line");
-        assert_eq!(count("- p"), 30, "proposals keep every line");
+        assert_eq!(count("- p"), 40, "proposals keep every line");
         assert!(count("- l") < 4, "learnings lose lines first");
         assert!(text.contains("Learnings:"));
         assert!(text.lines().any(|line| line.starts_with("- and ")));
@@ -1914,6 +1914,7 @@ mod tests {
         );
         set_memory(&store, MemoryKind::Preference, &ws1, &entries);
         set_memory(&store, MemoryKind::Learning, &ws1, &entries[..4]);
+        make_project(&store, "alpha", "/work/alpha", json!({}));
         for index in 0..20 {
             make_task(&store, &format!("t-{index}"), &"Fix the thing ".repeat(10));
         }
