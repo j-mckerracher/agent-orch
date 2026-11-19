@@ -43,7 +43,7 @@ The Windows list is the published runbook
 | Gate | Command | Where |
 | --- | --- | --- |
 | `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (112 tests on both; the exit code is in `node-self-tests.result.json`) | both |
-| `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
+| `daemon-build` | `cargo build --locked -p orchestrator-daemon --bins --examples` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (55 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
 | `cli-build` | `cargo build --locked -p orchestrator-cli` (shape: a `Finished` line and the binary; cached output is fine) | Windows |
@@ -89,7 +89,14 @@ name that branch protection watches.
 A changed file selects every job of its group. A selected job must succeed, and an unselected job must be skipped
 (or succeed). The aggregator therefore fails on a failed selected job and on a failed job it did not select, while a
 skipped group counts as a pass. A push to `main`, a manual run, the nightly `schedule` (04:23 UTC) and a call from
-`release.yml` run every Windows job. The macOS job, `gates (macos)`, runs every gate on every event.
+`release.yml` run every Windows job. The macOS gates run as three parallel legs of the `macos` matrix job
+(`macos: engine`, `macos: crates`, `macos: desktop`; the table is `MACOS_JOBS` in `scripts/ci/windows-jobs.mjs`), so no
+leg runs much over eight minutes. The same selection picks the legs: `engine` runs for the engine group, `crates` for
+the engine or smoke group, and `desktop` for the desktop, tauri or package group. A UI-only pull request runs only
+`macos: desktop`, and every other event runs all three. `gates (macos)` is the one verdict over them. It fails if the
+selection failed, and it accepts a skipped matrix only when no leg was selected. `workspace-tests` excludes
+`orchestrator-daemon`, `orchestrator-store` and `orchestrator-ipc`, which `daemon-tests`, `store-tests` and `ipc-tests`
+already run whole.
 
 To force every Windows job on a pull request, start a manual run of `ci` on its branch:
 `gh workflow run ci.yml --ref <branch>`. That run is a full run. There is no label trigger: a `labeled` event would
@@ -121,7 +128,7 @@ for that reason only.
 
 ### Usage smoke step (extension point)
 
-The usage smoke step (AI usage, DPES-1105) is written into the harness job and the `gates (macos)` job, after
+The usage smoke step (AI usage, DPES-1105) is written into the harness job and the `macos: crates` leg, after
 `Harness self-tests`. It runs `node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs"` and then
 `node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs <tap> 4`, which requires exact TAP totals (pass 4,
 fail 0, cancelled 0, skipped 0). Both jobs run with `if: always()`, so a skipped step leaves its job green, and the
@@ -144,7 +151,7 @@ no other line changes.
 ### Treehouse fetch step (DPES-1044)
 
 The gates that lease worktrees need the pinned treehouse binary: `engine-build`, `engine-tests-a`,
-`engine-tests-b`, `tauri-tests` and the `gates (macos)` job. Each runs
+`engine-tests-b`, `tauri-tests` and every `macos` leg. Each runs
 `node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"`, which checks
 the archive and binary SHA-256 pins and the version before it stages anything, then exports
 `AGENT_ORCH_TREEHOUSE_PROGRAM` through `$GITHUB_ENV` for the gates after it. The `release.yml` build jobs run the
@@ -182,7 +189,7 @@ node scripts/ci/sync-expected.mjs /tmp/evidence/gate-evidence-* --dry-run   # th
 It updates `scripts/ci/expected.mjs` and the matching list in `scripts/ci/windows-test-names.json` /
 `macos-test-names.json` from the measured output, reads only gates that exited 0 with no failed test, and
 refuses a run with fewer tests than the pins unless `--allow-removals` is given. Windows counts come from the
-Windows artifacts, macOS counts from `gate-evidence-macos`; run it on both. `node --test "scripts/**/*.test.mjs"`
+Windows artifacts, macOS counts from the `gate-evidence-macos-*` artifacts; run it on both. `node --test "scripts/**/*.test.mjs"`
 still fails when a total, a sequence and a name list disagree. Measure on the platform; do not edit to fit a run. The two
 `single_match` baseline lines in `supervisor.rs` are `CLIPPY_BASELINE` there: they are
 `#[cfg(windows)]` code, so only the Windows `clippy-scoped` gate can show them as new.

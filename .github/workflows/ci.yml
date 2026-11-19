@@ -23,7 +23,7 @@ concurrency:
 
 jobs:
   changes:
-    name: windows change selection
+    name: change selection
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -34,6 +34,7 @@ jobs:
       desktop: ${{ steps.select.outputs.desktop }}
       package: ${{ steps.select.outputs.package }}
       smoke: ${{ steps.select.outputs.smoke }}
+      macos: ${{ steps.select.outputs.macos }}
     steps:
       # On a pull request, HEAD is GitHub's merge commit and HEAD^1 is the base branch: two commits are enough.
       - name: Check out
@@ -42,7 +43,7 @@ jobs:
           fetch-depth: 2
           persist-credentials: false
 
-      - name: Select the Windows gate groups
+      - name: Select the gate groups
         id: select
         env:
           EVENT_NAME: ${{ github.event_name }}
@@ -785,12 +786,19 @@ jobs:
       - name: Verdict over the Windows jobs
         run: node scripts/ci/windows-jobs.mjs verdict
 
+  # The macOS gates run as parallel legs of one matrix job (the table is MACOS_JOBS in scripts/ci/windows-jobs.mjs).
+  # A pull request runs only the legs its changed files need; every other event runs all of them.
+  # `gates (macos)` is the one verdict over them.
   macos:
-    name: gates (macos)
+    name: "macos: ${{ matrix.job }}"
     needs: changes
-    if: always()
+    if: needs.changes.result == 'success' && needs.changes.outputs.macos != '[]'
     runs-on: macos-15
-    timeout-minutes: 180
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        job: ${{ fromJSON(needs.changes.outputs.macos) }}
     permissions:
       contents: read
     defaults:
@@ -830,10 +838,11 @@ jobs:
           git --version
 
       - name: Harness self-tests
+        if: matrix.job == 'crates'
         run: node --test "scripts/**/*.test.mjs"
 
       - name: Usage reader smoke test
-        if: needs.changes.outputs.smoke == 'true'
+        if: matrix.job == 'crates' && needs.changes.outputs.smoke == 'true'
         run: |
           node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs" | tee "$RUNNER_TEMP/usage-smoke.tap"
           node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
@@ -846,11 +855,14 @@ jobs:
           exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
           echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
 
-      # One step runs every gate once, in order, with its own target dir and test temp dir.
+      # One step runs this leg's gates once, in order, with its own target dir and test temp dir.
       # The evidence and target dirs are outside the checkout so the tree stays clean.
       - name: Native gates
+        env:
+          LEG: ${{ matrix.job }}
         run: |
           node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs macos-gates "$LEG")" \
             --evidence-dir "$RUNNER_TEMP/evidence" \
             --target-dir "$RUNNER_TEMP/target" \
             --test-tmp "$RUNNER_TEMP/tt"
@@ -859,7 +871,26 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gate-evidence-macos
+          name: gate-evidence-macos-${{ matrix.job }}
           path: ${{ runner.temp }}/evidence
           if-no-files-found: warn
           retention-days: 30
+
+  # Passes when the selection succeeded and the matrix succeeded, or when no leg was selected and the matrix was skipped.
+  macos-verdict:
+    name: gates (macos)
+    needs: [changes, macos]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Verdict over the macOS jobs
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          LEGS: ${{ needs.changes.outputs.macos }}
+          RESULT: ${{ needs.macos.result }}
+        run: |
+          echo "changes: $CHANGES, legs: $LEGS, macos matrix: $RESULT"
+          test "$CHANGES" = success
+          if [ "$LEGS" = "[]" ]; then test "$RESULT" = skipped; else test "$RESULT" = success; fi

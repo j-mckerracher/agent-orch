@@ -3,11 +3,14 @@
 // .github/workflows/ci.yml calls:
 //
 //   node scripts/ci/windows-jobs.mjs select --event <github.event_name>
-//       key=value lines for $GITHUB_OUTPUT; the reason goes to stderr
+//       key=value lines for $GITHUB_OUTPUT (the groups, and `macos`: a JSON list of the macOS jobs to run);
+//       the reason goes to stderr
 //   node scripts/ci/windows-jobs.mjs gates <job-id>
 //       the gate names one job runs, for run-gates --only
 //   node scripts/ci/windows-jobs.mjs verdict
 //       reads the needs context from NEEDS (JSON) and fails unless every job agrees with the selection
+//   node scripts/ci/windows-jobs.mjs macos-gates <job-id>
+//       the gate names one macOS job runs
 //
 // Only a pull request is selected by its changed files. Every other event (a push to main, a manual run,
 // a release call) runs every Windows gate. The harness job always runs. A job that is not selected is
@@ -47,6 +50,30 @@ export const JOBS = [
   { id: "tauri-tests", group: "tauri", gates: ["desktop-npm-ci", "desktop-build", "tauri-tests"] },
   { id: "desktop", group: "desktop", gates: ["desktop-npm-ci", "desktop-tsc", "desktop-build", "desktop-vitest"] },
   { id: "desktop-package", group: "package", gates: ["desktop-npm-ci", "desktop-package-win"] },
+];
+
+// The macOS native gates, split the same way so that no job runs longer than about ten minutes. `daemon-tests`
+// alone takes up to seven minutes, so it has the engine job to itself. A job runs when any of its groups is selected,
+// by the same rules as the Windows jobs (every event but a pull request selects every group).
+export const MACOS_JOBS = [
+  { id: "engine", groups: ["engine"], gates: ["daemon-tests", "daemon-lifecycle", "coordinator-review-tests"] },
+  {
+    id: "crates",
+    groups: ["engine", "smoke"],
+    gates: [
+      "node-self-tests", "ipc-tests", "git-lib-tests", "cli-cleanup-safety-tests", "private-fs-tests", "store-tests",
+      "lock-takeover-test", "diagnostics-tests", "runtime-command-line-tests", "cli-command-line-tests", "clippy-scoped",
+      "workspace-tests",
+    ],
+  },
+  {
+    id: "desktop",
+    groups: ["desktop", "tauri", "package"],
+    gates: [
+      "daemon-build", "desktop-npm-ci", "desktop-tsc", "desktop-build", "desktop-vitest", "desktop-e2e", "desktop-geometry",
+      "tauri-build", "tauri-tests", "tauri-clippy-clean", "tauri-clippy", "desktop-package-mac",
+    ],
+  },
 ];
 
 export const GROUPS = ["engine", "tauri", "desktop", "package", "smoke"];
@@ -122,6 +149,9 @@ export function groupOutputs(picked, smokeEnabled = USAGE_SMOKE.enabled) {
   return Object.fromEntries(GROUPS.map((group) => [group, group === "smoke" ? picked.smoke && smokeEnabled : picked[group]]));
 }
 
+// The macOS jobs that the group outputs select, in table order.
+export const macosJobs = (outputs) => MACOS_JOBS.filter((job) => job.groups.some((g) => outputs[g])).map((job) => job.id);
+
 // The verdict over the needs context of the `gates (windows)` aggregator.
 export function windowsVerdict(needs) {
   const outputs = needs.changes?.outputs ?? {};
@@ -180,11 +210,18 @@ function cli(argv) {
     process.stderr.write(`${picked.reason}\n`);
     const outputs = groupOutputs(picked);
     for (const group of GROUPS) process.stdout.write(`${group}=${outputs[group]}\n`);
+    process.stdout.write(`macos=${JSON.stringify(macosJobs(outputs))}\n`);
     return 0;
   }
   if (command === "gates") {
     const job = JOBS.find((j) => j.id === rest[0]);
     if (!job) throw new Error(`unknown Windows job '${rest[0]}'`);
+    process.stdout.write(`${job.gates.join(",")}\n`);
+    return 0;
+  }
+  if (command === "macos-gates") {
+    const job = MACOS_JOBS.find((j) => j.id === rest[0]);
+    if (!job) throw new Error(`unknown macOS job '${rest[0]}'`);
     process.stdout.write(`${job.gates.join(",")}\n`);
     return 0;
   }
@@ -195,7 +232,7 @@ function cli(argv) {
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, table);
     return verdict.ok ? 0 : 1;
   }
-  throw new Error("usage: windows-jobs.mjs select --event <name> | gates <job-id> | verdict");
+  throw new Error("usage: windows-jobs.mjs select --event <name> | gates <job-id> | verdict | macos-gates <job-id>");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {
