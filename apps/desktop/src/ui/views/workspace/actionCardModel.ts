@@ -119,6 +119,7 @@ const KIND_FAILURE_TEXT: Readonly<Record<string, Readonly<Record<string, string>
     invalid:
       "The app refused this entry: the key or the text is not allowed, for example it looks like a password, a token or a file path. Nothing was saved.",
     not_found: "The project or workstream of this conversation is gone. Nothing was saved.",
+  },
   "coordinator.route": {
     not_found: "The project has no active coordinator. Nothing was routed. Add its coordinator, then ask again.",
     conflict: "The coordinator cannot take this work now. Nothing was routed.",
