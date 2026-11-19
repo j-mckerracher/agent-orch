@@ -5,6 +5,23 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.27](https://github.com/mc-innersource/motif-mcao/compare/v0.1.26...v0.1.27) (2026-11-19)
+
+
+### Bug Fixes
+
+* **core:** DPES-1108 - Tell Implement workers to leave changes whatever the delivery policy ([1e43b75](https://github.com/mc-innersource/motif-mcao/commit/1e43b75d74ec0294b9e1cd6853d90c9258b5f574))
+* **desktop:** DPES-1108 - Match the coordinator text to what coordinators do now ([46877ea](https://github.com/mc-innersource/motif-mcao/commit/46877ea9e3e6739fde0fd4d6c358fbffd1a78df8))
+
+
+### Documentation
+
+* **manual-tests:** DPES-1108 - Drive the decision, worker, authority and coordinator tests with real agents ([1995df7](https://github.com/mc-innersource/motif-mcao/commit/1995df706323e35afe065064754d98cd475d999d))
+* **manual-tests:** DPES-1108 - Fix steps a literal runner could not follow ([9b5124f](https://github.com/mc-innersource/motif-mcao/commit/9b5124f6c9fc37959b514ae7aa4a4cd1a5b47bf6))
+* **manual-tests:** DPES-1108 - Name the prompt log by its home-folder path in the runner prompt ([aed1ac2](https://github.com/mc-innersource/motif-mcao/commit/aed1ac2c687eae3ba2e57bcc0766ad1a4a7a1358))
+* **manual-tests:** DPES-1108 - Note the open brief fix where the report-only brief matters ([06ce99b](https://github.com/mc-innersource/motif-mcao/commit/06ce99b60d5ec48278f234bd744881cc431c0191))
+* **manual-tests:** DPES-1108 - Run the manual UI tests the same way every time on the real app with real agents ([795f27d](https://github.com/mc-innersource/motif-mcao/commit/795f27d5b643afd9fbd07195ec56b5b538bdb5ca))
+
 ## [0.1.26](https://github.com/mc-innersource/motif-mcao/compare/v0.1.25...v0.1.26) (2026-11-19)
 
 
