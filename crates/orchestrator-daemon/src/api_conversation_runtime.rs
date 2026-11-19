@@ -8,8 +8,9 @@
 //! [`ReplySink`]. It receives no store handle, no task, approval or delivery
 //! capability, and nothing it emits is run as a command. The one exception is
 //! a trailing action block in a completed reply, on a session that negotiated
-//! `orchestrator_actions`: it becomes pending proposals (DPES-1105), which do
-//! nothing until the user approves them.
+//! `orchestrator_actions`: it becomes pending proposals (DPES-1105). The daemon's
+//! autonomy pass then runs the ones the authority model lets the orchestrator run on
+//! its own (DPES-1108 phase 5, `api_authority.rs`); the rest wait for the user.
 //!
 //! No provider is bound here. The daemon binds the agent runtime of
 //! `api_conversation_agent.rs` (M7-25), which fails every turn with
@@ -757,8 +758,9 @@ impl ConversationService {
     }
 
     /// Starts a wake turn: Restricted always, the daemon's default model choice, actions
-    /// allowed (a block becomes pending proposals, which need the user's approval like any
-    /// other). `turn_id` is stable per batch, so a second call returns the stored turn
+    /// allowed. A block becomes pending proposals; the autonomy pass runs on its own only those
+    /// that act on existing work (retry, message, ask), because a wake turn has no user words to
+    /// cite, and the rest wait for the user (DPES-1108 phase 5). `turn_id` is stable per batch, so a second call returns the stored turn
     /// (`created == false`). A turn already running in the conversation is an error, never
     /// cancelled: a wake never takes a turn from the user.
     pub(crate) fn start_wake(

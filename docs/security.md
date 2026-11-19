@@ -156,7 +156,8 @@ credential, permission-level and approval write (user-only methods, never action
 **Containment.**
 
 - The user's switch `autonomous_actions` (Settings, on by default). Off makes every action a
-  card again. A read error counts as off.
+  card again, which a standing approval the user made may still cover. A read error counts
+  as off.
 - Origin. A task the orchestrator starts on its own must cite a user turn: a turn the user's
   own message opened that read no agent report. The daemon writes the origin before it admits
   the task, and the store refuses any origin that is not such a turn (`record_task_origin`).

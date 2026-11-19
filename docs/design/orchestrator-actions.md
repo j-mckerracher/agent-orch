@@ -294,7 +294,7 @@ Every action has an `ActionAuthority`, from one exhaustive `match` over `ActionK
 
 Bounds, all checked by the daemon (`api_authority.rs`, `autonomy_check` in core):
 
-- The `autonomous_actions` setting is on (default on; Settings, "Acting on its own"). Off makes every action a card.
+- The `autonomous_actions` setting is on (default on; Settings, "Acting on its own"). Off makes every action a card, which a standing approval the user made may still cover.
 - A turn with no user words to cite (a wake turn, or a relay of a scout report) may run only `task.retry`, `task.message` and `decision.ask` on its own. Its `task.propose`, workstream and objective cards wait for the user.
 - A task the orchestrator starts records its origin (the user turn) in `task_origins` before it is admitted; the store refuses an origin that is not a user turn that read no report.
 - At most 5 actions a turn run on their own; the rest stay cards. A pull-request task always stays a card.

@@ -351,3 +351,26 @@ fn tasks_discard_takes_a_finished_task_only() {
         Err(RpcError::NotFound)
     );
 }
+
+/// The switch is on by default, read by `settings.get`, and turned off by `settings.set`.
+#[test]
+fn settings_carry_the_autonomy_switch_on_by_default() {
+    let (_directory, api) = new_api();
+    assert_eq!(
+        call(&api, "settings.get", Value::Null).unwrap()["autonomous_actions"],
+        true
+    );
+    let set = call(
+        &api,
+        "settings.set",
+        json!({"idempotency_key": "s-1", "autonomous_actions": false}),
+    )
+    .unwrap();
+    assert_eq!(set["autonomous_actions"], false, "{set}");
+    assert!(
+        !api.store
+            .orchestrator_settings()
+            .unwrap()
+            .autonomous_actions
+    );
+}

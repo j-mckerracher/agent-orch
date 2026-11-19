@@ -210,7 +210,7 @@ fn run_at_once(store: &SqliteStore, target: &ConversationTarget, from_user: bool
         .collect();
     format!(
         "Run at once: {}, at most {MAX_AUTONOMOUS_PER_TURN} a reply. Every other kind, a \
-         PullRequest task and a workstream archive wait for the user's approval.",
+         pull-request task and a workstream archive wait for the user's approval.",
         kinds.join(", ")
     )
 }

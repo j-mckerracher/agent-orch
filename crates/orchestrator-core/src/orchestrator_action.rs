@@ -5,7 +5,9 @@
 //! reply, [`parse_block`] validates it strictly, and [`Action::canonical`]
 //! gives the form, digest, and supersede subject the store deduplicates on.
 //! A parsed block carries no authority. The store records pending proposals,
-//! and only a later user approval can act on them.
+//! and only an approval can act on them: the user's, a standing grant's, or, for a kind
+//! [`ActionAuthority::Autonomous`] inside the daemon's bounds, the orchestrator's own
+//! (DPES-1108 phase 5).
 //!
 //! Design: `docs/design/orchestrator-actions.md`.
 
