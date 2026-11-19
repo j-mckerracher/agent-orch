@@ -100,3 +100,104 @@ Installed versions: Claude Code 2.1.311, Codex CLI 0.169.0, GitHub Copilot CLI 1
 - Daemon tests (`executor_tests.rs` status tests, `wake_events.rs`, `api_conversation_agent.rs` procedure test, the snapshot and routing pins) were compiled with `cargo check --all-targets` and clippy but not run; daemon tests hang on this laptop. CI runs them.
 - Run locally and passed: `cargo test -p orchestrator-core --lib`, `cargo test -p orchestrator-store` (including the new `worker_status` suite and the 0063-to-0064 migration test), `cargo test -p orchestrator-agents`, and the desktop vitest suite (127 files, with the main checkout's `node_modules` linked and then removed).
 - No real agent was run, so the resume flags were checked against `--help` text only.
+
+## Phase 7: coordinators
+
+DPES-1108, branch `feat/DPES-1108_coordinators`, based on phase 4 (`feat/DPES-1108_worker-status`). Phases 5, 6 and 8 were built at the same time from the same base. This phase therefore has no `ActionAuthority`: every coordinator action is a proposal the user approves.
+
+### New names
+
+- Migrations `0069_coordinator_kinds.sql` (rebuilds `action_proposals` and `wake_records` for the new kinds) and `0070_coordinators.sql`.
+- Column `coordinator_scopes.scope_sentence`. Tables `routed_requests` and `coordinator_reports`. Columns `tasks.coordinator_project_id` and `tasks.routed_request_id`.
+- Action kinds `coordinator.route` (`project`, `work`; global only) and `coordinator.report` (`verb` answer, caveat or blocked; `note`; `request`; `key`; coordinator only). `task.propose` gains an optional `request`.
+- Wake kinds `routed_request` (wakes the coordinator) and `coordinator_report` (wakes Global).
+- IPC `coordinator.set_scope` (user-only, capability `conversation_history`). `conversations.get` on a project target returns a `coordinator` object.
+- Core module `charter.rs` (`render`, `ReportVerb`, text rules), `BlockScope::Project`. Store module `sqlite_coordinators.rs` (`CoordinatorError`, `CoordinatorFact`, `RoutedRequest`, `CoordinatorReport`).
+
+### Deviation from firstmate
+
+- **1. Coordinators exist for every project mode.** Firstmate keeps local-only projects with its primary supervisor. MCAO's default mode is local-only, so that rule would leave almost every project without a coordinator. A coordinator is allowed for any mode and stays opt-in (0053).
+
+### Charter and scope
+
+- **2. The charter is turn content after the app state, not part of the preamble.** The preamble is shared by every conversation and was near its 4 KiB cap. The charter has its own header and its own 3 KiB ceiling, checked at compile time. It goes after `END APP STATE`, because preamble rule 3 makes text inside the state read as data. It replaces the preamble's identity line ("You are the orchestrator"); the preamble's rules still hold.
+  - Alternative: a second preamble for coordinator turns. That would mean two 4 KiB texts to keep in step.
+  - Undo: drop `TurnRequest::charter` and its push in `prompt_content`.
+- **3. The scope sentence is stored on `coordinator_scopes`, not on `projects`.** It belongs to the coordinator. Removing and restoring a coordinator keeps the row, so the sentence stays too. It is one line of at most 300 bytes and refuses control, bidi and invisible characters. Only the user sets it, through the user-only `coordinator.set_scope`, because every later prompt carries it, the same reason `notes.set` is user-only.
+- **4. The scope editor is in the coordinator panel of the conversation view, not in Project detail.** The sentence comes from `conversations.get`, and adding and removing coordinators already happens in the workspace. The desktop sub-agent made this choice and I kept it.
+
+### Acting and depth
+
+- **5. A coordinator acts only inside its own project, and the check runs three times.** The parser checks the scope (`BlockScope::Project` with the project's code). It allows `task.propose` for that code with no workstream, the actions that name an existing task, and `coordinator.report`. It refuses every `workstream.*` and `objective.*` action, `workstream.link_task`, `project.remove` and `coordinator.route`. When the turn completes, the sink checks that every named task belongs to the project and that every named request is open and belongs to the project. A block that fails is rejected whole, as in a workstream. At execution, `within_project` checks the proposal's scope again.
+- **6. Depth stays two because only the global conversation may route.** That rule is enforced in four places: the core parser, the snapshot (a coordinator is not offered the kind), execution, and the store. `create_routed_request` refuses unless its origin is an approved `coordinator.route` proposal of `conversation:global`. A coordinator's own proposals never route.
+- **7. A coordinator may act on any task of its project, not only on the tasks it owns.** The brief says "restricted to their own project". A retry or a question about a project task that Global made is still inside the project. Ownership is not changed by that.
+- **8. Global may still act on a coordinator's tasks.** "The global orchestrator stops supervising that work" is held by wakes and work checks: Global gets no wake for an owned task and no work-check unit for it. Global is not refused a `task.cancel` the user asks for in the global conversation. Undo: add a `task_coordinator` check to the global branch of `within_scope`.
+
+### Routing and ownership
+
+- **9. A routed request's id is `r-` plus 16 hex digits, derived from the proposal's execution key.** A rerun therefore finds the same request.
+- **10. Ownership is written before the task is admitted.** A coordinator's `task.propose` now creates the task, writes the owner and then admits it. This replaces the single `admit_contract` call. The executor therefore never sees a Queued coordinator task without its owner.
+  - Before the task exists, the store refuses a `request` that is unknown, belongs to another project, or already has an answer, so no task is created that cannot be owned.
+  - A trigger keeps the owner write-once, keeps it in the task's own project, and requires an open request of that project.
+- **11. A task the coordinator proposes never joins "Global tasks".** `default_link` is false for project scope.
+- **12. A revised task keeps its owner.** It keeps the request too, while that request is open. A promotion inherits the owner from the scope of the proposal that made it.
+- **13. Ownership counts only while the coordinator is active.** The scope queries read the owner through `coordinator_scopes.removed = 0`. If the coordinator is removed, its finished or failed tasks go back to Global: a retry then wakes Global, not a removed conversation. Removal itself is refused while a task is open (decision 19).
+
+### Wakes
+
+- **14. Wakes follow ownership, and ownership wins over a workstream link.**
+  - `task_wake_facts`, `running_attempts` and `supervision_load` give an owned task the scope `conversation:project:<id>`.
+  - `expand()` adds no `up:` copy to Global for that scope. A scout report on an owned task relays in the coordinator, which is the turn that reads it.
+  - `target_of` now maps project scopes, so these wakes start turns.
+  - A wake for a removed coordinator is dropped from the debounce and starts no turn.
+- **15. Idle by default comes from the work-check count.** A coordinator's work-check unit is its running owned tasks. With none, its scope is absent from `supervision_load`, so no timer is armed. Pending proposals do not make a coordinator active, unlike a workstream. Global's units leave out tasks a coordinator owns.
+- **16. Each coordinator has its own wake caps.** The caps are counted per scope (`wake_usage`), so each coordinator gets 6 an hour and 40 a day, separate from Global. Phase 8 sizes the caps and should check this.
+- **17. A coordinator's unseen records are not counted in `monitoring.get`.** The monitoring targets name only Global and workstreams. Before this change a project scope was reported as Global, so it would have raised the Global badge. The records still show in the coordinator's conversation. A coordinator badge would need a new monitoring target kind.
+
+### Parent channel
+
+- **18. The daemon writes the facts. The coordinator writes only its judgment.**
+  - `observe()` turns the classification that drives the wake into a fact for an owned task. Fact ids derive from the event sequence, and facts are written before the cursor moves, so a replay writes nothing twice. A task that succeeded has no wake, so its `Succeeded` transition is read there.
+  - `question_raised` for a question from `decision.ask` is written by `ask_inner`. A worker's question comes from its wait. `question_answered` is written by `decisions.answer` and `decisions.reconcile`.
+  - `merged` is written by the landing thread when it records a merge.
+  - These last three run after their own write has committed. A failed fact write is logged, not returned, so the user's answer or the merge still stands. Only that report is lost.
+  - Facts carry no text. The notice and the snapshot render them from the verb and the ids.
+- **19. The parent channel reports a pull request by its task, not by a URL.** `pull_requests` stores the number but no URL, so there is no URL to write.
+- **20. Not every report starts a Global turn.** These are model wakes: a coordinator's own reports, `task_failed`, `question_raised` and `worker_blocked`. Ready, done, report ready, answered and merged are notices: the user sees them, and the next turn reads them in the snapshot. This saves turns on progress that needs no judgment.
+  - Undo: return true from `report_needs_model` in `wake.rs`.
+- **21. Global wakes come from a scan of unwoken rows, with a write-once `woken` flag.** They do not come from durable events: those rows belong to no task, and `durable_events` is keyed by task. Records are keyed on the row id and the flag is set after them. A crash between the two therefore writes nothing twice, and a history clear never wakes a report again. The scan handles `routed_requests` the same way, waking the coordinator.
+- **22. Global's prompt never includes coordinator chat.** The global snapshot shows only these:
+  - the active coordinators with their scope sentence and open counts;
+  - the 10 newest reports.
+  - A coordinator's note is redacted, cut to 200 bytes and labelled as data. The `coordinator_report` notice uses the same treatment.
+- **23. A request has exactly one answer, and only its own coordinator gives it.**
+  - A partial unique index allows one `answer` per request, and the request is open while it has none.
+  - `record_coordinator_report` checks the origin proposal's scope (`conversation:project:<id>`), so Global cannot answer for a coordinator.
+  - A newer pending answer card replaces an older one: the supersede subject is the request.
+- **24. Removing a coordinator is refused while it owns an unfinished task (Created, Queued, Running, Waiting or Verifying) or has a routed request without an answer.** A failed task does not count: it runs nothing until it is retried.
+  - The store refuses first, with `CoordinatorError::OpenWork`, which `coordinator.remove` answers as `conflict`.
+  - A trigger on `coordinator_scopes` holds the same rule.
+
+### Dependency on phase 5 (`ActionAuthority`), to re-check at merge
+
+- `coordinator.route` and `coordinator.report` are on the left-out list of `standing_grant.rs`. When phase 5 classifies authority, `coordinator.report` should be autonomous: it only informs and changes nothing outside the parent channel. `coordinator.route` creates work for another conversation, so it is a judgment call. Classifying it autonomous fits plan 5.5, where `task.propose` becomes dispatch.
+- Plan 5.5 says dispatch must cite "a user turn or an open routed request" as its origin. `tasks.routed_request_id` is that record. Phase 5's origin check should read it rather than add a column.
+- A coordinator turn runs the same `start_wake`/user-turn paths as Global, so it inherits whatever phase 5 runs directly. Re-check that `within_project`, the sink's `targets_in_project` and the store's origin checks still run on the autonomous path, and not only in `actions.resolve`. If phase 5 executes from the turn without a stored proposal, `create_routed_request` and `record_coordinator_report` need a different origin proof, because today they read an approved proposal row.
+- Report notes are agent text that reaches Global's prompt. That stays safe only while they are framed as data and redacted. Phase 5's security review should include this path.
+
+### Merge notes for phases 5, 6 and 8
+
+- Migration 0069 copies 0064's rebuild of `action_proposals` and `wake_records`. If 0065 to 0068 rebuild either table or add a kind, re-derive 0069 from the newest definition, so no column or kind is lost.
+- The kind lists that every phase extends: `ActionKind::ALL` (now 16) and its tests; the store test `KINDS`; the snapshot's `offered()` and the "Action kinds:" pin; the preamble's kinds line; the `GRANTABLE_KINDS` walk; the desktop `types.ts` union and `actionCardModel`.
+- The preamble grew by about 300 bytes. It stays under `MAX_INSTRUCTIONS_BYTES` (4 KiB), checked at compile time.
+- Phase 6 (preferences): a coordinator write to shared preferences should be refused and reported up the parent channel (plan 5.6). `coordinator.report` with verb `caveat` is the existing channel for that.
+
+### Not verified locally in phase 7
+
+- These were compiled with `cargo check --all-targets` and clippy but not run, because daemon tests hang on this laptop. CI runs them:
+  - the new daemon tests (`api_coordinator_tests.rs`, the two coordinator tests in `wake_tests.rs`, the charter-placement test, the procedure test);
+  - the changed integration assertion in `tests/conversation_runtime.rs`: a coordinator's out-of-scope block is now `rejected`, not `stripped`;
+  - the IPC user-only pins.
+- Run locally and passed: `cargo test -p orchestrator-core --lib` (306) and `cargo test -p orchestrator-store` (including the new `coordinators` suite and the migration test from a 0068-style database).
+- Desktop: the sub-agent ran vitest on the touched areas (1,274 tests) and `tsc`, with the main checkout's `node_modules` linked and then removed.
+- No real agent turn was run. Two things are untested with a real model: that it follows the charter (idle by default, answering requests), and how well it routes against the scope sentence.

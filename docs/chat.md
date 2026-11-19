@@ -6,7 +6,19 @@ The Orchestrator Workspace is where you talk to an agent. Each message can use a
 
 The target picker lists Global, project coordinators, and workstreams. Click anywhere on a target's row to load its conversation and restore its unsent draft. The header shows "Talking to:" and the target's name. A project coordinator is scoped to that repository and appears only after you add it; registering a repository alone does not create one.
 
-Project coordinators answer through the same agent runtime as Global and workstreams, using your chosen model and permission level. Earlier coordinator notes remain visible above new exchanges. Project conversations do not propose actions; use Global or a workstream to request actionable plans. If the daemon predates project conversations, update it before sending; the app keeps your draft instead of saving an unanswered note.
+Project coordinators answer through the same agent runtime as Global and workstreams, using your chosen model and permission level. Earlier coordinator notes remain visible above new exchanges. If the daemon predates project conversations, update it before sending; the app keeps your draft instead of saving an unanswered note.
+
+## Work with a project coordinator
+
+A project coordinator is an orchestrator for one project. It proposes actions like Global does, but only inside its project: it proposes that project's tasks, retries or messages them, asks you questions about them, and reports to Global. It cannot create workstreams, remove the project, or hand work to another coordinator. Every action still waits for your approval.
+
+Give each coordinator a scope sentence, one line that says what the project covers. Set it in the coordinator panel above the message box. The coordinator is told its scope, and Global uses it to decide which work to hand over.
+
+When you ask Global for work that a coordinator's scope covers, Global proposes to route it there. After you approve, the coordinator receives the request with an id, proposes the tasks it needs, and owns them. Global stops watching that work. It learns about it only from the coordinator's reports: the app reports when the coordinator's tasks are ready, finish, fail or wait, when a question is raised or answered, and when work merges. The coordinator adds its own answer, a caveat, or a blocker. A routed request stays open until the coordinator answers it.
+
+A coordinator does nothing on its own. With no routed request and no message from you, it stays idle and gets no periodic check. A message you send in its conversation is answered there.
+
+The coordinator panel shows the scope, how many of its tasks are not finished, its open requests and its newest reports. Remove coordinator is refused while the coordinator owns unfinished tasks or an unanswered request.
 
 ## Choose an agent and model
 
