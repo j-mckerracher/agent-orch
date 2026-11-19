@@ -1,6 +1,7 @@
 # Security Architecture and Threat Model
 
-Updated: 2026-11-19 (DPES-1108 phase 5: section 6, orchestrator authority).
+Updated: 2026-11-19 (DPES-1108 phase 5: section 6, orchestrator authority; integration of phases
+5 to 8: preferences, coordinators and wake caps in section 6).
 
 Status: M0-04 candidate. This document defines the v1 threat model for the
 orchestrator and states which threats are addressed by the domain contracts in
@@ -145,11 +146,15 @@ something happen instead of only making a card the user can refuse.
 **What runs on its own** (`ActionKind::authority`, one exhaustive `match` in
 `orchestrator-core/src/orchestrator_action.rs`): `workstream.create`, `workstream.update`
 (except archiving, which is terminal), `objective.add`, `objective.revise`, `task.propose`,
-`task.retry`, `workstream.link_task`, `decision.ask`, `task.message`.
+`task.retry`, `workstream.link_task`, `decision.ask`, `task.message`, `memory.set` of a
+learning (phase 6), `coordinator.route` from the global conversation to a registered project
+whose coordinator is active, and `coordinator.report` from a coordinator (phase 7).
 
 **What is explicitly not autonomous** (always a card, whatever the turn): `task.cancel`,
 `task.revise`, `delivery.merge`, `project.remove`, `decision.hold` (it hides the user's
-pending cards), a `workstream.update` that archives, discarding committed work
+pending cards), a `workstream.update` that archives, a `memory.set` of a preference (shared
+or a conversation's own: preferences are the user's standing instructions that later prompts
+follow, so the orchestrator may only propose them), discarding committed work
 (`tasks.discard`, a user-only method, never an action), and every settings, grant,
 credential, permission-level and approval write (user-only methods, never actions).
 
@@ -161,15 +166,27 @@ credential, permission-level and approval write (user-only methods, never action
 - Origin. A task the orchestrator starts on its own must cite a user turn: a turn the user's
   own message opened that read no agent report. The daemon writes the origin before it admits
   the task, and the store refuses any origin that is not such a turn (`record_task_origin`).
-  A wake turn, or a relay of a scout report, may only retry, message or ask about existing
-  work (`autonomy_check`); a task, workstream or objective it proposes stays a card. The same
-  check runs again when a restart finishes an approved action.
+  A wake turn, or a relay of a scout report, may only retry, message, ask or (a coordinator)
+  report about existing work (`autonomy_check`); a task, workstream, objective, route or
+  learning it proposes stays a card. The one exception is a coordinator's task for an open
+  routed request: the request is its origin (`record_task_routed_origin` checks that the task
+  serves that request and that it has no answer yet). A route itself runs on its own only from
+  a user turn, so every routed request goes back to the user's word or the user's approval.
+  One request is the origin of at most 5 tasks started this way. The same checks run again
+  when a restart finishes an approved action.
 - Bounds. At most 5 actions a turn run on their own; a task's project must be registered and
   not removed; a pull-request task stays a card (it publishes to a remote); the approve-time
   envelope and promotion re-checks apply; the turn must have completed at a level that
   carries actions. Capacity caps, the load gate, attempt limits (`max_retries`), the wake
-  budget (6 an hour, 40 a day) and the wake token budget are unchanged: autonomy starts no
-  turn and skips no queue.
+  budget (20 an hour and 160 a day per scope since phase 8, half of each for work checks) and
+  the wake token budget still apply: autonomy starts no turn and skips no queue.
+- Coordinators. A coordinator acts only inside its own project, checked by the parser, the
+  turn sink, execution (`within_project`) and the store (phase 7); the autonomous path runs
+  the same execution, so all four still hold. It may write its own project's preferences and
+  learnings, never the shared preferences. Each coordinator has its own wake caps, so the
+  ceiling grows with the number of active coordinators; the work behind those wakes does not:
+  routes come only from user turns, a request starts at most 5 tasks on its own, and running
+  tasks are bounded by the capacity caps.
 - Unchanged gates. The merge gate (approval bound to the commit, merge grant the only
   relaxation), the never-grantable list, delivery approvals of each task (chat tasks still run
   with `ApprovalRequired`), and the chat envelope (no autonomy, verification or permission set
@@ -182,7 +199,12 @@ credential, permission-level and approval write (user-only methods, never action
 
 **Limits, stated honestly.** An injected instruction can still make the orchestrator start a
 bounded number of tasks from a user turn, retry failed tasks within their limits, send a
-waiting worker a message, or open a question. A token-only process (an agent at Auto or Full
+waiting worker a message, or open a question. A coordinator woken for a routed request,
+including one that read a scout report, can start up to 5 tasks for it, inside its project.
+A coordinator's report reaches the global orchestrator's prompt with no person reading it
+first: its note is redacted, cut to 200 bytes, defanged and framed as data, and a global wake
+turn that reads it may only retry, message or ask, never start work. A learning is written on
+its own only from a user turn, and a learning is framed as data in every later prompt. A token-only process (an agent at Auto or Full
 that read `daemon.token`) can send a conversation message and so open a user turn; that
 process could already call `tasks.submit` directly, so this widens nothing it had. A wrong
 autonomous action is undone by the user with the user-word actions (cancel, revise) or by

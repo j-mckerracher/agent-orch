@@ -289,18 +289,18 @@ Every action has an `ActionAuthority`, from one exhaustive `match` over `ActionK
 
 | Class | Kinds | What happens |
 | --- | --- | --- |
-| Autonomous | `workstream.create`, `workstream.update` (not to `archived`), `objective.add`, `objective.revise`, `task.propose`, `task.retry`, `workstream.link_task`, `decision.ask`, `task.message` | The card is stored as before, then the daemon approves it as `agent` and runs it through the same execute path as a user approval. The card shows "Done on its own". |
-| User word | `task.cancel`, `task.revise`, `delivery.merge`, `project.remove`, `decision.hold`, `workstream.update` to `archived` | A card the user approves. Only `delivery.merge` may be covered by a merge grant; the never-grantable list is unchanged. |
+| Autonomous | `workstream.create`, `workstream.update` (not to `archived`), `objective.add`, `objective.revise`, `task.propose`, `task.retry`, `workstream.link_task`, `decision.ask`, `task.message`, `memory.set` with `document: learnings`, `coordinator.route` (global only, to an active coordinator), `coordinator.report` (a coordinator only) | The card is stored as before, then the daemon approves it as `agent` and runs it through the same execute path as a user approval. The card shows "Done on its own". |
+| User word | `task.cancel`, `task.revise`, `delivery.merge`, `project.remove`, `decision.hold`, `workstream.update` to `archived`, `memory.set` with `document: shared` or `local` | A card the user approves. Only `delivery.merge` may be covered by a merge grant; the never-grantable list is unchanged. |
 
 Bounds, all checked by the daemon (`api_authority.rs`, `autonomy_check` in core):
 
 - The `autonomous_actions` setting is on (default on; Settings, "Acting on its own"). Off makes every action a card, which a standing approval the user made may still cover.
-- A turn with no user words to cite (a wake turn, or a relay of a scout report) may run only `task.retry`, `task.message` and `decision.ask` on its own. Its `task.propose`, workstream and objective cards wait for the user.
-- A task the orchestrator starts records its origin (the user turn) in `task_origins` before it is admitted; the store refuses an origin that is not a user turn that read no report.
+- A turn with no user words to cite (a wake turn, or a relay of a scout report) may run only `task.retry`, `task.message`, `decision.ask` and `coordinator.report` on its own, plus a coordinator's `task.propose` that names an open routed request (`request`). Its other `task.propose`, workstream, objective, route and learning cards wait for the user.
+- A task the orchestrator starts records its origin in `task_origins` before it is admitted: the routed request a coordinator's task serves, else the user turn. The store refuses a user-turn origin that is not a user turn that read no report, and a routed-request origin that is not the task's own open request (`tasks.routed_request_id`, no answer yet). One routed request is the origin of at most 5 such tasks (`MAX_AUTONOMOUS_TASKS_PER_REQUEST`); past that a task for it is a card.
 - At most 5 actions a turn run on their own; the rest stay cards. A pull-request task always stays a card.
-- The project must be registered and not removed; a task an action names must exist in such a project. The approve-time envelope and promotion re-checks apply.
+- The project must be registered and not removed; a task an action names must exist in such a project. A route needs the project's coordinator to be active. The approve-time envelope and promotion re-checks apply.
 - The pass looks at a turn's own new cards once, right after the turn completes, and before the grant matcher. A card it leaves is never picked up later, so turning the switch on does not run old cards.
-- Caps, the load gate, attempt limits, the wake budget and token budget are unchanged.
+- Caps, the load gate, attempt limits, the wake budget (per scope, so each coordinator has its own) and token budget are unchanged.
 
 The snapshot tells each turn which kinds run at once ("Run at once: ..."); the preamble says the rest wait for the user's approval.
 

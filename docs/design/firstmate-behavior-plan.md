@@ -186,6 +186,8 @@ Each phase is one PR with its prose and its guard together, and is useful on its
 | 7 | Coordinators. Built in DPES-1108 `feat/DPES-1108_coordinators`: charter (`core/charter.rs`), scope sentence, `BlockScope::Project`, `coordinator.route`, `coordinator.report`, task ownership, `coordinator_reports`, wakes `routed_request` and `coordinator_report`. See [decisions](firstmate-behavior-decisions.md#phase-7-coordinators) | `api_coordinator.rs`, `api_actions.rs`, `wake.rs`, migrations 0069 and 0070 | Routed work runs under a coordinator and returns only through the parent channel. |
 | 8 | Etiquette pass and wake caps. Built in DPES-1108 `feat/DPES-1108_etiquette`: an etiquette block in every turn's content (own 1 KiB cap), recorded pull request links on each completed turn shown under the reply, caps 20/hour and 160/day with half of each for work checks. See [decisions](firstmate-behavior-decisions.md#phase-8-etiquette-and-wake-caps) | `api_conversation_agent.rs`, `core/supervision.rs`, `wake.rs`, store migration 0071, workspace view | Final-message rule in place; PR links structured; caps re-sized for autonomous supervision. |
 
+Phases 5 to 8 were built in parallel from phase 4 and reconciled in DPES-1108 `feat/DPES-1108_integration`: one schema, one kind list and one authority classification for all four. See [decisions](firstmate-behavior-decisions.md#integration).
+
 Order reasoning: 1 first because nothing else fits in 3 KiB. 3 before 4 because a waiting worker needs somewhere to put its question. 5 after 2-4 so autonomy arrives with the brief, the decision records and the guards already in place. 7 last because it builds on all of them.
 
 ## 7. Open items to settle before the phase that needs them

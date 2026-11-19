@@ -30,13 +30,13 @@ Canceling a task, revising a task, and removing a project always need your appro
 
 Preferences are your standing defaults for the orchestrator, such as "keep pull requests small". The orchestrator follows them unless your current message says otherwise. A preference never approves anything for you: merges, cancels and other actions that need your word still ask.
 
-- **Shared preferences** apply to every conversation, including the turns the orchestrator starts on its own. Only you and the global conversation can change them. A project coordinator or a workstream conversation can read them but not change them; it tells you instead.
+- **Shared preferences** apply to every conversation, including the turns the orchestrator starts on its own. Only you can change them; the global conversation may propose a change, which waits for your approval. A project coordinator or a workstream conversation can read them but not propose a change; it tells you instead.
 - **Project and workstream preferences** apply to one project coordinator or one workstream conversation.
 - **Learnings** are facts an orchestrator recorded while it worked, such as how long a project's checks take. They are not your wishes. A learning that nobody has confirmed for 180 days is marked stale. Click Keep to confirm it, or remove it.
 
 Each entry has a short key and one line of text. Saving a key that already exists changes that entry, so nothing is listed twice. Each list has a size limit: 2,048 bytes for shared preferences, 2,048 for one project or workstream, and 1,024 for one list of learnings. The list shows how much is used. A save that would go over the limit is refused, with the size it would have reached.
 
-The orchestrator can propose a new entry. You see the key and the text on the card and approve it like any other action. Nothing is deleted without you: a removed or replaced entry moves to Removed entries, and you can restore it from there.
+The orchestrator can propose a new preference. You see the key and the text on the card and approve it like any other action; a preference is never saved on its own. A learning the orchestrator records after your message is saved at once while "Let the orchestrator act on its own" is on, and the card says it was done on its own; a learning from an automatic update waits for your approval. Nothing is deleted without you: a removed or replaced entry moves to Removed entries, and you can restore it from there.
 
 Do not put passwords, tokens, or file paths in an entry. The daemon refuses entries that look like these.
 
