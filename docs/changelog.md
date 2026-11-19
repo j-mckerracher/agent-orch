@@ -5,6 +5,18 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.26](https://github.com/mc-innersource/motif-mcao/compare/v0.1.25...v0.1.26) (2026-11-19)
+
+
+### Performance
+
+* **ci:** DPES-1044 - Split the macOS gates into parallel legs under ten minutes ([a2d9f5d](https://github.com/mc-innersource/motif-mcao/commit/a2d9f5d9dd3ef8bac97af17a17cacd8943161065))
+
+
+### Documentation
+
+* **manual-tests:** DPES-1108 - Cover the autonomy, decisions, preferences and coordinator behavior in the manual UI tests ([1ac0767](https://github.com/mc-innersource/motif-mcao/commit/1ac0767cb57ab8c897486469811a012cf22b1703))
+
 ## [0.1.25](https://github.com/mc-innersource/motif-mcao/compare/v0.1.24...v0.1.25) (2026-11-19)
 
 
