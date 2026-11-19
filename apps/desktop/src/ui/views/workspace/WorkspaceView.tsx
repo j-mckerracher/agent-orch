@@ -28,6 +28,7 @@ import { NEW_UPDATE_TEXT, WAKE_RUNNING_TEXT, notifyingCount, placeWake, quietTur
 import { PermissionLevelNotes } from "./PermissionLevelPicker";
 import { ReturnBrief } from "./ReturnBrief";
 import { RoutedInStrip } from "./RoutedInStrip";
+import { ThinkingBlock } from "./ThinkingBlock";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
@@ -935,6 +936,7 @@ function EntryBubble({
 }) {
   // The opening entry of an automatic turn is event lines inside an update, not something the user wrote.
   if (entry.origin === "wake") return <WakeLines text={entry.text} runtime={runtime} />;
+  if (entry.kind === "thinking") return <ThinkingBlock text={entry.text} streaming={entry.streaming === true} />;
   const human = entry.role === "user";
   // A daemon turn outcome is a system line, never a reply from the orchestrator. It is daemon text, so it stays plain.
   if (entry.kind === "status") {

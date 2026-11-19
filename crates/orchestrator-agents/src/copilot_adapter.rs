@@ -474,6 +474,9 @@ impl AgentHandle for CopilotHandle {
     }
 
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {
+        if let Some(event) = self.parser.take_pending() {
+            return Ok(Some(event));
+        }
         loop {
             match self.sup.next_event().await {
                 Some(SupervisionEvent::StdoutLine(line)) => {

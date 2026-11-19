@@ -1833,6 +1833,15 @@ async fn monitor_agent_with(
             }
             Some(Ok(Some(event))) => {
                 record_output(job, &event);
+                if let AgentEvent::ThinkingDelta { text } = &event {
+                    // Best effort: lost thinking never fails the run.
+                    if let Err(error) = store.append_session_thinking(&job.session_id, text) {
+                        eprintln!(
+                            "orchestrator-daemon: cannot record thinking for session {}: {error}",
+                            job.session_id
+                        );
+                    }
+                }
                 if let Some(pulse) = pulse {
                     pulse.touch(&job.session_id);
                 }

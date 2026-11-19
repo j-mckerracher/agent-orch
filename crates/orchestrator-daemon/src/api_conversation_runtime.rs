@@ -400,6 +400,17 @@ impl ReplySink {
         self.append(&shown)
     }
 
+    /// Appends thinking text, outside the reply budget and the reply filter. Returns
+    /// false once thinking can no longer be stored; the turn itself is never affected.
+    pub(crate) fn thinking(&self, text: &str) -> bool {
+        chunks(text).all(|piece| {
+            self.shared
+                .store
+                .append_thinking_chunk(&self.turn_id, piece)
+                .is_ok()
+        })
+    }
+
     /// Stores already shown text as reply chunks. Held text never reaches here.
     fn append(&self, text: &str) -> Result<(), SinkClosed> {
         for piece in chunks(text) {

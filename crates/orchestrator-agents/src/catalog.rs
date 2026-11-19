@@ -833,6 +833,15 @@ impl CodexAdapter {
         codex_catalog(&login, models)
     }
 
+    /// Makes `codex exec --json` emit reasoning items (read as thinking
+    /// events). Sent on every launch, including under `--ignore-user-config`.
+    const REASONING_ARGS: [&'static str; 4] = [
+        "-c",
+        "show_raw_agent_reasoning=true",
+        "-c",
+        "model_reasoning_summary=\"detailed\"",
+    ];
+
     /// Arguments that select a model and effort for `codex exec`; they go
     /// before the `--` separator. Both values must already be validated
     /// against the catalog.
@@ -877,6 +886,7 @@ impl CodexAdapter {
             .map(str::to_owned)
             .collect();
         args.extend(Self::selection_args(model, effort));
+        args.extend(Self::REASONING_ARGS.map(str::to_owned));
         args.extend(["--".to_owned(), prompt.to_owned()]);
         Some(args)
     }
@@ -922,6 +932,7 @@ impl CodexAdapter {
             args.extend(codex_developer_instructions_arg(agent));
         }
         args.extend(Self::selection_args(model, effort));
+        args.extend(Self::REASONING_ARGS.map(str::to_owned));
         args.extend(["--".to_owned(), objective.to_owned()]);
         Some(args)
     }
@@ -1633,6 +1644,10 @@ mod tests {
                 "read-only",
                 "--skip-git-repo-check",
                 "--ephemeral",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--"
             ]
         );
@@ -1646,6 +1661,10 @@ mod tests {
                 "--approve-for-me",
                 "--skip-git-repo-check",
                 "--ephemeral",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--"
             ]
         );
@@ -1656,6 +1675,10 @@ mod tests {
                 "--json",
                 "--skip-git-repo-check",
                 "--ephemeral",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--"
             ]
         );
@@ -1783,6 +1806,10 @@ mod tests {
                 "m",
                 "-c",
                 "model_reasoning_effort=\"low\"",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--",
                 "do it",
             ]
@@ -1801,6 +1828,10 @@ mod tests {
                 "m",
                 "-c",
                 "model_reasoning_effort=\"low\"",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--",
                 "do it",
             ]
@@ -1816,6 +1847,10 @@ mod tests {
                 "m",
                 "-c",
                 "model_reasoning_effort=\"low\"",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--",
                 "do it",
             ]

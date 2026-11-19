@@ -761,6 +761,10 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
             "gpt-6-luna",
             "-c",
             "model_reasoning_effort=\"low\"",
+            "-c",
+            "show_raw_agent_reasoning=true",
+            "-c",
+            "model_reasoning_summary=\"detailed\"",
             "--",
             "objective of sel-1",
         ]
@@ -815,6 +819,10 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
             "--ignore-user-config",
             "-c",
             "developer_instructions=\"fixture instructions\"",
+            "-c",
+            "show_raw_agent_reasoning=true",
+            "-c",
+            "model_reasoning_summary=\"detailed\"",
             "--",
             "objective of plain-1"
         ]

@@ -259,7 +259,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         const current = await t.direct((api) => api.conversationsGet(target));
         return current.turn?.state === "completed" && current;
       }, "completed conversation turn");
-      expect(page.entries.map((e) => e.kind)).toEqual(["user_message", "reply_chunk", "turn_completed"]);
+      expect(page.entries.map((e) => e.kind)).toEqual(["user_message", "thinking_chunk", "reply_chunk", "turn_completed"]);
       expect(page.turn).toMatchObject({ state: "completed", runtime: { name: "codex", version: "0.0.0-fake" } });
       expect(await t.direct((api) => api.tasksList())).toEqual([]);
       expect(await t.direct((api) => api.approvalsList())).toEqual([]);

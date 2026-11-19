@@ -280,7 +280,8 @@ export const NODE_SELF_TESTS = { passed: 147 };
 // The top bar open task count adds one test in TopBar.test.tsx: 2355.
 // The archived workstreams box and the settings layout (DPES-1044) add one file and six tests: 126 files, 2361 tests, as the
 // Windows desktop-vitest gate measured them in CI run 44380025826.
-export const VITEST = { files: 126, tests: 2366 };
+// Agent thinking (chat and task sessions) adds ThinkingBlock.test.tsx and SessionThinking.test.tsx and 20 tests in all: 128 files, 2386 tests.
+export const VITEST = { files: 128, tests: 2386 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

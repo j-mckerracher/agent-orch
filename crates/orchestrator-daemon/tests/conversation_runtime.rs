@@ -4284,3 +4284,37 @@ fn a_token_only_session_cannot_approve_a_merge_card() {
         .unwrap()
         .is_none());
 }
+
+#[test]
+fn thinking_is_stored_before_the_reply_and_never_enters_history() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hello thinker", "t-1");
+    let page = chat.settled(&global());
+    let kinds: Vec<&str> = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "user_message",
+            "thinking_chunk",
+            "reply_chunk",
+            "turn_completed"
+        ],
+        "{page}"
+    );
+    assert_eq!(
+        page["entries"][1]["body"],
+        "fake thinking about: hello thinker"
+    );
+    assert_eq!(reply(&page), "fake reply to: hello thinker");
+    chat.send(&global(), "[fake:echo]", "t-2");
+    let page = chat.settled(&global());
+    assert!(!reply(&page).contains("fake thinking"), "{}", reply(&page));
+    stop(&layout, daemon, chat);
+}

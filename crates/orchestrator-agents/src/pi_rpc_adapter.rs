@@ -556,12 +556,15 @@ fn event_from_record(record_type: &str, object: &Map<String, Value>) -> Option<A
     match record_type {
         "message_update" => {
             let update = object.get("assistantMessageEvent")?.as_object()?;
-            if update.get("type")?.as_str()? == "text_delta" {
-                Some(AgentEvent::MessageDelta {
-                    text: update.get("delta")?.as_str()?.to_owned(),
-                })
-            } else {
-                None
+            let text = update.get("delta").and_then(Value::as_str);
+            match update.get("type")?.as_str()? {
+                "text_delta" => Some(AgentEvent::MessageDelta {
+                    text: text?.to_owned(),
+                }),
+                "thinking_delta" => Some(AgentEvent::ThinkingDelta {
+                    text: text?.to_owned(),
+                }),
+                _ => None,
             }
         }
         "tool_execution_start" => Some(AgentEvent::ToolStarted {
@@ -653,6 +656,25 @@ async fn read_cli_version(program: &Path, working_dir: &Path) -> Result<String> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thinking_delta_becomes_a_thinking_event() {
+        let update = |kind: &str| serde_json::json!({"assistantMessageEvent": {"type": kind, "delta": "hm"}});
+        let event = |kind| event_from_record("message_update", update(kind).as_object().unwrap());
+        assert_eq!(
+            event("thinking_delta"),
+            Some(AgentEvent::ThinkingDelta {
+                text: "hm".to_owned()
+            })
+        );
+        assert_eq!(
+            event("text_delta"),
+            Some(AgentEvent::MessageDelta {
+                text: "hm".to_owned()
+            })
+        );
+        assert_eq!(event("thinking_start"), None);
+    }
 
     #[test]
     fn malformed_json_is_recoverable_and_fails_settled_turn() {

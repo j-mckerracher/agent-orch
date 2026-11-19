@@ -1588,6 +1588,8 @@ async fn drive(turn: Turn, sink: &ReplySink) {
     _record = orphans::AgentRecord::register(&turn.agents, handle.pid());
     let deadline = Instant::now() + turn.timeout;
     let mut messages = 0usize;
+    let mut thoughts = 0usize;
+    let mut thinking_open = true;
     let mut any_text = false;
     loop {
         if turn.cancelled.load(Ordering::Acquire) {
@@ -1629,6 +1631,19 @@ async fn drive(turn: Turn, sink: &ReplySink) {
                         drain(&mut *handle, sink);
                         return;
                     }
+                }
+            }
+            AgentEvent::ThinkingDelta { text } if thinking_open => {
+                let mut piece = sanitize(&text);
+                // Codex and Copilot report whole items; Claude Code reports fragments.
+                if matches!(turn.agent, CODEX | GITHUB_COPILOT) && thoughts > 0 && !piece.is_empty()
+                {
+                    piece.insert_str(0, "\n\n");
+                }
+                if !piece.is_empty() {
+                    thoughts += 1;
+                    // The cap marker is stored; later thinking is dropped, the turn goes on.
+                    thinking_open = sink.thinking(&piece);
                 }
             }
             AgentEvent::SessionExited { .. } => break,

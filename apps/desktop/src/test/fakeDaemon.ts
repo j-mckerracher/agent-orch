@@ -354,6 +354,10 @@ export class FakeDaemon implements DaemonConnector {
           last_sequence: last,
         });
       }
+      case "sessions.thinking": {
+        const stub = this.stubs.get("sessions.thinking");
+        return reply(stub ? stub(params) : { chunks: [], next_cursor: 0, truncated: false });
+      }
       case "approvals.list":
         return reply(this.approvals);
       case "queue.snapshot": {

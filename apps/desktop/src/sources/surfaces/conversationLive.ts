@@ -196,6 +196,7 @@ function actionBlocksOf(entries: readonly ConversationWireEntry[], latest: Conve
 /**
  * Maps wire entries to view entries. Reply chunks of one turn become a single
  * reply that stays `streaming` until the daemon records the end of the turn;
+ * its thinking chunks become one `thinking` entry before the reply, `streaming` until the reply starts or the turn ends;
  * a failed, canceled or empty turn becomes a `status` line, never a reply.
  * `withProposals` holds the turns that proposed actions (DPES-1105); one of
  * those with no reply says so instead.
@@ -203,6 +204,11 @@ function actionBlocksOf(entries: readonly ConversationWireEntry[], latest: Conve
 export function mapEntries(wire: readonly ConversationWireEntry[], withProposals?: ReadonlySet<string>): ConversationEntry[] {
   const out: ConversationEntry[] = [];
   const replies = new Map<string, ConversationEntry>();
+  const thoughts = new Map<string, ConversationEntry>();
+  const endThinking = (turnId: string) => {
+    const thought = thoughts.get(turnId);
+    if (thought) thought.streaming = false;
+  };
   const status = (entry: ConversationWireEntry, text: string): ConversationEntry => ({
     id: entry.id,
     kind: "status",
@@ -227,7 +233,29 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
           ...(entry.origin === "wake" ? { origin: "wake" as const } : {}),
         });
         break;
+      case "thinking_chunk": {
+        const thought = thoughts.get(entry.turn_id);
+        if (thought) {
+          thought.text += entry.body;
+          thought.sequence = entry.sequence;
+        } else {
+          const created: ConversationEntry = {
+            id: `${entry.turn_id}:thinking`,
+            kind: "thinking",
+            role: "coordinator",
+            text: entry.body,
+            at: entry.created_at,
+            turnId: entry.turn_id,
+            sequence: entry.sequence,
+            streaming: true,
+          };
+          thoughts.set(entry.turn_id, created);
+          out.push(created);
+        }
+        break;
+      }
       case "reply_chunk":
+        endThinking(entry.turn_id);
         if (reply) {
           reply.text += entry.body;
           reply.sequence = entry.sequence;
@@ -247,15 +275,18 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
         }
         break;
       case "turn_completed":
+        endThinking(entry.turn_id);
         if (reply) reply.streaming = false;
         else if (withProposals?.has(entry.turn_id)) out.push(status(entry, "The orchestrator proposed actions without a written reply."));
         else out.push(status(entry, "The orchestrator finished this turn without a reply."));
         break;
       case "turn_failed":
+        endThinking(entry.turn_id);
         if (reply) reply.streaming = false;
         out.push(status(entry, failureText(entry.error_code, entry.runtime)));
         break;
       case "turn_cancelled":
+        endThinking(entry.turn_id);
         if (reply) reply.streaming = false;
         out.push(status(entry, "This turn was canceled."));
         break;
