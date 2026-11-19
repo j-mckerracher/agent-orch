@@ -450,6 +450,11 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         "settings.get" | "settings.set" => Some(Capability::Settings),
         "monitoring.get" | "monitoring.set" | "monitoring.ack" => Some(Capability::Monitoring),
         "holds.set" | "holds.release" | "holds.list" => Some(Capability::Holds),
+        // DPES-1108 phase 3: questions held for the user share the holds capability. All four
+        // are user-only.
+        "decisions.list" | "decisions.answer" | "decisions.defer" | "decisions.reconcile" => {
+            Some(Capability::Holds)
+        }
         "grants.create" | "grants.revoke" | "grants.list" => Some(Capability::StandingApprovals),
         // DPES-1105 phase 5b: the return brief shares the grants capability. Both are open: the
         // brief reads, and the ack only clears the window the user has seen.

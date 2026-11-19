@@ -584,8 +584,24 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "notes.set",
             "reports.get",
             "reports.relay",
+            "decisions.list",
+            "decisions.answer",
+            "decisions.defer",
+            "decisions.reconcile",
         ]
     );
+    for method in [
+        "decisions.list",
+        "decisions.answer",
+        "decisions.defer",
+        "decisions.reconcile",
+    ] {
+        assert_eq!(
+            method_capability(method),
+            Some(Capability::Holds),
+            "{method}"
+        );
+    }
     assert_eq!(
         method_capability("actions.resolve"),
         Some(Capability::OrchestratorActions)

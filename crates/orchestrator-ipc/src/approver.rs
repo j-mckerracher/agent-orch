@@ -89,6 +89,10 @@ impl ApproverSecret {
 /// The two `review.*` writes are listed because they act as the user: a request
 /// supersedes the user's Approved approval for another candidate, and recorded
 /// changes block every later approve of that approval.
+///
+/// The four `decisions.*` methods (DPES-1108 phase 3) are the user's own decisions: only
+/// the user answers, defers or reconciles a question, and the list, which carries the
+/// questions the user is asked, is read by the user's app alone.
 #[rustfmt::skip]
 pub const USER_ONLY_METHODS: &[&str] = &[
     "actions.resolve",
@@ -105,6 +109,10 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "notes.set",
     "reports.get",
     "reports.relay",
+    "decisions.list",
+    "decisions.answer",
+    "decisions.defer",
+    "decisions.reconcile",
 ];
 
 /// The one gate. `Ok` when the method is open to every session or the session
