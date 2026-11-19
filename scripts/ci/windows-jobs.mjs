@@ -3,7 +3,8 @@
 // .github/workflows/ci.yml calls:
 //
 //   node scripts/ci/windows-jobs.mjs select --event <github.event_name>
-//       key=value lines for $GITHUB_OUTPUT; the reason goes to stderr
+//       key=value lines for $GITHUB_OUTPUT (the groups, and `macos`: a JSON list of the macOS jobs to run);
+//       the reason goes to stderr
 //   node scripts/ci/windows-jobs.mjs gates <job-id>
 //       the gate names one job runs, for run-gates --only
 //   node scripts/ci/windows-jobs.mjs verdict
@@ -51,12 +52,14 @@ export const JOBS = [
   { id: "desktop-package", group: "package", gates: ["desktop-npm-ci", "desktop-package-win"] },
 ];
 
-// The macOS native gates, split the same way so that no job runs longer than about ten minutes. Every event runs
-// every macOS job; `daemon-tests` alone takes up to seven minutes, so it has the engine job to itself.
+// The macOS native gates, split the same way so that no job runs longer than about ten minutes. `daemon-tests`
+// alone takes up to seven minutes, so it has the engine job to itself. A job runs when any of its groups is selected,
+// by the same rules as the Windows jobs (every event but a pull request selects every group).
 export const MACOS_JOBS = [
-  { id: "engine", gates: ["daemon-tests", "daemon-lifecycle", "coordinator-review-tests"] },
+  { id: "engine", groups: ["engine"], gates: ["daemon-tests", "daemon-lifecycle", "coordinator-review-tests"] },
   {
     id: "crates",
+    groups: ["engine", "smoke"],
     gates: [
       "node-self-tests", "ipc-tests", "git-lib-tests", "cli-cleanup-safety-tests", "private-fs-tests", "store-tests",
       "lock-takeover-test", "diagnostics-tests", "runtime-command-line-tests", "cli-command-line-tests", "clippy-scoped",
@@ -65,6 +68,7 @@ export const MACOS_JOBS = [
   },
   {
     id: "desktop",
+    groups: ["desktop", "tauri", "package"],
     gates: [
       "daemon-build", "desktop-npm-ci", "desktop-tsc", "desktop-build", "desktop-vitest", "desktop-e2e", "desktop-geometry",
       "tauri-build", "tauri-tests", "tauri-clippy-clean", "tauri-clippy", "desktop-package-mac",
@@ -145,6 +149,9 @@ export function groupOutputs(picked, smokeEnabled = USAGE_SMOKE.enabled) {
   return Object.fromEntries(GROUPS.map((group) => [group, group === "smoke" ? picked.smoke && smokeEnabled : picked[group]]));
 }
 
+// The macOS jobs that the group outputs select, in table order.
+export const macosJobs = (outputs) => MACOS_JOBS.filter((job) => job.groups.some((g) => outputs[g])).map((job) => job.id);
+
 // The verdict over the needs context of the `gates (windows)` aggregator.
 export function windowsVerdict(needs) {
   const outputs = needs.changes?.outputs ?? {};
@@ -203,6 +210,7 @@ function cli(argv) {
     process.stderr.write(`${picked.reason}\n`);
     const outputs = groupOutputs(picked);
     for (const group of GROUPS) process.stdout.write(`${group}=${outputs[group]}\n`);
+    process.stdout.write(`macos=${JSON.stringify(macosJobs(outputs))}\n`);
     return 0;
   }
   if (command === "gates") {

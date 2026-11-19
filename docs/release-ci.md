@@ -89,9 +89,12 @@ name that branch protection watches.
 A changed file selects every job of its group. A selected job must succeed, and an unselected job must be skipped
 (or succeed). The aggregator therefore fails on a failed selected job and on a failed job it did not select, while a
 skipped group counts as a pass. A push to `main`, a manual run, the nightly `schedule` (04:23 UTC) and a call from
-`release.yml` run every Windows job. The macOS gates run on every event as three parallel legs of the `macos` matrix
-job (`macos: engine`, `macos: crates`, `macos: desktop`; the table is `MACOS_JOBS` in `scripts/ci/windows-jobs.mjs`),
-so no leg runs much over eight minutes. `gates (macos)` is the one verdict over them. `workspace-tests` excludes
+`release.yml` run every Windows job. The macOS gates run as three parallel legs of the `macos` matrix job
+(`macos: engine`, `macos: crates`, `macos: desktop`; the table is `MACOS_JOBS` in `scripts/ci/windows-jobs.mjs`), so no
+leg runs much over eight minutes. The same selection picks the legs: `engine` runs for the engine group, `crates` for
+the engine or smoke group, and `desktop` for the desktop, tauri or package group. A UI-only pull request runs only
+`macos: desktop`, and every other event runs all three. `gates (macos)` is the one verdict over them. It fails if the
+selection failed, and it accepts a skipped matrix only when no leg was selected. `workspace-tests` excludes
 `orchestrator-daemon`, `orchestrator-store` and `orchestrator-ipc`, which `daemon-tests`, `store-tests` and `ipc-tests`
 already run whole.
 

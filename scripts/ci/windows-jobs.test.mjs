@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { gatesFor } from "./gates.mjs";
-import { GROUPS, JOBS, MACOS_JOBS, USAGE_SMOKE, groupOutputs, selectGroups, windowsVerdict } from "./windows-jobs.mjs";
+import { GROUPS, JOBS, MACOS_JOBS, USAGE_SMOKE, groupOutputs, macosJobs, selectGroups, windowsVerdict } from "./windows-jobs.mjs";
 
 const ALL = { engine: true, tauri: true, desktop: true, package: true, smoke: true };
 const NONE = { engine: false, tauri: false, desktop: false, package: false, smoke: false };
@@ -116,8 +116,22 @@ test("the macOS jobs cover every macOS gate once, each with its prerequisites", 
       for (const need of gate.needs ?? []) assert.ok(job.gates.includes(need), `${job.id}: ${gate.name} needs ${need}`);
     }
   }
+  for (const group of GROUPS) assert.ok(MACOS_JOBS.some((j) => j.groups.includes(group)), `no macOS job runs for ${group}`);
+  for (const job of MACOS_JOBS) for (const g of job.groups) assert.ok(GROUPS.includes(g), `${job.id} has an unknown group ${g}`);
   const yml = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
-  assert.match(yml, new RegExp(`^        job: \\[${MACOS_JOBS.map((j) => j.id).join(", ")}\\]$`, "m"), "the macOS matrix differs from MACOS_JOBS");
+  assert.match(yml, /macos: \$\{\{ steps\.select\.outputs\.macos \}\}/, "changes lacks the macos output");
+  assert.match(yml, /^        job: \$\{\{ fromJSON\(needs\.changes\.outputs\.macos\) \}\}$/m, "the macOS matrix does not read the selection");
+});
+
+test("the macOS jobs follow the selected groups", () => {
+  const legs = (files, eventName = "pull_request") => macosJobs(groupOutputs(selectGroups({ eventName, changedFiles: files }), true));
+  assert.deepEqual(legs([], "push"), ["engine", "crates", "desktop"], "every event but a pull request runs them all");
+  assert.deepEqual(legs(["docs/release-ci.md"]), [], "docs only");
+  assert.deepEqual(legs(["apps/desktop/src/App.tsx"]), ["desktop"], "UI only");
+  assert.deepEqual(legs(["apps/desktop/src-tauri/src/lib.rs"]), ["desktop"], "Tauri host only");
+  assert.deepEqual(legs(["crates/orchestrator-daemon/src/main.rs"]), ["engine", "crates", "desktop"], "an engine crate");
+  assert.deepEqual(legs(["scripts/ci/gates.mjs"]), ["engine", "crates", "desktop"], "the harness");
+  assert.deepEqual(legs(["apps/desktop/src-tauri/sidecars/codeburn/x.mjs"]), ["crates", "desktop"], "the usage smoke inputs");
 });
 
 test("the workflow has a job for each table entry and an aggregator that waits for all of them", () => {
@@ -140,9 +154,10 @@ test("the workflow has a job for each table entry and an aggregator that waits f
   for (const job of [...JOBS.map((j) => j.id), "changes"]) assert.ok(needed.includes(job), `aggregator skips ${job}`);
   const step = /      - name: Usage reader smoke test\n        if: (?:matrix\.job == 'crates' && )?needs\.changes\.outputs\.smoke == 'true'\n        run: \|\n          node --test --test-reporter=tap "scripts\/smoke\/\*\.smoke\.mjs" \| tee "\$RUNNER_TEMP\/usage-smoke\.tap"\n          node apps\/desktop\/src-tauri\/sidecars\/codeburn\/require-tap-totals\.mjs "\$RUNNER_TEMP\/usage-smoke\.tap" 4\n/g;
   assert.equal([...yml.matchAll(step)].length, 2, "the smoke step must be in exactly the harness job and the macOS crates leg");
-  for (const job of ["harness", "macos"]) {
-    assert.match(yml, new RegExp(`^  ${job}:\\n(?:    .*\\n)*?    needs: changes\\n    if: always\\(\\)\\n`, "m"), `${job} must run even if changes failed`);
-  }
+  assert.match(yml, /^  harness:\n(?:    .*\n)*?    needs: changes\n    if: always\(\)\n/m, "harness must run even if changes failed");
+  // The macOS legs need the selection; a failed selection fails `gates (macos)` instead.
+  assert.match(yml, /^  macos-verdict:\n(?:    .*\n)*?    needs: \[changes, macos\]\n    if: always\(\)\n/m, "gates (macos) must judge changes and macos");
+  assert.match(yml, /^          test "\$CHANGES" = success$/m, "gates (macos) must fail when the selection failed");
   assert.match(yml, /smoke: \$\{\{ steps\.select\.outputs\.smoke \}\}/);
   // The switch's value is not pinned here: turning the step on or off must change the one line in windows-jobs.mjs and nothing else.
   assert.equal(typeof USAGE_SMOKE.enabled, "boolean");
