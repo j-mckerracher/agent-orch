@@ -791,7 +791,8 @@ export interface WakeRecord {
   id: string;
   /**
    * The daemon's event word: `task_failed`, `task_stalled`, `delivery_waiting`, `sign_in_needed`, `proposal_waiting`,
-   * `scout_report_ready`, `candidate_ready`, `work_check` or `daemon_start`. An unknown word is kept.
+   * `scout_report_ready`, `candidate_ready`, `worker_needs_decision`, `worker_blocked`, `work_check` or `daemon_start`.
+   * An unknown word is kept.
    */
   event: string;
   /** The task id for a task event. */

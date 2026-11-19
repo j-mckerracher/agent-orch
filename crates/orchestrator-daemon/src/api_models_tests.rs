@@ -747,6 +747,9 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
     wait_state(&api, &task_id, "Succeeded");
 
     let argv = fs::read_to_string(&agents.codex_argv).unwrap();
+    // The status directory (DPES-1108 phase 4) goes after the selection, before the separator.
+    let status = super::worker_status::status_dir(&fixture.data(), &task_id, 1);
+    let status = status.display().to_string();
     assert_eq!(
         argv.lines().collect::<Vec<_>>(),
         [
@@ -761,6 +764,8 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
             "gpt-6-luna",
             "-c",
             "model_reasoning_effort=\"low\"",
+            "--add-dir",
+            status.as_str(),
             "--",
             "# MCAO worker brief",
         ]
@@ -805,6 +810,8 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
     wait_state(&api, &task_id, "Succeeded");
 
     let argv = fs::read_to_string(&agents.codex_argv).unwrap();
+    let status = super::worker_status::status_dir(&fixture.data(), &task_id, 1);
+    let status = status.display().to_string();
     assert_eq!(
         argv.lines().collect::<Vec<_>>(),
         [
@@ -815,6 +822,8 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
             "--ignore-user-config",
             "-c",
             "developer_instructions=\"fixture instructions\"",
+            "--add-dir",
+            status.as_str(),
             "--",
             "# MCAO worker brief"
         ]

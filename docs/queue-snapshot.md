@@ -34,6 +34,11 @@ limits.
 - `running`: tasks in state `Running`, ordered by task id.
 - `queued`: tasks in state `Queued` only (`Created` tasks are not admitted),
   ordered by `position` (nulls last) then task id.
+- **`Waiting` tasks appear in neither list** (DPES-1108 phase 4). Their worker
+  ended its turn to wait for a reply, so no process runs and no cap counts them.
+  One with a reply to deliver and no open question is planned like a queued
+  task and resumes under the same caps, so it can take a slot a queued task
+  would otherwise get on that pass.
 - **`Verifying` tasks appear in neither list.** The snapshot models scheduler
   capacity, and the scheduler counts only `Running` tasks against the global
   and per-project limits (and only `Running` tasks own a worktree for conflict

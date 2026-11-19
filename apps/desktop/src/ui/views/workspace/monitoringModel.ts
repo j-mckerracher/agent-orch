@@ -101,6 +101,8 @@ const TASK_EVENTS: readonly string[] = [
   "sign_in_needed",
   "scout_report_ready",
   "candidate_ready",
+  "worker_needs_decision",
+  "worker_blocked",
 ];
 
 /**

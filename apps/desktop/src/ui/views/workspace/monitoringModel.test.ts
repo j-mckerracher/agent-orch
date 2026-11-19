@@ -112,6 +112,7 @@ describe("monitoring model", () => {
     expect(isQuiet(record("f", 1, quiet))).toBe(false);
     expect(isQuiet(record("s", 1, { ...quiet, event: "scout_report_ready" }))).toBe(false);
     expect(isQuiet(record("c", 1, { ...quiet, event: "candidate_ready" }))).toBe(false);
+    expect(isQuiet(record("n", 1, { ...quiet, event: "worker_needs_decision" }))).toBe(false);
     expect(isQuiet(record("u", 1, { event: "work_check", state: "handled", outcome: "unanswered" }))).toBe(false);
     expect(isQuiet(record("w", 1, { ...quiet, event: "work_check" }))).toBe(true);
     expect(isQuiet(record("d", 1, { ...quiet, event: "daemon_start" }))).toBe(true);
@@ -123,6 +124,8 @@ describe("monitoring model", () => {
     expect(isTaskEvent(record("c", 1, { event: "candidate_ready" }))).toBe(true);
     expect(isTaskEvent(record("s", 1, { event: "scout_report_ready" }))).toBe(true);
     expect(isTaskEvent(record("d", 1, { event: "delivery_waiting" }))).toBe(true);
+    expect(isTaskEvent(record("n", 1, { event: "worker_needs_decision" }))).toBe(true);
+    expect(isTaskEvent(record("b", 1, { event: "worker_blocked" }))).toBe(true);
     expect(isTaskEvent(record("w", 1, { event: "work_check" }))).toBe(false);
     expect(isTaskEvent(record("p", 1, { event: "proposal_waiting" }))).toBe(false);
   });

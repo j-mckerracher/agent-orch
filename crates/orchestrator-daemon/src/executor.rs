@@ -1198,13 +1198,17 @@ impl Inner {
         let Some(prompt) = orchestrator_core::brief::render_resume(&rendered) else {
             return fail("the replies are too long to send in one turn");
         };
-        let workspace = store
+        // A missing worktree is permanent, so it fails the task instead of being planned again
+        // on every pass. Only a store read that failed is retried.
+        let Some(workspace) = store
             .list_workspaces()
             .map_err(|error| format!("cannot read the worktree: {error}"))?
             .into_iter()
             .rev()
             .find(|workspace| workspace.task_id == task_id)
-            .ok_or("the waiting task has no worktree")?;
+        else {
+            return fail("its worktree is no longer recorded");
+        };
         let number = target.attempt_number;
         let job = Job {
             task_id: task_id.clone(),
