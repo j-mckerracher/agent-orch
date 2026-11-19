@@ -60,7 +60,8 @@ export const WINDOWS = {
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 677 becomes 678.
   // The shared compatibility policy replaces six obsolete chat-only helper tests.
-  daemon: { passed: 696, ignored: 1, sequence: [593, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  // DPES-1108 phase 3 user decisions (CI run 44475972106, measured on Windows): the unit binary 593 becomes 600, so 696 becomes 703.
+  daemon: { passed: 703, ignored: 1, sequence: [600, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -104,7 +105,8 @@ export const WINDOWS = {
   // The home directory setting adds 1 portable store test (orchestrator_settings 12 becomes 13): 351 becomes 352.
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 352 becomes 353 passed.
   // Workstream priority adds 2 portable workstreams.rs tests: 13 becomes 15, so 359 becomes 361 passed.
-  store: { passed: 378, ignored: 1, sequence: [113, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 15, 0] },
+  // DPES-1108 phase 3 user decisions add the decision_questions binary (8 tests): 378 becomes 386 (CI run 44475972106).
+  store: { passed: 386, ignored: 1, sequence: [113, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 112 },
@@ -280,7 +282,8 @@ export const NODE_SELF_TESTS = { passed: 147 };
 // The top bar open task count adds one test in TopBar.test.tsx: 2355.
 // The archived workstreams box and the settings layout (DPES-1044) add one file and six tests: 126 files, 2361 tests, as the
 // Windows desktop-vitest gate measured them in CI run 44380025826.
-export const VITEST = { files: 126, tests: 2366 };
+// DPES-1108 phase 3 (Needs your decision list, decision.ask card) adds one file: 127 files, 2379 tests (CI run 44475972106).
+export const VITEST = { files: 127, tests: 2379 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

@@ -843,7 +843,14 @@
    "api::archive_tests::archived_tasks_leave_the_list_and_tasks_get_still_answers",
    "api::archive_tests::archiving_again_is_a_no_op_and_an_unknown_task_is_not_found",
    "api::home_directory_tests::a_git_home_directory_registers_as_a_worktree_project",
-   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup"
+   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup",
+   "api::conversation_agent::tests::a_wake_turn_gets_only_the_procedures_its_record_kinds_select",
+   "api::conversation_snapshot::tests::open_questions_are_listed_as_bounded_data_and_fit_the_cap",
+   "api::decisions_tests::a_deferral_keeps_the_question_open_and_the_task_held",
+   "api::decisions_tests::an_answer_is_stored_verbatim_closes_once_and_frees_the_task",
+   "api::decisions_tests::an_approved_ask_raises_one_question_that_holds_its_task",
+   "api::decisions_tests::an_ask_on_a_missing_task_fails_and_raises_nothing",
+   "api::decisions_tests::the_methods_refuse_unknown_questions_and_bad_text"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -1402,7 +1409,15 @@
    "an_unknown_task_is_not_found_and_writes_nothing",
    "a_task_that_is_not_finished_refuses_the_whole_call_and_writes_nothing",
    "finished_tasks_archive_once_keep_their_rows_and_each_emit_one_event",
-   "clearing_in_place_removes_only_the_flag_from_the_project_settings"
+   "clearing_in_place_removes_only_the_flag_from_the_project_settings",
+   "a_deferral_hides_the_question_until_its_day_but_keeps_it_open_and_holding",
+   "a_key_asks_once_per_task_and_an_id_names_one_task",
+   "a_raised_question_is_open_listed_and_holds_its_task",
+   "a_reconcile_closes_with_evidence_never_as_an_answer",
+   "a_scout_report_is_not_relayed_while_its_worker_question_is_open",
+   "an_answer_keeps_the_exact_words_and_closes_the_question_once",
+   "the_database_refuses_every_close_that_is_not_an_answer_or_a_reconcile",
+   "migration_0063_applies_to_a_0062_style_database_and_keeps_every_row"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
