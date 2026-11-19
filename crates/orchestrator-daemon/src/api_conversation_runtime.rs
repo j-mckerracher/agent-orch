@@ -259,6 +259,10 @@ pub(crate) trait ConversationRuntime: Send + Sync {
     /// agent drops it, so the next selection reads the settings again.
     fn settings_changed(&self) {}
 
+    /// The daemon is stopping. A runtime ends the child processes it started in
+    /// the background, so none outlives the daemon.
+    fn shutdown(&self) {}
+
     fn start_turn(
         &self,
         request: TurnRequest,
@@ -642,6 +646,11 @@ impl ConversationService {
     /// See [`ConversationRuntime::prepare`].
     pub(crate) fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
         self.runtime.prepare(choice)
+    }
+
+    /// See [`ConversationRuntime::shutdown`].
+    pub(crate) fn shutdown(&self) {
+        self.runtime.shutdown();
     }
 
     /// See [`ConversationRuntime::settings_changed`]. Called after the daemon's settings are

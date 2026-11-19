@@ -332,6 +332,7 @@ impl DaemonApi {
     pub(crate) fn shutdown(&self) {
         self.stop_landing();
         self.stop_grant_matcher();
+        self.conversations.shutdown();
         if let Some(wake) = &self.wake {
             wake.stop();
         }
