@@ -61,7 +61,8 @@ export const WINDOWS = {
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 677 becomes 678.
   // The shared compatibility policy replaces six obsolete chat-only helper tests.
   // DPES-1108 phase 3 user decisions (CI run 44475972106, measured on Windows): the unit binary 593 becomes 600, so 696 becomes 703.
-  // DPES-1108 phase 5 authority model, measured on CI run 44508913337 with the phase 4 tests: 703 becomes 717.
+  // DPES-1108 phase 4 adds one portable wake classification test (the executor tests are Unix-only): 703 becomes 704.
+  // DPES-1108 phase 5 authority model adds 12 daemon unit tests and 1 real-daemon test: 704 becomes 717 (CI run 44508913337).
   daemon: { passed: 717, ignored: 1, sequence: [613, 89, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
@@ -107,7 +108,8 @@ export const WINDOWS = {
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 352 becomes 353 passed.
   // Workstream priority adds 2 portable workstreams.rs tests: 13 becomes 15, so 359 becomes 361 passed.
   // DPES-1108 phase 3 user decisions add the decision_questions binary (8 tests): 378 becomes 386 (CI run 44475972106).
-  // DPES-1108 phases 4 and 5 add the worker_status (11) and action_authority (6) binaries: 386 becomes 403 (CI run 44508913337).
+  // DPES-1108 phase 4 adds the portable worker_status binary (11 tests): 386 becomes 397, in the macOS order.
+  // DPES-1108 phase 5 adds the action_authority binary (6 tests): 397 becomes 403 (CI run 44508913337).
   store: { passed: 403, ignored: 1, sequence: [113, 6, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
@@ -161,7 +163,8 @@ export const MACOS = {
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 794 becomes 795.
   // Six chat-only helper tests removed; the Unix executable-replacement regression adds one.
   // Running task attempts as the pstack workflow agent (DPES-1044) adds four Unix-only executor tests: 820 becomes 824 (CI run 44356323793, measured on macOS).
-  // DPES-1108 phase 5 authority model, measured on CI run 44508913337 with the phase 4 tests: 840 becomes 859.
+  // DPES-1108 phase 4 worker status adds 5 Unix executor tests and 1 wake classification test: 710 becomes 716 (CI run 44494162204, measured on macOS).
+  // DPES-1108 phase 5 authority model adds 12 daemon unit tests and 1 real-daemon test: 846 becomes 859 (CI run 44508913337).
   daemon: { passed: 859, ignored: 1, sequence: [728, 94, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
@@ -197,7 +200,8 @@ export const MACOS = {
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
   // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
   // The workflow agent (DPES-1044) adds 13 tests (4 daemon, 7 agents unit, 1 agents integration, 1 cli), as the macOS gate measured them in CI run 44356323793: 2281 becomes 2294.
-  workspace: { passed: 2336, ignored: 2 },
+  // DPES-1108 phase 4 worker status, measured by the macOS gate in CI run 44494162204: 2368.
+  workspace: { passed: 2368, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
@@ -219,7 +223,8 @@ export const MACOS = {
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 356 becomes 357 passed.
   // Workstream priority adds 2 workstreams.rs tests: 13 becomes 15, so 363 becomes 365 passed.
   // DPES-1108 phase 3 user decisions add the decision_questions binary (8 tests): 382 becomes 390 (CI run 44475972106).
-  // DPES-1108 phases 4 and 5 add the worker_status (11) and action_authority (6) binaries: 390 becomes 407 (CI run 44508913337).
+  // DPES-1108 phase 4 adds the worker_status binary (11 tests): 390 becomes 401 (CI run 44494162204).
+  // DPES-1108 phase 5 adds the action_authority binary (6 tests): 401 becomes 407 (CI run 44508913337).
   store: { passed: 407, ignored: 1, sequence: [115, 6, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 4, 2, 5, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
