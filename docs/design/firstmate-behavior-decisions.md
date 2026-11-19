@@ -217,6 +217,7 @@ DPES-1108, branch `feat/DPES-1108_preferences`.
 - The daemon tests (`api_memory_tests.rs`, the new snapshot tests, the preamble pin, `tests/conversation_runtime.rs` `memory_writes_are_refused_to_a_token_only_session_on_a_real_daemon`) and the ipc `memory_tests.rs` were compiled with `cargo check --all-targets` and clippy, but not run. Daemon tests hang on this laptop. CI runs them.
 - Run locally and passed: `cargo test -p orchestrator-core --lib` (299 tests), and `cargo test -p orchestrator-store` for `memory_documents` (7 tests, including the 0067 and 0068 migration test), `action_proposals`, `conversation_history` and `conversations`.
 - Not checked: a real user database with many notes, and how a real model follows the new framing.
+
 ## Phase 7: coordinators
 
 DPES-1108, branch `feat/DPES-1108_coordinators`, based on phase 4 (`feat/DPES-1108_worker-status`). Phases 5, 6 and 8 were built at the same time from the same base. This phase therefore has no `ActionAuthority`: every coordinator action is a proposal the user approves.
@@ -317,6 +318,7 @@ DPES-1108, branch `feat/DPES-1108_coordinators`, based on phase 4 (`feat/DPES-11
 - Run locally and passed: `cargo test -p orchestrator-core --lib` (306) and `cargo test -p orchestrator-store` (including the new `coordinators` suite and the migration test from a 0068-style database).
 - Desktop: the sub-agent ran vitest on the touched areas (1,274 tests) and `tsc`, with the main checkout's `node_modules` linked and then removed.
 - No real agent turn was run. Two things are untested with a real model: that it follows the charter (idle by default, answering requests), and how well it routes against the scope sentence.
+
 ## Phase 8: etiquette and wake caps
 
 DPES-1108, branch `feat/DPES-1108_etiquette`, built on `feat/DPES-1108_worker-status`.
