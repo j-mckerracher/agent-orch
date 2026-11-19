@@ -152,9 +152,11 @@ impl DaemonApi {
                 // Marked before the turn starts, so a proposal the turn makes is checked
                 // against a report that counts as relayed. Marking is safe to repeat, which
                 // also finishes a relay a stop interrupted, and it never changes the time.
+                // A scout whose worker asked the user something has not reported yet: the
+                // store refuses the mark, and the relay is a conflict until the question closes.
                 self.store
                     .mark_task_report_relayed(&report.task_id, &utc_text(self.reports_now_ms()))
-                    .map_err(map_store_error)?;
+                    .map_err(super::decisions::map_question_error)?;
                 let begun = self
                     .conversations
                     .start_relay(&target, &turn_id, &text, &block, actions)

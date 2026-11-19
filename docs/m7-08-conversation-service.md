@@ -684,8 +684,9 @@ lookup, so a non-approver cannot replay a key to read a cached approval. A sessi
 that did not negotiate the capability still gets `-32004` first. Later phases add
 `settings.set` (phase 2), `monitoring.set` (phase 3), `projects.set_defaults`,
 `holds.set`, `holds.release`, `reports.get` and `reports.relay` (phase 4), and
-`grants.create` and `grants.revoke` (phase 5), each in the same change that routes
-the method.
+`grants.create` and `grants.revoke` (phase 5), and `decisions.list`,
+`decisions.answer`, `decisions.defer` and `decisions.reconcile` (DPES-1108 phase 3),
+each in the same change that routes the method.
 
 The credential does not enable actions at Full. Actions run at Restricted and Auto.
 
@@ -913,8 +914,8 @@ revokes a grant.
 - **Grantable kinds.** The code's `GRANTABLE_KINDS` list has six kinds:
   `workstream.update` (title and summary only, never a change of `state`),
   `objective.add`, `objective.revise`, `task.propose`, `task.retry` and
-  `workstream.link_task`. A grant names at most 16 kinds. `decision.hold` and
-  `workstream.create` are not grantable in this build.
+  `workstream.link_task`. A grant names at most 16 kinds. `decision.hold`,
+  `decision.ask` and `workstream.create` are not grantable in this build.
 - **Never grantable.** The code's `NEVER_GRANTABLE` list has three entries:
   `project.remove`, `task.cancel` and `task.revise`. `delivery.merge` is covered only by
   a merge grant, which may name no other kind (see `orchestrator-actions.md`).
@@ -968,6 +969,47 @@ name or a standing fact. The backend and the desktop editor are built.
 - Clearing a conversation's history deletes that scope's notes. Clearing the global
   conversation deletes the global notes, which every workstream conversation lists.
 - The `notes.set` reply carries no note text, because replies are cached.
+
+## User decisions (DPES-1108, phase 3)
+
+A user decision is a question held for the user and bound to one task. It is a
+`decision_holds` row of subject kind `question` (migration 0063). The plan is
+`docs/design/firstmate-behavior-plan.md`, section 5.4.
+
+- **Raising.** The orchestrator proposes `decision.ask` (`task_id`, `question`, optional
+  `options`, optional `key`). Like every action it waits for the user's approval in this
+  build. A later phase raises a question from a worker with `SqliteStore::raise_question`
+  and `QuestionRaiser::Worker`. A question is at most 1,024 bytes, up to 6 one-line
+  options of at most 200 bytes, and a key of lowercase letters, digits and `-`. One
+  open question per task and key: asking again with the key returns the open one.
+- **Holding.** While a question is open, deferred or not, its task does not start. The
+  scheduler gives it `AwaitingDecision`, and `queue.snapshot` shows `waiting_reason`
+  `decision` with `waiting_detail` `open_question`. A running task is not stopped.
+- **Closing.** Only `decisions.answer` (the user's words, stored exactly as sent, up to
+  4,096 bytes) or `decisions.reconcile` (evidence that the question no longer matters)
+  closes a question. The database refuses any other close. A task finishing, a
+  cancel, a history clear or a hold call never closes one.
+- **Deferring.** `decisions.defer` takes `until` as `YYYY-MM-DD`, today to 60 days
+  ahead, as a hold does. The question stays open and its task stays held. The list
+  marks it with `deferred_until` until the end of that day in UTC.
+- **Records.** Every answer, reconcile and deferral is a row in `decision_answers`.
+  Rows are never changed or deleted. Only the user records one (`recorded_by` is
+  `user`).
+- **Scout reports.** A scout's report is not marked relayed while the scout's worker
+  has an open question. `reports.relay` answers `conflict`, and the automatic relay
+  leaves the report unrelayed.
+- **Methods.** All four are user-only, under the `holds` capability.
+  `decisions.list` takes `{}` and returns `{"questions": [...]}`, the open questions
+  oldest first. Each of the other three takes `question_id`, its own field (`answer`,
+  `until` or `evidence`) and `idempotency_key`, and returns `{"question": ...}`. A
+  question carries `id`, `task_id`, `task_title`, `project`, `question`, `options`,
+  `key`, `raised_by` (`orchestrator` or `worker`), `state` (`open`, `answered` or
+  `reconciled`), `deferred_until`, `created_at` and `closing` (`kind`, `text`,
+  `recorded_at`, or null). An unknown question is `not_found`. A closed one is
+  `conflict`. Text or a date the rules refuse is `invalid_params`.
+- **Snapshot.** The chat snapshot lists open questions as data: the count, then one
+  line per question with its id, its task and the question cut to 80 bytes. The
+  answers are never shown.
 
 ## Not covered here
 

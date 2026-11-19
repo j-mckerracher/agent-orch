@@ -407,7 +407,8 @@ impl DaemonApi {
             | Action::TaskCancel(_)
             | Action::TaskRevise(_)
             | Action::ProjectRemove(_)
-            | Action::DecisionHold(_) => return Ok(None),
+            | Action::DecisionHold(_)
+            | Action::DecisionAsk(_) => return Ok(None),
         }
         Ok(Some(found))
     }

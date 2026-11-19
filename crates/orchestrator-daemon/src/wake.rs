@@ -391,12 +391,16 @@ impl WakeService {
                     if reply.trim().is_empty() {
                         continue;
                     }
-                    self.store
-                        .mark_task_report_relayed(
-                            &record.subject,
-                            &super::report::utc_text(self.clock.now_ms()),
-                        )
-                        .map_err(|_| "cannot mark relayed report".to_owned())?;
+                    match self.store.mark_task_report_relayed(
+                        &record.subject,
+                        &super::report::utc_text(self.clock.now_ms()),
+                    ) {
+                        Ok(_) => {}
+                        // The scout's worker asked the user something, so the report stays
+                        // unrelayed until the question closes (DPES-1108 phase 3).
+                        Err(error) if orchestrator_store::QuestionError::of(&error).is_some() => {}
+                        Err(_) => return Err("cannot mark relayed report".to_owned()),
+                    }
                 }
                 self.store
                     .settle_wake_batch(batch_id, settle)

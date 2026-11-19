@@ -479,6 +479,10 @@ impl RpcHandler for DaemonApi {
             "holds.set" => self.holds_set(params),
             "holds.release" => self.holds_release(params),
             "holds.list" => self.holds_list(params),
+            "decisions.list" => self.decisions_list(params),
+            "decisions.answer" => self.decisions_answer(params),
+            "decisions.defer" => self.decisions_defer(params),
+            "decisions.reconcile" => self.decisions_reconcile(params),
             "grants.create" => self.grants_create(params),
             "grants.revoke" => self.grants_revoke(params),
             "grants.list" => self.grants_list(params),
@@ -2017,6 +2021,8 @@ mod coordinator;
 mod grant_matcher;
 #[path = "api_grants.rs"]
 mod grants;
+#[path = "api_decisions.rs"]
+mod decisions;
 #[path = "api_holds.rs"]
 mod holds;
 #[path = "api_home_directory.rs"]
@@ -2086,6 +2092,9 @@ mod review_tests;
 #[cfg(test)]
 #[path = "api_actions_phase4_tests.rs"]
 mod actions_phase4_tests;
+#[cfg(test)]
+#[path = "api_decisions_tests.rs"]
+mod decisions_tests;
 #[cfg(test)]
 #[path = "api_actions_task_tests.rs"]
 mod actions_task_tests;

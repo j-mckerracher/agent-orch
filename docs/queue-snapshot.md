@@ -45,11 +45,14 @@ limits.
   expose a separate `verifying` list: that would be a contract change after
   clients began building on these fields, and `tasks.list` already carries it.
   The behavior is pinned by `verifying_tasks_are_in_neither_list_and_hold_no_capacity`.
-- `waiting_reason`: `dependency` | `global_cap` | `project_cap` | `approval` |
-  `load` | `other`. It is taken from a real scheduler pass with the daemon's real
+- `waiting_reason`: `dependency` | `decision` | `global_cap` | `project_cap` |
+  `approval` | `load` | `other`. It is taken from a real scheduler pass with the daemon's real
   limits, so it equals the executor's decision. The global cap is reported
   before the project cap, as the scheduler checks it first.
   - `dependency`: `waiting_on` is the unfinished dependency's task id.
+  - `decision`: the task has a question open for the user (DPES-1108 phase 3).
+    `waiting_detail` is `open_question`. Only the user's answer or a reconcile
+    lets it start.
   - `approval`: the scheduler's start authorization was withheld. Today the
     daemon authorizes any task whose project is registered, and the store
     cannot hold tasks for an unregistered project, so this value is produced

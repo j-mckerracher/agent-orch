@@ -114,6 +114,7 @@ enum Execution {
     ReviseTask(Box<ReviseTaskExec>),
     RemoveProject(RemoveParams),
     HoldDecision(HoldParams),
+    AskDecision(AskParams),
 }
 
 /// A `task.propose`: the `tasks.submit` request it stands for, and the workstream
@@ -159,6 +160,16 @@ struct HoldParams {
     idempotency_key: String,
 }
 
+/// A `decision.ask`. The key seeds the question id, so a rerun finds the question it raised.
+#[derive(Serialize)]
+struct AskParams {
+    task_id: String,
+    question: String,
+    options: Vec<String>,
+    key: Option<String>,
+    idempotency_key: String,
+}
+
 impl Execution {
     /// The method the execution key is claimed under.
     fn method(&self) -> &'static str {
@@ -174,6 +185,7 @@ impl Execution {
             Self::ReviseTask(_) => "tasks.revise",
             Self::RemoveProject(_) => "projects.remove",
             Self::HoldDecision(_) => "holds.set",
+            Self::AskDecision(_) => "decisions.ask",
         }
     }
 
@@ -198,6 +210,7 @@ impl Execution {
             }
             Self::RemoveProject(request) => serde_json::to_value(request),
             Self::HoldDecision(request) => serde_json::to_value(request),
+            Self::AskDecision(request) => serde_json::to_value(request),
         };
         value.map_err(|_| RpcError::Internal)
     }
@@ -253,6 +266,16 @@ impl Execution {
                     &hold_id(&request.idempotency_key),
                 )
                 .map(|hold| format!("hold:{}", hold.id))
+                .map_err(ActionError::from),
+            Self::AskDecision(request) => api
+                .ask_inner(
+                    &question_id(&request.idempotency_key),
+                    &request.task_id,
+                    &request.question,
+                    &request.options,
+                    request.key.as_deref(),
+                )
+                .map(|question| format!("question:{}", question.id))
                 .map_err(ActionError::from),
         }
     }
@@ -313,6 +336,13 @@ impl Execution {
                     .store
                     .decision_hold(&id)?
                     .map(|hold| format!("hold:{}", hold.id)));
+            }
+            Self::AskDecision(request) => {
+                let id = question_id(&request.idempotency_key);
+                return Ok(api
+                    .store
+                    .decision_question(&id)?
+                    .map(|question| format!("question:{}", question.id)));
             }
         };
         match found {
@@ -547,6 +577,10 @@ fn promotable_scout(store: &SqliteStore, task_id: &str) -> Result<Option<String>
 /// The id of the hold an execution under `key` makes.
 fn hold_id(key: &str) -> String {
     idempotency::stable_id("hold", key)
+}
+
+fn question_id(key: &str) -> String {
+    idempotency::stable_id("question", key)
 }
 
 /// A lineage refusal is a conflict, whatever its cause. Any other store failure is internal.
@@ -1006,6 +1040,9 @@ impl DaemonApi {
             Execution::HoldDecision(request) => {
                 self.task_in_workstream(&request.task_id, workstream)?
             }
+            Execution::AskDecision(request) => {
+                self.task_in_workstream(&request.task_id, workstream)?
+            }
             // Removing a project reaches outside any one workstream.
             Execution::RemoveProject(_) => false,
         })
@@ -1163,6 +1200,13 @@ impl DaemonApi {
             Action::DecisionHold(hold) => Execution::HoldDecision(HoldParams {
                 task_id: hold.task_id,
                 until: hold.until,
+                idempotency_key: key,
+            }),
+            Action::DecisionAsk(ask) => Execution::AskDecision(AskParams {
+                task_id: ask.task_id,
+                question: ask.question,
+                options: ask.options,
+                key: ask.key,
                 idempotency_key: key,
             }),
         })
@@ -1463,6 +1507,7 @@ impl DaemonApi {
             Action::TaskRetry(retry) => &retry.task_id,
             Action::TaskRevise(revise) => &revise.task_id,
             Action::DecisionHold(hold) => &hold.task_id,
+            Action::DecisionAsk(ask) => &ask.task_id,
             Action::WorkstreamLinkTask(link) => &link.task_id,
             _ => return Value::Null,
         };

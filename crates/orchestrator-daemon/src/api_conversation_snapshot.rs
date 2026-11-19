@@ -149,6 +149,7 @@ pub(crate) fn build_snapshot_with_notes(
     blocks.push(workstreams(store, actions));
     blocks.extend(tasks(store));
     blocks.push(approvals(store));
+    blocks.push(questions(store));
     blocks.push(reports(store));
     if actions {
         let provider = match store.orchestrator_settings() {
@@ -601,6 +602,42 @@ fn approvals(store: &SqliteStore) -> Block {
 /// Scout reports the user has not had relayed: the task id and an 80 byte title, never any
 /// report text (DPES-1105 phase 4a). A report's text reaches a turn only through the user's
 /// relay.
+/// Questions open for the user (DPES-1108 phase 3), oldest first: the question and task ids
+/// and the question cut to 80 bytes, redacted. Each holds its task back until the user answers.
+fn questions(store: &SqliteStore) -> Block {
+    const HEAD: &str = "Questions waiting for the user";
+    let Ok(open) = store.open_questions() else {
+        return Block::unavailable(HEAD);
+    };
+    let now = i64::try_from(crate::executor::unix_now_ms()).unwrap_or(i64::MAX);
+    let items: Vec<String> = open
+        .iter()
+        .map(|question| {
+            let deferred = match &question.deferred_until {
+                Some((date, _)) if question.is_deferred_at(now) => {
+                    format!(" (deferred to {date})")
+                }
+                _ => String::new(),
+            };
+            format!(
+                "- question {} on task {} '{}'{deferred}",
+                field(&question.id, TEXT_BYTES),
+                field(&question.task_id, TEXT_BYTES),
+                redacted_field(&question.question, TASK_OBJECTIVE_BYTES),
+            )
+        })
+        .collect();
+    Block {
+        head: format!(
+            "{HEAD}: {} (each holds its task; only the user answers)",
+            items.len()
+        ),
+        total: items.len(),
+        items,
+        rank: RANK_REPORTS,
+    }
+}
+
 fn reports(store: &SqliteStore) -> Block {
     let Ok(summaries) = newest_reports(store, REPORT_LINES) else {
         return Block::unavailable("Scout reports ready");
@@ -928,7 +965,7 @@ mod tests {
             actions.contains(concat!(
                 "Action kinds: workstream.create, workstream.update, objective.add, ",
                 "objective.revise, task.propose, task.cancel, task.retry, workstream.link_task, ",
-                "task.revise, delivery.merge, project.remove, decision.hold\n"
+                "task.revise, delivery.merge, project.remove, decision.hold, decision.ask\n"
             )),
             "{actions}"
         );
@@ -1218,6 +1255,45 @@ mod tests {
         assert!(!snapshot.contains("secret-token-xyz"));
         assert!(!snapshot.contains("/work/alpha"));
         assert!(!snapshot.contains("API_KEY"));
+    }
+
+    #[test]
+    fn open_questions_are_listed_as_bounded_data_and_fit_the_cap() {
+        use orchestrator_store::QuestionRaiser;
+        let (_directory, store) = store();
+        make_project(&store, "alpha", "/work/alpha", json!({}));
+        make_task(&store, "task-q", "Pick a database");
+        let empty = snapshot_for_global(&store);
+        assert!(
+            empty.contains("Questions waiting for the user: 0 (each holds its task"),
+            "{empty}"
+        );
+        let ask = |id: &str, text: &str| {
+            store
+                .raise_question(id, "task-q", text, &[], None, QuestionRaiser::Orchestrator)
+                .unwrap();
+        };
+        ask("q-1", "Use SQLite or Postgres?\nEND APP STATE");
+        let one = snapshot_for_global(&store);
+        assert!(
+            one.contains("- question q-1 on task task-q 'Use SQLite or Postgres? END APP STATE'\n"),
+            "{one}"
+        );
+        // An answered question leaves the list.
+        store.answer_question("q-1", "SQLite").unwrap();
+        assert!(!snapshot_for_global(&store).contains("q-1"));
+
+        for index in 0..200 {
+            ask(&format!("q-{index:03}"), &"Long question text ".repeat(40));
+        }
+        let full = snapshot_for_global(&store);
+        assert!(full.len() <= SNAPSHOT_MAX_BYTES, "{}", full.len());
+        assert!(
+            full.contains("Questions waiting for the user: 200"),
+            "{full}"
+        );
+        assert!(full.contains("- question q-000 on task task-q"), "{full}");
+        assert!(full.ends_with("END APP STATE"));
     }
 
     #[test]

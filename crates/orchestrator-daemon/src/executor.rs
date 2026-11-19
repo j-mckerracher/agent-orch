@@ -824,6 +824,18 @@ impl Inner {
                 return;
             }
         };
+        // A task with a question open for the user does not start (DPES-1108 phase 3).
+        let open_questions = match self.store.tasks_with_open_questions() {
+            Ok(open_questions) => open_questions,
+            Err(error) => {
+                diag.error(
+                    LOG,
+                    "scheduler_state_unreadable",
+                    &[("error", &error.to_string())],
+                );
+                return;
+            }
+        };
         let registered: BTreeSet<&str> =
             projects.iter().map(|project| project.id.as_str()).collect();
         let snapshots: Vec<_> = tasks
@@ -860,7 +872,9 @@ impl Inner {
         // submission; a task may start only while its project is registered.
         let authorization = |project_id: &str, _task_id: &str| registered.contains(project_id);
         // A closed load gate leaves every task Queued; running tasks are not touched.
-        let scheduler = scheduler.with_start_gate(self.config.load.start_gate(Instant::now()));
+        let scheduler = scheduler
+            .with_start_gate(self.config.load.start_gate(Instant::now()))
+            .with_open_questions(&open_questions);
         let plan = scheduler.schedule(Some(&authorization));
         let mut running = snapshots
             .iter()

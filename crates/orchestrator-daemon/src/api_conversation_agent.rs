@@ -1278,14 +1278,14 @@ workstream.create now; it needs no registered project.",
 Action block: end the reply with one fenced block; nothing changes until the user approves it.
 ```mcao-actions
 {
-  "mcao_actions": 1,
-  "actions": [
-    { "kind": "workstream.create", "ref": "a", "title": "Docs", "summary": "Scope." },
-    { "kind": "objective.add", "workstream_ref": "a", "title": "Plan scope", "gates": ["Scope list approved"] }
-  ]
+"mcao_actions": 1,
+"actions": [
+{ "kind": "workstream.create", "ref": "a", "title": "Docs", "summary": "Scope." },
+{ "kind": "objective.add", "workstream_ref": "a", "title": "Plan scope", "gates": ["Scope list approved"] }
+]
 }
 ```
-Kinds: workstream.create (title, summary, ref); workstream.update (workstream_id, expected_revision, title, summary, state); objective.add (workstream_id or workstream_ref, title, description, gates); objective.revise (objective_id, expected_revision, title, description, add_gates); task.propose (project, objective, agent, task_kind, delivery, workstream_id or workstream_ref, objective_id); task.cancel (task_id); task.retry (task_id); workstream.link_task (workstream_id, task_id, objective_id); task.revise (task_id, added_intent); delivery.merge (task_id, pr_number, head_sha: full 40-character commit); decision.hold (task_id, until as YYYY-MM-DD); project.remove (project). expected_revision is the app state's rev. A ref names workstream.create in this block. task.propose project: Projects list's p-xxxxxxxx code; agent: omit for Settings, codex or claude-code if no default or user override. task_kind is Implement or Investigate; delivery is ReportOnly or LocalReview (default). At most 10 actions. Unknown kinds or fields reject the block."#
+Kinds: workstream.create (title, summary, ref); workstream.update (workstream_id, expected_revision, title, summary, state); objective.add (workstream_id or workstream_ref, title, description, gates); objective.revise (objective_id, expected_revision, title, description, add_gates); task.propose (project, objective, agent, task_kind, delivery, workstream_id or workstream_ref, objective_id); task.cancel, task.retry (task_id); workstream.link_task (workstream_id, task_id, objective_id); task.revise (task_id, added_intent); delivery.merge (task_id, pr_number, head_sha: full 40-hex commit); decision.hold (task_id, until as YYYY-MM-DD); decision.ask (task_id, question, options, key); project.remove (project). expected_revision is the app state's rev. A ref names workstream.create in this block. task.propose project: Projects list's p-xxxxxxxx code; agent: omit for Settings, codex or claude-code if no default or user override. task_kind is Implement or Investigate; delivery is ReportOnly or LocalReview (default). At most 10 actions. Unknown kinds or fields reject the block."#
 );
 
 /// The preamble cap from the design (DPES-1105).
