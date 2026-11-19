@@ -64,7 +64,8 @@ export const WINDOWS = {
   // DPES-1108 phase 4 adds one portable wake classification test (the executor tests are Unix-only): 703 becomes 704.
   // DPES-1108 phase 5 authority model adds 12 daemon unit tests and 1 real-daemon test: 704 becomes 717 (CI run 44508913337).
   // DPES-1108 phase 6 preferences adds 7 daemon tests (608 vs 601 unit, 88 real-daemon): 724 in the phase 9 integration, re-synced from CI.
-  daemon: { passed: 724, ignored: 1, sequence: [620, 89, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  // DPES-1108 phase 7 coordinators adds 8 daemon unit tests: 732 in the phase 9 integration, re-synced from CI.
+  daemon: { passed: 732, ignored: 1, sequence: [628, 89, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -112,7 +113,8 @@ export const WINDOWS = {
   // DPES-1108 phase 4 adds the portable worker_status binary (11 tests): 386 becomes 397, in the macOS order.
   // DPES-1108 phase 5 adds the action_authority binary (6 tests): 397 becomes 403 (CI run 44508913337).
   // DPES-1108 phase 6 replaces the 5 orchestrator_notes tests with the 7 memory_documents tests (CI run 44507155149): 405.
-  store: { passed: 405, ignored: 1, sequence: [113, 6, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 3, 2, 7, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
+  // DPES-1108 phase 7 adds the coordinators binary (8 tests): 413.
+  store: { passed: 413, ignored: 1, sequence: [113, 6, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 8, 9, 8, 11, 3, 7, 14, 3, 2, 7, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 112 },
@@ -168,7 +170,8 @@ export const MACOS = {
   // DPES-1108 phase 4 worker status adds 5 Unix executor tests and 1 wake classification test: 710 becomes 716 (CI run 44494162204, measured on macOS).
   // DPES-1108 phase 5 authority model adds 12 daemon unit tests and 1 real-daemon test: 846 becomes 859 (CI run 44508913337).
   // DPES-1108 phase 6 preferences adds 7 daemon tests: 866 in the phase 9 integration, re-synced from CI.
-  daemon: { passed: 866, ignored: 1, sequence: [735, 94, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // DPES-1108 phase 7 coordinators adds 8 daemon unit tests: 874 in the phase 9 integration, re-synced from CI.
+  daemon: { passed: 874, ignored: 1, sequence: [743, 94, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -206,7 +209,8 @@ export const MACOS = {
   // DPES-1108 phase 4 worker status, measured by the macOS gate in CI run 44494162204: 2368.
   // DPES-1108 phase 5 authority model adds 25 tests (13 daemon, 6 store, 6 core), measured in CI run 44513183355: 2393.
   // DPES-1108 phase 6 preferences adds 14 tests (CI run 44507155149 measured 2382 from 2368): 2407.
-  workspace: { passed: 2407, ignored: 2 },
+  // DPES-1108 phase 7 coordinators adds 28 tests (2396 from 2368): 2435.
+  workspace: { passed: 2435, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
@@ -231,7 +235,8 @@ export const MACOS = {
   // DPES-1108 phase 4 adds the worker_status binary (11 tests): 390 becomes 401 (CI run 44494162204).
   // DPES-1108 phase 5 adds the action_authority binary (6 tests): 401 becomes 407 (CI run 44508913337).
   // DPES-1108 phase 6 replaces the 5 orchestrator_notes tests with the 7 memory_documents tests (CI run 44507155149): 409.
-  store: { passed: 409, ignored: 1, sequence: [115, 6, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 4, 2, 7, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
+  // DPES-1108 phase 7 adds the coordinators binary (8 tests): 417.
+  store: { passed: 417, ignored: 1, sequence: [115, 6, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 8, 9, 8, 11, 3, 7, 14, 4, 2, 7, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 11, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 114 },
@@ -302,7 +307,8 @@ export const NODE_SELF_TESTS = { passed: 147 };
 // DPES-1108 phase 4 (the task.message card) adds one test in actionCardModel.test.ts: 2380 tests.
 // DPES-1108 phase 5 (autonomy switch section, done-on-its-own cards, discard) adds one file: 128 files, 2394 tests.
 // DPES-1108 phase 6 (Preferences section, memory.set card) adds 11 tests: 2405.
-export const VITEST = { files: 128, tests: 2405 };
+// DPES-1108 phase 7 (coordinator panel, route and report cards) adds one file and 28 tests: 129 files, 2433.
+export const VITEST = { files: 129, tests: 2433 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

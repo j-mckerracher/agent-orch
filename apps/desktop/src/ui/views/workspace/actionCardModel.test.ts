@@ -655,3 +655,76 @@ describe("cards the orchestrator ran on its own (DPES-1108)", () => {
     ]);
   });
 });
+
+// DPES-1108 phase 7: the global orchestrator routes work to a coordinator, and a coordinator reports back.
+const route = proposal({
+  id: "proposal-11",
+  kind: "coordinator.route",
+  params: { project: "p-3fa9c1d2", work: "Write the troubleshooting page.\nCover sign-in failures." },
+  target: { projectName: "alpha", coordinatorActive: true },
+});
+const report = proposal({
+  id: "proposal-12",
+  kind: "coordinator.report",
+  params: { verb: "answer", note: "The page is written.", request: "r-0123456789abcdef", key: "docs" },
+  target: { requestWork: "Write the troubleshooting page.", requestAnswered: false },
+});
+
+describe("coordinator route and report card copy", () => {
+  it("phase7_names_both_kinds_headings_button_phrases_and_done_labels", () => {
+    expect(cardTitle("coordinator.route", route.params)).toBe("Proposed: Route work to the project coordinator");
+    expect(cardTitle("coordinator.report", report.params)).toBe("Proposed: Report to the orchestrator");
+    expect(actionPhrase(route, NAMES)).toBe("route work to the project coordinator alpha");
+    expect(actionPhrase({ ...route, target: null }, NAMES)).toBe("route work to the project coordinator p-3fa9c1d2");
+    expect(actionPhrase(report, NAMES)).toBe("report to the orchestrator r-0123456789abcdef");
+    const done = (p: ActionProposal) => viewOf({ ...p, state: "executed" }, null, LIVE).pill.text;
+    expect([done(route), done(report)]).toEqual(["Routed", "Reported"]);
+  });
+
+  it("phase7_route_card_shows_the_project_whether_its_coordinator_is_active_and_the_whole_work", () => {
+    expect(fieldsOf(route, NAMES, null)).toEqual([
+      { label: "Project", value: "alpha (p-3fa9c1d2)" },
+      { label: "Coordinator", value: "Active" },
+      { label: "Work", value: ["Write the troubleshooting page.", "Cover sign-in failures."] },
+      expect.objectContaining({ label: "What happens" }),
+    ]);
+    const inactive = { ...route, target: { projectName: "alpha", coordinatorActive: false } };
+    expect(fieldsOf(inactive, NAMES, null)[1]!.value).toMatch(/^Not active/);
+    expect(fieldsOf({ ...route, target: null }, NAMES, null)[1]).toEqual({ label: "Coordinator", value: "(not available)" });
+  });
+
+  it("phase7_report_card_shows_the_verb_the_note_and_the_routed_request", () => {
+    expect(fieldsOf(report, NAMES, null)).toEqual([
+      { label: "Report", value: "Answer" },
+      { label: "Note", value: ["The page is written."] },
+      { label: "Routed request", value: "r-0123456789abcdef" },
+      { label: "Request work", value: ["Write the troubleshooting page."] },
+      { label: "Request answered", value: "No" },
+      { label: "Key", value: "docs" },
+      expect.objectContaining({ label: "What happens" }),
+    ]);
+    const caveat = proposal({ kind: "coordinator.report", params: { verb: "caveat", note: "Screens may go stale." } });
+    expect(fieldsOf(caveat, NAMES, null).map((row) => row.label)).toEqual(["Report", "Note", "What happens"]);
+    expect(actionPhrase(caveat, NAMES)).toBe("report to the orchestrator Screens may go stale.");
+  });
+
+  it("phase7_task_propose_card_names_the_routed_request_it_belongs_to", () => {
+    const owned = proposal({
+      kind: "task.propose",
+      params: { project: "p-3fa9c1d2", objective: "Write it", agent: "codex", task_kind: "Implement", delivery: "LocalReview", request: "r-0123456789abcdef" },
+    });
+    expect(fieldsOf(owned, NAMES, null)).toContainEqual({ label: "Routed request", value: "r-0123456789abcdef" });
+    const plain = { ...owned, params: { ...owned.params, request: undefined } };
+    expect(fieldsOf(plain, NAMES, null).map((row) => row.label)).not.toContain("Routed request");
+  });
+
+  it("phase7_failures_say_nothing_was_routed_or_reported", () => {
+    for (const code of ["conflict", "invalid", "not_found"]) {
+      expect(failureText(failedWith(route, code))).toMatch(/Nothing was routed\./);
+      expect(failureText(failedWith(report, code))).toMatch(/Nothing was reported\.$/);
+    }
+    expect(failureText(failedWith(route, "not_found"))).toMatch(/no active coordinator/);
+    expect(failureText(failedWith(report, "conflict"))).toMatch(/already answered/);
+    expect(viewOf(route, null, { ...LIVE, approver: false }).approve).toMatchObject({ enabled: false, reason: APPROVER_REQUIRED_NOTICE });
+  });
+});

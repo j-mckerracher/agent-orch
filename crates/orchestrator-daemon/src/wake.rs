@@ -25,8 +25,9 @@ use orchestrator_core::supervision::{
 use orchestrator_core::task::TaskState;
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_store::{
-    ConversationError, ConversationTarget, NewWakeRecord, OrchestratorSettings, Settle, SkipReason,
-    SqliteStore, Store, TurnState, WakeKind, WakeOutcome, WakeRecord, WakeState,
+    ConversationError, ConversationTarget, CoordinatorFact, NewCoordinatorFact, NewWakeRecord,
+    OrchestratorSettings, Settle, SkipReason, SqliteStore, Store, StreamEvent, TaskWakeFacts,
+    TurnState, WakeKind, WakeOutcome, WakeRecord, WakeState,
 };
 use sha2::{Digest, Sha256};
 
@@ -47,13 +48,17 @@ impl Clock for SystemClock {
     }
 }
 use super::wake_events::{
-    classify, proposal_notice, report_relay_failed_notice, stall_candidate, Candidate,
+    classify, coordinator_report_notice, proposal_notice, report_relay_failed_notice,
+    routed_request_notice, stall_candidate, Candidate,
 };
 use crate::executor::SessionPulse;
 
 const LOG: &str = "wake";
 const GLOBAL_SCOPE: &str = "conversation:global";
 const WORKSTREAM_PREFIX: &str = "conversation:workstream:";
+const PROJECT_PREFIX: &str = "conversation:project:";
+/// Routed requests and coordinator reports turned into wake records per pass.
+const COORDINATOR_PAGE: usize = 64;
 /// How often the loop thread runs a pass.
 const TICK: Duration = Duration::from_secs(2);
 /// Durable events read per pass.
@@ -77,7 +82,7 @@ pub(crate) fn scope_of(target: &ConversationTarget) -> String {
     match target {
         ConversationTarget::Global => GLOBAL_SCOPE.to_owned(),
         ConversationTarget::Workstream(id) => format!("{WORKSTREAM_PREFIX}{id}"),
-        ConversationTarget::Project(id) => format!("conversation:project:{id}"),
+        ConversationTarget::Project(id) => format!("{PROJECT_PREFIX}{id}"),
     }
 }
 
@@ -86,10 +91,55 @@ pub(crate) fn target_of(scope: &str) -> Option<ConversationTarget> {
     if scope == GLOBAL_SCOPE {
         return Some(ConversationTarget::Global);
     }
+    if let Some(id) = scope
+        .strip_prefix(PROJECT_PREFIX)
+        .filter(|id| !id.is_empty())
+    {
+        return Some(ConversationTarget::Project(id.to_owned()));
+    }
     scope
         .strip_prefix(WORKSTREAM_PREFIX)
         .filter(|id| !id.is_empty())
         .map(|id| ConversationTarget::Workstream(id.to_owned()))
+}
+
+/// The durable fact a coordinator's parent channel gets for one event of a task it owns
+/// (DPES-1108 phase 7), from the same classification that drives the wake. A task that
+/// succeeded has no wake of its own, so its transition is read here. `None` for an event that
+/// is no fact: a stall, a sign-in, a delivery approval (its candidate was already reported).
+fn coordinator_fact(event: &StreamEvent, candidate: Option<&Candidate>) -> Option<CoordinatorFact> {
+    if let Some(candidate) = candidate {
+        return match candidate.kind {
+            WakeKind::TaskFailed => Some(CoordinatorFact::TaskFailed),
+            WakeKind::CandidateReady => Some(CoordinatorFact::TaskReady),
+            WakeKind::ScoutReportReady => Some(CoordinatorFact::ReportReady),
+            WakeKind::WorkerNeedsDecision => Some(CoordinatorFact::QuestionRaised),
+            WakeKind::WorkerBlocked => Some(CoordinatorFact::WorkerBlocked),
+            _ => None,
+        };
+    }
+    let succeeded = event.kind == "task.transition"
+        && event
+            .payload
+            .get("state")
+            .and_then(serde_json::Value::as_str)
+            == Some("Succeeded");
+    succeeded.then_some(CoordinatorFact::TaskDone)
+}
+
+/// The owning coordinator's project, when `facts` place the task in a coordinator's scope.
+fn owning_project(facts: Option<&TaskWakeFacts>) -> Option<&str> {
+    facts?
+        .scope
+        .strip_prefix(PROJECT_PREFIX)
+        .filter(|id| !id.is_empty())
+}
+
+/// Whether a coordinator report needs the global orchestrator's judgment now: the coordinator's
+/// own report, a failure, or something that waits. Progress (ready, done, answered, merged) is a
+/// notice, and the next turn reads it in the app state.
+fn report_needs_model(author: &str, verb: &str) -> bool {
+    author == "coordinator" || matches!(verb, "task_failed" | "question_raised" | "worker_blocked")
 }
 
 /// A stable id: the same prefix and seed always give the same value.
@@ -272,6 +322,7 @@ impl WakeService {
         let settings = self.settings()?;
         report.settled = self.settle_running(&settings, now)?;
         report.recorded += self.observe(&settings, now)?;
+        report.recorded += self.coordinator_scan(&settings, now)?;
         report.recorded += self.proposal_scan(&settings, now)?;
         self.start_ready(now, &mut report)?;
         // Drain due batches before arming the next check. At the one-minute floor the
@@ -585,8 +636,21 @@ impl WakeService {
     }
 
     /// Task events are interpreted in their workstream with a notice in Global. Reports
-    /// instead relay in Global, with a notice in the workstream.
+    /// instead relay in Global, with a notice in the workstream. A coordinator's task is its
+    /// coordinator's alone, reports included: Global hears of it only through the parent
+    /// channel (`coordinator_scan`), never through a copy of the record (DPES-1108 phase 7).
     fn expand(candidate: Candidate, scope: &str, out: &mut Vec<NewWakeRecord>) {
+        if scope.starts_with(PROJECT_PREFIX) {
+            out.push(NewWakeRecord {
+                scope: scope.to_owned(),
+                kind: candidate.kind,
+                subject: candidate.subject,
+                dedupe_key: candidate.dedupe_key,
+                notice: candidate.notice,
+                needs_model: candidate.kind.needs_model(),
+            });
+            return;
+        }
         out.push(NewWakeRecord {
             scope: scope.to_owned(),
             kind: candidate.kind,
@@ -623,6 +687,7 @@ impl WakeService {
             return Ok(0);
         };
         let mut records = Vec::new();
+        let mut coordinator_facts = Vec::new();
         for event in &events {
             if event.kind == "task.report_ready"
                 && self
@@ -649,14 +714,83 @@ impl WakeService {
             {
                 continue;
             }
-            if let Some(candidate) = classify(event, facts.as_ref()) {
+            let candidate = classify(event, facts.as_ref());
+            // A coordinator's task leaves a durable fact on its parent channel, from the same
+            // event that wakes the coordinator. Its id derives from the event, so a replay
+            // after a crash writes it once.
+            if let Some(project_id) = owning_project(facts.as_ref()) {
+                if let Some(fact) = coordinator_fact(event, candidate.as_ref()) {
+                    coordinator_facts.push(NewCoordinatorFact {
+                        id: stable_id("fact", &format!("{}:{}", event.sequence, fact.as_str())),
+                        project_id: project_id.to_owned(),
+                        fact,
+                        task_id: event.task_id.clone(),
+                        key: None,
+                    });
+                }
+            }
+            if let Some(candidate) = candidate {
                 let scope = facts
                     .as_ref()
                     .map_or(GLOBAL_SCOPE, |facts| facts.scope.as_str());
                 Self::expand(candidate, scope, &mut records);
             }
         }
+        // Facts first: the cursor moves with the wake records, so a crash before that replays
+        // these events, and the facts are already there.
+        if !coordinator_facts.is_empty() {
+            self.store
+                .record_coordinator_facts(&coordinator_facts)
+                .map_err(|_| "cannot record coordinator facts".to_owned())?;
+        }
         self.record_at(settings, &records, last, now)
+    }
+
+    /// The parent channel's wakes (DPES-1108 phase 7): a routed request wakes its coordinator,
+    /// and a coordinator report wakes the global orchestrator. Each row is marked once its wake
+    /// record is written; the record is keyed on the row, so a crash between the two writes it
+    /// once, and a history clear of either conversation never wakes it again.
+    fn coordinator_scan(&self, settings: &OrchestratorSettings, now: u64) -> Result<usize, String> {
+        let requests = self
+            .store
+            .unwoken_routed_requests(COORDINATOR_PAGE)
+            .map_err(|_| "cannot read routed requests".to_owned())?;
+        let reports = self
+            .store
+            .unwoken_coordinator_reports(COORDINATOR_PAGE)
+            .map_err(|_| "cannot read coordinator reports".to_owned())?;
+        if requests.is_empty() && reports.is_empty() {
+            return Ok(0);
+        }
+        let mut records: Vec<NewWakeRecord> = requests
+            .iter()
+            .map(|request| NewWakeRecord {
+                scope: scope_of(&ConversationTarget::Project(request.project_id.clone())),
+                kind: WakeKind::RoutedRequest,
+                subject: request.id.clone(),
+                dedupe_key: format!("routed:{}", request.id),
+                notice: routed_request_notice(&request.id),
+                needs_model: true,
+            })
+            .collect();
+        records.extend(reports.iter().map(|report| NewWakeRecord {
+            scope: GLOBAL_SCOPE.to_owned(),
+            kind: WakeKind::CoordinatorReport,
+            subject: report.id.clone(),
+            dedupe_key: format!("coordinator_report:{}", report.id),
+            notice: coordinator_report_notice(
+                &super::conversation_snapshot::project_label(&report.project_id),
+                report,
+            ),
+            needs_model: report_needs_model(&report.author, &report.verb),
+        }));
+        let recorded = self.record(settings, &records, now)?;
+        let report_ids: Vec<String> = reports.into_iter().map(|report| report.id).collect();
+        let request_ids: Vec<String> = requests.into_iter().map(|request| request.id).collect();
+        self.store
+            .mark_coordinator_wakes_written(&report_ids, &request_ids)
+            .map_err(|_| "cannot mark coordinator wakes".to_owned())?;
+        Ok(recorded)
     }
 
     /// Adaptive work checks and deterministic stall notices.
@@ -867,6 +1001,14 @@ impl WakeService {
                 self.state().debounce.forget(&scope);
                 continue;
             };
+            // A removed coordinator takes no turn. Its tasks are back with Global, and its
+            // records wait for a restore.
+            if matches!(target, ConversationTarget::Project(_))
+                && self.conversations.require_target(&target).is_err()
+            {
+                self.state().debounce.forget(&scope);
+                continue;
+            }
             // One wake turn per scope, and a wake waits while a user turn runs.
             match self.store.running_conversation_turn(&target) {
                 Ok(None) => {}

@@ -1,6 +1,6 @@
 # Firstmate capability map (DPES-1105)
 
-Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `347c7ab`. Refreshed from `89bfc8b2d`; rows D16, D17, F8, W1 and I6 are new. Rows H2 and D11 were updated by DPES-1108 phase 3 and phase 4 (worker status, waits, steering by resume). Rows D2, D12, H4, H8 and R4 were updated by phase 5 (authority model); H4 moved from PARTIAL to HAVE. The firstmate behavior plan is [firstmate-behavior-plan.md](firstmate-behavior-plan.md).
+Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `347c7ab`. Refreshed from `89bfc8b2d`; rows D16, D17, F8, W1 and I6 are new. Rows H2 and D11 were updated by DPES-1108 phase 3 and phase 4 (worker status, waits, steering by resume). Rows D2, D12, H4, H8 and R4 were updated by phase 5 (authority model); H4 moved from PARTIAL to HAVE. Rows F1, F3, F7 and F8 were updated by DPES-1108 phase 7 (coordinators). The firstmate behavior plan is [firstmate-behavior-plan.md](firstmate-behavior-plan.md).
 
 ## Source and method
 
@@ -21,9 +21,9 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | Status | Count |
 | --- | --- |
-| HAVE | 50 |
-| PARTIAL | 15 |
-| GAP | 8 |
+| HAVE | 53 |
+| PARTIAL | 13 |
+| GAP | 7 |
 | Total | 73 |
 
 ## Dispatch and supervision
@@ -117,14 +117,14 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| F1 | Persistent secondmates with a written scope | PARTIAL | Workstream conversations carry proposals inside their own workstream (`BlockScope::Workstream`). Project coordinator conversations cannot act: their action blocks are stripped (`TurnBlock::Stripped`). Plan phase 7. |
+| F1 | Persistent secondmates with a written scope | HAVE | A project coordinator has a charter rendered from its scope sentence (`orchestrator-core/src/charter.rs`, `coordinator_scopes.scope_sentence`, `coordinator.set_scope`) and acts only inside its project (`BlockScope::Project`). It is idle by default: no work check while it owns no running task. Workstream conversations act inside their workstream. |
 | F2 | Route work to the secondmate whose scope fits | HAVE | Global `task.propose` with `workstream_id` and `objective_id`, and `workstream.link_task`. Routing is the model's judgment, not a code router. |
-| F3 | A secondmate reports up through a parent channel | GAP | Phase 3: the daemon posts a summary entry to Global when a workstream gate or task changes state. |
+| F3 | A secondmate reports up through a parent channel | HAVE | `coordinator_reports` (migration 0070): the daemon writes the facts of owned tasks (ready, done, failed, blocked, question raised or answered, merged); the coordinator adds `coordinator.report` (answer, caveat, blocked). Each report wakes Global (`coordinator_report`). Global's prompt holds reports, never coordinator chat. A routed request stays open until its answer. |
 | F4 | Remote secondmates on an SSH host | GAP | Phase 6, design only. The IPC is a local socket with a token handshake. A remote daemon needs an authenticated network transport and a new threat model. |
 | F5 | Quota-aware dispatch across accounts and CLIs | PARTIAL | Assignment profile policy v1, `usage.localTools`, catalog sign-in states. Missing: selection that reads remaining quota. Not planned: removed from phase 6 by the user (DPES-1105). |
 | F6 | Refresh local clones after a merge (fleet sync) | GAP | Phase 4: fast-forward the registered project after a landed merge, refusing on local changes. |
-| F7 | Flat command structure, depth capped | HAVE | Global, then workstream, then task; coordinator conversations are read-only. |
-| F8 | Per-project coordinator conversation | PARTIAL | `ConversationTarget::Project`, `coordinator.send_message`, `coordinator.propose`; opt-in. It can talk and propose a decomposition but not act, and has no wake scope reporting to the parent. |
+| F7 | Flat command structure, depth capped | HAVE | Global, then a workstream or a project coordinator, then task. Only Global routes (`coordinator.route`); a coordinator cannot route to another, in the parser, at execution and in the store. |
+| F8 | Per-project coordinator conversation | HAVE | `ConversationTarget::Project`, opt-in. It proposes actions in its project, owns the tasks it makes (`tasks.coordinator_project_id`, `tasks.routed_request_id`), and gets the wakes of those tasks in its own scope (`routed_request`, task wakes). |
 
 ## Backlog
 

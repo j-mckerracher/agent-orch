@@ -21,6 +21,7 @@ import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type {
   ActionProposalWire,
+  ConversationCoordinatorWire,
   ConversationRoutedInWire,
   ConversationWireEntry,
   ConversationWireTarget,
@@ -37,6 +38,7 @@ import type {
   ConversationSource,
   ConversationTarget,
   ConversationTurnInfo,
+  CoordinatorState,
   ModelChoice,
   PermissionLevel,
   Provenance,
@@ -145,6 +147,31 @@ export function toWireTarget(target: ConversationTarget): ConversationWireTarget
 /** Copies a routed-in row from the wire. The state stays the daemon's string, so an unknown one shows as unknown. */
 export function mapRoutedIn(wire: ConversationRoutedInWire): RoutedIn {
   return { taskId: wire.task_id, title: wire.title, routedAt: wire.routed_at, state: wire.state };
+}
+
+/** Copies a coordinator's state from the wire (DPES-1108). Verbs and authors stay the daemon's strings. */
+export function mapCoordinator(wire: ConversationCoordinatorWire): CoordinatorState {
+  return {
+    scopeSentence: wire.scope_sentence,
+    openTasks: wire.open_tasks,
+    openRequests: wire.open_requests,
+    routedRequests: wire.routed_requests.map((request) => ({
+      id: request.id,
+      work: request.work,
+      answered: request.answered,
+      createdAt: request.created_at,
+    })),
+    reports: wire.reports.map((report) => ({
+      id: report.id,
+      author: report.author,
+      verb: report.verb,
+      requestId: report.request_id,
+      taskId: report.task_id,
+      key: report.key,
+      note: report.note,
+      createdAt: report.created_at,
+    })),
+  };
 }
 
 /** Copies a wake record from the wire. State, outcome and reason stay the daemon's strings, so an unknown one shows as unknown. */
@@ -355,6 +382,7 @@ export function createLiveConversation(
           let wakeRecords: WakeRecordWire[] | undefined;
           let wakeMore: boolean | undefined;
           let routedIn: ConversationRoutedInWire[] | undefined;
+          let coordinator: ConversationCoordinatorWire | undefined;
           let jumpedTo: number | null = null;
           // The first read starts at the beginning and learns `latest_sequence`. A long log is then
           // read from `latest_sequence - MAX_LIVE_SEQUENCE_SPAN`, so the newest entries and the
@@ -373,6 +401,7 @@ export function createLiveConversation(
             wakeRecords = result.wake_records;
             wakeMore = result.wake_records_more;
             routedIn = result.routed_in;
+            coordinator = result.coordinator;
             more = result.more;
             if (!more) break;
             after = result.next_after_sequence;
@@ -399,6 +428,7 @@ export function createLiveConversation(
             ...(wakeRecords ? { wake: wakeRecords.map(mapWakeRecord) } : {}),
             wakeMore: wakeMore ?? false,
             ...(routedIn && routedIn.length > 0 ? { routedIn: routedIn.map(mapRoutedIn) } : {}),
+            ...(coordinator ? { coordinator: mapCoordinator(coordinator) } : {}),
           };
       };
       return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));

@@ -28,6 +28,8 @@ import { NEW_UPDATE_TEXT, WAKE_RUNNING_TEXT, notifyingCount, placeWake, quietTur
 import { PermissionLevelNotes } from "./PermissionLevelPicker";
 import { ReturnBrief } from "./ReturnBrief";
 import { RoutedInStrip } from "./RoutedInStrip";
+import { CoordinatorStrip } from "./CoordinatorStrip";
+import { REMOVE_OPEN_WORK_TEXT, scopeLockReason } from "./coordinatorModel";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
@@ -78,7 +80,13 @@ export function WorkspaceView() {
   const [fixtureRemoved, setFixtureRemoved] = useState<readonly string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [addBusy, setAddBusy] = useState<string | null>(null);
-  const [actionNote, setActionNote] = useState<{ notice: string | null; error: DaemonError | null; action: string } | null>(
+  const [actionNote, setActionNote] = useState<{
+    notice: string | null;
+    error: DaemonError | null;
+    action: string;
+    /** A refusal said in plain words instead of the generic failure. */
+    refusal?: string;
+  } | null>(
     null,
   );
   const removedIds = useMemo(
@@ -131,7 +139,10 @@ export function WorkspaceView() {
       drafts.setWorkspaceTarget("global");
       setActionNote({ notice: receipt.notice, error: null, action: "" });
     } catch (thrown) {
-      setActionNote({ notice: null, error: asDaemonError(thrown), action: "Removing the coordinator" });
+      const failed = asDaemonError(thrown);
+      // DPES-1108: the daemon keeps a coordinator that still owns unfinished tasks or an unanswered routed request.
+      if (failed.kind === "conflict") setActionNote({ notice: null, error: null, action: "", refusal: REMOVE_OPEN_WORK_TEXT });
+      else setActionNote({ notice: null, error: failed, action: "Removing the coordinator" });
     }
   };
 
@@ -190,6 +201,11 @@ export function WorkspaceView() {
         </p>
       )}
       {actionNote?.error && <ErrorNotice error={actionNote.error} action={actionNote.action} />}
+      {actionNote?.refusal && (
+        <Notice tone="bad" role="alert">
+          {actionNote.refusal}
+        </Notice>
+      )}
       {actionNote?.notice && <p role="status">{actionNote.notice}</p>}
       <Conversation
         option={option}
@@ -735,6 +751,25 @@ function Conversation({
         snapshot={transcript.status === "ok" ? transcript.data : null}
         workstream={target.kind === "workstream"}
       />
+
+      {target.kind === "project" && (
+        <CoordinatorStrip
+          key={option.key}
+          snapshot={transcript.status === "ok" ? transcript.data : null}
+          lockReason={scopeLockReason({
+            live,
+            connected: gate.connected,
+            supported: gate.can("conversation_history"),
+            approver: gate.connection.approver,
+          })}
+          onSaveScope={
+            surfaces.conversation.setCoordinatorScope
+              ? (sentence) => surfaces.conversation.setCoordinatorScope!(target.projectId, sentence)
+              : undefined
+          }
+          onSaved={() => setNonce((value) => value + 1)}
+        />
+      )}
 
       <form className="ws-composer" onSubmit={onSubmit} aria-label={`Message ${option.label}`}>
         <textarea

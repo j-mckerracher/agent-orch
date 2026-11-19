@@ -146,6 +146,10 @@ impl DaemonApi {
             .unseen_wake_counts()
             .map_err(map_store_error)?
             .into_iter()
+            // A coordinator's records (DPES-1108 phase 7) are shown in its own conversation; the
+            // monitoring targets name Global and workstreams only, so they are not counted here
+            // rather than read as Global's.
+            .filter(|(scope, _)| !matches!(target_of(scope), Some(ConversationTarget::Project(_))))
             .map(|(scope, count)| json!({"target": target_wire(&scope), "count": count}))
             .collect();
         let away = self.store.away_windows().map_err(map_store_error)?;

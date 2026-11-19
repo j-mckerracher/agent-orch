@@ -31,7 +31,7 @@ use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTE
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
     BegunTurn, ConversationError, ConversationTarget, ConversationTurn, ConversationUsageReceipt,
-    SqliteStore, TurnBlock, TurnOutcome, TurnPermission, TurnState, TurnTrigger, WakeKind,
+    SqliteStore, Store, TurnBlock, TurnOutcome, TurnPermission, TurnState, TurnTrigger, WakeKind,
     MAX_REPLY_CHUNK_BYTES,
 };
 
@@ -138,6 +138,9 @@ pub(crate) struct TurnRequest {
     /// The runtime starts the server only for Claude when its CLI offers the flag, and
     /// clears the field when it did not start one. The view has no write method.
     pub mcp: Option<Arc<McpView>>,
+    /// The coordinator charter (DPES-1108 phase 7), set only for a project coordinator's turn.
+    /// It is instructions, so the prompt places it outside the app state.
+    pub charter: Option<String>,
 }
 
 /// Why a turn could not be answered. Maps to a stable code; runtime-supplied
@@ -516,10 +519,15 @@ impl ReplySink {
             Some(HeldBlock::Overflow) => return TurnBlock::Rejected,
             Some(HeldBlock::Text(text)) => text,
         };
-        let scope = match &self.target {
-            ConversationTarget::Global => BlockScope::Global,
-            ConversationTarget::Workstream(id) => BlockScope::Workstream(id.as_str()),
-            ConversationTarget::Project(_) => return TurnBlock::Stripped,
+        // A coordinator acts only inside its project, which a block names by its code.
+        let code = match &self.target {
+            ConversationTarget::Project(id) => Some(super::actions::project_code(id)),
+            _ => None,
+        };
+        let scope = match (&self.target, &code) {
+            (ConversationTarget::Workstream(id), _) => BlockScope::Workstream(id.as_str()),
+            (ConversationTarget::Project(_), Some(code)) => BlockScope::Project(code.as_str()),
+            _ => BlockScope::Global,
         };
         match parse_block(&text, scope) {
             // Each `task.propose` is checked against its own project's envelope as it is
@@ -567,9 +575,13 @@ impl ReplySink {
     }
 
     /// In a workstream conversation, an objective revision must name one of that
-    /// workstream's objectives, and a task cancel or retry one of its tasks. The
-    /// lookups need the store, so they are checked here.
+    /// workstream's objectives, and a task cancel or retry one of its tasks. In a coordinator's
+    /// conversation, every task named must be of its project and every routed request an open
+    /// one of its project. The lookups need the store, so they are checked here.
     fn targets_in_scope(&self, block: &ActionBlock) -> bool {
+        if let ConversationTarget::Project(project_id) = &self.target {
+            return self.targets_in_project(block, project_id);
+        }
         let ConversationTarget::Workstream(workstream_id) = &self.target else {
             return true;
         };
@@ -591,6 +603,25 @@ impl ReplySink {
         })
     }
 
+    fn targets_in_project(&self, block: &ActionBlock, project_id: &str) -> bool {
+        let store = &self.shared.store;
+        block.actions().iter().all(|action| {
+            let task_in_project = action.target_task().is_none_or(|task_id| {
+                store
+                    .get(task_id)
+                    .is_ok_and(|task| task.contract.project_id == project_id)
+            });
+            let request_open = action.routed_request().is_none_or(|request_id| {
+                store
+                    .routed_request(request_id)
+                    .ok()
+                    .flatten()
+                    .is_some_and(|request| request.project_id == project_id && !request.answered)
+            });
+            task_in_project && request_open
+        })
+    }
+
     pub(crate) fn fail(&self, failure: RuntimeFailure) {
         let outcome = TurnOutcome::Failed(failure.code().to_owned());
         self.shared
@@ -601,6 +632,16 @@ impl ReplySink {
     pub(crate) fn turn_id(&self) -> &str {
         &self.turn_id
     }
+}
+
+/// The charter of a project's coordinator, from its stored scope sentence. An unreadable
+/// sentence renders the charter without one, which tells the model the scope is not set.
+fn coordinator_charter(store: &SqliteStore, project_id: &str) -> String {
+    let sentence = store.coordinator_scope_sentence(project_id).ok().flatten();
+    orchestrator_core::charter::render(
+        &super::conversation_snapshot::project_label(project_id),
+        sentence.as_deref(),
+    )
 }
 
 fn truncate_to(text: &str, max: usize) -> String {
@@ -848,9 +889,9 @@ impl ConversationService {
         };
         let choice = if evidence.is_some() { None } else { choice };
         let trigger = wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake);
-        // Project coordinators gain replies, not the Global/workstream action authority.
-        let actions =
-            !matches!(target, ConversationTarget::Project(_)) && turn_actions(negotiated, level);
+        // A project coordinator acts like any orchestrator conversation (DPES-1108 phase 7); its
+        // block is held to its own project when the turn completes.
+        let actions = turn_actions(negotiated, level);
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
         let permission = self.runtime.permission(choice, level);
@@ -977,6 +1018,12 @@ impl ConversationService {
             actions,
             wake: wake.cloned(),
             mcp: self.mcp_view(level, wake.is_some(), relay.is_some()),
+            charter: match target {
+                ConversationTarget::Project(id) => {
+                    Some(coordinator_charter(&self.shared.store, id))
+                }
+                _ => None,
+            },
         };
         let sink = ReplySink {
             shared: self.shared.clone(),

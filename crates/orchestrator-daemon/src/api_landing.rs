@@ -1025,9 +1025,44 @@ impl DaemonApi {
         refusal: Option<&str>,
         merge_sha: Option<&str>,
     ) -> Result<MergeAttempt, RpcError> {
-        self.store
+        let attempt = self
+            .store
             .advance_pull_request_merge(proposal_id, to, refusal, merge_sha)
-            .map_err(map_store_error)
+            .map_err(map_store_error)?;
+        if attempt.state == MergeState::Merged {
+            self.record_merge_fact(&attempt);
+        }
+        Ok(attempt)
+    }
+
+    /// Tells a coordinator's parent channel that a task it owns merged (DPES-1108 phase 7). The
+    /// id derives from the merge attempt, so a second read of the merged pull request writes
+    /// nothing. The merge is already recorded, so a failed write is logged, never returned.
+    fn record_merge_fact(&self, attempt: &MergeAttempt) {
+        let owner = match self.store.task_coordinator(&attempt.task_id) {
+            Ok(Some((project_id, _))) => project_id,
+            Ok(None) => return,
+            Err(error) => {
+                internal("landing", &error);
+                return;
+            }
+        };
+        let fact = orchestrator_store::CoordinatorFact::Merged;
+        let recorded =
+            self.store
+                .record_coordinator_facts(&[orchestrator_store::NewCoordinatorFact {
+                    id: idempotency::stable_id(
+                        "fact",
+                        &format!("{}:{}", attempt.proposal_id, fact.as_str()),
+                    ),
+                    project_id: owner,
+                    fact,
+                    task_id: attempt.task_id.clone(),
+                    key: None,
+                }]);
+        if let Err(error) = recorded {
+            internal("landing", &error);
+        }
     }
 
     /// Records how the proposal ended, under the gate: a local write, never across a host

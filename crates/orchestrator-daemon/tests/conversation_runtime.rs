@@ -396,7 +396,9 @@ fn project_coordinator_replies_keep_history_selection_and_lifecycle() {
     chat.send(&target, "[fake:script]", "project-actions");
     let page = chat.settled(&target);
     assert_eq!(reply(&page), "A discussion reply.\n");
-    assert_eq!(page["turn"]["action_block"], "stripped");
+    // A coordinator's block is parsed (DPES-1108 phase 7), but it acts only inside its project:
+    // a workstream is out of its scope, so the whole block is rejected and nothing is proposed.
+    assert_eq!(page["turn"]["action_block"], "rejected");
     assert_eq!(page["proposals"], json!([]));
     assert_eq!(
         chat.call("workstreams.list", json!({}))["result"],

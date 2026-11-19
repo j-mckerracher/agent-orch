@@ -44,7 +44,19 @@
         "project": [
           { "id": "fixture:msg-3", "kind": "message", "role": "user", "text": "Please split the docs work into smaller tasks.", "at": "2026-01-01T09:10:00Z" },
           { "id": "fixture:msg-4", "kind": "proposal", "role": "coordinator", "text": "Proposal: split into install guide and troubleshooting page.", "at": "2026-01-01T09:10:20Z" }
-        ]
+        ],
+        "coordinator": {
+          "scopeSentence": "Owns the user documentation: install guide, troubleshooting and release notes.",
+          "openTasks": 1,
+          "openRequests": 1,
+          "routedRequests": [
+            { "id": "r-0123456789abcdef", "work": "Write the troubleshooting page for sign-in failures.", "answered": false, "createdAt": "2026-01-01T09:08:00Z" }
+          ],
+          "reports": [
+            { "id": "fixture:report-2", "author": "coordinator", "verb": "caveat", "requestId": "r-0123456789abcdef", "taskId": null, "key": null, "note": "The sign-in page changes next week, so the screenshots may go stale.", "createdAt": "2026-01-01T09:12:00Z" },
+            { "id": "fixture:report-1", "author": "daemon", "verb": "task_done", "requestId": null, "taskId": "fixture:task-docs-1", "key": null, "note": null, "createdAt": "2026-01-01T09:05:00Z" }
+          ]
+        }
       }
     },
     "unavailable": { "reason": "Fixture scenario: the conversation source is unavailable." },

@@ -106,8 +106,17 @@ model selection, permission levels, cancellation, idempotency, and restart
 recovery use the same path as Global and workstreams. The snapshot identifies
 the project by its sanitized label, not its root path.
 
-Project turns retain the coordinator's no-action authority: action blocks are
-stripped and cannot create proposals. Monitoring remains Global/workstream-only.
+Project turns carry action blocks (DPES-1108 phase 7). The block is parsed in
+`BlockScope::Project` (the project's code): a coordinator proposes tasks of its own
+project with no workstream, acts on the project's tasks, and reports with
+`coordinator.report`; it cannot touch workstreams, remove the project or route
+(`coordinator.route` is the global conversation's only). The sink checks every task
+and routed request a block names against the store, and execution checks the
+proposal's scope again (`within_project`). Each coordinator turn is handed its
+charter after the app state. Wakes of tasks a coordinator owns go to its scope;
+Global hears of them only as `coordinator_report` wakes. `monitoring.get` names
+Global and workstreams only, so a coordinator's unseen records are not counted
+there; they show in its conversation.
 Legacy `coordinator.get` notes remain readable and are shown before runtime
 exchanges; they are not replayed as agent requests. Clearing or removing a
 coordinator deletes both histories in one transaction and refuses while a user

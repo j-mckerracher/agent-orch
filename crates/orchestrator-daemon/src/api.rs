@@ -444,6 +444,7 @@ impl RpcHandler for DaemonApi {
             "coordinator.clear" => self.coordinator_clear(params),
             "coordinator.remove" => self.coordinator_remove(params),
             "coordinator.restore" => self.coordinator_restore(params),
+            "coordinator.set_scope" => self.coordinator_set_scope(params),
             "conversations.send" => {
                 self.conversations_send(params, context.negotiated(Capability::OrchestratorActions))
             }
@@ -2183,6 +2184,9 @@ mod actions_tests;
 #[cfg(test)]
 #[path = "api_authority_tests.rs"]
 mod authority_tests;
+#[cfg(test)]
+#[path = "api_coordinator_tests.rs"]
+mod coordinator_tests;
 #[cfg(test)]
 #[path = "api_decisions_tests.rs"]
 mod decisions_tests;

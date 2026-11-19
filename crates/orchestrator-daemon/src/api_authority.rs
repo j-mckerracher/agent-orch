@@ -15,9 +15,11 @@
 //!   about existing work, no pull-request task, at most `MAX_AUTONOMOUS_PER_TURN` per turn;
 //! - the turn completed at a level that may carry actions;
 //! - a task's project is registered and not removed, and a named task exists in such a project;
+//!   work is routed only to such a project whose coordinator is active;
 //! - the approve-time re-checks a user approval makes (envelope, promotion) pass;
-//! - a task the orchestrator starts cites its user turn as its origin, written before the task is
-//!   admitted (`ProposeExec::run`), and the store refuses any origin that is not a user turn.
+//! - a task the orchestrator starts cites its user turn as its origin, or, for a coordinator's
+//!   task, the open routed request it serves; written before the task is admitted
+//!   (`ProposeExec::run`), and the store refuses any other origin.
 //!
 //! Capacity caps, the load gate, the wake budget and attempt limits are not touched: a task the
 //! orchestrator starts is queued like any other, and a wake turn runs only inside the budget.
@@ -157,8 +159,10 @@ impl DaemonApi {
     }
 
     /// The project bound: a task's project is registered and not removed, and a task the action
-    /// names exists in such a project. The executions refuse most of these too; checking first
-    /// keeps a refused action a card the user can read instead of a failed run.
+    /// names exists in such a project. Work is routed on its own only to such a project whose
+    /// coordinator is active (DPES-1108 integration); the parser already lets only the global
+    /// conversation route. The executions refuse most of these too; checking first keeps a
+    /// refused action a card the user can read instead of a failed run.
     fn inside_bounds(&self, action: &Action) -> Result<bool, ()> {
         let project = match action {
             Action::TaskPropose(propose) => {
@@ -166,6 +170,20 @@ impl DaemonApi {
                     Some(project) => project,
                     None => return Ok(false),
                 }
+            }
+            Action::CoordinatorRoute(route) => {
+                let Some(project) = project_id_for_code(&self.store, &route.project) else {
+                    return Ok(false);
+                };
+                if self
+                    .store
+                    .coordinator_scope(&project)
+                    .map_err(|_| ())?
+                    .removed
+                {
+                    return Ok(false);
+                }
+                project
             }
             Action::WorkstreamLinkTask(link) => match self.task_project(&link.task_id)? {
                 Some(project) => project,

@@ -13,7 +13,10 @@
 //! user's words for the worker, in the same store transaction, and the answer or reconcile here
 //! wakes the scheduler so the worker resumes with them.
 
-use orchestrator_store::{ClosingKind, DecisionQuestion, QuestionError, QuestionRaiser};
+use orchestrator_store::{
+    ClosingKind, CoordinatorFact, DecisionQuestion, NewCoordinatorFact, QuestionError,
+    QuestionRaiser,
+};
 
 use super::holds::hold_end_ms;
 use super::reports::report_title;
@@ -71,6 +74,7 @@ impl DaemonApi {
                     .store
                     .answer_question(&request.question_id, &request.answer)
                     .map_err(map_question_error)?;
+                self.record_question_fact(&question, CoordinatorFact::QuestionAnswered);
                 self.wake_resumes();
                 Ok(json!({"question": self.question_wire(&question, self.holds_now_ms())}))
             },
@@ -114,6 +118,7 @@ impl DaemonApi {
                     .store
                     .reconcile_question(&request.question_id, &request.evidence)
                     .map_err(map_question_error)?;
+                self.record_question_fact(&question, CoordinatorFact::QuestionAnswered);
                 self.wake_resumes();
                 Ok(json!({"question": self.question_wire(&question, self.holds_now_ms())}))
             },
@@ -138,7 +143,8 @@ impl DaemonApi {
         options: &[String],
         key: Option<&str>,
     ) -> Result<DecisionQuestion, RpcError> {
-        self.store
+        let raised = self
+            .store
             .raise_question(
                 question_id,
                 task_id,
@@ -147,7 +153,35 @@ impl DaemonApi {
                 key,
                 QuestionRaiser::Orchestrator,
             )
-            .map_err(map_question_error)
+            .map_err(map_question_error)?;
+        self.record_question_fact(&raised, CoordinatorFact::QuestionRaised);
+        Ok(raised)
+    }
+
+    /// Writes the parent-channel fact for a question on a coordinator's task (DPES-1108 phase
+    /// 7). The id derives from the question and the fact, so a replay writes it once. The
+    /// question itself is already committed, so a failed write is logged, never returned: the
+    /// user's answer stands, and the fact is only lost from the report list. A worker's question
+    /// gets its raised fact from the task's wait event instead.
+    fn record_question_fact(&self, question: &DecisionQuestion, fact: CoordinatorFact) {
+        let owner = match self.store.task_coordinator(&question.task_id) {
+            Ok(Some((project_id, _))) => project_id,
+            Ok(None) => return,
+            Err(error) => {
+                internal("decisions", &error);
+                return;
+            }
+        };
+        let recorded = self.store.record_coordinator_facts(&[NewCoordinatorFact {
+            id: idempotency::stable_id("fact", &format!("{}:{}", question.id, fact.as_str())),
+            project_id: owner,
+            fact,
+            task_id: question.task_id.clone(),
+            key: question.key.clone(),
+        }]);
+        if let Err(error) = recorded {
+            internal("decisions", &error);
+        }
     }
 
     fn question_wire(&self, question: &DecisionQuestion, now_ms: i64) -> Value {

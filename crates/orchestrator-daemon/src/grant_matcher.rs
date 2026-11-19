@@ -428,7 +428,9 @@ impl DaemonApi {
             | Action::DecisionHold(_)
             | Action::DecisionAsk(_)
             | Action::TaskMessage(_)
-            | Action::MemorySet(_) => return Ok(None),
+            | Action::MemorySet(_)
+            | Action::CoordinatorRoute(_)
+            | Action::CoordinatorReport(_) => return Ok(None),
         }
         Ok(Some(found))
     }

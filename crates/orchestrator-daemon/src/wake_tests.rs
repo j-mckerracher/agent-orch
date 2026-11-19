@@ -2577,3 +2577,141 @@ fn the_pause_lifts_thirty_minutes_after_the_newest_failure() {
     );
     assert_eq!(f.probe.started(), 4);
 }
+
+// ---- project coordinators (DPES-1108 phase 7) ---------------------------------------------
+
+const COORDINATOR_SCOPE: &str = "conversation:project:p";
+
+fn coordinator_records(f: &Fixture) -> Vec<WakeRecord> {
+    f.api
+        .store
+        .wake_records_page(COORDINATOR_SCOPE, 50)
+        .unwrap()
+        .0
+}
+
+/// Adds project `p`'s coordinator and makes it the owner of `task_id`.
+fn own(f: &Fixture, task_id: &str) {
+    f.api.store.restore_coordinator("p").unwrap();
+    f.api
+        .store
+        .set_task_coordinator(task_id, "p", None)
+        .unwrap();
+}
+
+#[test]
+fn a_coordinator_task_wakes_its_coordinator_and_reaches_global_only_as_a_report() {
+    let f = fixture();
+    f.probe.replying(Some("The export task failed."));
+    queue_task(&f, "t-c", "Fix the export");
+    own(&f, "t-c");
+    // The rest of a run, from the queued task the owner was written on.
+    let store = &f.api.store;
+    store
+        .add_attempt(
+            "t-c",
+            &Attempt {
+                id: "t-c-a1".into(),
+                task_id: "t-c".into(),
+                attempt_number: 1,
+                state: AttemptState::Pending,
+                failure_reason: None,
+                summary: None,
+                changed_files: None,
+            },
+        )
+        .unwrap();
+    store
+        .update_attempt_state("t-c", "t-c-a1", AttemptState::Running)
+        .unwrap();
+    store
+        .transition("t-c", TaskEvent::ExecutionStarted)
+        .unwrap();
+    store
+        .record_attempt_failure("t-c", "t-c-a1", "boom")
+        .unwrap();
+    store.transition("t-c", TaskEvent::ExecutionFailed).unwrap();
+    tick(&f);
+
+    let own_records = coordinator_records(&f);
+    assert_eq!(own_records.len(), 1, "{own_records:?}");
+    assert_eq!(own_records[0].kind, WakeKind::TaskFailed);
+    assert!(own_records[0].needs_model);
+    // Global gets no copy of the task's record, only the parent channel's report.
+    assert!(records_of(&f, WakeKind::TaskFailed).is_empty());
+    let reports = records_of(&f, WakeKind::CoordinatorReport);
+    assert_eq!(reports.len(), 1, "{:?}", global_records(&f));
+    assert!(reports[0].needs_model);
+    assert!(
+        reports[0].notice.contains("task t-c failed"),
+        "{}",
+        reports[0].notice
+    );
+    let stored = store.coordinator_reports("p", 10).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].verb, "task_failed");
+    assert_eq!(stored[0].author, "daemon");
+
+    // A replay of the same events writes nothing twice.
+    tick(&f);
+    assert_eq!(store.coordinator_reports("p", 10).unwrap().len(), 1);
+    assert_eq!(records_of(&f, WakeKind::CoordinatorReport).len(), 1);
+
+    // Both conversations get their own turn: the coordinator with its charter, Global with the
+    // report procedure and never the coordinator's conversation.
+    assert_eq!(start_batch(&f).started, 2);
+    let seen = f.probe.seen.lock().unwrap().clone();
+    let coordinator = seen
+        .iter()
+        .find(|turn| {
+            turn.prompt
+                .contains(orchestrator_core::charter::CHARTER_BEGIN)
+        })
+        .expect("a coordinator turn");
+    assert!(coordinator.actions && coordinator.wake);
+    assert!(coordinator
+        .prompt
+        .contains("Procedure, a failed or stalled task"));
+    let global = seen
+        .iter()
+        .find(|turn| {
+            !turn
+                .prompt
+                .contains(orchestrator_core::charter::CHARTER_BEGIN)
+        })
+        .expect("a global turn");
+    assert!(global.prompt.contains("Procedure, a coordinator report"));
+    assert!(
+        global.context.contains("Coordinator reports"),
+        "{}",
+        global.context
+    );
+}
+
+#[test]
+fn an_idle_coordinator_gets_no_work_check_and_a_busy_one_gets_its_own() {
+    let f = fixture();
+    f.probe.replying(Some(QUIET_TOKEN));
+    // Owned but queued work runs nothing: no scope holds work.
+    queue_task(&f, "t-q", "Waiting for capacity");
+    own(&f, "t-q");
+    tick(&f);
+    advance(&f, 11 * MINUTE);
+    tick(&f);
+    assert!(coordinator_records(&f).is_empty());
+    assert!(records_of(&f, WakeKind::WorkCheck).is_empty());
+
+    // A running owned task is the coordinator's work, not Global's.
+    run_task(&f, "t-r", "Working");
+    f.api.store.set_task_coordinator("t-r", "p", None).unwrap();
+    tick(&f);
+    advance(&f, 600 * 1_000 + SLACK);
+    f.pulse.touch_at("t-r-s1", f.clock.now_ms());
+    tick(&f);
+    let checks: Vec<WakeRecord> = coordinator_records(&f)
+        .into_iter()
+        .filter(|record| record.kind == WakeKind::WorkCheck)
+        .collect();
+    assert_eq!(checks.len(), 1, "{:?}", coordinator_records(&f));
+    assert!(records_of(&f, WakeKind::WorkCheck).is_empty());
+}

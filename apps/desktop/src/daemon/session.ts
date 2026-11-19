@@ -76,6 +76,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "coordinator.send_message": "coordinator",
   "coordinator.propose": "coordinator",
   "coordinator.get": "coordinator",
+  "coordinator.set_scope": "conversation_history",
   "review.request_approval": "review",
   "review.evidence": "review",
   "review.request_changes": "review",

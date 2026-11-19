@@ -1,8 +1,11 @@
 //! Authority records (DPES-1108 phase 5, migrations 0065 and 0066).
 //!
 //! - A task the orchestrator started on its own cites its origin: the user turn whose message
-//!   asked for it. The store refuses an origin that is not a user turn, or a turn that read an
-//!   agent's report, so a wake can never be the origin of new work.
+//!   asked for it, or the open routed request a coordinator's task serves (DPES-1108
+//!   integration). The store refuses an origin that is not a user turn, or a turn that read an
+//!   agent's report, so a wake can never be the origin of new work; a routed request was made by
+//!   the global orchestrator from a user's word, and is checked against the task's own
+//!   `routed_request_id`.
 //! - A one-task override records an explicit departure from a project default with the user's
 //!   words. It is read only for its own task.
 //! - A discard is the user's word that a task's committed candidate is not wanted. It is what
@@ -42,12 +45,15 @@ const MAX_USER_WORDS_BYTES: usize = 16 * 1024;
 pub enum OriginKind {
     /// A user turn: the user's own message in a conversation.
     UserTurn,
+    /// An open routed request the task's coordinator serves (DPES-1108 phase 7).
+    RoutedRequest,
 }
 
 impl OriginKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::UserTurn => "user_turn",
+            Self::RoutedRequest => "routed_request",
         }
     }
 }
@@ -57,7 +63,8 @@ impl OriginKind {
 pub struct TaskOrigin {
     pub task_id: String,
     pub kind: OriginKind,
-    /// The turn id for [`OriginKind::UserTurn`].
+    /// The turn id for [`OriginKind::UserTurn`], the request id for
+    /// [`OriginKind::RoutedRequest`].
     pub origin_ref: String,
     /// The proposal that made the task.
     pub proposal_id: String,
@@ -84,6 +91,8 @@ pub struct TaskOverride {
 pub enum AuthorityError {
     /// The origin is not a user turn, or the turn read an agent's report.
     NotUserTurn,
+    /// The routed request is not the one the task serves, or it is answered already.
+    NotOpenRequest,
     /// The task already has a different origin or override for that field.
     AlreadyRecorded,
     /// An override field, value or words outside the table's rules.
@@ -94,6 +103,7 @@ impl fmt::Display for AuthorityError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str(match self {
             Self::NotUserTurn => "only a user turn that read no agent report can be an origin",
+            Self::NotOpenRequest => "only the open routed request a task serves can be its origin",
             Self::AlreadyRecorded => "the task already has a different record",
             Self::InvalidOverride => "the override is not valid",
         })
@@ -148,26 +158,58 @@ impl SqliteStore {
             if !matches!(&turn, Some((trigger, 0)) if trigger == "user") {
                 return Err(AuthorityError::NotUserTurn.into());
             }
-            if let Some(existing) = read_origin(&mut transaction, &task_id).await? {
-                return if existing.origin_ref == turn_id && existing.proposal_id == proposal_id {
-                    Ok(existing)
-                } else {
-                    Err(AuthorityError::AlreadyRecorded.into())
-                };
-            }
-            sqlx::query(
-                "INSERT INTO task_origins (task_id, origin_kind, origin_ref, proposal_id) \
-                 VALUES (?, ?, ?, ?)",
+            let saved = write_origin(
+                &mut transaction,
+                &task_id,
+                OriginKind::UserTurn,
+                &turn_id,
+                &proposal_id,
+            )
+            .await?;
+            transaction.commit().await?;
+            Ok(saved)
+        })
+    }
+
+    /// Records that `task_id`, a coordinator's task, was started on its own for the routed
+    /// request `request_id`, by proposal `proposal_id`. Refused with
+    /// [`AuthorityError::NotOpenRequest`] unless the task's own `routed_request_id` is that
+    /// request (written by `set_task_coordinator`, which checks the project) and the request has
+    /// no answer yet. The same record again returns it.
+    pub fn record_task_routed_origin(
+        &self,
+        task_id: &str,
+        request_id: &str,
+        proposal_id: &str,
+    ) -> Result<TaskOrigin, StoreError> {
+        let (task_id, request_id, proposal_id) = (
+            task_id.to_owned(),
+            request_id.to_owned(),
+            proposal_id.to_owned(),
+        );
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            require_task(&mut transaction, &task_id).await?;
+            let open = sqlx::query_scalar::<_, i64>(
+                "SELECT 1 FROM tasks t WHERE t.id = ?1 AND t.routed_request_id = ?2 \
+                 AND NOT EXISTS (SELECT 1 FROM coordinator_reports r \
+                     WHERE r.request_id = ?2 AND r.verb = 'answer')",
             )
             .bind(&task_id)
-            .bind(OriginKind::UserTurn.as_str())
-            .bind(&turn_id)
-            .bind(&proposal_id)
-            .execute(&mut *transaction)
+            .bind(&request_id)
+            .fetch_optional(&mut *transaction)
             .await?;
-            let saved = read_origin(&mut transaction, &task_id)
-                .await?
-                .ok_or_else(|| corrupt("the task origin just written is missing".to_owned()))?;
+            if open.is_none() {
+                return Err(AuthorityError::NotOpenRequest.into());
+            }
+            let saved = write_origin(
+                &mut transaction,
+                &task_id,
+                OriginKind::RoutedRequest,
+                &request_id,
+                &proposal_id,
+            )
+            .await?;
             transaction.commit().await?;
             Ok(saved)
         })
@@ -343,6 +385,40 @@ async fn require_task(connection: &mut SqliteConnection, task_id: &str) -> Resul
     }
 }
 
+/// Writes a task's one origin, or returns the same one written before. A different origin for
+/// the task is refused with [`AuthorityError::AlreadyRecorded`].
+async fn write_origin(
+    connection: &mut SqliteConnection,
+    task_id: &str,
+    kind: OriginKind,
+    origin_ref: &str,
+    proposal_id: &str,
+) -> Result<TaskOrigin, StoreError> {
+    if let Some(existing) = read_origin(connection, task_id).await? {
+        return if existing.kind == kind
+            && existing.origin_ref == origin_ref
+            && existing.proposal_id == proposal_id
+        {
+            Ok(existing)
+        } else {
+            Err(AuthorityError::AlreadyRecorded.into())
+        };
+    }
+    sqlx::query(
+        "INSERT INTO task_origins (task_id, origin_kind, origin_ref, proposal_id) \
+         VALUES (?, ?, ?, ?)",
+    )
+    .bind(task_id)
+    .bind(kind.as_str())
+    .bind(origin_ref)
+    .bind(proposal_id)
+    .execute(&mut *connection)
+    .await?;
+    read_origin(connection, task_id)
+        .await?
+        .ok_or_else(|| corrupt("the task origin just written is missing".to_owned()))
+}
+
 async fn read_origin(
     connection: &mut SqliteConnection,
     task_id: &str,
@@ -362,6 +438,7 @@ fn origin_from_row(row: &SqliteRow) -> Result<TaskOrigin, StoreError> {
     let kind: String = row.try_get("origin_kind")?;
     let kind = match kind.as_str() {
         "user_turn" => OriginKind::UserTurn,
+        "routed_request" => OriginKind::RoutedRequest,
         other => return Err(corrupt(format!("unknown task origin kind {other}"))),
     };
     Ok(TaskOrigin {

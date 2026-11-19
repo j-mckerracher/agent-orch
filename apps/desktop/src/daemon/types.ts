@@ -825,7 +825,9 @@ export type ActionKindWire =
   | "decision.ask"
   | "task.message"
   | "memory.set"
-  | "project.remove";
+  | "project.remove"
+  | "coordinator.route"
+  | "coordinator.report";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
 export type ProposalStateWire = "pending" | "approved" | "executed" | "failed" | "rejected" | "superseded" | "expired";
@@ -847,6 +849,11 @@ export interface ProposalTargetWire {
   running_tasks?: number;
   /** Present only on a `delivery.merge` card: the pull request as the daemon last read it. */
   pull?: PullFactsWire;
+  /** Present only on a `coordinator.route` card (DPES-1108): whether the project has an active coordinator. */
+  coordinator_active?: boolean;
+  /** Present only on a `coordinator.report` card that names a routed request: its work and whether it is answered. */
+  request_work?: string;
+  request_answered?: boolean;
 }
 
 /** One proposed action (DPES-1105). `params` is the canonical JSON the digest binds; it may hold `kind`. */
@@ -893,7 +900,10 @@ export interface ActionsResolveWire {
 }
 
 /** The conversation that holds a proposal's card. */
-export type ProposalScopeWire = { kind: "global" } | { kind: "workstream"; workstream_id: string };
+export type ProposalScopeWire =
+  | { kind: "global" }
+  | { kind: "workstream"; workstream_id: string }
+  | { kind: "project"; project_id: string };
 
 /** `actions.pending` result: pending proposals only, newest first. `more` is true when any were left out. */
 export interface ActionsPendingWire {
@@ -1333,6 +1343,41 @@ export interface ConversationRoutedInWire {
   state: string;
 }
 
+/** A request the global orchestrator routed to a project coordinator (DPES-1108). `id` is the correlation id. */
+export interface CoordinatorRoutedRequestWire {
+  id: string;
+  work: string;
+  answered: boolean;
+  created_at: string;
+}
+
+/** One entry of a coordinator's parent channel. A `daemon` row is an app fact; a `coordinator` note is agent text. */
+export interface CoordinatorReportWire {
+  id: string;
+  author: "daemon" | "coordinator" | (string & {});
+  verb: string;
+  request_id: string | null;
+  task_id: string | null;
+  key: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+/** A project coordinator's state on `conversations.get` (DPES-1108). Lists are newest first, at most 20 each. */
+export interface ConversationCoordinatorWire {
+  scope_sentence: string | null;
+  open_tasks: number;
+  open_requests: number;
+  routed_requests: CoordinatorRoutedRequestWire[];
+  reports: CoordinatorReportWire[];
+}
+
+/** `coordinator.set_scope` result (DPES-1108). A null sentence means the scope was cleared. */
+export interface CoordinatorSetScopeResult {
+  project_id: string;
+  scope_sentence: string | null;
+}
+
 /** `conversations.get` result: cursor paging, no push stream. */
 export interface ConversationWirePage {
   authority: "none";
@@ -1354,6 +1399,8 @@ export interface ConversationWirePage {
   wake_records_more?: boolean;
   /** Workstream target only: tasks the global conversation routed here, newest first. Absent or empty otherwise (DPES-1105). */
   routed_in?: ConversationRoutedInWire[];
+  /** Project target only: the coordinator's scope, open work and parent channel. Absent from older daemons (DPES-1108). */
+  coordinator?: ConversationCoordinatorWire;
 }
 
 /** `conversations.clear` result (DPES-1105). Idempotent: nothing to clear reports `cleared: false`. */

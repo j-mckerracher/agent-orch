@@ -59,6 +59,7 @@ const ROWS: Row[] = [
   row("coordinatorClear", "coordinator.clear", (a) => a.coordinatorClear(FX, "k"), (a) => a.coordinatorClear("/p", "k")),
   row("coordinatorRemove", "coordinator.remove", (a) => a.coordinatorRemove(FX, "k"), (a) => a.coordinatorRemove("/p", "k")),
   row("coordinatorRestore", "coordinator.restore", (a) => a.coordinatorRestore(FX, "k"), (a) => a.coordinatorRestore("/p", "k")),
+  row("coordinatorSetScope", "coordinator.set_scope", (a) => a.coordinatorSetScope(FX, "Docs", "k"), (a) => a.coordinatorSetScope("/p", "Docs", "k")),
   row("coordinatorGet", "coordinator.get", (a) => a.coordinatorGet(FX), (a) => a.coordinatorGet("/p")),
   row(
     "reviewRequestApproval",

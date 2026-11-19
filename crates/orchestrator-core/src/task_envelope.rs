@@ -186,6 +186,7 @@ mod tests {
             workstream_ref: None,
             objective_id: None,
             promote_from: None,
+            request: None,
         }
     }
 

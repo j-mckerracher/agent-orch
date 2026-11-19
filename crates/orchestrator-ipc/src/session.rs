@@ -498,7 +498,9 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         "conversations.clear"
         | "coordinator.clear"
         | "coordinator.remove"
-        | "coordinator.restore" => Some(Capability::ConversationHistory),
+        | "coordinator.restore"
+        // DPES-1108 phase 7: the scope sentence of a coordinator's charter. User-only.
+        | "coordinator.set_scope" => Some(Capability::ConversationHistory),
         // DPES-1105: approving or rejecting a proposed action, and reading the pending
         // ones. Only a session that negotiated `orchestrator_actions` can do either.
         // `actions.pending` only reads, so it is not a user-only method.
