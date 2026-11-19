@@ -104,10 +104,10 @@ export const WINDOWS = {
   // The home directory setting adds 1 portable store test (orchestrator_settings 12 becomes 13): 351 becomes 352.
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 352 becomes 353 passed.
   // Workstream priority adds 2 portable workstreams.rs tests: 13 becomes 15, so 359 becomes 361 passed.
-  store: { passed: 378, ignored: 1, sequence: [113, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 15, 0] },
+  store: { passed: 384, ignored: 1, sequence: [114, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 112 },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 113 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
