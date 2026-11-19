@@ -88,7 +88,7 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
     // An Implement run that exits 0 without changing a file fails, so each agent writes one in its worktree.
     const change = `echo usage-e2e > usage-e2e.txt`;
     const codex = script(dir, "codex-agent", [
-      `if [ "$1" = exec ] && [ "$2" = --help ]; then printf '%s\\n' --json --sandbox --ignore-user-config; exit 0; fi`,
+      `if [ "$1" = exec ] && [ "$2" = --help ]; then printf '%s\\n' --json --sandbox --ignore-user-config -c; exit 0; fi`,
       change,
       `printf '{"type":"thread.started","thread_id":"01a1b721-1f91-7393-ae1d-6aace8e4646a"}\\n'`,
       `printf '{"type":"turn.started"}\\n'`,

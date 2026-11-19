@@ -354,8 +354,10 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       const before = await settled(t, global);
       expect(before.data.entries.map((e) => [e.role, e.text])).toEqual([
         ["user", "one"],
+        ["coordinator", "fake thinking about: one"],
         ["coordinator", "fake reply to: one"],
         ["user", "two"],
+        ["coordinator", "fake thinking about: two"],
         ["coordinator", "fake reply to: two"],
       ]);
 
@@ -375,7 +377,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       expect(reply).toContain("Scope: one workstream.");
       expect(reply).toContain("Auth rewrite");
       const globalAgain = await settled(t, global);
-      expect(globalAgain.data.entries).toHaveLength(4);
+      expect(globalAgain.data.entries).toHaveLength(6);
     } finally {
       await t.stop();
     }
