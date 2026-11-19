@@ -119,7 +119,7 @@ Purpose: work is never orphaned by removing its coordinator.
 - Step 1: "This coordinator still owns open work. Finish or cancel its tasks and answer its routed requests first." The coordinator stays in the target picker.
 - Step 2: the coordinator leaves the target picker and the target switches to Global.
 
-**Known limitations:** the dialog says removing "permanently deletes its notes". Its project's preferences are kept (see TC-P-08). Adding it back restores the same scope sentence (Phase 7 item 3).
+**Known limitations:** this test does not check what removal keeps. Its project's preferences are kept (see TC-P-08). Adding it back restores the same scope sentence (Phase 7 item 3).
 
 ## TC-C-08 A route waits when it cannot run on its own
 
