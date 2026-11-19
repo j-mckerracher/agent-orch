@@ -1395,8 +1395,8 @@ task.revise.";
 
 /// A coordinator woken for work the global orchestrator routed to it (DPES-1108 phase 7).
 const PROCEDURE_ROUTED: &str = "Procedure, work routed to you: read the open request in the app \
-state. If it fits this project, propose the tasks it needs, each with the request id in \
-request. If it does not fit or cannot be done, send coordinator.report with verb answer and \
+state. If it fits this project, use task.propose for the tasks it needs, each with the request \
+id in request. If it does not fit or cannot be done, send coordinator.report with verb answer and \
 say why. Do only what the request names; do not widen it.";
 
 /// The global orchestrator woken for a coordinator's report (DPES-1108 phase 7).

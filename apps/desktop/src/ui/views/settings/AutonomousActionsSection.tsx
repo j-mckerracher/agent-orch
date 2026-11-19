@@ -9,7 +9,7 @@ import type { SaveResult, SettingsModel } from "./useSettings";
 
 export const AUTONOMOUS_LABEL = "Let the orchestrator act on its own";
 export const AUTONOMOUS_CONSEQUENCE =
-  "When this is on, the orchestrator starts tasks, retries them, sends messages to waiting tasks and organizes workstreams by itself after your messages. Cancelling or revising a task, merging, removing a project and holding a decision are never done on its own. When this is off, every action waits for your approval, unless a standing approval covers it.";
+  "When this is on, the orchestrator starts tasks, retries them, sends messages to waiting tasks, organizes workstreams, records learnings and hands work to project coordinators by itself after your messages, and a coordinator starts the tasks for work handed to it. Cancelling or revising a task, merging, removing a project, holding a decision and saving a preference are never done on its own. When this is off, every action waits for your approval, unless a standing approval covers it.";
 export const AUTONOMOUS_SAVE = "Save acting on its own";
 
 export function AutonomousActionsSection({ model }: { model: SettingsModel }) {
