@@ -5,6 +5,18 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.23](https://github.com/mc-innersource/motif-mcao/compare/v0.1.22...v0.1.23) (2026-11-19)
+
+
+### Features
+
+* **daemon:** DPES-1108 - Integrate the authority, preferences, coordinator and etiquette phases ([8eff259](https://github.com/mc-innersource/motif-mcao/commit/8eff25998bbe4d67de19440419d15fab61c79d5e))
+
+
+### CI
+
+* DPES-1108 - Count main's new CLI help probe test in the macOS workspace pin ([86c0e44](https://github.com/mc-innersource/motif-mcao/commit/86c0e44b00f4fab945c48703f04a9d9cfdbe484a))
+
 ## [0.1.22](https://github.com/mc-innersource/motif-mcao/compare/v0.1.21...v0.1.22) (2026-11-19)
 
 
