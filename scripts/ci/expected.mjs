@@ -192,7 +192,7 @@ export const MACOS = {
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
   // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
   // The workflow agent (DPES-1044) adds 13 tests (4 daemon, 7 agents unit, 1 agents integration, 1 cli), as the macOS gate measured them in CI run 44356323793: 2281 becomes 2294.
-  workspace: { passed: 2312, ignored: 2 },
+  workspace: { passed: 2315, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
