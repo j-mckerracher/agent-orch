@@ -49,6 +49,7 @@ use crate::sqlite_history::{
     count_coordinator_entries, record_audit, require_project, set_clear_gate,
     tombstone_conversation_sends, wipe_coordinator, ClearOutcome,
 };
+use crate::sqlite_thinking::THINKING_TRUNCATED_MARKER;
 use crate::sqlite_turn_links::record_turn_links;
 use crate::sqlite_wake::delete_scope_wake_records;
 use crate::{SqliteStore, StoreError};
@@ -59,6 +60,9 @@ pub const MAX_CONVERSATION_MESSAGE_BYTES: usize = 8 * 1024;
 pub const MAX_REPLY_CHUNK_BYTES: usize = 16 * 1024;
 /// Largest total reply for one turn, in bytes.
 pub const MAX_REPLY_BYTES_PER_TURN: usize = 256 * 1024;
+/// Largest total thinking for one turn, in bytes. Thinking has its own budget so it never
+/// takes room from the reply.
+pub const MAX_THINKING_BYTES_PER_TURN: usize = 1024 * 1024;
 /// Largest accepted workstream identifier, in bytes.
 pub const MAX_WORKSTREAM_ID_BYTES: usize = 128;
 
@@ -165,8 +169,8 @@ pub struct ConversationEntry {
     pub id: String,
     pub conversation_id: String,
     pub turn_id: String,
-    /// `user_message`, `reply_chunk`, `turn_completed`, `turn_failed`, or
-    /// `turn_cancelled`.
+    /// `user_message`, `reply_chunk`, `thinking_chunk`, `turn_completed`,
+    /// `turn_failed`, or `turn_cancelled`.
     pub kind: String,
     /// `user`, `orchestrator`, or `system`.
     pub author: String,
@@ -241,6 +245,8 @@ pub enum ConversationError {
     TurnNotRunning(TurnState),
     /// The reply would exceed the per-turn or per-chunk bound.
     ReplyTooLarge,
+    /// The turn's thinking reached its bound. The turn itself is unaffected.
+    ThinkingFull,
     InvalidInput(&'static str),
 }
 
@@ -260,6 +266,7 @@ impl fmt::Display for ConversationError {
                 )
             }
             Self::ReplyTooLarge => formatter.write_str("reply exceeds its size bound"),
+            Self::ThinkingFull => formatter.write_str("thinking exceeds its size bound"),
             Self::InvalidInput(field) => write!(formatter, "invalid {field}"),
         }
     }
@@ -470,6 +477,90 @@ impl SqliteStore {
                  WHERE id = ?",
             )
             .bind(i64::try_from(total).unwrap_or(i64::MAX))
+            .bind(&turn_id)
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            Ok(entry)
+        })
+    }
+
+    /// Append one thinking fragment to a running turn, mirroring [`Self::append_reply_chunk`]
+    /// with its own budget: `thinking_bytes` counts it and `reply_bytes` never does.
+    ///
+    /// When the fragment would pass [`MAX_THINKING_BYTES_PER_TURN`], the first such call stores
+    /// one final `[thinking truncated: limit reached]` entry; that call and every later one
+    /// return [`ConversationError::ThinkingFull`]. The turn stays running.
+    pub fn append_thinking_chunk(
+        &self,
+        turn_id: &str,
+        text: &str,
+    ) -> Result<ConversationEntry, ConversationError> {
+        if text.is_empty() {
+            return Err(ConversationError::InvalidInput("thinking chunk"));
+        }
+        if text.len() > MAX_REPLY_CHUNK_BYTES {
+            return Err(ConversationError::ReplyTooLarge);
+        }
+        let (turn_id, text) = (turn_id.to_owned(), text.to_owned());
+        conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let turn = load_turn(&mut transaction, &turn_id)
+                .await?
+                .ok_or(ConversationError::TurnNotFound)?;
+            if turn.state != TurnState::Running {
+                return Err(ConversationError::TurnNotRunning(turn.state));
+            }
+            let marker_id = format!("{turn_id}:think:truncated");
+            let (used, marked): (i64, bool) = sqlx::query_as(
+                "SELECT thinking_bytes, EXISTS (SELECT 1 FROM conversation_entries WHERE id = ?) \
+                 FROM conversation_turns WHERE id = ?",
+            )
+            .bind(&marker_id)
+            .bind(&turn_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if marked {
+                return Err(ConversationError::ThinkingFull);
+            }
+            let total = used + text.len() as i64;
+            if total > MAX_THINKING_BYTES_PER_TURN as i64 {
+                insert_entry(
+                    &mut transaction,
+                    &marker_id,
+                    &turn.conversation_id,
+                    &turn_id,
+                    "thinking_chunk",
+                    "orchestrator",
+                    THINKING_TRUNCATED_MARKER,
+                    None,
+                )
+                .await?;
+                transaction.commit().await?;
+                return Err(ConversationError::ThinkingFull);
+            }
+            let chunks: i64 = sqlx::query_scalar(
+                "SELECT count(*) FROM conversation_entries WHERE turn_id = ? AND kind = 'thinking_chunk'",
+            )
+            .bind(&turn_id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            let entry = insert_entry(
+                &mut transaction,
+                &format!("{turn_id}:think:{}", chunks + 1),
+                &turn.conversation_id,
+                &turn_id,
+                "thinking_chunk",
+                "orchestrator",
+                &text,
+                None,
+            )
+            .await?;
+            sqlx::query(
+                "UPDATE conversation_turns SET thinking_bytes = ?, updated_at = CURRENT_TIMESTAMP \
+                 WHERE id = ?",
+            )
+            .bind(total)
             .bind(&turn_id)
             .execute(&mut *transaction)
             .await?;

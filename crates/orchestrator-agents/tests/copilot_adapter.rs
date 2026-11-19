@@ -850,6 +850,40 @@ fn unknown_event_types_and_non_json_lines_change_nothing() {
     assert_eq!(parser.last_message(), Some("OK"));
 }
 
+/// One `assistant.message` line yields its reasoning, then its reply.
+#[test]
+fn reasoning_text_yields_a_thinking_event_before_the_message() {
+    let stream = std::fs::read_to_string(fixture("success_clean.jsonl")).unwrap();
+    let mut parser = CopilotParser::new();
+    let mut events = Vec::new();
+    for line in stream.lines() {
+        events.extend(parser.feed(line));
+        events.extend(parser.take_pending());
+    }
+    let thinking = events
+        .iter()
+        .position(|e| matches!(e, AgentEvent::ThinkingDelta { text } if text.starts_with("The user is asking")))
+        .expect("thinking event");
+    assert!(matches!(
+        &events[thinking + 1],
+        AgentEvent::MessageDelta { text } if text == "OK"
+    ));
+    assert_eq!(parser.last_message(), Some("OK"));
+    assert_eq!(parser.take_pending(), None);
+
+    let mut parser = CopilotParser::new();
+    let only_thinking =
+        r#"{"type":"assistant.message","data":{"content":"","reasoningText":"hm"}}"#;
+    assert_eq!(
+        parser.feed(only_thinking),
+        Some(AgentEvent::ThinkingDelta {
+            text: "hm".to_owned()
+        })
+    );
+    assert_eq!(parser.take_pending(), None);
+    assert_eq!(parser.last_message(), None);
+}
+
 #[test]
 fn a_truncated_stream_never_completes() {
     let mut parser = CopilotParser::new();

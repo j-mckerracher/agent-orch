@@ -273,6 +273,22 @@ describe("Agents & Sessions, live mode", () => {
     expect(fake.callsTo("sessions.output_tail")[0]!.params).toMatchObject({ task_id: "t-run", session_id: "s-1" });
   });
 
+  it("shows the selected session's thinking in a Thinking disclosure, empty by default", async () => {
+    const { user } = await liveView(seeded());
+    await user.click(screen.getByRole("button", { name: /t-run/ }));
+    expect(await screen.findByText("No thinking recorded")).toBeInTheDocument();
+  });
+
+  it("shows the selected session's recorded thinking and the size-limit note", async () => {
+    const fake = seeded();
+    fake.stub("sessions.thinking", { chunks: [{ sequence: 1, body: "Plan the **marker-zz**." }], next_cursor: 1, truncated: true });
+    const { user } = await liveView(fake);
+    await user.click(screen.getByRole("button", { name: /t-run/ }));
+    expect(await screen.findByText("marker-zz")).toBeInTheDocument();
+    expect(screen.getByText("Thinking log hit its size limit.")).toBeInTheDocument();
+    expect(fake.callsTo("sessions.thinking")[0]!.params).toMatchObject({ session_id: "s-1" });
+  });
+
   it("places cancel under Session controls and the reassignment under Task controls", async () => {
     const { user } = await liveView();
     await user.click(screen.getByRole("button", { name: /t-run/ }));

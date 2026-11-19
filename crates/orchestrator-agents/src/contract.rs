@@ -68,6 +68,10 @@ pub enum AgentEvent {
     MessageDelta {
         text: String,
     },
+    /// Reasoning text the provider exposes. Never part of the reply.
+    ThinkingDelta {
+        text: String,
+    },
     ToolStarted {
         tool_id: String,
         name: String,

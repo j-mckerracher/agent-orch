@@ -201,8 +201,8 @@ export type ConversationTarget =
 export type LiveConversationTarget = Exclude<ConversationTarget, { kind: "project" }>;
 export interface ConversationEntry {
   id: string;
-  /** `status` is a daemon-recorded turn outcome (failed, canceled, empty) and never a reply. */
-  kind: "message" | "proposal" | "status";
+  /** `status` is a daemon-recorded turn outcome (failed, canceled, empty) and never a reply. `thinking` is a turn's agent reasoning. */
+  kind: "message" | "proposal" | "status" | "thinking";
   role: "user" | "coordinator" | "system";
   text: string;
   at: string;

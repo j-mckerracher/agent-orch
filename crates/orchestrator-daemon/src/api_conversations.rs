@@ -418,9 +418,9 @@ pub(super) fn map_conversation_error(error: ConversationError) -> RpcError {
             RpcError::Conflict
         }
         ConversationError::TurnNotFound => RpcError::NotFound,
-        ConversationError::ReplyTooLarge | ConversationError::InvalidInput(_) => {
-            RpcError::InvalidParams
-        }
+        ConversationError::ReplyTooLarge
+        | ConversationError::ThinkingFull
+        | ConversationError::InvalidInput(_) => RpcError::InvalidParams,
     }
 }
 

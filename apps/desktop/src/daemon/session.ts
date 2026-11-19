@@ -57,6 +57,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "sessions.get": "sessions",
   "sessions.events": "sessions",
   "sessions.output_tail": "sessions",
+  "sessions.thinking": "sessions",
   "events.subscribe": "events",
   "approvals.list": "approvals",
   "approvals.resolve": "approvals",

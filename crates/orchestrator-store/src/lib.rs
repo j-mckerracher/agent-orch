@@ -75,6 +75,7 @@ mod sqlite_reports;
 mod sqlite_review;
 mod sqlite_settings;
 mod sqlite_supervision;
+mod sqlite_thinking;
 mod sqlite_turn_links;
 mod sqlite_verification;
 mod sqlite_wake;
@@ -91,7 +92,7 @@ pub use sqlite_conversations::{
     BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
     ConversationTurn, TurnOutcome, TurnPermission, TurnState, INTERRUPTED_BY_RESTART,
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
-    MAX_WORKSTREAM_ID_BYTES,
+    MAX_THINKING_BYTES_PER_TURN, MAX_WORKSTREAM_ID_BYTES,
 };
 pub use sqlite_coordinators::{
     CoordinatorError, CoordinatorFact, CoordinatorReport, CoordinatorSummary, NewCoordinatorFact,
@@ -144,6 +145,9 @@ pub mod usage_prices;
 pub use sqlite::SqliteStore;
 pub use sqlite_ops::{
     CancellationOwner, CancellationStatus, EventJournalEntry, OpenTask, TaskOverview,
+};
+pub use sqlite_thinking::{
+    SessionThinkingPage, ThinkingChunk, MAX_THINKING_BYTES_PER_SESSION, MAX_THINKING_CHUNK_BYTES,
 };
 pub use sqlite_usage::{
     ProviderUsage, ReceiptOutcome, UsageBucket, UsageFigures, UsageReceipt, UsageSource,

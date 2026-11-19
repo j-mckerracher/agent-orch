@@ -209,9 +209,18 @@ impl Parser {
                         .to_string();
                     self.last_message = Some(text.clone());
                     Ok(Some(AgentEvent::MessageDelta { text }))
+                } else if item_type == "reasoning" {
+                    // Reasoning carries no last_message; absent/empty text is skipped.
+                    Ok(item
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .filter(|t| !t.is_empty())
+                        .map(|t| AgentEvent::ThinkingDelta {
+                            text: t.to_string(),
+                        }))
                 } else {
-                    // Unknown item types (e.g. reasoning) are not a protocol
-                    // violation; they carry no canonical event.
+                    // Unknown item types are not a protocol violation; they
+                    // carry no canonical event.
                     Ok(None)
                 }
             }
@@ -420,7 +429,16 @@ mod tests {
         assert_eq!(p.feed(""), None);
         let reasoning =
             r#"{"type":"item.completed","item":{"id":"item_1","type":"reasoning","text":"hmm"}}"#;
-        assert_eq!(p.feed(reasoning), None);
+        assert_eq!(
+            p.feed(reasoning),
+            Some(Ok(AgentEvent::ThinkingDelta { text: "hmm".into() }))
+        );
+        let empty =
+            r#"{"type":"item.completed","item":{"id":"item_2","type":"reasoning","text":""}}"#;
+        assert_eq!(p.feed(empty), None);
+        let unknown =
+            r#"{"type":"item.completed","item":{"id":"item_3","type":"web_search","text":"x"}}"#;
+        assert_eq!(p.feed(unknown), None);
         assert!(p.feed(TURN_DONE).unwrap().is_ok());
         assert_eq!(p.last_message(), None);
     }

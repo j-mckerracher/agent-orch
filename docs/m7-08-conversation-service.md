@@ -512,6 +512,10 @@ runs at. Rules:
 - **Codex.** `--skip-git-repo-check` and `--ephemeral` stay at every level,
   Full included. Neither loosens anything, and the per-turn directory is not a
   repository.
+  Every level also passes `-c show_raw_agent_reasoning=true` and
+  `-c model_reasoning_summary="detailed"` so the turn's thinking can be shown
+  (DPES-1106). They only change what Codex reports. The daemon needs the CLI to
+  advertise `-c`, as it does for any flag it passes.
 - **Copilot.** `--max-ai-credits 30` is passed only when the credit cap is on.
   The daemon reads `AGENT_ORCH_COPILOT_CREDIT_CAP` once at start, and the value
   `1` turns the cap on. It is off by default, and then no Copilot run carries

@@ -316,7 +316,8 @@ export const NODE_SELF_TESTS = { passed: 147 };
 // DPES-1108 phase 8 (pull request links under replies) adds PullRequestLinks.test.tsx (2 tests) and 3 mapper tests in
 // conversationLive.test.ts: 128 files, 2385 tests, as a full local `npx vitest run` counted them.
 // Together in the phase 9 integration: 131 files, 2438 tests, as a full local `npx vitest run` counted them.
-export const VITEST = { files: 131, tests: 2438 };
+// With main (DPES-1106 agent thinking) merged in: 133 files, 2458 tests, as a full local `npx vitest run` counted them.
+export const VITEST = { files: 133, tests: 2458 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

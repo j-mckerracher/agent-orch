@@ -29,6 +29,8 @@ export interface ConversationStub {
   /** Set by a test to send a project coordinator's state on `conversations.get` (DPES-1108); left out by default. */
   coordinator?: ConversationCoordinatorWire;
   finishRunning(code?: string | null, reply?: string): void;
+  /** Records one thinking chunk on the running turn. */
+  think(body: string): void;
 }
 
 /** A daemon-shaped live conversation: send records a turn, get pages the log, cancel ends a running turn. */
@@ -39,6 +41,9 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
     entries: [],
     turn: null,
     outcome,
+    think(body) {
+      if (this.turn) this.entries.push(entry(this.turn.id, "thinking_chunk", "orchestrator", body, null, `think:${seq}`));
+    },
     finishRunning(code = null, reply) {
       if (!this.turn || this.turn.state !== "running") return;
       const id = this.turn.id;

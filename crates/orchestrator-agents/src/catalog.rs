@@ -833,6 +833,15 @@ impl CodexAdapter {
         codex_catalog(&login, models)
     }
 
+    /// Makes `codex exec --json` emit reasoning items (read as thinking
+    /// events). Sent on every launch, including under `--ignore-user-config`.
+    const REASONING_ARGS: [&'static str; 4] = [
+        "-c",
+        "show_raw_agent_reasoning=true",
+        "-c",
+        "model_reasoning_summary=\"detailed\"",
+    ];
+
     /// Arguments that select a model and effort for `codex exec`; they go
     /// before the `--` separator. Both values must already be validated
     /// against the catalog.
@@ -877,6 +886,7 @@ impl CodexAdapter {
             .map(str::to_owned)
             .collect();
         args.extend(Self::selection_args(model, effort));
+        args.extend(Self::REASONING_ARGS.map(str::to_owned));
         args.extend(["--".to_owned(), prompt.to_owned()]);
         Some(args)
     }
@@ -922,6 +932,7 @@ impl CodexAdapter {
             args.extend(codex_developer_instructions_arg(agent));
         }
         args.extend(Self::selection_args(model, effort));
+        args.extend(Self::REASONING_ARGS.map(str::to_owned));
         args.extend(["--".to_owned(), objective.to_owned()]);
         Some(args)
     }
@@ -978,6 +989,8 @@ impl CodexAdapter {
             args.extend(codex_developer_instructions_arg(agent));
         }
         args.extend(Self::selection_args(model, effort));
+        // A resumed turn shows its thinking like the first one (DPES-1106 on main).
+        args.extend(Self::REASONING_ARGS.map(str::to_owned));
         args.extend(["--".to_owned(), session_id.to_owned(), prompt.to_owned()]);
         Some(args)
     }
@@ -1642,6 +1655,10 @@ mod tests {
                 "--skip-git-repo-check",
                 "-m",
                 "m",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--",
                 "01a1b721-1f91-7393-ae1d-6aace8e4646a",
                 "--answer",
@@ -1659,7 +1676,21 @@ mod tests {
             false,
         )
         .unwrap();
-        assert_eq!(full, ["exec", "resume", "--json", "--", "id", "p"]);
+        assert_eq!(
+            full,
+            [
+                "exec",
+                "resume",
+                "--json",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
+                "--",
+                "id",
+                "p"
+            ]
+        );
         for flag in [
             "--sandbox",
             "--add-dir",
@@ -1752,6 +1783,10 @@ mod tests {
                 "read-only",
                 "--skip-git-repo-check",
                 "--ephemeral",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--"
             ]
         );
@@ -1765,6 +1800,10 @@ mod tests {
                 "--approve-for-me",
                 "--skip-git-repo-check",
                 "--ephemeral",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--"
             ]
         );
@@ -1775,6 +1814,10 @@ mod tests {
                 "--json",
                 "--skip-git-repo-check",
                 "--ephemeral",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--"
             ]
         );
@@ -1902,6 +1945,10 @@ mod tests {
                 "m",
                 "-c",
                 "model_reasoning_effort=\"low\"",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--",
                 "do it",
             ]
@@ -1920,6 +1967,10 @@ mod tests {
                 "m",
                 "-c",
                 "model_reasoning_effort=\"low\"",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--",
                 "do it",
             ]
@@ -1935,6 +1986,10 @@ mod tests {
                 "m",
                 "-c",
                 "model_reasoning_effort=\"low\"",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
                 "--",
                 "do it",
             ]

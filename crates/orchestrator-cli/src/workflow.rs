@@ -985,6 +985,7 @@ async fn monitor_agent(
                 println!("Codex session: {session_id}")
             }
             Ok(Some(AgentEvent::MessageDelta { text })) => println!("{text}"),
+            Ok(Some(AgentEvent::ThinkingDelta { text })) => eprintln!("thinking: {text}"),
             Ok(Some(AgentEvent::ToolStarted { name, .. })) => println!("tool started: {name}"),
             Ok(Some(AgentEvent::ToolFinished { success, .. })) => {
                 println!("tool finished: {success}")

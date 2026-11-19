@@ -681,7 +681,7 @@ impl RunningAgentFixture {
         fs::write(
             &agent,
             format!(
-                "#!/bin/sh\nif [ \"$1\" = exec ] && [ \"$2\" = --help ]; then\n  printf '%s\\n' --json --sandbox --ignore-user-config\n  exit 0\nfi\n\
+                "#!/bin/sh\nif [ \"$1\" = exec ] && [ \"$2\" = --help ]; then\n  printf '%s\\n' --json --sandbox --ignore-user-config -c\n  exit 0\nfi\n\
                  printf '{{\"type\":\"thread.started\",\"thread_id\":\"01a1b721-1f91-7393-ae1d-6aace8e4646a\"}}\\n'\nprintf '{{\"type\":\"turn.started\"}}\\n'\necho $$ > '{}'\nexec sleep 60\n",
                 pid_file.display()
             ),

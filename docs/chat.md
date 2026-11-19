@@ -42,6 +42,14 @@ Every reply, including automatic updates, follows the same rules. It states outc
 
 When a reply acted on or reported tasks that have a pull request MCAO recorded, the links are listed under the reply as `Pull request 12: https://github.com/<owner>/<repo>/pull/12`. The app builds each link from its own records, not from the reply text. The app does not open links, so use the copy button next to each one.
 
+## Thinking
+
+When the agent exposes its reasoning, a "Thinking" block appears above that turn's reply. It is open while the agent works and collapses when the reply starts. Click it to open it again. Copy thinking copies the full text.
+
+The block shows everything the provider exposes. Newer Claude and GitHub Copilot models return summarized thinking. Codex returns raw reasoning only on models that support it. Turns from before this feature have no thinking.
+
+Thinking is capped at 1 MiB per chat turn. When the cap is reached, the text ends with "[thinking truncated: limit reached]".
+
 ## Clear history or remove a coordinator
 
 The conversation header menu has Clear history and, for a project coordinator, Remove coordinator. Both ask for confirmation first.

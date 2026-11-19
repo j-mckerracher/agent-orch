@@ -1,0 +1,171 @@
+//! Agent thinking of a task session (DPES-1106, migration 0063, table `session_thinking`).
+//!
+//! Display data only: nothing reads it back as a command or into a prompt. A session keeps at
+//! most [`MAX_THINKING_BYTES_PER_SESSION`] bytes; past that one marker row is written and
+//! further text is dropped silently, because thinking must never fail the run that produced it.
+//! A chat turn keeps its thinking as `thinking_chunk` entries instead (see
+//! `sqlite_conversations`).
+
+use sqlx::Row;
+
+use crate::{SqliteStore, StoreError};
+
+/// Largest single stored thinking piece, in bytes.
+pub const MAX_THINKING_CHUNK_BYTES: usize = 16 * 1024;
+/// Largest total thinking kept for one session, in bytes.
+pub const MAX_THINKING_BYTES_PER_SESSION: usize = 8 * 1024 * 1024;
+/// Largest page [`SqliteStore::session_thinking`] returns.
+const MAX_PAGE_CHUNKS: usize = 500;
+/// The last thinking row of a session or turn that hit its cap.
+pub(crate) const THINKING_TRUNCATED_MARKER: &str = "[thinking truncated: limit reached]";
+
+/// One stored piece of a session's thinking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThinkingChunk {
+    pub sequence: u64,
+    pub body: String,
+}
+
+/// One bounded read of a session's thinking.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionThinkingPage {
+    /// Ordered by sequence; all newer than the `after` cursor.
+    pub chunks: Vec<ThinkingChunk>,
+    /// The last returned sequence, or `after` when nothing was returned.
+    pub next_cursor: u64,
+    /// The session hit its cap; its last chunk is the truncation marker.
+    pub truncated: bool,
+}
+
+/// Splits `text` into pieces of at most `max` bytes, cutting only on character boundaries.
+/// `max` must be at least 4 so every character fits in a piece.
+pub(crate) fn split_chunks(text: &str, max: usize) -> Vec<&str> {
+    let mut pieces = Vec::new();
+    let mut rest = text;
+    while !rest.is_empty() {
+        let mut end = max.min(rest.len());
+        while !rest.is_char_boundary(end) {
+            end -= 1;
+        }
+        let (piece, tail) = rest.split_at(end);
+        pieces.push(piece);
+        rest = tail;
+    }
+    pieces
+}
+
+impl SqliteStore {
+    /// Append thinking text to a session. Empty text is a no-op. Once the session total would
+    /// pass [`MAX_THINKING_BYTES_PER_SESSION`], one marker row is written and later text is
+    /// dropped without error.
+    pub fn append_session_thinking(&self, session_id: &str, text: &str) -> Result<(), StoreError> {
+        if text.is_empty() {
+            return Ok(());
+        }
+        let session_id = session_id.to_owned();
+        let pieces: Vec<String> = split_chunks(text, MAX_THINKING_CHUNK_BYTES)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            // ponytail: sums the session's rows on every append; a counter column if sessions
+            // ever stream enough tiny pieces for this to show up in a profile.
+            let (mut total, truncated): (i64, bool) = {
+                let row = sqlx::query(
+                    "SELECT COALESCE(SUM(length(CAST(body AS BLOB))), 0) AS total, \
+                     COALESCE(MAX(body = ?), 0) AS truncated \
+                     FROM session_thinking WHERE session_id = ?",
+                )
+                .bind(THINKING_TRUNCATED_MARKER)
+                .bind(&session_id)
+                .fetch_one(&mut *transaction)
+                .await?;
+                (
+                    row.try_get("total")?,
+                    row.try_get::<i64, _>("truncated")? != 0,
+                )
+            };
+            if !truncated {
+                for piece in &pieces {
+                    let full = total + piece.len() as i64 > MAX_THINKING_BYTES_PER_SESSION as i64;
+                    sqlx::query("INSERT INTO session_thinking (session_id, body) VALUES (?, ?)")
+                        .bind(&session_id)
+                        .bind(if full {
+                            THINKING_TRUNCATED_MARKER
+                        } else {
+                            piece.as_str()
+                        })
+                        .execute(&mut *transaction)
+                        .await?;
+                    if full {
+                        break;
+                    }
+                    total += piece.len() as i64;
+                }
+            }
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
+    /// Read a session's thinking after the `after` cursor: at most `limit` chunks (never more
+    /// than 500), oldest first.
+    pub fn session_thinking(
+        &self,
+        session_id: &str,
+        after: u64,
+        limit: usize,
+    ) -> Result<SessionThinkingPage, StoreError> {
+        let session_id = session_id.to_owned();
+        let after_sequence = i64::try_from(after).unwrap_or(i64::MAX);
+        let limit = i64::try_from(limit.min(MAX_PAGE_CHUNKS)).unwrap_or(0);
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            let rows = sqlx::query(
+                "SELECT sequence, body FROM session_thinking \
+                 WHERE session_id = ? AND sequence > ? ORDER BY sequence LIMIT ?",
+            )
+            .bind(&session_id)
+            .bind(after_sequence)
+            .bind(limit)
+            .fetch_all(&mut *transaction)
+            .await?;
+            let truncated: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM session_thinking WHERE session_id = ? AND body = ?)",
+            )
+            .bind(&session_id)
+            .bind(THINKING_TRUNCATED_MARKER)
+            .fetch_one(&mut *transaction)
+            .await?;
+            let chunks = rows
+                .iter()
+                .map(|row| {
+                    Ok(ThinkingChunk {
+                        sequence: u64::try_from(row.try_get::<i64, _>("sequence")?).unwrap_or(0),
+                        body: row.try_get("body")?,
+                    })
+                })
+                .collect::<Result<Vec<_>, sqlx::Error>>()?;
+            Ok(SessionThinkingPage {
+                next_cursor: chunks.last().map_or(after, |chunk| chunk.sequence),
+                chunks,
+                truncated,
+            })
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_chunks_cuts_on_char_boundaries_and_loses_nothing() {
+        let text = "é".repeat(10) + "abc";
+        let pieces = split_chunks(&text, 5);
+        assert!(pieces.iter().all(|piece| piece.len() <= 5));
+        assert_eq!(pieces.concat(), text);
+        assert!(split_chunks("", 5).is_empty());
+    }
+}

@@ -1379,6 +1379,10 @@ fn codex_task_argv_per_level_is_exact() {
         "--ignore-user-config",
         "-c",
         "developer_instructions=\"fixture instructions\"",
+        "-c",
+        "show_raw_agent_reasoning=true",
+        "-c",
+        "model_reasoning_summary=\"detailed\"",
         "--add-dir",
         "<status>",
         "--",
@@ -1398,6 +1402,10 @@ fn codex_task_argv_per_level_is_exact() {
             "--ignore-user-config",
             "-c",
             "developer_instructions=\"fixture instructions\"",
+            "-c",
+            "show_raw_agent_reasoning=true",
+            "-c",
+            "model_reasoning_summary=\"detailed\"",
             "--add-dir",
             "<status>",
             "--",
@@ -1411,6 +1419,10 @@ fn codex_task_argv_per_level_is_exact() {
             "--json",
             "-c",
             "developer_instructions=\"fixture instructions\"",
+            "-c",
+            "show_raw_agent_reasoning=true",
+            "-c",
+            "model_reasoning_summary=\"detailed\"",
             "--add-dir",
             "<status>",
             "--",
@@ -1430,6 +1442,10 @@ fn codex_task_argv_per_level_is_exact() {
             "--sandbox",
             "workspace-write",
             "--ignore-user-config",
+            "-c",
+            "show_raw_agent_reasoning=true",
+            "-c",
+            "model_reasoning_summary=\"detailed\"",
             "--add-dir",
             "<status>",
             "--",
@@ -3360,6 +3376,11 @@ fn a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_w
         "{resumed_argv}"
     );
     assert!(lines.contains(&"--ignore-user-config"), "{resumed_argv}");
+    // A resumed turn emits its thinking like the first one (DPES-1106).
+    assert!(
+        lines.contains(&"show_raw_agent_reasoning=true"),
+        "{resumed_argv}"
+    );
     assert!(!lines.contains(&"--sandbox") && !lines.contains(&"--add-dir"));
     assert!(
         resumed_argv.contains("Question: SQLite or Postgres?"),
@@ -3525,3 +3546,38 @@ fn a_failed_report_fails_the_attempt_and_a_done_claim_does_not_make_a_candidate(
 
 #[path = "api_models_tests.rs"]
 mod model_selection;
+
+#[test]
+fn task_thinking_is_stored_and_served_by_sessions_thinking_not_the_output() {
+    let fixture = Fixture::new();
+    let agent = fixture.script(
+        "thinking-agent",
+        &format!(
+            "{THREAD_STARTED}printf '{{\"type\":\"item.completed\",\"item\":{{\"id\":\"r\",\"type\":\"reasoning\",\"text\":\"weighing options\"}}}}\\n'\n{}echo produced > agent-output.txt\n{TURN_COMPLETED}",
+            message_line("done"),
+        ),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "think-1", 0);
+    wait_state(&api, &task_id, "Succeeded");
+    let session_id = format!("{task_id}-session-1");
+    let page = api
+        .dispatch("sessions.thinking", json!({"session_id": session_id}))
+        .unwrap();
+    assert_eq!(page["chunks"].as_array().unwrap().len(), 1, "{page}");
+    assert_eq!(page["chunks"][0]["body"], "weighing options");
+    assert_eq!(page["truncated"], false);
+    let cursor = page["next_cursor"].clone();
+    let after = api
+        .dispatch(
+            "sessions.thinking",
+            json!({"session_id": session_id, "after": cursor}),
+        )
+        .unwrap();
+    assert_eq!(after["chunks"], json!([]));
+    assert!(
+        !tail_texts(&output_tail(&api, &task_id, json!({})).unwrap())
+            .iter()
+            .any(|line| line.contains("weighing"))
+    );
+}
