@@ -23,7 +23,7 @@ pub mod identity;
 pub mod interval;
 pub mod landing;
 pub mod load_gate;
-pub mod notes;
+pub mod memory;
 pub mod orchestrator_action;
 pub mod permission;
 pub mod project_mode;

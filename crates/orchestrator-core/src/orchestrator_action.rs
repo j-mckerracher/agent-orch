@@ -68,11 +68,12 @@ pub enum ActionKind {
     DecisionHold,
     DecisionAsk,
     TaskMessage,
+    MemorySet,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 15] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
@@ -87,6 +88,7 @@ impl ActionKind {
         Self::DecisionHold,
         Self::DecisionAsk,
         Self::TaskMessage,
+        Self::MemorySet,
     ];
 
     /// Wire name, such as `workstream.create`.
@@ -106,6 +108,7 @@ impl ActionKind {
             Self::DecisionHold => "decision.hold",
             Self::DecisionAsk => "decision.ask",
             Self::TaskMessage => "task.message",
+            Self::MemorySet => "memory.set",
         }
     }
 
@@ -152,6 +155,8 @@ pub enum Action {
     DecisionAsk(AskDecision),
     #[serde(rename = "task.message")]
     TaskMessage(MessageTask),
+    #[serde(rename = "memory.set")]
+    MemorySet(SetMemory),
 }
 
 /// `workstream.create`. `ref` names the workstream for later actions in the block.
@@ -347,6 +352,19 @@ pub struct MessageTask {
     pub task_id: String,
     /// The message, as the worker will read it. The rules of a reply:
     /// [`crate::question::check_reply`].
+    pub text: String,
+}
+
+/// `memory.set` (DPES-1108 phase 6). Writes one entry of a preference or learning document,
+/// keyed, so the same key updates the entry in place. `document` is relative to the
+/// conversation: the shared preferences, its own preferences, or its own learnings. The daemon
+/// refuses a write to the shared preferences from any conversation but the global one
+/// ([`crate::memory::resolve`]).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetMemory {
+    pub document: crate::memory::MemoryDocument,
+    pub key: String,
     pub text: String,
 }
 
@@ -697,6 +715,10 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
             crate::question::check_reply(&message.text)
                 .map_err(|_| BlockError::InvalidField("text"))
         }
+        Action::MemorySet(set) => {
+            crate::memory::check_key(&set.key).map_err(|_| BlockError::InvalidField("key"))?;
+            crate::memory::check_text(&set.text).map_err(|_| BlockError::InvalidField("text"))
+        }
         Action::WorkstreamLinkTask(link) => {
             check(
                 validate_id("workstream_id", &link.workstream_id),
@@ -842,6 +864,9 @@ fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockErr
             | Action::DecisionHold(_)
             | Action::DecisionAsk(_)
             | Action::TaskMessage(_) => true,
+            // Which document a conversation may write is a denial, not a parse error, so the
+            // agent is told to report a shared preference up (`crate::memory::resolve`).
+            Action::MemorySet(_) => true,
             // A workstream conversation never removes a project.
             Action::ProjectRemove(_) => false,
         };
@@ -878,6 +903,7 @@ impl Action {
             Self::DecisionHold(_) => ActionKind::DecisionHold,
             Self::DecisionAsk(_) => ActionKind::DecisionAsk,
             Self::TaskMessage(_) => ActionKind::TaskMessage,
+            Self::MemorySet(_) => ActionKind::MemorySet,
         }
     }
 
@@ -992,6 +1018,8 @@ impl Action {
             },
             // A newer message to the same task replaces one the user has not approved yet.
             Self::TaskMessage(message) => format!("task.message:{}", message.task_id),
+            // A newer write to the same entry replaces one the user has not approved yet.
+            Self::MemorySet(set) => format!("memory.set:{}:{}", set.document.as_str(), set.key),
         }
     }
 }
@@ -1452,7 +1480,7 @@ mod tests {
     }
 
     #[test]
-    fn the_action_kind_list_names_all_fourteen_kinds() {
+    fn the_action_kind_list_names_all_fifteen_kinds() {
         let names = ActionKind::ALL.map(ActionKind::as_str);
         assert_eq!(
             names,
@@ -1471,6 +1499,7 @@ mod tests {
                 "decision.hold",
                 "decision.ask",
                 "task.message",
+                "memory.set",
             ]
         );
         assert_eq!(
@@ -2462,6 +2491,58 @@ mod tests {
         }
         let unknown = r#"{"kind":"task.message","task_id":"task-1","text":"go","to":"user"}"#;
         assert!(parse(&block(unknown)).is_err());
+    }
+
+    #[test]
+    fn memory_set_parses_with_one_subject_per_entry_and_refuses_bad_fields() {
+        let text = json!({"kind": "memory.set", "document": "shared", "key": "pr-size",
+            "text": "Keep pull requests under 400 changed lines."})
+        .to_string();
+        let parsed = parse(&block(&text)).expect("valid block");
+        let set = &parsed.actions()[0];
+        assert_eq!(set.kind(), ActionKind::MemorySet);
+        assert_eq!(set.target_task(), None);
+        assert_eq!(set.canonical(None).subject, "memory.set:shared:pr-size");
+        // A workstream conversation may name any document; which one it may write is a
+        // denial the daemon adds, so the agent learns why.
+        assert!(parse_block(&block(&text), BlockScope::Workstream("ws-1")).is_ok());
+        for (fields, field) in [
+            (
+                json!({"document": "local", "key": "Bad Key", "text": "x"}),
+                "key",
+            ),
+            (
+                json!({"document": "local", "key": "k", "text": " "}),
+                "text",
+            ),
+            (
+                json!({"document": "local", "key": "k", "text": "a\nb"}),
+                "text",
+            ),
+            (
+                json!({"document": "local", "key": "k", "text": "see /etc/hosts"}),
+                "text",
+            ),
+            (
+                json!({"document": "learnings", "key": "k", "text": "x".repeat(281)}),
+                "text",
+            ),
+        ] {
+            let mut action = fields;
+            action["kind"] = json!("memory.set");
+            let text = action.to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{text}"
+            );
+        }
+        for unknown in [
+            r#"{"kind":"memory.set","document":"global","key":"k","text":"x"}"#,
+            r#"{"kind":"memory.set","document":"local","key":"k","text":"x","scope":"global"}"#,
+        ] {
+            assert!(parse(&block(unknown)).is_err(), "{unknown}");
+        }
     }
 
     #[test]
