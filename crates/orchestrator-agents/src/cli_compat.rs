@@ -6,11 +6,21 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 
 use orchestrator_runtime::{ChildSupervisor, LaunchRequest, SupervisionEvent};
-use tokio::sync::OnceCell;
+use tokio::sync::watch;
 
 const OUTPUT_LIMIT: usize = 256 * 1024;
 const MAX_CACHE_ENTRIES: usize = 64;
+/// A good answer older than this is read again; until the new read lands, the
+/// old answer is still served, so a refresh never refuses a working CLI.
 const CACHE_TTL: Duration = Duration::from_secs(30);
+/// A good answer older than this is dropped instead of served.
+const STALE_LIMIT: Duration = Duration::from_secs(600);
+/// How long one `--help` read may run. It is longer than any caller waits: a
+/// CLI started through a wrapper (such as a terminal's shim script) while other
+/// probes run can take over 2 s, and callers such as `agents.capabilities` must
+/// answer inside a 2 s client timeout. The read runs on its own thread, so a
+/// caller that stops waiting does not cancel it, and the next call finds it.
+const PROBE_LIMIT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct Executable {
@@ -170,56 +180,100 @@ fn option_names(line: &str) -> impl Iterator<Item = &str> {
     })
 }
 
-type Probe = OnceCell<Option<(Instant, Arc<CliHelp>)>>;
+type Key = (String, Executable);
+/// `None` until the read finishes, then its answer.
+type Reading = watch::Receiver<Option<Option<Arc<CliHelp>>>>;
 
 #[derive(Default)]
-pub struct CompatibilityCache(Mutex<HashMap<(String, Executable), Arc<Probe>>>);
+struct Entry {
+    good: Option<(Instant, Arc<CliHelp>)>,
+    reading: Option<Reading>,
+}
+
+#[derive(Default)]
+pub struct CompatibilityCache(Arc<Mutex<HashMap<Key, Entry>>>);
 
 impl CompatibilityCache {
-    /// A failed probe is not cached. Concurrent requests for the same binary
-    /// share a read; no subprocess runs with the map locked.
+    /// The help of `program`, waiting at most `wait` for a read. A failed read
+    /// is not cached. Concurrent requests for the same binary share one read,
+    /// which runs on its own thread for up to `PROBE_LIMIT` and is cached when
+    /// it succeeds, even after every caller stopped waiting.
     pub async fn help(
         &self,
         agent: &str,
         program: &Path,
         executable: &Executable,
-        limit: Duration,
+        wait: Duration,
     ) -> Option<Arc<CliHelp>> {
         if !executable.matches(program) {
             return None;
         }
         let key = (agent.to_owned(), executable.clone());
-        let cell = {
+        let mut reading = {
             let mut entries = self.0.lock().ok()?;
-            entries.retain(|_, entry| match entry.get() {
-                Some(Some((at, _))) => at.elapsed() < CACHE_TTL,
-                _ => Arc::strong_count(entry) > 1,
+            entries.retain(|_, entry| {
+                entry.reading.is_some()
+                    || entry
+                        .good
+                        .as_ref()
+                        .is_some_and(|(at, _)| at.elapsed() < STALE_LIMIT)
             });
             if entries.len() >= MAX_CACHE_ENTRIES && !entries.contains_key(&key) {
                 return None;
             }
-            entries.entry(key.clone()).or_default().clone()
-        };
-        let result = cell
-            .get_or_init(|| async {
-                read_help(agent, program, limit)
-                    .await
-                    .map(|help| (Instant::now(), help))
-            })
-            .await
-            .as_ref()
-            .map(|(_, help)| help.clone());
-        if result.is_none() {
-            if let Ok(mut entries) = self.0.lock() {
-                if entries
-                    .get(&key)
-                    .is_some_and(|entry| Arc::ptr_eq(entry, &cell))
-                {
-                    entries.remove(&key);
-                }
+            let entry = entries.entry(key.clone()).or_default();
+            let good = entry.good.clone();
+            if good
+                .as_ref()
+                .is_some_and(|(at, _)| at.elapsed() < CACHE_TTL)
+            {
+                return good.map(|(_, help)| help);
             }
-        }
-        result.filter(|_| executable.matches(program))
+            if entry.reading.is_none() {
+                entry.reading = self.start(key, program.to_path_buf());
+            }
+            if let Some((_, help)) = good {
+                return Some(help);
+            }
+            entry.reading.clone()?
+        };
+        let answer = tokio::time::timeout(wait, reading.wait_for(Option::is_some))
+            .await
+            .ok()?
+            .ok()?
+            .clone()
+            .flatten();
+        answer.filter(|_| executable.matches(program))
+    }
+
+    /// Starts the read for `key` on its own thread; `None` if it cannot start.
+    fn start(&self, key: Key, program: PathBuf) -> Option<Reading> {
+        let (sender, receiver) = watch::channel(None);
+        let entries = self.0.clone();
+        std::thread::Builder::new()
+            .name("cli-help".into())
+            .spawn(move || {
+                let answer = std::panic::catch_unwind(|| {
+                    tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .ok()?
+                        .block_on(read_help(&key.0, &program, PROBE_LIMIT))
+                })
+                .ok()
+                .flatten();
+                if let Ok(mut entries) = entries.lock() {
+                    if let Some(entry) = entries.get_mut(&key) {
+                        entry.reading = None;
+                        if let Some(help) = &answer {
+                            entry.good = Some((Instant::now(), help.clone()));
+                        }
+                    }
+                }
+                let _ = sender.send(Some(answer));
+            })
+            .ok()?;
+        Some(receiver)
     }
 }
 
@@ -283,5 +337,37 @@ mod tests {
             ),
             Ok(())
         );
+    }
+
+    /// A CLI slower than the caller's wait (a shim under load) is still read:
+    /// the read outlives the call, and a later call gets its answer.
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn slow_help_finishes_after_the_caller_stops_waiting() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let program = dir.path().join("slow-cli");
+        std::fs::write(&program, "#!/bin/sh\nsleep 1\necho '  --model <id>'\n").unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let executable = Executable::read(&program).unwrap();
+        let cache = CompatibilityCache::default();
+        let wait = Duration::from_millis(100);
+
+        assert!(cache
+            .help("claude-code", &program, &executable, wait)
+            .await
+            .is_none());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let help = loop {
+            if let Some(help) = cache.help("claude-code", &program, &executable, wait).await {
+                break help;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the background read never landed"
+            );
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        };
+        assert!(help.offers("--model"));
     }
 }

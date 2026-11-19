@@ -10,7 +10,7 @@ Install MCAO from a prebuilt installer. To build it yourself, see [Build from so
 
 ## Download
 
-Get the installers from the [releases page](https://github.com/mc-innersource/motif-mcao/releases). Each release lists a macOS `.zip`, a Windows `-setup.exe`, and a `SHA256SUMS` file.
+Get the installers from the [releases page](https://github.com/mc-innersource/motif-mcao/releases). See "Assets" for the release you want to install. Each release lists a macOS `.zip`, a Windows `-setup.exe`, and a `SHA256SUMS` file.
 
 ## Install on macOS
 
