@@ -24,7 +24,9 @@ use tempfile::TempDir;
 /// secret, so it may appear in a failure message.
 const FIXED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const NEGOTIATED: [Capability; 10] = [
+/// Every capability a user-only method needs, so a refusal can only come from the approver gate.
+/// `ConversationHistory` routes `coordinator.set_scope` (DPES-1108 phase 7).
+const NEGOTIATED: [Capability; 11] = [
     Capability::Health,
     Capability::OrchestratorActions,
     Capability::Approvals,
@@ -35,6 +37,7 @@ const NEGOTIATED: [Capability; 10] = [
     Capability::Holds,
     Capability::StandingApprovals,
     Capability::Coordinator,
+    Capability::ConversationHistory,
 ];
 
 /// Answers with the method name and records every call that reaches it, so a
