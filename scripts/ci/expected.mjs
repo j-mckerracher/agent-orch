@@ -284,7 +284,8 @@ export const NODE_SELF_TESTS = { passed: 147 };
 // The archived workstreams box and the settings layout (DPES-1044) add one file and six tests: 126 files, 2361 tests, as the
 // Windows desktop-vitest gate measured them in CI run 44380025826.
 // DPES-1108 phase 3 (Needs your decision list, decision.ask card) adds one file: 127 files, 2379 tests (CI run 44475972106).
-export const VITEST = { files: 127, tests: 2379 };
+// DPES-1108 phase 4 (the task.message card) adds one test in actionCardModel.test.ts: 2380 tests.
+export const VITEST = { files: 127, tests: 2380 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
