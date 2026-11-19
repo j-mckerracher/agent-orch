@@ -638,6 +638,7 @@ describe("S4 task and session detail", () => {
     expect(await screen.findByText("Sent. The agent resumes shortly.")).toBeInTheDocument();
     expect(box).toHaveValue("");
     expect(fake.callsTo("tasks.message")).toHaveLength(1);
+    expect(fake.messages).toEqual([{ task_id: "t-w", text: "Use the staging database" }]);
     expect(fake.callsTo("tasks.message")[0]!.params).toEqual({
       task_id: "t-w",
       text: "Use the staging database",
@@ -716,7 +717,9 @@ describe("S4 task and session detail", () => {
     await user.type(box, "One more thing");
     await user.click(screen.getByRole("button", { name: "Send message" }));
     expect(
-      await screen.findByText("The task is no longer waiting, or already has the most messages it can hold. Nothing was changed."),
+      await screen.findByText(
+        "The task is no longer waiting, is waiting on a question, or already has the most messages it can hold. Nothing was changed.",
+      ),
     ).toBeInTheDocument();
     expect(box).toHaveValue("One more thing");
   });
@@ -732,6 +735,8 @@ describe("S4 task and session detail", () => {
     await user.type(box, "Use the staging database");
     await user.click(screen.getByRole("button", { name: "Send message" }));
     expect(await screen.findByText("The outcome is unknown. Sending again reuses the same request key.")).toBeInTheDocument();
+    expect(box).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
     await user.click(screen.getByRole("button", { name: "Send message" }));
     expect(await screen.findByText("Sent. The agent resumes shortly.")).toBeInTheDocument();
     const keys = () => fake.callsTo("tasks.message").map((call) => (call.params as { idempotency_key: string }).idempotency_key);
@@ -741,6 +746,21 @@ describe("S4 task and session detail", () => {
     await user.click(screen.getByRole("button", { name: "Send message" }));
     await waitFor(() => expect(keys()).toHaveLength(3));
     expect(keys()[2]).not.toBe(keys()[1]);
+  });
+
+  it("locks the message text while a send is in flight", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.stub("decisions.list", { questions: [] });
+    fake.delayNext("tasks.message", 200);
+    const { user } = await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    const box = await screen.findByLabelText("Message to the agent");
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, "Use the staging database");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(box).toBeDisabled();
+    expect(await screen.findByText("Sent. The agent resumes shortly.")).toBeInTheDocument();
+    expect(box).toBeEnabled();
   });
 
   it("disables the reply box on a waiting task when the open questions cannot be read", async () => {

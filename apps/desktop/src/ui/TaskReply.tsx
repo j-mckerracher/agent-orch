@@ -93,6 +93,8 @@ function MessageForm({ taskId, reason }: { taskId: string; reason: string | null
   const reasonId = useId();
   const off = reason !== null;
   const describedBy = off ? reasonId : undefined;
+  // A different text would mint a new key while the old send may still have queued, so the text stays put until it settles.
+  const locked = sending || error?.indeterminate === true;
 
   const send = async () => {
     setSending(true);
@@ -120,7 +122,7 @@ function MessageForm({ taskId, reason }: { taskId: string; reason: string | null
         id={inputId}
         rows={3}
         value={text}
-        disabled={off}
+        disabled={off || locked}
         aria-describedby={describedBy}
         onChange={(event) => setText(event.target.value)}
       />
@@ -151,7 +153,10 @@ function SendError({ error }: { error: DaemonError }) {
       return <p role="alert">That task is no longer known. Nothing was changed.</p>;
     case "conflict":
       return (
-        <p role="alert">The task is no longer waiting, or already has the most messages it can hold. Nothing was changed.</p>
+        <p role="alert">
+          The task is no longer waiting, is waiting on a question, or already has the most messages it can hold. Nothing was
+          changed.
+        </p>
       );
     default:
       return (
