@@ -42,7 +42,7 @@ fn agents(fixture: &Fixture) -> Agents {
              login) if [ -f '{signed_out}' ]; then echo 'Not logged in'; exit 1; fi; echo 'Logged in using ChatGPT'; exit 0;;\n\
              debug) cat '{models}'; exit 0;;\n\
              esac\n\
-             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}.tmp' && mv '{argv}.tmp' '{argv}'\n\
              echo produced > agent-output.txt\n\
              {THREAD_STARTED}{TURN_COMPLETED}",
             signed_out = signed_out.display(),
@@ -57,7 +57,7 @@ fn agents(fixture: &Fixture) -> Agents {
              auth) echo '{{\"loggedIn\":true}}'; exit 0;;\n\
              --help) cat '{help}'; exit 0;;\n\
              esac\n\
-             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}.tmp' && mv '{argv}.tmp' '{argv}'\n\
              echo '{{}}'\n",
             help = help.display(),
             argv = claude_argv.display(),
