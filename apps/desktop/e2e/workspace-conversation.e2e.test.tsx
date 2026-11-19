@@ -395,7 +395,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
     }
   }, 90000);
 
-  it("approves an orchestrator action on the real daemon and creates the workstream once", async () => {
+  it("runs an orchestrator action on its own on the real daemon and creates the workstream once", async () => {
     // The fake agent reads its reply from this file: prose, then one trailing action block (DPES-1105).
     const dir = mkdtempSync(join(tmpdir(), "orch-actions-reply-"));
     const replyFile = join(dir, "reply.txt");
@@ -424,15 +424,19 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       await userEvent.click(sendButton());
 
       expect(await screen.findByText("Post-MVP work can be its own workstream.", undefined, { timeout: 20000 })).toBeTruthy();
-      const card = await screen.findByRole("article", { name: "Proposed: Create workstream" }, { timeout: 20000 });
+      await screen.findByRole("article", { name: "Proposed: Create workstream" }, { timeout: 20000 });
       expect(screen.getByRole("log", { name: /Conversation with Global orchestrator/ }).textContent).not.toContain("mcao-actions");
 
-      await userEvent.click(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" }));
-      // The card is re-rendered once the action completes, so read the current one, not the pre-approval node.
+      // DPES-1108 phase 5: with the default settings a workstream.create from the user's turn runs on its own, so
+      // the card ends executed with no approve button. The approval path is covered with the switch off in
+      // crates/orchestrator-daemon/tests/conversation_runtime.rs.
       await waitFor(
-        () => expect(screen.getByRole("article", { name: "Proposed: Create workstream" }).querySelector(".ui-pill")?.textContent).toContain("Created"),
+        () => expect(screen.getByRole("article", { name: "Proposed: Create workstream" }).querySelector(".ui-pill")?.textContent).toContain("Done on its own"),
         { timeout: 15000 },
       );
+      const done = screen.getByRole("article", { name: "Proposed: Create workstream" });
+      expect(within(done).queryByRole("button", { name: /^Approve/ })).toBeNull();
+      expect(within(done).getByText("The orchestrator did this on its own. You did not need to approve it.")).toBeTruthy();
 
       const titled = (await t.direct((api) => api.workstreamsList())).filter((ws) => ws.title === "Post-MVP work");
       expect(titled).toHaveLength(1);
