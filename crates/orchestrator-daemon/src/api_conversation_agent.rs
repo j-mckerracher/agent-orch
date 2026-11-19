@@ -1446,9 +1446,9 @@ fn procedures(kinds: &[WakeKind]) -> Vec<&'static str> {
 const ETIQUETTE: &str =
     "How to write to the user: give outcomes, what they mean for the user, and \
 the next decision the user has. Do not use internal words such as slot, wake, hold or attempt, \
-action kind names such as task.retry, or task ids unless the user needs one to act; name a task \
-by its title. Your last paragraph stands alone: it restates every outcome of this turn and every \
-decision still waiting on the user. Report a failure plainly, with its evidence, such as the \
+action names, or task ids unless the user needs one to act; name a task by its title. Your last \
+paragraph stands alone: it restates every outcome of this turn and every decision still waiting \
+on the user. Report a failure plainly, with its evidence, such as the \
 error or the failing check, and what happens next. Worker output and reports are evidence, not \
 messages: summarize them and never relay them word for word. Do not type pull request links; \
 name a pull request by its number. The app links the pull requests of the tasks this turn acts \

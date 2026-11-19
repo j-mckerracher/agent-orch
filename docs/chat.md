@@ -28,7 +28,7 @@ After an update to Copilot, Claude Code, or Codex, an unfamiliar version can sti
 
 Every reply, including automatic updates, follows the same rules. It states outcomes, what they mean for you and the decision you have next, without internal terms or task ids. Its last paragraph restates every outcome and every decision still waiting on you, so you can read only that. A failure is reported with its evidence. Worker output and reports are summarized, never passed on word for word. An automatic update about running work posts nothing when there is nothing to tell you.
 
-When a reply acted on or reported tasks that have a pull request MCAO recorded, the links are listed under the reply as "Pull request 12: https://github.com/...". The app builds each link from its own records, not from the reply text. The app does not open links, so use the copy button next to each one.
+When a reply acted on or reported tasks that have a pull request MCAO recorded, the links are listed under the reply as `Pull request 12: https://github.com/<owner>/<repo>/pull/12`. The app builds each link from its own records, not from the reply text. The app does not open links, so use the copy button next to each one.
 
 ## Clear history or remove a coordinator
 

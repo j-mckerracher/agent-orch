@@ -717,15 +717,13 @@ impl WakeService {
                 state.last_check_ms.insert(load.scope.clone(), now);
                 // A work check past its share of the caps is not recorded at all, so it leaves
                 // no skipped line behind; the next one is an interval later (DPES-1108 phase 8).
+                // A usage read that fails skips this check only; the stall check below still runs.
                 if settings.mode.runs_wake_turns()
                     && !outstanding.contains(&load.scope)
-                    && admits_heartbeat(
-                        &settings.wake_limits,
-                        &self
-                            .store
-                            .wake_usage(&load.scope, now)
-                            .map_err(|_| "cannot read wake usage".to_owned())?,
-                    )
+                    && self
+                        .store
+                        .wake_usage(&load.scope, now)
+                        .is_ok_and(|usage| admits_heartbeat(&settings.wake_limits, &usage))
                 {
                     records.push(NewWakeRecord {
                         scope: load.scope.clone(),
