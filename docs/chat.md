@@ -24,6 +24,12 @@ Copilot does not expose a free model or effort inventory to the picker. Choose C
 
 After an update to Copilot, Claude Code, or Codex, an unfamiliar version can still run. The daemon checks the installed CLI's help for the command options and permission controls the operation needs. When it cannot confirm those options, it does not start the agent. Retry the check or change your selection. MCAO does not silently replace a saved provider or weaken the requested permissions.
 
+## How the orchestrator writes to you
+
+Every reply, including automatic updates, follows the same rules. It states outcomes, what they mean for you and the decision you have next, without internal terms or task ids. Its last paragraph restates every outcome and every decision still waiting on you, so you can read only that. A failure is reported with its evidence. Worker output and reports are summarized, never passed on word for word. An automatic update about running work posts nothing when there is nothing to tell you.
+
+When a reply acted on or reported tasks that have a pull request MCAO recorded, the links are listed under the reply as "Pull request 12: https://github.com/...". The app builds each link from its own records, not from the reply text. The app does not open links, so use the copy button next to each one.
+
 ## Clear history or remove a coordinator
 
 The conversation header menu has Clear history and, for a project coordinator, Remove coordinator. Both ask for confirmation first.

@@ -184,7 +184,7 @@ Each phase is one PR with its prose and its guard together, and is useful on its
 | 5 | Authority model | `core/orchestrator_action.rs`, `api_conversation_runtime.rs`, `store` archive guard, security docs | Autonomous actions run directly within bounds; user-word list still proposes; unlanded-work guard refuses. |
 | 6 | Preferences and learnings | migration from `orchestrator_notes`, `core/notes.rs`, settings UI | Three documents, budgets, read in wake turns, write guards. |
 | 7 | Coordinators | `api_coordinator.rs`, `core/decomposition.rs`, `wake.rs`, new `coordinator_reports` | Routed work runs under a coordinator and returns only through the parent channel. |
-| 8 | Etiquette pass and wake caps | `core/instructions.rs`, `core/supervision.rs` | Final-message rule in place; PR links structured; caps re-sized for autonomous supervision. |
+| 8 | Etiquette pass and wake caps. Built in DPES-1108 `feat/DPES-1108_etiquette`: an etiquette block in every turn's content (own 1 KiB cap), recorded pull request links on each completed turn shown under the reply, caps 20/hour and 160/day with half of each for work checks. See [decisions](firstmate-behavior-decisions.md#phase-8-etiquette-and-wake-caps) | `api_conversation_agent.rs`, `core/supervision.rs`, `wake.rs`, store migration 0071, workspace view | Final-message rule in place; PR links structured; caps re-sized for autonomous supervision. |
 
 Order reasoning: 1 first because nothing else fits in 3 KiB. 3 before 4 because a waiting worker needs somewhere to put its question. 5 after 2-4 so autonomy arrives with the brief, the decision records and the guards already in place. 7 last because it builds on all of them.
 
@@ -192,7 +192,7 @@ Order reasoning: 1 first because nothing else fits in 3 KiB. 3 before 4 because 
 
 1. **Status file under sandbox** (phase 4): settled by granting that single path (`--add-dir`, plus a Copilot write rule). See the phase 4 decisions.
 2. **Session resume** (phase 4): settled from each CLI's `--help`; see the phase 4 decisions. Codex Auto cannot resume at its level and fails closed.
-3. **Wake budget** (phase 8): 6/hour and 40/day were sized for proposals; measure before choosing new numbers.
+3. **Wake budget** (phase 8): settled from the code, not from measured wake turns (none were available); 20/hour and 160/day, with half of each for work checks. See the phase 8 decisions.
 4. **Security review** (phase 5): required, see 5.5.
 5. **Jira keys**: one per phase is needed for branches and commits; none are assigned here.
 6. **pstack dependency** (phase 2): a missing plugin today only warns. With a real brief the worker still functions, so keep the warning.

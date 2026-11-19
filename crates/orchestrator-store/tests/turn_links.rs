@@ -110,9 +110,12 @@ fn contract(id: &str) -> TaskContract {
     }
 }
 
+/// A task, its pull request number if one is recorded, and the repository bound to it.
+type Seed<'a> = (&'a str, Option<u64>, Option<(&'a str, &'a str)>);
+
 /// A store with project p1 and `tasks` in it. Each `(task, number, repo)` with a number gets a
 /// recorded pull request, and a bound repository when `repo` is set.
-fn seeded(directory: &Path, tasks: &[(&str, Option<u64>, Option<(&str, &str)>)]) -> SqliteStore {
+fn seeded(directory: &Path, tasks: &[Seed<'_>]) -> SqliteStore {
     let store = SqliteStore::new(&directory.join("store.sqlite")).unwrap();
     store
         .register_project(&Project {
@@ -222,7 +225,7 @@ fn a_wake_turn_links_the_pull_requests_of_the_tasks_it_reports_and_keeps_at_most
     let tasks: Vec<(String, u64)> = (1..=7u8)
         .map(|n| (format!("task-bbbb000{n}"), u64::from(n) + 100))
         .collect();
-    let spec: Vec<(&str, Option<u64>, Option<(&str, &str)>)> = tasks
+    let spec: Vec<Seed<'_>> = tasks
         .iter()
         .map(|(task, number)| (task.as_str(), Some(*number), Some(("octo", "demo"))))
         .collect();

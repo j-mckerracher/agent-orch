@@ -34,6 +34,50 @@ const wire = (
 });
 
 describe("mapEntries", () => {
+  const pr = (number: number, url = `https://github.com/octo/demo/pull/${number}`) => ({ task_id: `t-${number}`, number, url });
+
+  it("puts the daemon's pull request links on the reply its turn completed", () => {
+    const entries = mapEntries([
+      wire(1, "t1", "user_message", "hi"),
+      wire(2, "t1", "reply_chunk", "Done."),
+      { ...wire(3, "t1", "turn_completed"), pull_requests: [pr(12), pr(7)] },
+    ]);
+    expect(entries).toHaveLength(2);
+    expect(entries[1]!.pullRequests).toEqual([
+      { taskId: "t-12", number: 12, url: "https://github.com/octo/demo/pull/12" },
+      { taskId: "t-7", number: 7, url: "https://github.com/octo/demo/pull/7" },
+    ]);
+    expect(entries[0]!.pullRequests).toBeUndefined();
+  });
+
+  it("puts the links on the status line of a turn with no reply, and none on a turn without them", () => {
+    const entries = mapEntries([
+      { ...wire(1, "t1", "turn_completed"), pull_requests: [pr(3)] },
+      wire(2, "t2", "turn_completed"),
+    ]);
+    expect(entries[0]).toMatchObject({ kind: "status", pullRequests: [{ number: 3 }] });
+    expect(entries[1]!.pullRequests).toBeUndefined();
+  });
+
+  it("drops any link that is not exactly the daemon's GitHub pull request form", () => {
+    const entries = mapEntries([
+      wire(1, "t1", "reply_chunk", "Done."),
+      {
+        ...wire(2, "t1", "turn_completed"),
+        pull_requests: [
+          pr(1, "http://github.com/octo/demo/pull/1"),
+          pr(2, "https://github.com.evil.example/octo/demo/pull/2"),
+          pr(3, "https://github.com/octo/demo/pull/4"),
+          pr(5, "https://github.com/octo/demo/pull/5/files"),
+          pr(6, "javascript:alert(6)"),
+          pr(7, "https://github.com/oc to/demo/pull/7"),
+          pr(8),
+        ],
+      },
+    ]);
+    expect(entries[0]!.pullRequests).toEqual([{ taskId: "t-8", number: 8, url: "https://github.com/octo/demo/pull/8" }]);
+  });
+
   it("coalesces reply chunks into one reply that stops streaming at the turn end", () => {
     const entries = mapEntries([
       wire(1, "t1", "user_message", "hi"),

@@ -216,6 +216,15 @@ export interface ConversationEntry {
   origin?: "wake";
   /** The daemon's transcript sequence (a reply: its last chunk). A wake record is placed by it. Live targets only. */
   sequence?: number;
+  /** The recorded pull requests of the tasks this turn acted on or reported (DPES-1108), on its reply or status. */
+  pullRequests?: PullRequestLink[];
+}
+
+/** A pull request the daemon recorded for a task. The URL is the daemon's, checked again before it is shown. */
+export interface PullRequestLink {
+  taskId: string;
+  number: number;
+  url: string;
 }
 /** The permission level a chat message runs at (DPES-1105). The daemon sets the level it ran with on each turn. */
 export type PermissionLevel = "restricted" | "extended" | "auto" | "full";
