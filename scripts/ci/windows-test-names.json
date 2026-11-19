@@ -843,7 +843,8 @@
    "api::archive_tests::archived_tasks_leave_the_list_and_tasks_get_still_answers",
    "api::archive_tests::archiving_again_is_a_no_op_and_an_unknown_task_is_not_found",
    "api::home_directory_tests::a_git_home_directory_registers_as_a_worktree_project",
-   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup"
+   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup",
+   "thinking_is_stored_before_the_reply_and_never_enters_history"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",

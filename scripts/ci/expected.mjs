@@ -60,7 +60,7 @@ export const WINDOWS = {
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 677 becomes 678.
   // The shared compatibility policy replaces six obsolete chat-only helper tests.
-  daemon: { passed: 696, ignored: 1, sequence: [593, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 697, ignored: 1, sequence: [593, 89, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
