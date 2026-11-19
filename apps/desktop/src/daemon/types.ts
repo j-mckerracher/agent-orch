@@ -871,8 +871,19 @@ export interface ActionProposalWire {
   approved_by?: { kind: "user" } | { kind: "grant"; grant_id: string } | string | null;
   /** The daemon sends the approving grant's id here (null when a person approved or nobody has). */
   grant_id?: string | null;
+  /** True when the orchestrator approved and ran it itself after the user's message (DPES-1108). Absent from older daemons. */
+  autonomous?: boolean;
+  /** On an executed `task.propose`: what this one task changes from the project default, at the user's request. Absent from older daemons. */
+  overrides?: ProposalOverrideWire[];
   created_at: string;
   updated_at: string;
+}
+
+/** One field a task sets differently from its project's default, for that task only (DPES-1108). */
+export interface ProposalOverrideWire {
+  field: string;
+  project_default: string;
+  chosen: string;
 }
 
 /** `actions.resolve` result: the proposal as the daemon now holds it (DPES-1105). */
@@ -923,6 +934,8 @@ export interface SettingsWire {
   wake_limits?: WakeLimitsWire;
   /** Whether chat may propose tasks that end in a pull request. Absent from an older daemon (DPES-1105). */
   chat_pr_delivery?: boolean;
+  /** Whether the orchestrator runs some actions itself after the user's messages (DPES-1108). Absent from an older daemon. */
+  autonomous_actions?: boolean;
   /** The read-only task tools for the orchestrator chat. Absent from an older daemon (DPES-1105 phase 6b). */
   mcp?: McpWire;
   /** The folder a task runs in when it is not clear which project it belongs to; `null` while none is set. Absent from an older daemon. */
@@ -960,6 +973,7 @@ export interface SettingsPatchWire {
   supervision?: Partial<SupervisionWire>;
   wake_limits?: Partial<WakeLimitsWire>;
   chat_pr_delivery?: boolean;
+  autonomous_actions?: boolean;
   mcp?: McpWire;
   /** The folder to run in when no project is clear; `null` clears it. The daemon refuses a folder that does not exist. */
   home_directory?: string | null;

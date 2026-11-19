@@ -206,6 +206,17 @@ export class DaemonApi {
     });
   }
 
+  /**
+   * DPES-1108. Records the user's word that a finished task's committed work is not wanted, so it can be archived.
+   * Deletes nothing: the branch stays. User-only. Conflict when the task is not finished.
+   */
+  async tasksDiscard(taskId: string, idempotencyKey: string): Promise<{ task_id: string; discarded: boolean }> {
+    return this.session.request("tasks.discard", {
+      task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
   async sessionsList(taskId: string | null): Promise<SessionEntry[]> {
     return this.session.request("sessions.list", { task_id: taskId === null ? null : realId(taskId) });
   }
@@ -689,7 +700,7 @@ export class DaemonApi {
    * must name at least one field. User-only, like `settingsSet`.
    */
   settingsSetGroups(
-    patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "home_directory" | "dispatch_defaults">,
+    patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "autonomous_actions" | "mcp" | "home_directory" | "dispatch_defaults">,
     idempotencyKey: string,
   ): Promise<SettingsWire> {
     return this.session.request("settings.set", { idempotency_key: idempotencyKey, ...patch });

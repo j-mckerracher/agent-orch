@@ -3,13 +3,16 @@ import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import type { ActionProposal } from "../../../sources/surfaces/types";
 import {
   actionPhrase,
+  approvedByText,
   cardTitle,
+  doneOnItsOwnText,
   failureText,
   fieldsOf,
   newerRecord,
   openTaskId,
   openWorkstreamId,
   outcomeAnnouncement,
+  overrideLines,
   requestErrorText,
   viewOf,
 } from "./actionCardModel";
@@ -577,5 +580,39 @@ describe("revise, hold and remove card copy", () => {
     expect(openTaskId(revise)).toBeNull();
     expect(openTaskId(hold)).toBe("task-0123");
     expect(openTaskId(remove)).toBeNull();
+  });
+});
+
+describe("cards the orchestrator ran on its own (DPES-1108)", () => {
+  const task = proposal({ kind: "task.propose", state: "executed", resultRef: "task-1", params: { title: "Fix it" } });
+
+  it("authority_marks_an_executed_autonomous_card_as_done_on_its_own_without_decisions", () => {
+    const view = viewOf({ ...task, autonomous: true }, null, LIVE);
+    expect(view.pill).toEqual({ tone: "ok", text: "Done on its own" });
+    expect(view.approve.enabled).toBe(false);
+    expect(view.reject.enabled).toBe(false);
+    expect(doneOnItsOwnText({ ...task, autonomous: true })).toBe("The orchestrator did this on its own. You did not need to approve it.");
+  });
+
+  it("authority_keeps_the_usual_copy_for_a_card_the_user_or_a_standing_approval_approved", () => {
+    expect(viewOf(task, null, LIVE).pill.text).toBe("Queued");
+    expect(doneOnItsOwnText(task)).toBeNull();
+    const granted = { ...task, approvedBy: { kind: "grant" as const, grantId: "grant-1234567890ab" } };
+    expect(approvedByText(granted)).toBe("Approved by a standing approval (grant-1234).");
+    expect(doneOnItsOwnText(granted)).toBeNull();
+  });
+
+  it("authority_never_says_done_for_an_autonomous_card_that_failed_or_is_running", () => {
+    expect(doneOnItsOwnText({ ...task, autonomous: true, state: "failed", errorCode: "conflict" })).toBeNull();
+    expect(doneOnItsOwnText({ ...task, autonomous: true, state: "approved" })).toBeNull();
+    expect(viewOf({ ...task, autonomous: true, state: "failed", errorCode: "conflict" }, null, LIVE).pill.text).toBe("Failed");
+    expect(failureText({ ...task, autonomous: true, state: "failed", errorCode: "autonomy_off" })).toMatch(/^Acting on its own was turned off/);
+  });
+
+  it("authority_names_each_one_task_override_in_plain_words", () => {
+    expect(overrideLines(task)).toEqual([]);
+    expect(overrideLines({ ...task, overrides: [{ field: "delivery", projectDefault: "LocalReview", chosen: "ReportOnly" }] })).toEqual([
+      "For this task only: delivery report only instead of the project's local review.",
+    ]);
   });
 });

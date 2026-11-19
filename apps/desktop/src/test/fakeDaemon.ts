@@ -129,6 +129,10 @@ export class FakeDaemon implements DaemonConnector {
   tasks: TaskRecord[] = [];
   /** Ids archived by `tasks.archive`: `tasks.list` and workstream links leave them out; `tasks.get` still returns them. */
   archived = new Set<string>();
+  /** Ids with committed work that was not delivered: `tasks.archive` refuses them with Conflict until discarded. */
+  undelivered = new Set<string>();
+  /** Ids `tasks.discard` recorded. */
+  discarded = new Set<string>();
   events: DaemonEvent[] = [];
   approvals: Approval[] = [];
   /** Scheduler limits and restart gate reported by `queue.snapshot`. */
@@ -301,9 +305,19 @@ export class FakeDaemon implements DaemonConnector {
           found.push(task);
         }
         if (found.some((task) => !ARCHIVABLE_STATES.has(task.state))) return fail(-32011, "task is not finished; it cannot be archived");
+        if (found.some((task) => this.undelivered.has(task.contract.id) && !this.discarded.has(task.contract.id))) {
+          return fail(-32011, "task has committed work that was not delivered");
+        }
         const archived = ids.filter((id) => !this.archived.has(id));
         for (const id of archived) this.archived.add(id);
         return reply({ archived });
+      }
+      case "tasks.discard": {
+        const task = this.tasks.find((t) => t.contract.id === params.task_id);
+        if (!task) return fail(-32010, "task not found");
+        if (!ARCHIVABLE_STATES.has(task.state)) return fail(-32011, "task is not finished; it cannot be discarded");
+        this.discarded.add(task.contract.id);
+        return reply({ task_id: task.contract.id, discarded: true });
       }
       case "sessions.list": {
         const entries: SessionEntry[] = this.tasks

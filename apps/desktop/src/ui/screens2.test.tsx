@@ -484,10 +484,43 @@ describe("S4 task and session detail", () => {
     const fake = seeded();
     const { user } = await mount(fake, { route: taskRoute("t-d") });
     await screen.findByTestId("task-state");
-    fake.failNext("tasks.archive", { code: -32011, message: "task is not finished" });
+    fake.failNext("tasks.archive", { code: -32603, message: "store error" });
     await user.click(screen.getByRole("button", { name: "Archive task" }));
     expect(await screen.findByText(/Archiving the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Archived\. The task leaves/)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
+  });
+
+  it("offers to discard undelivered changes after a confirmation, then lets archive go through", async () => {
+    const fake = seeded();
+    fake.undelivered.add("t-d");
+    const { user } = await mount(fake, { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    expect(await screen.findByText("This task has changes that were not delivered. Deliver them, or discard them first.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    expect(screen.getByText(/Discard this task's changes\? The branch stays in the repository/)).toBeInTheDocument();
+    expect(fake.callsTo("tasks.discard")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Keep changes" }));
+    expect(fake.callsTo("tasks.discard")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Discard changes" }));
+    await user.click(screen.getByRole("button", { name: "Confirm discard" }));
+    expect(await screen.findByText("Changes discarded. You can archive the task now.")).toBeInTheDocument();
+    expect(fake.callsTo("tasks.discard")[0]!.params).toEqual({ task_id: "t-d", idempotency_key: expect.any(String) });
+    expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    expect(await screen.findByText(/Archived\. The task leaves the task lists; its history is kept\./)).toBeInTheDocument();
+  });
+
+  it("locks discard for a session that is not the approver", async () => {
+    const fake = seeded();
+    fake.approver = false;
+    fake.undelivered.add("t-d");
+    const { user } = await mount(fake, { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    expect(await screen.findByRole("button", { name: "Discard changes" })).toBeDisabled();
+    expect(fake.callsTo("tasks.discard")).toHaveLength(0);
   });
 
   it("disables cancel for terminal tasks", async () => {
