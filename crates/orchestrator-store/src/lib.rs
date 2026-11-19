@@ -59,6 +59,7 @@ mod sqlite_attempts;
 mod sqlite_brief;
 mod sqlite_conversation_usage;
 mod sqlite_conversations;
+mod sqlite_coordinators;
 mod sqlite_delivery;
 mod sqlite_grants;
 mod sqlite_history;
@@ -88,6 +89,10 @@ pub use sqlite_conversations::{
     ConversationTurn, TurnOutcome, TurnPermission, TurnState, INTERRUPTED_BY_RESTART,
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
     MAX_WORKSTREAM_ID_BYTES,
+};
+pub use sqlite_coordinators::{
+    CoordinatorError, CoordinatorFact, CoordinatorReport, CoordinatorSummary, NewCoordinatorFact,
+    RoutedRequest,
 };
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_grants::{GrantClaimError, GrantError, GrantEvent, GrantEventKind, GrantOutcome};

@@ -49,6 +49,12 @@ pub enum WakeKind {
     WorkerNeedsDecision,
     /// A task's worker reported that it is blocked and waits for help.
     WorkerBlocked,
+    /// Work the global orchestrator routed to a project's coordinator (DPES-1108 phase 7). Its
+    /// record is in the coordinator's scope.
+    RoutedRequest,
+    /// A coordinator's report for the global orchestrator: a fact the daemon wrote or the
+    /// coordinator's own judgment. Its record is in the global scope.
+    CoordinatorReport,
 }
 
 impl WakeKind {
@@ -66,6 +72,8 @@ impl WakeKind {
             Self::CandidateReady => "candidate_ready",
             Self::WorkerNeedsDecision => "worker_needs_decision",
             Self::WorkerBlocked => "worker_blocked",
+            Self::RoutedRequest => "routed_request",
+            Self::CoordinatorReport => "coordinator_report",
         }
     }
 
@@ -83,6 +91,8 @@ impl WakeKind {
             "candidate_ready" => Some(Self::CandidateReady),
             "worker_needs_decision" => Some(Self::WorkerNeedsDecision),
             "worker_blocked" => Some(Self::WorkerBlocked),
+            "routed_request" => Some(Self::RoutedRequest),
+            "coordinator_report" => Some(Self::CoordinatorReport),
             _ => None,
         }
     }
@@ -100,6 +110,8 @@ impl WakeKind {
                 | Self::CandidateReady
                 | Self::WorkerNeedsDecision
                 | Self::WorkerBlocked
+                | Self::RoutedRequest
+                | Self::CoordinatorReport
         )
     }
 }

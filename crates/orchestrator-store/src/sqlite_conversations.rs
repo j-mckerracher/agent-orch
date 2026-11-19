@@ -856,6 +856,17 @@ impl SqliteStore {
                         clear_generation: coordinator_generation(&mut transaction, id).await?,
                     });
                 }
+                // A coordinator that owns unfinished work or an unanswered routed request stays
+                // (DPES-1108 phase 7). Migration 0070 holds the same rule as a trigger.
+                if remove
+                    && crate::sqlite_coordinators::coordinator_has_open_work(&mut transaction, id)
+                        .await?
+                {
+                    return Err(StoreError::from(
+                        crate::sqlite_coordinators::CoordinatorError::OpenWork,
+                    )
+                    .into());
+                }
                 count_coordinator_entries(&mut transaction, id).await?
             } else {
                 0
