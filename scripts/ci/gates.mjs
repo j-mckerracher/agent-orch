@@ -2,7 +2,7 @@
 // (docs/evidence/priority-11r3-windows-acceptance-efa5e8a-runbook.md on branch
 // docs/priority-11r3-windows-acceptance-efa5e8a): same commands, same order, same derived counts.
 // macOS runs the same commands with counts measured on macOS (they differ by `cfg`), plus the
-// two macOS-only gates the M5-05r3 owner measured: the whole workspace and the real-daemon e2e.
+// two macOS-only gates the M5-05r3 owner measured: the rest of the workspace and the real-daemon e2e.
 //
 // Every expected count and the clippy baseline live in expected.mjs; this file holds none. They
 // are never edited to fit a run. If a count changes, the change needs a reason in the commit that
@@ -149,7 +149,11 @@ export function gatesFor(platform) {
   if (!win) {
     gates.push({
       name: "workspace-tests", mode: "test", cwd: ".", exe: "cargo", isolated: true, timeout: 3600,
-      args: ["test", "--locked", "--workspace"],
+      // The crates that daemon-tests, store-tests and ipc-tests run whole are excluded, so no test runs twice.
+      args: [
+        "test", "--locked", "--workspace",
+        "--exclude", "orchestrator-daemon", "--exclude", "orchestrator-store", "--exclude", "orchestrator-ipc",
+      ],
       passed: MACOS.workspace.passed, ignored: MACOS.workspace.ignored,
     });
   }

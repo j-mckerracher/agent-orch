@@ -8,6 +8,8 @@
 //       the gate names one job runs, for run-gates --only
 //   node scripts/ci/windows-jobs.mjs verdict
 //       reads the needs context from NEEDS (JSON) and fails unless every job agrees with the selection
+//   node scripts/ci/windows-jobs.mjs macos-gates <job-id>
+//       the gate names one macOS job runs
 //
 // Only a pull request is selected by its changed files. Every other event (a push to main, a manual run,
 // a release call) runs every Windows gate. The harness job always runs. A job that is not selected is
@@ -47,6 +49,27 @@ export const JOBS = [
   { id: "tauri-tests", group: "tauri", gates: ["desktop-npm-ci", "desktop-build", "tauri-tests"] },
   { id: "desktop", group: "desktop", gates: ["desktop-npm-ci", "desktop-tsc", "desktop-build", "desktop-vitest"] },
   { id: "desktop-package", group: "package", gates: ["desktop-npm-ci", "desktop-package-win"] },
+];
+
+// The macOS native gates, split the same way so that no job runs longer than about ten minutes. Every event runs
+// every macOS job; `daemon-tests` alone takes up to seven minutes, so it has the engine job to itself.
+export const MACOS_JOBS = [
+  { id: "engine", gates: ["daemon-tests", "daemon-lifecycle", "coordinator-review-tests"] },
+  {
+    id: "crates",
+    gates: [
+      "node-self-tests", "ipc-tests", "git-lib-tests", "cli-cleanup-safety-tests", "private-fs-tests", "store-tests",
+      "lock-takeover-test", "diagnostics-tests", "runtime-command-line-tests", "cli-command-line-tests", "clippy-scoped",
+      "workspace-tests",
+    ],
+  },
+  {
+    id: "desktop",
+    gates: [
+      "daemon-build", "desktop-npm-ci", "desktop-tsc", "desktop-build", "desktop-vitest", "desktop-e2e", "desktop-geometry",
+      "tauri-build", "tauri-tests", "tauri-clippy-clean", "tauri-clippy", "desktop-package-mac",
+    ],
+  },
 ];
 
 export const GROUPS = ["engine", "tauri", "desktop", "package", "smoke"];
@@ -188,6 +211,12 @@ function cli(argv) {
     process.stdout.write(`${job.gates.join(",")}\n`);
     return 0;
   }
+  if (command === "macos-gates") {
+    const job = MACOS_JOBS.find((j) => j.id === rest[0]);
+    if (!job) throw new Error(`unknown macOS job '${rest[0]}'`);
+    process.stdout.write(`${job.gates.join(",")}\n`);
+    return 0;
+  }
   if (command === "verdict") {
     const verdict = windowsVerdict(JSON.parse(process.env.NEEDS ?? "{}"));
     const table = summaryTable(verdict);
@@ -195,7 +224,7 @@ function cli(argv) {
     if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, table);
     return verdict.ok ? 0 : 1;
   }
-  throw new Error("usage: windows-jobs.mjs select --event <name> | gates <job-id> | verdict");
+  throw new Error("usage: windows-jobs.mjs select --event <name> | gates <job-id> | verdict | macos-gates <job-id>");
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

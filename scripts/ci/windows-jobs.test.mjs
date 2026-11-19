@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
 import { gatesFor } from "./gates.mjs";
-import { GROUPS, JOBS, USAGE_SMOKE, groupOutputs, selectGroups, windowsVerdict } from "./windows-jobs.mjs";
+import { GROUPS, JOBS, MACOS_JOBS, USAGE_SMOKE, groupOutputs, selectGroups, windowsVerdict } from "./windows-jobs.mjs";
 
 const ALL = { engine: true, tauri: true, desktop: true, package: true, smoke: true };
 const NONE = { engine: false, tauri: false, desktop: false, package: false, smoke: false };
@@ -102,6 +102,24 @@ test("the jobs cover every Windows gate once, each with its prerequisites", () =
   }
 });
 
+// The same for macOS: a gate in no leg would never run, and `run-gates --only` would not notice.
+test("the macOS jobs cover every macOS gate once, each with its prerequisites", () => {
+  const macGates = gatesFor("darwin");
+  const names = macGates.map((g) => g.name);
+  const placed = MACOS_JOBS.flatMap((job) => job.gates);
+  for (const name of names) assert.equal(placed.filter((n) => n === name).length >= 1, true, `${name} runs in no macOS job`);
+  for (const name of placed) assert.ok(names.includes(name), `${name} is not a macOS gate`);
+  assert.equal(new Set(MACOS_JOBS.map((j) => j.id)).size, MACOS_JOBS.length, "macOS job ids are not unique");
+  for (const job of MACOS_JOBS) {
+    assert.equal(new Set(job.gates).size, job.gates.length, `${job.id} lists a gate twice`);
+    for (const gate of macGates.filter((g) => job.gates.includes(g.name))) {
+      for (const need of gate.needs ?? []) assert.ok(job.gates.includes(need), `${job.id}: ${gate.name} needs ${need}`);
+    }
+  }
+  const yml = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
+  assert.match(yml, new RegExp(`^        job: \\[${MACOS_JOBS.map((j) => j.id).join(", ")}\\]$`, "m"), "the macOS matrix differs from MACOS_JOBS");
+});
+
 test("the workflow has a job for each table entry and an aggregator that waits for all of them", () => {
   const yml = readFileSync(new URL("../../.github/workflows/ci.yml", import.meta.url), "utf8");
   for (const job of JOBS) {
@@ -120,8 +138,8 @@ test("the workflow has a job for each table entry and an aggregator that waits f
   assert.ok(waits, "ci.yml has no gates-windows aggregator with a needs list");
   const needed = waits[1].split(",").map((s) => s.trim());
   for (const job of [...JOBS.map((j) => j.id), "changes"]) assert.ok(needed.includes(job), `aggregator skips ${job}`);
-  const step = /      - name: Usage reader smoke test\n        if: needs\.changes\.outputs\.smoke == 'true'\n        run: \|\n          node --test --test-reporter=tap "scripts\/smoke\/\*\.smoke\.mjs" \| tee "\$RUNNER_TEMP\/usage-smoke\.tap"\n          node apps\/desktop\/src-tauri\/sidecars\/codeburn\/require-tap-totals\.mjs "\$RUNNER_TEMP\/usage-smoke\.tap" 4\n/g;
-  assert.equal([...yml.matchAll(step)].length, 2, "the smoke step must be in exactly the harness and macOS jobs");
+  const step = /      - name: Usage reader smoke test\n        if: (?:matrix\.job == 'crates' && )?needs\.changes\.outputs\.smoke == 'true'\n        run: \|\n          node --test --test-reporter=tap "scripts\/smoke\/\*\.smoke\.mjs" \| tee "\$RUNNER_TEMP\/usage-smoke\.tap"\n          node apps\/desktop\/src-tauri\/sidecars\/codeburn\/require-tap-totals\.mjs "\$RUNNER_TEMP\/usage-smoke\.tap" 4\n/g;
+  assert.equal([...yml.matchAll(step)].length, 2, "the smoke step must be in exactly the harness job and the macOS crates leg");
   for (const job of ["harness", "macos"]) {
     assert.match(yml, new RegExp(`^  ${job}:\\n(?:    .*\\n)*?    needs: changes\\n    if: always\\(\\)\\n`, "m"), `${job} must run even if changes failed`);
   }

@@ -785,12 +785,18 @@ jobs:
       - name: Verdict over the Windows jobs
         run: node scripts/ci/windows-jobs.mjs verdict
 
+  # The macOS gates run as parallel legs of one matrix job (the table is MACOS_JOBS in scripts/ci/windows-jobs.mjs).
+  # `gates (macos)` is the one verdict over them.
   macos:
-    name: gates (macos)
+    name: "macos: ${{ matrix.job }}"
     needs: changes
     if: always()
     runs-on: macos-15
-    timeout-minutes: 180
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [engine, crates, desktop]
     permissions:
       contents: read
     defaults:
@@ -830,10 +836,11 @@ jobs:
           git --version
 
       - name: Harness self-tests
+        if: matrix.job == 'crates'
         run: node --test "scripts/**/*.test.mjs"
 
       - name: Usage reader smoke test
-        if: needs.changes.outputs.smoke == 'true'
+        if: matrix.job == 'crates' && needs.changes.outputs.smoke == 'true'
         run: |
           node --test --test-reporter=tap "scripts/smoke/*.smoke.mjs" | tee "$RUNNER_TEMP/usage-smoke.tap"
           node apps/desktop/src-tauri/sidecars/codeburn/require-tap-totals.mjs "$RUNNER_TEMP/usage-smoke.tap" 4
@@ -846,11 +853,12 @@ jobs:
           exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
           echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
 
-      # One step runs every gate once, in order, with its own target dir and test temp dir.
+      # One step runs this leg's gates once, in order, with its own target dir and test temp dir.
       # The evidence and target dirs are outside the checkout so the tree stays clean.
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
+            --only "$(node scripts/ci/windows-jobs.mjs macos-gates ${{ matrix.job }})" \
             --evidence-dir "$RUNNER_TEMP/evidence" \
             --target-dir "$RUNNER_TEMP/target" \
             --test-tmp "$RUNNER_TEMP/tt"
@@ -859,7 +867,22 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gate-evidence-macos
+          name: gate-evidence-macos-${{ matrix.job }}
           path: ${{ runner.temp }}/evidence
           if-no-files-found: warn
           retention-days: 30
+
+  macos-verdict:
+    name: gates (macos)
+    needs: macos
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Verdict over the macOS jobs
+        env:
+          RESULT: ${{ needs.macos.result }}
+        run: |
+          echo "macos matrix: $RESULT"
+          test "$RESULT" = success

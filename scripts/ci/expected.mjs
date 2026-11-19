@@ -160,41 +160,11 @@ export const MACOS = {
   // A daemon shutdown kills a `--version` read in flight (DPES-1106): one Unix-only unit test, so 833 becomes 834.
   daemon: { passed: 836, ignored: 1, sequence: [705, 94, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
-  // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
-  // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
-  // DPES-1106 adds 2 store tests (the publish regression and the racing-acquires stress): 1021 becomes 1023.
-  // Measured on the rebased DPES-1105 branch (`cargo test --locked --workspace --no-fail-fast`, every binary's `test
-  // result` summed): 1115 passed, 2 ignored. That base already holds the AI usage tests from PR #43 (1050).
-  // The bundled usage reader (PR #62) adds 4 tests in orchestrator-local-usage (pin and service): 1119. Measured on a real
-  // macOS run of the DPES-1105 fixture-identifier PR.
-  // The chat model choice (DPES-1105) adds 15 tests (14 daemon, 1 ipc): 1119 becomes 1134 (CI run 43734333632).
-  // The Copilot sandbox gate removal (PR #75) deletes 10 tests (the sandbox probes and the sandbox-gated catalog and launch
-  // tests) and adds 1 sign-in test: 1134 becomes 1125 (CI run 43757529505).
-  // DPES-1105 permission levels (PR #80, CI run 43767887059, measured on macOS, `cargo test --locked --workspace`): 18 new
-  // tests across orchestrator-agents, orchestrator-core, orchestrator-daemon and orchestrator-store, so 1125 becomes 1143.
-  // WI-DPES-736: Seven portable store audit-envelope tests are added.
-  // DPES-1123 adds three portable daemon API tests and one Unix-only executor test.
-  // WI-DPES-747: Three additional portable daemon token-warning tests.
-  // DPES-1105 task permission levels (PR #93, CI run 43915710007, measured on macOS, `cargo test --locked --workspace`): 12 new
-  // tests (8 daemon, 1 core, 1 agents unit, 2 agents integration), so 1157 becomes 1169 passed plus 2 ignored.
-  // DPES-1105 usage controls (PR #97) adds three orchestrator-local-usage preflight unit tests: 1169 becomes 1172 passed
-  // plus 2 ignored, as the macOS workspace-tests gate measured them in CI run 43945842537.
-  // The chat model choice for GitHub Copilot (DPES-1105, PR #99) adds 5 tests to the workspace total, as the macOS workspace-tests
-  // gate measured them in CI run 43951278199 (1174 against 1169 before main's 3 usage preflight tests): 1172 becomes 1177.
-  // DPES-1106 unverified agent versions (PR #101) adds 13 tests to the workspace total (macOS workspace-tests gate, CI run 43965574766): 1177 becomes 1190.
-  // DPES-1105 orchestrator preamble and snapshot (PR #108, macOS workspace-tests gate, CI run 43974417288): 1190 becomes 1203.
-  // DPES-1105 action proposals (macOS workspace-tests gate, PR #113, CI run 43981399384): 1203 becomes 1258.
-  // DPES-1105 action resolve and approval card (PRs #116 and #118, CI run 43994386560): 1258 becomes 1289.
-  // CI run 44023050296: 1289 becomes 1432.
-  // OX-W9 workstream plan editing adds 9 daemon tests: 2074 becomes 2083.
-  // Opt-in project coordinators add 3 tests (1 daemon, 2 store): 2083 becomes 2086.
-  // Project coordinator replies add one runtime regression.
-  // The home directory and Global tasks add 18 tests (15 daemon, 1 core, 1 store, 1 cli): 2087 becomes 2105.
-  // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
-  // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
-  // The workflow agent (DPES-1044) adds 13 tests (4 daemon, 7 agents unit, 1 agents integration, 1 cli), as the macOS gate measured them in CI run 44356323793: 2281 becomes 2294.
-  // The macOS workspace-tests gate measured 2311 on main (CI run 44458538573); the shutdown test above and the thinking tests of this branch make 2323.
-  workspace: { passed: 2323, ignored: 2 },
+  // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
+  // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
+  // 2323 passed and 2 ignored for the whole workspace (CI run 44550404415); minus daemon 836+1, store 388+1 and ipc 121 that is
+  // 978 passed and none ignored.
+  workspace: { passed: 978, ignored: 0 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
@@ -235,7 +205,8 @@ export const MACOS = {
 // 137 = 132 + the 3 tests of release-please.test.mjs and the 2 added to publish.test.mjs (DPES-1106, release-please, PR #100).
 // Measured by `node --test "scripts/**/*.test.mjs"` on main and by the macOS node-self-tests gate in CI run 43968335824.
 // 146 = 137 + the 9 tests of sync-expected.test.mjs, counted by `node --test "scripts/**/*.test.mjs"`.
-export const NODE_SELF_TESTS = { passed: 147 };
+// 148 = 147 + the macOS job coverage test in windows-jobs.test.mjs.
+export const NODE_SELF_TESTS = { passed: 148 };
 
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
 // Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests. The Enter-in-search fix adds 2 tests
