@@ -750,11 +750,23 @@ export interface ConversationWireEntry {
   error_code: string | null;
   /** Set on a `turn_completed` entry (DPES-1105). Absent from older daemons; null when the turn had no action block. */
   action_block?: ActionBlockWire | null;
+  /**
+   * Set on a `turn_completed` entry when the turn acted on or reported tasks with a recorded pull request (DPES-1108).
+   * The daemon builds each URL from its own records, never from reply text. Absent otherwise and from older daemons.
+   */
+  pull_requests?: PullRequestLinkWire[];
   /** Set on a `version_mismatch` entry: the agent and version the turn refused (DPES-1106). */
   runtime?: { name: string; version: string };
   /** `wake` on the opening entry of an automatic turn only. Absent otherwise and from older daemons. */
   origin?: string;
   created_at: string;
+}
+
+/** One recorded pull request of a turn's task. `url` is `https://github.com/<owner>/<name>/pull/<number>`. */
+export interface PullRequestLinkWire {
+  task_id: string;
+  number: number;
+  url: string;
 }
 
 /** The permission level a message runs at (DPES-1105). Absent from older daemons; null when no agent launched. */

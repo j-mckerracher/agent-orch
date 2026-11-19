@@ -42,6 +42,7 @@ import type {
   ModelChoice,
   PermissionLevel,
   Provenance,
+  PullRequestLink,
   RoutedIn,
   SendReceipt,
   WakeRecord,
@@ -220,6 +221,28 @@ function actionBlocksOf(entries: readonly ConversationWireEntry[], latest: Conve
   return blocks;
 }
 
+/** Exactly the shape the daemon builds. Anything else is dropped, never shown. */
+const PULL_REQUEST_URL = /^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/([1-9][0-9]{0,5})$/;
+
+/** The most links one turn shows; the daemon keeps at most this many. */
+const MAX_PULL_REQUEST_LINKS = 5;
+
+/**
+ * The pull request links of a `turn_completed` entry (DPES-1108). Each URL must match the daemon's form and name the
+ * entry's own number; any other entry, or an older daemon, gives none.
+ */
+export function pullRequestLinks(entry: ConversationWireEntry): PullRequestLink[] {
+  if (entry.kind !== "turn_completed" || !Array.isArray(entry.pull_requests)) return [];
+  const links: PullRequestLink[] = [];
+  for (const wire of entry.pull_requests) {
+    if (links.length === MAX_PULL_REQUEST_LINKS) break;
+    const match = typeof wire?.url === "string" ? PULL_REQUEST_URL.exec(wire.url) : null;
+    if (!match || Number(match[1]) !== wire.number || typeof wire.task_id !== "string") continue;
+    links.push({ taskId: wire.task_id, number: wire.number, url: wire.url });
+  }
+  return links;
+}
+
 /**
  * Maps wire entries to view entries. Reply chunks of one turn become a single
  * reply that stays `streaming` until the daemon records the end of the turn;
@@ -273,11 +296,24 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
           out.push(created);
         }
         break;
-      case "turn_completed":
-        if (reply) reply.streaming = false;
-        else if (withProposals?.has(entry.turn_id)) out.push(status(entry, "The orchestrator proposed actions without a written reply."));
-        else out.push(status(entry, "The orchestrator finished this turn without a reply."));
+      case "turn_completed": {
+        let ended: ConversationEntry;
+        if (reply) {
+          reply.streaming = false;
+          ended = reply;
+        } else {
+          ended = status(
+            entry,
+            withProposals?.has(entry.turn_id)
+              ? "The orchestrator proposed actions without a written reply."
+              : "The orchestrator finished this turn without a reply.",
+          );
+          out.push(ended);
+        }
+        const links = pullRequestLinks(entry);
+        if (links.length > 0) ended.pullRequests = links;
         break;
+      }
       case "turn_failed":
         if (reply) reply.streaming = false;
         out.push(status(entry, failureText(entry.error_code, entry.runtime)));

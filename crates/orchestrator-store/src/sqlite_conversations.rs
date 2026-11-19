@@ -34,6 +34,7 @@ use std::fmt;
 use std::future::Future;
 
 use orchestrator_core::memory::MemoryScope;
+use orchestrator_core::orchestrator_action::{Action, ActionBlock};
 use orchestrator_core::permission::PermissionLevel;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
@@ -48,6 +49,7 @@ use crate::sqlite_history::{
     count_coordinator_entries, record_audit, require_project, set_clear_gate,
     tombstone_conversation_sends, wipe_coordinator, ClearOutcome,
 };
+use crate::sqlite_turn_links::record_turn_links;
 use crate::sqlite_wake::delete_scope_wake_records;
 use crate::{SqliteStore, StoreError};
 
@@ -607,6 +609,10 @@ impl SqliteStore {
             let turn = load_turn(&mut transaction, &turn_id)
                 .await?
                 .ok_or(ConversationError::TurnNotFound)?;
+            let block_tasks = match &block {
+                TurnBlock::Accepted(action_block) => block_task_ids(action_block),
+                _ => Vec::new(),
+            };
             let (outcome, effective) = match block {
                 TurnBlock::None => (None, Vec::new()),
                 TurnBlock::Stripped => (Some(ActionBlockOutcome::Stripped), Vec::new()),
@@ -635,6 +641,7 @@ impl SqliteStore {
                     .execute(&mut *transaction)
                     .await?;
             }
+            record_turn_links(&mut transaction, &turn_id, &block_tasks).await?;
             transaction.commit().await?;
             Ok(Some(effective))
         })
@@ -1007,6 +1014,19 @@ where
     store
         .call(move |pool| async move { Ok(operation(pool).await) })
         .map_err(ConversationError::Store)?
+}
+
+/// The tasks an accepted block names, in block order: the target of each action, and the task a
+/// `workstream.link_task` links. Their recorded pull requests become the turn's links.
+fn block_task_ids(block: &ActionBlock) -> Vec<String> {
+    block
+        .actions()
+        .iter()
+        .filter_map(|action| match action {
+            Action::WorkstreamLinkTask(link) => Some(link.task_id.clone()),
+            other => other.target_task().map(str::to_owned),
+        })
+        .collect()
 }
 
 pub(crate) fn corrupt(detail: String) -> StoreError {

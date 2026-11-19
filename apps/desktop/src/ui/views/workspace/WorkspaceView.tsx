@@ -17,6 +17,7 @@ import { useGate, useServices, useStore, useSurface, type SurfaceState } from ".
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Bubble, Button, CopyButton, EmptyState, Markdown } from "../../theme";
+import { PullRequestLinks } from "./PullRequestLinks";
 import { ErrorNotice, Notice } from "../../widgets";
 import { useWorkstreamsVersion } from "../workstreams/model";
 import { ActionCard } from "./ActionCard";
@@ -974,12 +975,15 @@ function EntryBubble({
   // A daemon turn outcome is a system line, never a reply from the orchestrator. It is daemon text, so it stays plain.
   if (entry.kind === "status") {
     return (
-      <div className="ws-state ws-turn-status">
-        <p role="status" className="ws-turn-status-text">
-          {entry.text}
-        </p>
-        <CopyButton text={entry.text} label="Copy status" />
-      </div>
+      <>
+        <div className="ws-state ws-turn-status">
+          <p role="status" className="ws-turn-status-text">
+            {entry.text}
+          </p>
+          <CopyButton text={entry.text} label="Copy status" />
+        </div>
+        <PullRequestLinks links={entry.pullRequests} />
+      </>
     );
   }
   const bubble = (
@@ -1006,6 +1010,7 @@ function EntryBubble({
       actions={<CopyButton text={entry.text} />}
     >
       <Markdown text={entry.text} />
+      <PullRequestLinks links={entry.pullRequests} />
     </Bubble>
   );
   // A reply to an automatic turn says it is an update, so it is never read as an answer to the user's last message.

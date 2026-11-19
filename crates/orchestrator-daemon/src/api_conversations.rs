@@ -459,6 +459,16 @@ fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, R
             if let (true, Some(block)) = (is_completed, turn.action_block) {
                 value["action_block"] = json!(block.as_str());
             }
+            // The recorded pull requests of the tasks the turn acted on or reported (DPES-1108
+            // phase 8). Absent when there are none.
+            if is_completed {
+                let links = store
+                    .turn_pull_request_links(&entry.turn_id)
+                    .map_err(map_conversation_error)?;
+                if !links.is_empty() {
+                    value["pull_requests"] = json!(links);
+                }
+            }
             // The opening entry of a wake turn is stored as a user message, but the wire
             // never calls it one (DPES-1105).
             if is_opening && turn.trigger == TurnTrigger::Wake {

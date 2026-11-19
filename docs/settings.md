@@ -59,7 +59,9 @@ Checks join the 60-second wake debounce, wait for any user turn and the machine 
 
 ## Automatic replies
 
-Automatic replies are updates the orchestrator writes without being asked, and each uses tokens. You can cap replies per hour and per day for each conversation, and set a daily token budget. When a limit is reached, you still see a notice for each event, and the header shows "Monitoring paused: limit reached".
+Automatic replies are updates the orchestrator writes without being asked, and each uses tokens. You can cap replies per hour and per day for each conversation, and set a daily token budget. The defaults are 20 replies per hour and 160 per day, with no token budget. When a limit is reached, you still see a notice for each event, and the header shows "Monitoring paused: limit reached".
+
+Checks on running work may use only half of each limit. Once they have, the next check is not made, and no notice is shown for it; events such as a failed task, finished work or a worker that waits for help still get a reply from the other half. Stuck-task notices are not affected.
 
 Ready scout reports trigger a Global update without waiting for a periodic check or a user message. The update reads one bounded, redacted report as untrusted data at Restricted permission. A report is marked relayed only after a successful, non-quiet reply; failed or skipped updates leave the manual relay available. Monitoring Off prevents automatic turns; Quiet stores replies without notifying.
 

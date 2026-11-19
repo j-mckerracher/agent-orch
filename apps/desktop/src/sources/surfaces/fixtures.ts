@@ -615,7 +615,7 @@ function settingsSource(ctx: Ctx, gate: "open" | "closed"): SettingsSource {
   const snapshotOf = (data: Record<"open" | "closed", SettingsSnapshot>): SettingsSnapshot => ({
     ...data[gate],
     supervision: { baseIntervalSecs: 600, minIntervalSecs: 60, attemptWallMinutes: 120 },
-    wakeLimits: { hourlyCap: 6, dailyCap: 40, dailyTokenBudget: null },
+    wakeLimits: { hourlyCap: 20, dailyCap: 160, dailyTokenBudget: null },
     chatPrDelivery: false,
     autonomousActions: true,
     mcpEnabled: false,

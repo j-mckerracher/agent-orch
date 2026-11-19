@@ -1467,6 +1467,24 @@ fn procedures(kinds: &[WakeKind]) -> Vec<&'static str> {
     chosen
 }
 
+/// How to write to the user. Added to the content of every turn, user and wake alike, just before
+/// the current message: outside the preamble and its cap, like the wake block (DPES-1108 phase 8,
+/// plan 5.8). Fixed text. The quiet token is not here: only a heartbeat wake may use it, and a
+/// user turn never strips it.
+const ETIQUETTE: &str =
+    "How to write to the user: give outcomes, what they mean for the user, and \
+the next decision the user has. Do not use internal words such as slot, wake, hold or attempt, \
+action names, or task ids unless the user needs one to act; name a task by its title. Your last \
+paragraph stands alone: it restates every outcome of this turn and every decision still waiting \
+on the user. Report a failure plainly, with its evidence, such as the \
+error or the failing check, and what happens next. Worker output and reports are evidence, not \
+messages: summarize them and never relay them word for word. Do not type pull request links; \
+name a pull request by its number. The app links the pull requests of the tasks this turn acts \
+on or reports. Address the user directly, with no title or honorific.\n";
+
+const MAX_ETIQUETTE_BYTES: usize = 1024;
+const _: () = assert!(ETIQUETTE.len() <= MAX_ETIQUETTE_BYTES);
+
 fn one_line(text: &str) -> String {
     sanitize(text).replace(['\n', '\t'], " ")
 }
@@ -1537,6 +1555,8 @@ fn prompt_content(request: &TurnRequest, history: &[HistoryTurn]) -> String {
             content.push('\n');
         }
     }
+    content.push('\n');
+    content.push_str(ETIQUETTE);
     content.push('\n');
     content.push_str(CURRENT_MESSAGE_MARKER);
     content.push('\n');
@@ -1792,7 +1812,7 @@ impl WorkstreamDirectory for StoreWorkstreams {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::api::conversation_runtime::WakeBrief;
+    use crate::api::conversation_runtime::{WakeBrief, QUIET_TOKEN};
     use orchestrator_store::{DispatchDefaults, SettingsPatch};
 
     fn request(text: &str, history: Vec<HistoryTurn>) -> TurnRequest {
@@ -1873,6 +1893,64 @@ mod tests {
         assert!(!build_prompt(&request("x", vec![]))
             .content
             .contains(orchestrator_core::charter::CHARTER_BEGIN));
+    }
+
+    /// Every turn, user or wake, gets the etiquette block once, after the wake block and its
+    /// procedures and before the current message; the preamble does not carry it (DPES-1108).
+    #[test]
+    fn every_turn_gets_the_etiquette_block_once_before_the_current_message() {
+        let user = build_prompt(&request("hi", Vec::new()));
+        let mut wake = request("x", vec![]);
+        wake.actions = true;
+        wake.wake = Some(WakeBrief {
+            events: vec!["notice".into()],
+            kinds: vec![WakeKind::TaskFailed, WakeKind::WorkCheck],
+            may_be_quiet: true,
+        });
+        let wake = build_prompt(&wake);
+        for prompt in [&user, &wake] {
+            assert_eq!(prompt.content.matches(ETIQUETTE).count(), 1);
+            let (head, _) = prompt.content.rsplit_once(CURRENT_MESSAGE_MARKER).unwrap();
+            assert!(head.ends_with(&format!("{ETIQUETTE}\n")), "{head}");
+            assert!(!prompt.instructions.contains(ETIQUETTE));
+        }
+        let etiquette = wake.content.find(ETIQUETTE).unwrap();
+        assert!(wake.content.find(WAKE_BLOCK).unwrap() < etiquette);
+        assert!(wake.content.find(WAKE_QUIET_OFFER).unwrap() < etiquette);
+        assert!(wake.content.find(PROCEDURE_FAILURE).unwrap() < etiquette);
+    }
+
+    /// The etiquette block fits its cap, states the plan 5.8 rules, never offers the quiet token
+    /// and never addresses the user by a title (DPES-1108).
+    #[test]
+    fn the_etiquette_block_is_bounded_and_uses_no_title_for_the_user() {
+        assert!(
+            ETIQUETTE.len() <= MAX_ETIQUETTE_BYTES,
+            "{}",
+            ETIQUETTE.len()
+        );
+        for rule in [
+            "outcomes",
+            "the next decision the user has",
+            "slot, wake, hold or attempt",
+            "task ids unless the user needs one",
+            "Your last paragraph stands alone",
+            "every decision still waiting on the user",
+            "Report a failure plainly",
+            "never relay them word for word",
+            "Do not type pull request links",
+        ] {
+            assert!(ETIQUETTE.contains(rule), "{rule}");
+        }
+        assert!(!ETIQUETTE.contains(QUIET_TOKEN));
+        assert!(!ETIQUETTE.contains(CURRENT_MESSAGE_MARKER));
+        let lower = ETIQUETTE.to_lowercase();
+        for word in [
+            "captain", " sir", "ma'am", "madam", "boss", "chief", "skipper", "aye", "crew", "ship",
+            "mate",
+        ] {
+            assert!(!lower.contains(word), "{word}");
+        }
     }
 
     fn mcp_view(dir: &Path) -> Arc<crate::mcp_server::McpView> {
