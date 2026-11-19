@@ -1,6 +1,6 @@
 # Manual UI tests: Global Orchestrator
 
-These test cases check four documented behaviors of the Global Orchestrator through the desktop app UI. An AI agent with computer use runs them. A human can run them too.
+These test cases check documented behaviors of the Global Orchestrator through the desktop app UI. An AI agent with computer use runs them. A human can run them too.
 
 | # | Behavior | File |
 | --- | ---------- | ------ |
@@ -8,6 +8,9 @@ These test cases check four documented behaviors of the Global Orchestrator thro
 | 2 | The Global Orchestrator wakes to check on its agents | [02-wake.md](02-wake.md) |
 | 3 | The Global Orchestrator starts sub-orchestrators | [03-sub-orchestrators.md](03-sub-orchestrators.md) |
 | 4 | The Global Orchestrator is the main intermediary between the user and any sub-orchestrator or worker | [04-intermediary.md](04-intermediary.md) |
+| 5 | Questions for the user are held until the user answers | [05-decisions.md](05-decisions.md) |
+| 7 | The orchestrator acts on its own within bounds; some actions still need the user's word | [07-authority.md](07-authority.md) |
+| 8 | Preferences and learnings | [08-preferences.md](08-preferences.md) |
 
 Start with [00-setup.md](00-setup.md). Every test file assumes that setup is complete.
 
@@ -15,10 +18,10 @@ Start with [00-setup.md](00-setup.md). Every test file assumes that setup is com
 
 The docs describe these behaviors differently from the plain-language names above. The tests follow the docs.
 
-- **Dispatch.** The agent ends a reply with one structured action block. The daemon turns it into a proposal and shows an approval card. The task runs only after the user approves it (`docs/design/orchestrator-actions.md` N1; `docs/m7-08-conversation-service.md` "task proposals").
-- **Wake.** A wake turn is an automatic Global turn started by an event, such as a failed task, or by a timer while work is active. It is not a user message (`docs/design/orchestrator-actions.md` "Wake").
-- **Sub-orchestrator.** A sub-orchestrator is a workstream conversation. The user approves a `workstream.create` proposal to make one. It has its own entry in the conversation target picker. It cannot create workstreams itself.
-- **Intermediary.** The Global conversation reaches the user through approval cards, wake notices, relayed scout reports, and the "Routed here by the global orchestrator" strip. The user talks to a workstream directly by choosing it in the target picker. The docs do not describe the Global Orchestrator forwarding chat text to workers. A test that expects that is out of scope.
+- **Dispatch.** The agent ends a reply with one structured action block. The daemon turns each action into a card (`docs/design/orchestrator-actions.md` N1; `docs/m7-08-conversation-service.md` "task proposals"). With **Let the orchestrator act on its own** on (the default), a task from a reply to the user's message starts at once and its card reads "Done on its own". With the switch off, the task runs only after the user approves the card (`docs/settings.md` "Preferences and learnings"; `docs/security.md` section 6).
+- **Wake.** A wake turn is an automatic turn started by an event, such as a failed task, a worker that waits, or a coordinator report, or by a timer while work is active. It is not a user message (`docs/design/orchestrator-actions.md` "Wake"). A wake turn never starts new work on its own. It may retry, message or ask about existing work.
+- **Sub-orchestrator.** A sub-orchestrator is a workstream conversation, made by a `workstream.create` action: on its own when the switch is on, after the user's approval when it is off. It has its own entry in the conversation target picker. It cannot create workstreams itself. A project coordinator is the other kind: one orchestrator per project, which receives work routed from Global (`09-coordinators.md`).
+- **Intermediary.** The Global conversation reaches the user through cards, wake notices, relayed scout reports, the "Needs your decision" list, coordinator reports, and the "Routed here by the global orchestrator" strip. The user talks to a workstream or a coordinator directly by choosing it in the target picker. Workers never address the user. The docs do not describe the Global Orchestrator forwarding chat text to workers. A test that expects that is out of scope.
 
 ## Rules for the AI runner
 
@@ -29,7 +32,7 @@ The docs describe these behaviors differently from the plain-language names abov
    - `FAIL`: a step ran and the result differed from the expected result.
    - `BLOCKED`: a precondition could not be met. Say which one.
 5. After the last test, write `docs/evidence/manual-tests/<run-UTC>/RESULTS.md`. Put one row per test case: ID, result, and one line of notes.
-6. Do not run a paid agent. Use the fake agent from `00-setup.md`. Stop and report if a step would call a real provider.
+6. Do not run a paid agent. Use the fake agent from `00-setup.md`. Stop and report if a step would call a real provider. A step marked **Real agent** runs only when the person who asked for the run allows it; otherwise mark it `BLOCKED`.
 7. Do not use the keyboard to change application state when a UI control exists. Use the UI control.
 8. If the app shows "Fixture data: nothing was saved", the app is not connected to a real daemon. Stop and fix setup. Results from fixture mode do not count.
 
@@ -37,11 +40,13 @@ The docs describe these behaviors differently from the plain-language names abov
 
 Each test case has:
 
-- **ID.** `TC-D-nn` (dispatch), `TC-W-nn` (wake), `TC-S-nn` (sub-orchestrator), `TC-I-nn` (intermediary).
+- **ID.** `TC-D-nn` (dispatch), `TC-W-nn` (wake), `TC-S-nn` (sub-orchestrator), `TC-I-nn` (intermediary), `TC-Q-nn` (questions), `TC-A-nn` (authority), `TC-P-nn` (preferences).
 - **Source.** The doc and the line the expected behavior comes from.
-- **Preconditions.** State that must be true before step 1.
+- **Preconditions.** State that must be true before step 1, including the fake agent behaviors it needs (`00-setup.md` section 2).
 - **Steps.** Numbered. Each step names the control to use.
 - **Expected.** What must be visible after the steps.
+
+Tests from `05` on also have a one-line purpose under the heading, a **Reset** line when the test leaves state behind, and a **Known limitations** line when part of the behavior has no UI to check. Checks marked **Prompt log** read `prompts.log` from the fake agent: they check what the daemon sent to an agent, which the app does not show.
 
 ## Coverage matrix
 
@@ -54,7 +59,8 @@ Each test case has:
 | Load gate | `docs/design/orchestrator-actions.md` "Load gate" | TC-D-10, TC-D-11 |
 | Actions that always need approval | `docs/settings.md` "Actions that always need approval" | TC-D-12 |
 | Standing approvals | `docs/settings.md` "Standing approvals" | TC-D-13 |
-| Proposal only at Restricted; project chats do not propose | `docs/chat.md`; `orchestrator-actions.md` | TC-D-14, TC-D-15 |
+| Proposal states | `orchestrator-actions.md` | TC-D-14 |
+| A project coordinator proposes actions in its project | `docs/chat.md` "Work with a project coordinator" | TC-D-15 |
 | Default agent order and unavailable agent | `docs/chat.md`; `docs/m7-08-conversation-service.md` | TC-D-02, TC-D-16 |
 | Monitoring chip and modes | `docs/design/orchestrator-actions.md` "Wake" | TC-W-01, TC-W-02, TC-W-03 |
 | Wake on failed task | same | TC-W-04 |
@@ -83,3 +89,15 @@ Each test case has:
 | Approvals surface to the user | `orchestrator-actions.md` | TC-I-08 |
 | Task events reported up to Global | same | TC-I-09 |
 | End-to-end flow | all | TC-I-10 |
+| Questions under Needs your decision, one per key | `firstmate-behavior-decisions.md` Phase 3 | TC-Q-01, TC-Q-02 |
+| Verbatim answer, deferral, cancelled task keeps its question | same | TC-Q-03, TC-Q-04, TC-Q-06 |
+| Open question blocks a queued task | `firstmate-behavior-plan.md` 5.4 | TC-Q-05 |
+| Questions are user-only | Phase 3 items 10, 17 | TC-Q-07 |
+| Acting on its own: switch, Done on its own, off fallback | `docs/security.md` section 6 | TC-A-01, TC-A-02, TC-A-03 |
+| User-word actions and pull-request tasks still wait | same | TC-A-04, TC-A-05 |
+| Automatic turns act only on existing work; 5 per reply | same | TC-A-06, TC-A-07 |
+| One-task override | Phase 5 items 14, 15 | TC-A-08 |
+| Unlanded work and Discard changes | Phase 5 items 16 to 18 | TC-A-09 |
+| Preferences: keyed entries, archive, refusals, budgets | `docs/settings.md` "Preferences and learnings" | TC-P-01, TC-P-02, TC-P-03 |
+| Learning on its own, preference proposed; shared read-only outside Global | same; Integration I2, I8 | TC-P-04, TC-P-05 |
+| Wake turns read preferences; staleness; history clear keeps them | Phase 6 items 5, 7, 14 | TC-P-06, TC-P-07, TC-P-08 |

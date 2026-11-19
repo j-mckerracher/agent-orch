@@ -2,7 +2,11 @@
 
 Setup: [00-setup.md](00-setup.md). Everything here happens in the **Workspace** page with the **Global** target unless a step says otherwise.
 
-How to make the Global agent propose a task: write the action block into `next-reply.txt` (see setup), then send any message. The block is one `task.propose` action with `project`, `objective`, `agent`, `task_kind`, and `delivery`. Use project `manual-test-project`, agent `codex`, `task_kind` `Implement`, `delivery` `ReportOnly`, and objective `Add a README line`, unless a test says otherwise.
+These tests check the approval card. Run them with **Let the orchestrator act on its own** off (setup section 5, step 5). With it on, a task from your message starts without a click; `07-authority.md` tests that.
+
+How to make the Global agent propose a task: write the action block into `next-reply.txt` (setup section 2a), then send any message. The block is one `task.propose` action with `project`, `objective`, `agent`, `task_kind`, and `delivery`. Use the code of `manual-test-project` as `project` (setup section 2a), agent `codex`, `task_kind` `Implement`, `delivery` `ReportOnly`, and objective `Add a README line`, unless a test says otherwise.
+
+In a local-only project, `ReportOnly` is below the project's default delivery, so every such task card also has the row "Below this project's default" reading "Project default: local review. This task: report only." It does not change these tests.
 
 ---
 
@@ -170,7 +174,7 @@ Set the CPU limit back to `80` afterward and click **Save**.
 ## TC-D-13 Standing approval auto-approves a granted action
 
 **Source:** `docs/settings.md` "Standing approvals"; `orchestrator-actions.md` ("Standing approval: 3 of 20 used").
-**Preconditions:** None.
+**Preconditions:** Acting on its own is off. With it on, the task starts on its own first and the grant is never used.
 
 1. Open Settings. Find **Standing approvals**.
 2. Create a standing approval for `task.propose` in project `manual-test-project`. Set the count limit to `3`.
@@ -194,15 +198,16 @@ Set the CPU limit back to `80` afterward and click **Save**.
 
 **Expected:** The older card is marked superseded, or, for a stale change, shows "A newer change to this workstream exists. Ask the orchestrator to propose again." Quote the text. Mark `BLOCKED` if the state cannot be reached and say why.
 
-## TC-D-15 Project conversations do not propose
+## TC-D-15 A project coordinator proposes actions in its project
 
-**Source:** `docs/chat.md` ("Project conversations do not propose actions").
-**Preconditions:** A coordinator exists for `manual-test-project`. If not, use the add control in the target picker menu ("Add manual-test-project").
+**Source:** `docs/chat.md` "Work with a project coordinator" ("It proposes actions like Global does, but only inside its project"). This replaced the earlier rule that project conversations do not propose.
+**Preconditions:** Acting on its own is off. A coordinator exists for `manual-test-project`. If not, open the target picker, choose **Add coordinator…**, and click **Add** next to `manual-test-project` in the "Add a coordinator" dialog.
 
 1. Choose `manual-test-project` in the target picker. The header reads "Talking to: manual-test-project".
-2. Put a `task.propose` block in `next-reply.txt`. Send `Run a task`.
+2. Put the standard `task.propose` block in `next-reply.txt`. Send `Run a task`.
+3. Clear `next-reply.txt`.
 
-**Expected:** No approval card appears in the project conversation.
+**Expected:** A card "Proposed: Create task" for `manual-test-project` appears under the reply, with **Approve** and **Reject**. Nothing runs until you approve. A block that names another project, or a `workstream.create`, is not accepted: see TC-C-04 in `09-coordinators.md`.
 
 ## TC-D-16 Unavailable agent is refused, not replaced
 

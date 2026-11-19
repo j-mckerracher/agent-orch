@@ -2,7 +2,7 @@
 
 In the docs a sub-orchestrator is a **workstream conversation**. Global creates one with a `workstream.create` proposal. See the README for the mapping.
 
-Setup: [00-setup.md](00-setup.md).
+Setup: [00-setup.md](00-setup.md). Run these tests with **Let the orchestrator act on its own** off (setup section 5, step 5). With it on, a `workstream.create` from your message runs at once and its card reads "Done on its own" (TC-A-02).
 
 How to make Global propose a workstream: put one `workstream.create` action in `next-reply.txt` with title `Post-MVP work` and a one-line summary `Everything after the MVP`. Then send a message to Global.
 

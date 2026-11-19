@@ -1,6 +1,6 @@
 # 02 Wake: the Global Orchestrator wakes to check on its agents
 
-Setup: [00-setup.md](00-setup.md). Wake events are listed in setup section 6.
+Setup: [00-setup.md](00-setup.md). Wake events are listed in setup section 6. Run these tests with **Let the orchestrator act on its own** off (setup section 5, step 5), so "approve the task" means a click on **Approve**.
 
 UI parts used here, all on the **Workspace** page:
 
