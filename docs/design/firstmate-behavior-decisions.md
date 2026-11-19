@@ -143,7 +143,7 @@ DPES-1108, branch `feat/DPES-1108_coordinators`, based on phase 4 (`feat/DPES-11
 - **12. A revised task keeps its owner.** It keeps the request too, while that request is open. A promotion inherits the owner from the scope of the proposal that made it.
 - **13. Ownership counts only while the coordinator is active.** The scope queries read the owner through `coordinator_scopes.removed = 0`. If the coordinator is removed, its finished or failed tasks go back to Global: a retry then wakes Global, not a removed conversation. Removal itself is refused while a task is open (decision 24).
 
-### Wakes
+### Wakes follow ownership
 
 - **14. Wakes follow ownership, and ownership wins over a workstream link.**
   - `task_wake_facts`, `running_attempts` and `supervision_load` give an owned task the scope `conversation:project:<id>`.
