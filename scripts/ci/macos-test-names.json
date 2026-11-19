@@ -956,7 +956,14 @@
    "executor::tests::a_missing_treehouse_fails_the_attempt_with_a_stable_reason",
    "executor::tests::an_in_place_home_that_became_a_repository_runs_in_a_worktree",
    "executor::tests::archiving_keeps_the_slot_of_a_task_whose_worktree_is_dirty",
-   "executor::tests::archiving_a_finished_task_returns_its_worktree_slot_to_the_pool"
+   "executor::tests::archiving_a_finished_task_returns_its_worktree_slot_to_the_pool",
+   "api::conversation_agent::tests::a_wake_turn_gets_only_the_procedures_its_record_kinds_select",
+   "api::conversation_snapshot::tests::open_questions_are_listed_as_bounded_data_and_fit_the_cap",
+   "api::decisions_tests::a_deferral_keeps_the_question_open_and_the_task_held",
+   "api::decisions_tests::an_answer_is_stored_verbatim_closes_once_and_frees_the_task",
+   "api::decisions_tests::an_approved_ask_raises_one_question_that_holds_its_task",
+   "api::decisions_tests::an_ask_on_a_missing_task_fails_and_raises_nothing",
+   "api::decisions_tests::the_methods_refuse_unknown_questions_and_bad_text"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
