@@ -11,7 +11,13 @@
 //! obeys, so nothing here reads load.
 
 use crate::{contract::TaskContract, load_gate::LoadHold, records::Workspace, task::TaskState};
-use std::{collections::BTreeMap, num::NonZeroUsize};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    num::NonZeroUsize,
+};
+
+/// No task waits for a decision: the default of [`Scheduler::with_open_questions`].
+static NO_QUESTIONS: BTreeSet<String> = BTreeSet::new();
 
 /// One task's scheduling inputs. The referenced contract and workspace remain
 /// owned by the caller for the scheduler's lifetime.
@@ -238,6 +244,9 @@ pub enum RejectionReason {
     TaskNotQueued { state: TaskState },
     /// Dependency is absent from the snapshot or has not succeeded.
     DependencyNotSucceeded { dependency_id: String },
+    /// The task has a question open for the user. Only the user's answer or a reconcile
+    /// closes it; nothing else, such as a dependency finishing, lets the task start.
+    AwaitingDecision,
     /// No authorization policy was supplied or the policy denied the task.
     Unauthorized,
     /// The global worker limit is full.
@@ -261,6 +270,8 @@ pub enum RejectionReason {
 pub enum WaitingReason {
     /// A dependency has not succeeded.
     Dependency,
+    /// A question for the user is open.
+    Decision,
     /// The global worker limit is full.
     GlobalCap,
     /// The per-project worker limit is full.
@@ -278,6 +289,7 @@ impl WaitingReason {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Dependency => "dependency",
+            Self::Decision => "decision",
             Self::GlobalCap => "global_cap",
             Self::ProjectCap => "project_cap",
             Self::Approval => "approval",
@@ -294,6 +306,7 @@ impl RejectionReason {
     pub fn waiting_reason(&self) -> WaitingReason {
         match self {
             Self::DependencyNotSucceeded { .. } => WaitingReason::Dependency,
+            Self::AwaitingDecision => WaitingReason::Decision,
             Self::GlobalLimitReached => WaitingReason::GlobalCap,
             Self::ProjectLimitReached => WaitingReason::ProjectCap,
             Self::Unauthorized => WaitingReason::Approval,
@@ -367,6 +380,7 @@ pub struct Scheduler<'a> {
     order: Vec<usize>,
     by_id: BTreeMap<&'a str, usize>,
     gate: StartGate,
+    open_questions: &'a BTreeSet<String>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -387,6 +401,7 @@ impl<'a> Scheduler<'a> {
             order,
             by_id,
             gate: StartGate::Open,
+            open_questions: &NO_QUESTIONS,
         })
     }
 
@@ -396,6 +411,14 @@ impl<'a> Scheduler<'a> {
     /// and every other rejection reason stay as they are.
     pub fn with_start_gate(mut self, gate: StartGate) -> Self {
         self.gate = gate;
+        self
+    }
+
+    /// Names the tasks that have a question open for the user, deferred or not. Each one gets
+    /// [`RejectionReason::AwaitingDecision`] instead of starting. [`Scheduler::new`] starts with
+    /// none. A task already running is not touched.
+    pub fn with_open_questions(mut self, task_ids: &'a BTreeSet<String>) -> Self {
+        self.open_questions = task_ids;
         self
     }
 
@@ -437,6 +460,10 @@ impl<'a> Scheduler<'a> {
                 rejections[index] = Some(RejectionReason::DependencyNotSucceeded {
                     dependency_id: dependency_id.clone(),
                 });
+                continue;
+            }
+            if self.open_questions.contains(&task.contract.id) {
+                rejections[index] = Some(RejectionReason::AwaitingDecision);
                 continue;
             }
             if !matches!(
@@ -839,13 +866,7 @@ mod tests {
         let open = pass(&tasks, two, None, None, &allow_all);
         assert_eq!(open.started, ["a", "b"]);
 
-        let closed = pass(
-            &tasks,
-            two,
-            Some(CLOSED),
-            None,
-            &allow_all,
-        );
+        let closed = pass(&tasks, two, Some(CLOSED), None, &allow_all);
         assert!(closed.started.is_empty());
         assert_eq!(closed.rejected.len(), 3);
         for task_id in ["a", "b", "c"] {
@@ -1022,5 +1043,47 @@ mod tests {
         let reason = RejectionReason::LoadGateClosed(HOLD);
         assert_eq!(reason.waiting_reason(), WaitingReason::Load);
         assert_eq!(WaitingReason::Load.as_str(), "load");
+    }
+
+    #[test]
+    fn a_task_with_an_open_question_does_not_start_and_says_why() {
+        let tasks = [
+            (contract("done", "project-a", &[]), TaskState::Succeeded),
+            (contract("asked", "project-a", &["done"]), TaskState::Queued),
+            (contract("free", "project-b", &[]), TaskState::Queued),
+            (contract("running", "project-c", &[]), TaskState::Running),
+        ];
+        let snapshots: Vec<_> = tasks
+            .iter()
+            .map(|(contract, state)| TaskSnapshot {
+                contract,
+                state: *state,
+                workspace: None,
+            })
+            .collect();
+        let snapshot = SchedulerSnapshot {
+            tasks: &snapshots,
+            last_started_project: None,
+        };
+        // Without the question the task would start: its dependency has succeeded.
+        let plain = Scheduler::new(snapshot, SchedulerLimits::default()).unwrap();
+        assert_eq!(plain.schedule(Some(&allow_all)).started, ["asked", "free"]);
+
+        let open: BTreeSet<String> = ["asked".to_owned(), "running".to_owned()].into();
+        let plan = Scheduler::new(snapshot, SchedulerLimits::default())
+            .unwrap()
+            .with_open_questions(&open)
+            .schedule(Some(&allow_all));
+        assert_eq!(plan.started, ["free"]);
+        let asked = reason(&plan, "asked");
+        assert_eq!(asked, &RejectionReason::AwaitingDecision);
+        assert_eq!(asked.waiting_reason().as_str(), "decision");
+        // A running task is left alone: the question only holds back a start.
+        assert_eq!(
+            reason(&plan, "running"),
+            &RejectionReason::TaskNotQueued {
+                state: TaskState::Running
+            }
+        );
     }
 }

@@ -66,11 +66,12 @@ pub enum ActionKind {
     DeliveryMerge,
     ProjectRemove,
     DecisionHold,
+    DecisionAsk,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 13] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
@@ -83,6 +84,7 @@ impl ActionKind {
         Self::DeliveryMerge,
         Self::ProjectRemove,
         Self::DecisionHold,
+        Self::DecisionAsk,
     ];
 
     /// Wire name, such as `workstream.create`.
@@ -100,6 +102,7 @@ impl ActionKind {
             Self::DeliveryMerge => "delivery.merge",
             Self::ProjectRemove => "project.remove",
             Self::DecisionHold => "decision.hold",
+            Self::DecisionAsk => "decision.ask",
         }
     }
 
@@ -142,6 +145,8 @@ pub enum Action {
     ProjectRemove(RemoveProject),
     #[serde(rename = "decision.hold")]
     DecisionHold(HoldDecision),
+    #[serde(rename = "decision.ask")]
+    DecisionAsk(AskDecision),
 }
 
 /// `workstream.create`. `ref` names the workstream for later actions in the block.
@@ -308,6 +313,24 @@ pub struct HoldDecision {
     /// `YYYY-MM-DD`. Only the shape is checked here; the daemon checks the
     /// range against its clock when it runs the action.
     pub until: String,
+}
+
+/// `decision.ask`. Raises a question for the user, bound to a task. While it is open the task
+/// does not start. Only the user closes it (`decisions.answer` or `decisions.reconcile`).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AskDecision {
+    pub task_id: String,
+    /// The question, as the user will read it. See [`crate::question::check_question`].
+    pub question: String,
+    /// Suggested answers. The user may still answer in their own words. Left out of the
+    /// canonical form when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    /// A short slug naming the decision. One open question per task and key: asking again
+    /// with the same key finds the open one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 /// A validated block. `parent(i)` is the index of the earlier
@@ -647,6 +670,11 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
                 Err(BlockError::InvalidField("until"))
             }
         }
+        Action::DecisionAsk(ask) => {
+            check(validate_id("task_id", &ask.task_id), "task_id")?;
+            crate::question::check_question(&ask.question, &ask.options, ask.key.as_deref())
+                .map_err(|field| BlockError::InvalidField(field.as_str()))
+        }
         Action::WorkstreamLinkTask(link) => {
             check(
                 validate_id("workstream_id", &link.workstream_id),
@@ -716,7 +744,7 @@ fn is_project_code(code: &str) -> bool {
 /// character except tab, LF and CR, the bidirectional formatting controls, and
 /// the characters that render as nothing. The first two are the set
 /// `contract::check_free_text` refuses; a test keeps them in step.
-fn is_disallowed_objective_char(c: char) -> bool {
+pub(crate) fn is_disallowed_objective_char(c: char) -> bool {
     let bidi_control = matches!(
         c,
         '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
@@ -787,7 +815,10 @@ fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockErr
             Action::TaskCancel(_) | Action::TaskRetry(_) => true,
             Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
             // The owning workstream of a revised, held or merged task is checked against the store.
-            Action::TaskRevise(_) | Action::DeliveryMerge(_) | Action::DecisionHold(_) => true,
+            Action::TaskRevise(_)
+            | Action::DeliveryMerge(_)
+            | Action::DecisionHold(_)
+            | Action::DecisionAsk(_) => true,
             // A workstream conversation never removes a project.
             Action::ProjectRemove(_) => false,
         };
@@ -822,6 +853,7 @@ impl Action {
             Self::DeliveryMerge(_) => ActionKind::DeliveryMerge,
             Self::ProjectRemove(_) => ActionKind::ProjectRemove,
             Self::DecisionHold(_) => ActionKind::DecisionHold,
+            Self::DecisionAsk(_) => ActionKind::DecisionAsk,
         }
     }
 
@@ -864,6 +896,7 @@ impl Action {
             Self::TaskRevise(revise) => Some(revise.task_id.as_str()),
             Self::DeliveryMerge(merge) => Some(merge.task_id.as_str()),
             Self::DecisionHold(hold) => Some(hold.task_id.as_str()),
+            Self::DecisionAsk(ask) => Some(ask.task_id.as_str()),
             _ => None,
         }
     }
@@ -924,6 +957,14 @@ impl Action {
             }
             Self::ProjectRemove(remove) => format!("project.remove:{}", remove.project),
             Self::DecisionHold(hold) => format!("decision.hold:{}", hold.task_id),
+            // A keyed question is one decision whatever its wording; an unkeyed one is its text.
+            Self::DecisionAsk(ask) => match &ask.key {
+                Some(key) => format!("decision.ask:{}:{key}", ask.task_id),
+                None => {
+                    let digest = Sha256::digest(normalize(&ask.question).as_bytes());
+                    format!("decision.ask:{}:{}", ask.task_id, hex(&digest))
+                }
+            },
         }
     }
 }
@@ -1384,7 +1425,7 @@ mod tests {
     }
 
     #[test]
-    fn the_action_kind_list_names_all_twelve_kinds() {
+    fn the_action_kind_list_names_all_thirteen_kinds() {
         let names = ActionKind::ALL.map(ActionKind::as_str);
         assert_eq!(
             names,
@@ -1401,6 +1442,7 @@ mod tests {
                 "delivery.merge",
                 "project.remove",
                 "decision.hold",
+                "decision.ask",
             ]
         );
         assert_eq!(
@@ -2332,6 +2374,61 @@ mod tests {
             parse(&block(&text)),
             Err(BlockError::InvalidField("task_id"))
         );
+    }
+
+    #[test]
+    fn decision_ask_parses_with_a_subject_per_key_or_question() {
+        let keyed = json!({"kind": "decision.ask", "task_id": "task-1",
+            "question": "Use SQLite or Postgres?", "options": ["SQLite", "Postgres"],
+            "key": "db-choice"})
+        .to_string();
+        let parsed = parse(&block(&keyed)).expect("valid block");
+        let ask = &parsed.actions()[0];
+        assert_eq!(ask.kind(), ActionKind::DecisionAsk);
+        assert_eq!(ask.target_task(), Some("task-1"));
+        assert_eq!(ask.canonical(None).subject, "decision.ask:task-1:db-choice");
+        assert_eq!(
+            ask.canonical(None).json,
+            r#"{"key":"db-choice","kind":"decision.ask","options":["SQLite","Postgres"],"question":"Use SQLite or Postgres?","task_id":"task-1"}"#
+        );
+        // Without a key the subject follows the question text, so another question is another card.
+        let bare = |question: &str| {
+            let text = json!({"kind": "decision.ask", "task_id": "task-1", "question": question})
+                .to_string();
+            parse(&block(&text)).expect("valid block").actions()[0]
+                .canonical(None)
+                .subject
+        };
+        assert_eq!(bare("Ship  it?"), bare("ship it?"));
+        assert_ne!(bare("Ship it?"), bare("Hold it?"));
+        assert!(!bare("Ship it?").contains("Ship"));
+    }
+
+    #[test]
+    fn decision_ask_refuses_bad_fields() {
+        for (fields, field) in [
+            (json!({"task_id": "t 1", "question": "Q?"}), "task_id"),
+            (json!({"task_id": "task-1", "question": "  "}), "question"),
+            (
+                json!({"task_id": "task-1", "question": "Q?", "options": ["a\nb"]}),
+                "options",
+            ),
+            (
+                json!({"task_id": "task-1", "question": "Q?", "key": "Not A Slug"}),
+                "key",
+            ),
+        ] {
+            let mut action = fields;
+            action["kind"] = json!("decision.ask");
+            let text = action.to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{text}"
+            );
+        }
+        let unknown = r#"{"kind":"decision.ask","task_id":"task-1","question":"Q?","answer":"A"}"#;
+        assert!(parse(&block(unknown)).is_err());
     }
 
     #[test]
