@@ -116,6 +116,6 @@ Purpose: an update with nothing to tell the user posts no reply text.
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** As TC-W-06, in this file's clean data directory.
 
-1. Run TC-W-06 (`02-wake.md`), including its Reset.
+1. Run TC-W-06 (`02-wake.md`), including its Reset. Acting on its own is on in this file, so the held task starts on its own: there is no card to approve.
 
 **Expected:** As TC-W-06: only the collapsed line "Checked N updates. Nothing needs you.", and the token `MCAO_QUIET` is never shown. TC-W-17 and TC-W-18, which check that a quiet reply never hides a failure or a report, are `BLOCKED` with a real agent.

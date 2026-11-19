@@ -21,10 +21,10 @@ The app offers Claude Code models as aliases. This one call shows which model th
 
 ```sh
 claude -p --model sonnet --effort medium --output-format json 'Reply with exactly: pong' \
-  | python3 -c 'import json, sys; print(*json.load(sys.stdin)["modelUsage"])'
+  | python3 -c 'import json, sys; print(*[m for m in json.load(sys.stdin)["modelUsage"] if "sonnet" in m])'
 ```
 
-Expected: it prints the expected model id from the runner prompt, `claude-sonnet-5-5` today. If it prints another id or fails, stop the run.
+Expected: it prints exactly one id, the expected model id from the runner prompt, `claude-sonnet-5-5` today. The CLI may also use a small helper model; the command filters it out. If it prints another Sonnet id, nothing, or an error, stop the run.
 
 ## 3. Folders and fixture
 

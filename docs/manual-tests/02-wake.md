@@ -109,7 +109,7 @@ Replies to wake turns come from a real model. Judge the notices, badges and labe
 2. Wait 8 minutes (RUNNER.md rule 7).
 3. Open Global.
 
-**Expected:** A deterministic notice says the task is stalled. It was not written by the model. No new assistant reply was generated for it. **Prompt log:** no turn entry starts after the stalled notice's time.
+**Expected:** A deterministic notice says the task is stalled. It was not written by the model. No new assistant reply was generated for it. **Prompt log:** no turn entry is for the stall. A scheduled work-check turn for the running task may appear; it does not count.
 
 **Reset:** release `HOLD-1` and click **Request cancel** on the task page.
 

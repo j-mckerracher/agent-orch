@@ -203,7 +203,7 @@ In a local-only project, `ReportOnly` is below the project's default delivery, s
 
 **Source:** `docs/settings.md` "Actions that always need approval".
 **Real agent:** Sonnet (alias), medium. Cost: low; the held task does no work.
-**Preconditions:** Create a standing approval first (TC-D-13 steps 1 to 3) that tries to cover all action kinds. Then start a held task (setup section 8c): run `sh docs/manual-tests/manual-test.sh hold HOLD-1`, send the message below to Global, click **Approve**, and wait until the task page reads `Running`.
+**Preconditions:** First start a held task (setup section 8c): run `sh docs/manual-tests/manual-test.sh hold HOLD-1`, send the message below to Global, click **Approve**, and wait until the task page reads `Running`. Then create a standing approval (TC-D-13 steps 1 to 3) that tries to cover all action kinds.
 
 ```text
 Propose exactly one action and nothing else: task.propose for project manual-test-project, task_kind Investigate, delivery ReportOnly, objective "HOLD-1: Read README.md and report its first line. Change no file."
