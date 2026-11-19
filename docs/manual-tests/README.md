@@ -9,8 +9,12 @@ These test cases check documented behaviors of the Global Orchestrator through t
 | 3 | The Global Orchestrator starts sub-orchestrators | [03-sub-orchestrators.md](03-sub-orchestrators.md) |
 | 4 | The Global Orchestrator is the main intermediary between the user and any sub-orchestrator or worker | [04-intermediary.md](04-intermediary.md) |
 | 5 | Questions for the user are held until the user answers | [05-decisions.md](05-decisions.md) |
+| 6 | Workers start from a brief, wait for a reply and resume | [06-workers.md](06-workers.md) |
 | 7 | The orchestrator acts on its own within bounds; some actions still need the user's word | [07-authority.md](07-authority.md) |
 | 8 | Preferences and learnings | [08-preferences.md](08-preferences.md) |
+| 9 | Project coordinators take routed work and report back | [09-coordinators.md](09-coordinators.md) |
+| 10 | Reply etiquette, pull request links and wake caps | [10-etiquette-and-caps.md](10-etiquette-and-caps.md) |
+| 11 | An older database upgrades without losing data | [11-upgrade.md](11-upgrade.md) |
 
 Start with [00-setup.md](00-setup.md). Every test file assumes that setup is complete.
 
@@ -40,7 +44,7 @@ The docs describe these behaviors differently from the plain-language names abov
 
 Each test case has:
 
-- **ID.** `TC-D-nn` (dispatch), `TC-W-nn` (wake), `TC-S-nn` (sub-orchestrator), `TC-I-nn` (intermediary), `TC-Q-nn` (questions), `TC-A-nn` (authority), `TC-P-nn` (preferences).
+- **ID.** `TC-D-nn` (dispatch), `TC-W-nn` (wake), `TC-S-nn` (sub-orchestrator), `TC-I-nn` (intermediary), `TC-Q-nn` (questions), `TC-B-nn` (worker brief and status), `TC-A-nn` (authority), `TC-P-nn` (preferences), `TC-C-nn` (coordinators), `TC-E-nn` (etiquette and caps), `TC-M-nn` (upgrade).
 - **Source.** The doc and the line the expected behavior comes from.
 - **Preconditions.** State that must be true before step 1, including the fake agent behaviors it needs (`00-setup.md` section 2).
 - **Steps.** Numbered. Each step names the control to use.
@@ -101,3 +105,14 @@ Tests from `05` on also have a one-line purpose under the heading, a **Reset** l
 | Preferences: keyed entries, archive, refusals, budgets | `docs/settings.md` "Preferences and learnings" | TC-P-01, TC-P-02, TC-P-03 |
 | Learning on its own, preference proposed; shared read-only outside Global | same; Integration I2, I8 | TC-P-04, TC-P-05 |
 | Wake turns read preferences; staleness; history clear keeps them | Phase 6 items 5, 7, 14 | TC-P-06, TC-P-07, TC-P-08 |
+| Worker brief per task kind; workers never address the user | `firstmate-behavior-plan.md` 5.2 | TC-B-01, TC-B-02 |
+| Waiting for a decision or help; no spend, no slot; no stall notice | `docs/tasks.md` "Task states"; Phase 4 | TC-B-03, TC-B-06, TC-B-07 |
+| Answer and `task.message` resume the same session | Phase 4 items 13 to 20 | TC-B-04, TC-B-05, TC-B-08 |
+| Scope sentence and routing from Global | `docs/chat.md` "Work with a project coordinator" | TC-C-01, TC-C-02, TC-C-08 |
+| Coordinator owns its tasks and acts only in its project | same; Phase 7 items 5, 14 | TC-C-03, TC-C-04 |
+| Parent channel: reports, never coordinator chat | Phase 7 items 18 to 22 | TC-C-05 |
+| Idle by default; removal refused with open work | `docs/chat.md` | TC-C-06, TC-C-07 |
+| Etiquette block on every turn | `docs/chat.md` "How the orchestrator writes to you" | TC-E-01 |
+| Pull request links from records only | same; Phase 8 items 4 to 7 | TC-E-02, TC-E-03 |
+| Wake caps 20 and 160, half for work checks; quiet updates | `docs/settings.md` "Automatic replies" | TC-E-04, TC-E-05, TC-E-06 |
+| Upgrade keeps notes, tasks, cards; migrations 0064 to 0072 | Integration I0, I1 | TC-M-01 |

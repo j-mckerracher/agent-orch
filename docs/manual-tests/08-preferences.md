@@ -117,7 +117,7 @@ Purpose: wake turns now see the user's standing defaults.
 
 Purpose: learnings nobody confirmed for 180 days are flagged, never removed.
 **Source:** `docs/settings.md` ("A learning that nobody has confirmed for 180 days is marked stale. Click Keep to confirm it").
-**Preconditions:** A learning `old-fact` in **Learnings for Global**. The app is quit. Make it look 181 days old in the store, since no control can do that: `sqlite3 "$HOME/agent-orch-manual-test/store.sqlite" "UPDATE memory_entries SET confirmed_at_ms = confirmed_at_ms - 181*86400000 WHERE kind = 'learning' AND key = 'old-fact'"`. Start the app.
+**Preconditions:** A learning `old-fact` in **Learnings for Global**. Quit the app and wait two minutes, so the daemon has exited. Make it look 181 days old in the store, since no control can do that: `sqlite3 "$HOME/agent-orch-manual-test/store.sqlite" "UPDATE memory_entries SET confirmed_at_ms = confirmed_at_ms - 181*86400000 WHERE kind = 'learning' AND key = 'old-fact'"`. Start the app.
 
 1. Open **Settings > Preferences and learnings > Learnings**.
 2. Click **Keep** on `old-fact`.

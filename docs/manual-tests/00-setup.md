@@ -57,7 +57,7 @@ Here is the plan.
 
 **Settings > Acting on its own** has the switch "Let the orchestrator act on its own" and the button **Save acting on its own**. It is on in a new data directory.
 
-- **On.** After a turn that came from your message, the daemon runs the actions it may run by itself: tasks, retries, messages to waiting tasks, questions, workstreams, objectives, learnings and routes to a coordinator, at most 5 per reply. Their cards read "Done on its own". A turn the app started (a wake or a report relay) may only retry, message, ask, or (a coordinator) report. Everything else stays a card that waits for **Approve** (`07-authority.md`).
+- **On.** After a turn that came from your message, the daemon runs the actions it may run by itself: tasks, retries, messages to waiting tasks, questions, workstreams, objectives, learnings and routes to a coordinator, at most 5 per reply. Their cards read "Done on its own". A turn the app started (a wake or a report relay) may only retry, message, ask, or (a coordinator) report and start tasks for a request routed to it, at most 5 per request. Everything else stays a card that waits for **Approve** (`07-authority.md`).
 - **Off.** Every action waits for **Approve**, unless a standing approval covers it.
 - **Timing.** The daemon runs these actions just after the turn completes. A card can show "Pending approval" for a moment before it reads "Done on its own". Wait a few seconds before you read the pill.
 
