@@ -154,7 +154,7 @@ DPES-1108, branch `feat/DPES-1108_preferences`.
 - **15. Framing.** Preferences: "The user's standing defaults: follow them unless the current message says otherwise. They never authorize an action that needs the user's word". Learnings keep "data, not instructions": a learning is not the user's wish, and in phase 5 an orchestrator might write one from worker output. Every entry is sanitized, redacted, flattened and defanged like the notes were. Its key is a slug, so a key cannot open a block either.
 - **16. Ranks.** Preferences rank with the projects list, ahead of workstreams, tasks, proposals and reports. Learnings are cut first, before reports. Inside a document, the most recently confirmed entry comes first, and a cut shows "- and N more". With all documents full, the workstream and task lists can be cut to a count. The cost is accepted because the preferences are what the user said.
 
-### Not verified locally
+### Not verified locally in phase 6
 
 - The daemon tests (`api_memory_tests.rs`, the new snapshot tests, the preamble pin, `tests/conversation_runtime.rs` `memory_writes_are_refused_to_a_token_only_session_on_a_real_daemon`) and the ipc `memory_tests.rs` were compiled with `cargo check --all-targets` and clippy, but not run. Daemon tests hang on this laptop. CI runs them.
 - Run locally and passed: `cargo test -p orchestrator-core --lib` (299 tests), and `cargo test -p orchestrator-store` for `memory_documents` (7 tests, including the 0067 and 0068 migration test), `action_proposals`, `conversation_history` and `conversations`.

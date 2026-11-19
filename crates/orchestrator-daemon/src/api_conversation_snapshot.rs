@@ -609,7 +609,8 @@ fn proposal_outcome(
 /// The text after the state on a proposal line, from the canonical parameters.
 /// A task is named by its project code and its objective cut to 80 bytes, never
 /// by a path. A cancel, retry or link names the task and workstream ids the
-/// snapshot already lists. Any other kind shows its title, when it has one.
+/// snapshot already lists. A `memory.set` names its document and key. Any other kind shows its
+/// title, when it has one.
 fn proposal_detail(kind: ActionKind, params: &serde_json::Value) -> Option<String> {
     let text = |key: &str, max_bytes: usize| {
         params
@@ -624,6 +625,13 @@ fn proposal_detail(kind: ActionKind, params: &serde_json::Value) -> Option<Strin
             text("objective", TASK_OBJECTIVE_BYTES)?,
         )),
         ActionKind::TaskCancel | ActionKind::TaskRetry => text("task_id", TEXT_BYTES),
+        // The document and key, so a refused shared write names what to report up. Never the
+        // text: the documents themselves are listed below.
+        ActionKind::MemorySet => Some(format!(
+            "{} {}",
+            text("document", TEXT_BYTES)?,
+            text("key", TEXT_BYTES)?,
+        )),
         ActionKind::WorkstreamLinkTask => Some(format!(
             "{} to {}",
             text("task_id", TEXT_BYTES)?,
@@ -1077,6 +1085,50 @@ mod tests {
         assert!(!snapshot.lines().any(|line| line.starts_with("```")));
         assert!(!snapshot.contains("proposal-"), "{snapshot}");
         assert!(snapshot.len() <= SNAPSHOT_MAX_BYTES);
+    }
+
+    /// A workstream conversation's write to the shared preferences is stored failed with its
+    /// denial, as the runtime checks it, and the next snapshot tells the agent why and which
+    /// entry, so it reports the preference up instead.
+    #[test]
+    fn a_refused_shared_preference_write_names_its_reason_and_entry() {
+        let (_directory, store) = store();
+        make_workstream(&store, "ws-1", "Alpha", "");
+        let target = ConversationTarget::Workstream("ws-1".to_owned());
+        store
+            .begin_conversation_turn(&target, "t1", "hi", "test-runtime", "1.0.0")
+            .unwrap();
+        let held = "```mcao-actions\n{\"mcao_actions\": 1, \"actions\": [\
+            {\"kind\": \"memory.set\", \"document\": \"shared\", \"key\": \"pr-size\", \
+             \"text\": \"Small pull requests.\"}, \
+            {\"kind\": \"memory.set\", \"document\": \"local\", \"key\": \"freeze\", \
+             \"text\": \"Freeze on Monday.\"}]}\n```";
+        let block = parse_block(held, BlockScope::Workstream("ws-1"))
+            .unwrap()
+            .checked_with(|action| match action {
+                orchestrator_core::orchestrator_action::Action::MemorySet(set) => {
+                    orchestrator_core::memory::resolve(set.document, &target.memory_scope())
+                        .err()
+                        .map(orchestrator_core::task_envelope::Denial::Memory)
+                }
+                _ => None,
+            });
+        store
+            .complete_conversation_turn("t1", TurnBlock::Accepted(block))
+            .unwrap();
+
+        let snapshot = build_snapshot(&store, &target, true, &open_load());
+
+        for line in [
+            "- memory.set failed (action_denied: shared_preferences_read_only): shared pr-size",
+            "- memory.set pending: local freeze",
+        ] {
+            assert!(
+                snapshot.lines().any(|found| found == line),
+                "{line}\n{snapshot}"
+            );
+        }
+        assert!(!snapshot.contains("Small pull requests."), "{snapshot}");
     }
 
     fn make_project(store: &SqliteStore, id: &str, root_path: &str, settings: serde_json::Value) {
