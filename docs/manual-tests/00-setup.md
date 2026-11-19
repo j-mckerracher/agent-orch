@@ -1,10 +1,12 @@
 # Setup
 
-Complete this once before any test. Use a throwaway data directory so no real data changes.
+Every test file starts from this setup. The runner follows [RUNNER.md](RUNNER.md), which owns the run rules: real app, real agents, fixed waits, retries and evidence. All paths are relative to the repository root, except the scratch folder under `$HOME`.
 
-## 1. Build and launch
+The tests run on the real app built from the tip of `main`, with real agents: Claude Code, model "Sonnet (alias)" at effort "medium", for chat and for tasks. There is no fake agent. Real agents cost money; each test file states its cost class.
 
-Run in a terminal from the repo root. Rust 1.96.0 and Node 22.20.0 are required (`docs/build-from-source.md`).
+## 1. Build
+
+Run from the repository root, at the commit you test (`git rev-parse HEAD`). Rust 1.96.0 and Node.js 22.20.0 are required ([build-from-source.md](../build-from-source.md)).
 
 ```sh
 cargo build --workspace
@@ -13,104 +15,160 @@ npm --prefix apps/desktop run build
 cargo build --manifest-path apps/desktop/src-tauri/Cargo.toml
 ```
 
-## 2. Create the fake agent
+## 2. Model probe
 
-The fake agent stops the tests from spending money. Create the directory `$HOME/agent-orch-manual-test-bin` and put two executable scripts in it. Keep these scripts outside the repo.
+The app offers Claude Code models as aliases. This one call shows which model the alias `sonnet` resolves to today. It costs one short turn.
 
-- `fake-codex`: the controllable agent. It must answer the `--version` probe in under 500 ms and print a version. For a conversation turn it must print an agent reply whose final lines are the action block the test needs. Each test says which action block to emit. Control the block with a file: the script reads `$HOME/agent-orch-manual-test-bin/next-reply.txt` and prints it. If the file is empty, it prints a short text reply.
-- `fake-codex-fail`: same `--version` probe, but every conversation turn exits non-zero. Tests TC-W-09 and TC-W-10 use it.
-
-Task runs started by the fake agent must finish on a file switch too: if `$HOME/agent-orch-manual-test-bin/task-mode` contains `succeed`, `fail`, or `hang`, the task exits 0 without changing a file, ends with an error, or runs without output until killed. An Implement task that exits 0 without a file change ends `Failed` with the reason "The agent exited without changing any files.", so `succeed` never reaches `Verifying`. Investigate tasks are not affected: they may finish without a file change.
-
-**Missing: a `write` mode.** A candidate needs a task run that changes one file and exits 0. The contract above has no such mode. The fake agent script is not in the repo, so this section is the only specification. The Rust test fakes in `crates/orchestrator-daemon/tests/daemon.rs` and `crates/orchestrator-daemon/tests/work_classes.rs` print JSON events and never write a file, so they cannot stand in. To close the gap, add a `write` branch to `$HOME/agent-orch-manual-test-bin/fake-codex`: when `task-mode` contains `write`, create one file in the task's worktree and exit 0. Then add `write` to the list above. Until the branch exists, every test that needs a candidate is `BLOCKED`: TC-W-05 (delivery part), TC-W-16, and TC-I-10 step 7.
-
-**Missing: the prompt log, session ids and the wait modes.** Tests from `05-decisions.md` on need four more behaviors. Like `write`, they are specified only here. Each test names the ones it needs; until the fake agent has them, that test is `BLOCKED`.
-
-- **Prompt log.** Append every prompt to `$HOME/agent-orch-manual-test-bin/prompts.log`. The prompt is the last argument. Write a line `=== <UTC time> <kind> <session id or -> ===` before each one. `<kind>` is `task` when the prompt starts with `# MCAO worker brief`, `resume` when the arguments start with `exec resume` (the prompt then starts with `# MCAO worker brief, continued`, and the argument before it is the session id), and `turn` otherwise.
-- **Session id.** For a task run, print `{"type":"thread.started","thread_id":"<uuid>"}` as the first event, with a new v4 UUID. For a resume, print the session id it was given. The daemon cannot resume a task without it.
-- **`ask` and `block` modes.** When `task-mode` contains `ask`, find the status file the brief names (the path after `the end of the status file`), append the line `needs-decision [key=readme-word] Should the README line say alpha or beta?`, and exit 0. `block` appends `blocked The test database does not answer.` and exits 0. A run that exits non-zero raises no question.
-- **Resume.** On `exec resume`, ignore `task-mode` and behave as `succeed`. Otherwise the task asks again forever.
-
-If you cannot build the fake agent, mark every test that needs it `BLOCKED` and say so in `RESULTS.md`. Do not substitute a real agent. A step marked **Real agent** is the one exception: it names the CLI and permission level it needs, spends money, and runs only when the person who asked for the run allows it. Otherwise mark it `BLOCKED`.
-
-## 2a. Write an action block
-
-The fake agent prints `next-reply.txt` as the reply, so the file holds a short text and then one fenced block. A block that does not parse is shown as "The orchestrator's action block in this reply could not be read. No action was proposed. Nothing was changed."
-
-````text
-Here is the plan.
-```mcao-actions
-{
-"mcao_actions": 1,
-"actions": [
-{ "kind": "task.propose", "project": "p-1a2b3c4d", "objective": "Add a README line", "agent": "codex", "task_kind": "Implement", "delivery": "ReportOnly" }
-]
-}
+```sh
+claude -p --model sonnet --effort medium --output-format json 'Reply with exactly: pong' \
+  | python3 -c 'import json, sys; print(*[m for m in json.load(sys.stdin)["modelUsage"] if "sonnet" in m])'
 ```
-````
 
-- **Project code.** `project` is the project's code, `p-` and 8 hex digits, never its name. A name does not resolve, and the action is refused or waits. Compute the code once: `printf '%s' "$(cd "$HOME/agent-orch-manual-test-project" && pwd -P)" | shasum -a 256 | cut -c1-8`, then put `p-` in front. A task card shows it too, in its **Project** field, as `manual-test-project (p-…)`. Where a test file says "project `manual-test-project`", use this code.
-- **Kinds and fields.** They are listed in the preamble in `crates/orchestrator-daemon/src/api_conversation_agent.rs` (`INSTRUCTIONS_WITH_ACTIONS`). A block holds at most 10 actions. An unknown kind or field rejects the whole block.
-- **The fake re-reads the file on every turn.** That includes wake turns, report relays and a coordinator's turn for routed work. A block left in the file is sent again by the next automatic turn. Each test says when to rewrite or clear the file. Clear it means: write one short line of text, such as `Noted.`
+Expected: it prints exactly one id, the expected model id from the runner prompt, `claude-sonnet-5-5` today. The CLI may also use a small helper model; the command filters it out. If it prints another Sonnet id, nothing, or an error, stop the run.
 
-## 2b. Acting on its own
+## 3. Folders and fixture
 
-**Settings > Acting on its own** has the switch "Let the orchestrator act on its own" and the button **Save acting on its own**. It is on in a new data directory.
+Everything a run creates outside the repository goes under one folder, `$HOME/agent-orch-manual-test`. It stays outside the repository so agents working in the test projects do not read this repository's instruction files.
 
-- **On.** After a turn that came from your message, the daemon runs the actions it may run by itself: tasks, retries, messages to waiting tasks, questions, workstreams, objectives, learnings and routes to a coordinator, at most 5 per reply. Their cards read "Done on its own". A turn the app started (a wake or a report relay) may only retry, message, ask, or (a coordinator) report and start tasks for a request routed to it, at most 5 per request. Everything else stays a card that waits for **Approve** (`07-authority.md`).
-- **Off.** Every action waits for **Approve**, unless a standing approval covers it.
-- **Timing.** The daemon runs these actions just after the turn completes. A card can show "Pending approval" for a moment before it reads "Done on its own". Wait a few seconds before you read the pill.
+| Path | Holds |
+| --- | --- |
+| `$HOME/agent-orch-manual-test/data` | The daemon data directory |
+| `$HOME/agent-orch-manual-test/projects/manual-test-project` | The main test project |
+| `$HOME/agent-orch-manual-test/projects/other-project` | A second project, for TC-C-04 |
+| `$HOME/agent-orch-manual-test/logs` | The prompt log (section 7) |
 
-Files `01` to `04` test the approval card. Run them with the switch **off** (section 5, step 5).
+Create both projects with the fixture command. It deletes and recreates them with the same file and the same commit every time.
 
-## 3. Start the app
+```sh
+sh docs/manual-tests/manual-test.sh fixture
+```
+
+Expected output, exactly:
+
+```text
+manual-test-project fc60d42dcc1b1a6ebd5a6315f5f11620107e45d0
+other-project 02061f1dff348d6017c6d098178e7c6194ba4203
+```
+
+Each project holds one file, `README.md`, whose first line is `# manual-test-project` (or `# other-project`).
+
+## 4. Start the app
 
 ```sh
 AGENT_ORCH_DAEMON_BIN="$PWD/target/debug/orchestrator-daemon" \
-AGENT_ORCH_DATA_DIR="$HOME/agent-orch-manual-test" \
-AGENT_ORCH_CODEX_PROGRAM="$HOME/agent-orch-manual-test-bin/fake-codex" \
-AGENT_ORCH_CONVERSATION_AGENT=codex \
+AGENT_ORCH_DATA_DIR="$HOME/agent-orch-manual-test/data" \
+AGENT_ORCH_CONVERSATION_AGENT=claude-code \
+AGENT_ORCH_CONVERSATION_MODEL=sonnet \
+AGENT_ORCH_CONVERSATION_EFFORT=medium \
 npm --prefix apps/desktop run tauri dev
 ```
 
-The daemon inherits the app environment and exits about a minute after it goes idle. To change an environment variable, quit the app, wait two minutes, and start again (`docs/configuration.md`).
+The daemon inherits the app environment and exits about a minute after it goes idle. To change an environment variable, quit the app, wait two minutes, check that `pgrep -fl orchestrator-daemon` prints nothing, and start again ([configuration.md](../configuration.md)). A daemon with a running task is not idle and does not exit.
 
-Expected: the app window opens. The sidebar has Workspace, Workstreams, Agents, Review, and Settings. The Workspace page does not show "Fixture data: nothing was saved".
+Expected: the app window opens. The sidebar has Workspace, Workstreams, Agents, Review, and Settings. No page shows "Fixture data".
 
-## 4. Create a test project
+## 5. Register the projects
 
-1. Create the folder `$HOME/agent-orch-manual-test-project` and run `git init` in it. Make one commit.
-2. In the app, open the Projects page. Use its add-project control and choose that folder.
-3. Name it `manual-test-project`.
+1. In the app, open the Projects page. Use its add-project control and choose `$HOME/agent-orch-manual-test/projects/manual-test-project`.
+2. Name it `manual-test-project`.
 
-Expected: `manual-test-project` is listed.
+Expected: `manual-test-project` is listed. Register `other-project` the same way only when a test asks for it.
 
-## 5. Set the settings the tests assume
+## 6. Settings, in this order
 
-1. Open Settings from the sidebar.
-2. In **Agent dispatch defaults**, choose Codex as the default provider. Click **Save** for that group.
-3. In **Home directory**, enter `~/agent-orch-manual-test-project` and click **Save home directory**. (TC-D-09 clears this.)
-4. In **Automatic replies**, leave the caps at their defaults: 20 replies per hour and 160 per day, per conversation.
-5. For files `01` to `04`: in **Acting on its own**, clear the switch "Let the orchestrator act on its own" and click **Save acting on its own**. The result reads "Saved.". Files from `05` on say which setting they need.
+Apply these at the start of every test file, in this order, and take the named screenshots.
 
-## 6. How to create wake events
+1. Open **Settings**. In **Agent dispatch defaults**, choose `Claude Code` as **Default provider**, `Sonnet (alias)` as **Claude Code model** and `medium` as **Claude Code effort**. Click **Save dispatch defaults**. The result reads "Saved. New tasks use these defaults." **Screenshot** `SETUP-<file number>-1`.
+2. In **Home directory**, enter `~/agent-orch-manual-test/projects/manual-test-project` and click **Save home directory**.
+3. In **Automatic replies**, check the defaults and change nothing: 20 replies per hour and 160 per day, per conversation, and no daily token budget.
+4. In **Checks on running work**, change nothing. Record the three values in `ENVIRONMENT.md`.
+5. In **Acting on its own**, for files `01` to `04`, clear the switch "Let the orchestrator act on its own" and click **Save acting on its own**; the result reads "Saved.". For files `05` to `11`, leave the switch on. **Screenshot** `SETUP-<file number>-2`.
+6. Open **Workspace** and choose **Global** in the target picker. Open the **Model settings** chip. Choose `Claude Code` as **Provider**, `Sonnet (alias)` as **Model** and `medium` as **Effort**. Leave the permission level at its default, Auto. The Monitoring chip reads `Monitoring: on`. **Screenshot** `SETUP-<file number>-3`.
+
+The app remembers the Model settings choice for every conversation target. If a target shows another choice, set it back before you send.
+
+## 7. Prompt log
+
+Some checks read what the daemon sent to an agent, which the app does not show. They are marked **Prompt log**.
+
+Start the capture in its own terminal before the first such check of a file, and stop it with Ctrl-C at the end of the run:
+
+```sh
+sh docs/manual-tests/manual-test.sh capture
+```
+
+It copies the command line of every agent run the daemon starts into `$HOME/agent-orch-manual-test/logs/prompts.log`. It reads process arguments only. Each entry starts with `=== <UTC time> pid <pid> ===`. Line breaks in a prompt show as `\012`, so match the quoted text, not the start of a line.
+
+- **Turn.** A chat or automatic turn. Its command line has `--no-session-persistence`.
+- **Task.** A new task run. It has `--session-id <uuid>`, and its prompt starts with `# MCAO worker brief`.
+- **Resume.** A resumed task run. It has `--resume <uuid>`, and its prompt starts with `# MCAO worker brief, continued`.
+
+A task run's prompt is also in Claude Code's own session record. Find it with `grep -l '<task id>' ~/.claude/projects/*/*.jsonl`. If neither source has the entry, the check is `BLOCKED` with "prompt capture found no command line".
+
+## 8. How to cause each situation with a real agent
+
+### 8a. Prompts that make the orchestrator act
+
+Each test gives the exact message to send. The messages name the action and every field, so the orchestrator has nothing to choose. The orchestrator reads project codes from its own Projects list, so a message can name `manual-test-project`. A step that needs the orchestrator to propose an action is **Model-dependent** (RUNNER.md rule 8).
+
+With **Let the orchestrator act on its own** on, the daemon runs the actions it may run by itself just after the turn, at most 5 per reply, and their cards read "Done on its own". A turn the app started (a wake or a report relay) may only retry, message, ask, or (a coordinator) report and start tasks for a request routed to it. Everything else waits for **Approve** (`07-authority.md`). With the switch off, every action waits for **Approve** unless a standing approval covers it. A card can show "Pending approval" for a moment before it reads "Done on its own"; wait the 30 seconds of RUNNER.md rule 7.
+
+### 8b. Worker objectives
+
+A task's objective is the worker's instruction. These objectives make the worker end the same way every time. Tests use them word for word inside their messages. A test may put a short label in front, such as `Q-TASK:`, so a later message can name the task by the start of its objective.
+
+| Name | Kind | Delivery | Objective | Outcome |
+| --- | --- | --- | --- | --- |
+| WRITE | Implement | LocalReview | `Add the line 'Manual test line.' at the end of README.md. Change no other file.` | A candidate with one changed file. The task is `Verifying` and waits for review. |
+| NO-CHANGE | Implement | ReportOnly | `Read README.md. Do not create, change or delete any file.` | `Failed` with "The agent exited without changing any files." The daemon retries once; the retry fails the same way. |
+| REPORT | Investigate | ReportOnly | `Read README.md and report its first line. Change no file.` | `Succeeded` with a report, no file changed. |
+| ASK | Investigate | ReportOnly | `Change no file. Add the line 'needs-decision [key=readme-word] Should the README line say alpha or beta?' to the end of your status file, then end your turn. When MCAO resumes you, report the answer you got and finish.` | `Waiting for a reply`, with the question under **Needs your decision**. After the answer, the resumed run ends `Succeeded`. |
+| BLOCK | Investigate | ReportOnly | `Change no file. Add the line 'blocked The test database does not answer.' to the end of your status file, then end your turn. When MCAO resumes you, report the first line of README.md and finish.` | `Waiting for a reply`, blocked. After a message, the resumed run ends `Succeeded`. |
+| HOLD | Investigate | ReportOnly | `HOLD-<n>: Read README.md and report its first line. Change no file.` | With the hold helper (8c), `Running` until you release it. |
+
+The worker writes the status file through its file tools; the daemon grants it that one folder outside the worktree. A run that ends without the expected status line is a model miss (RUNNER.md rule 8), not an app failure.
+
+### 8c. Deterministic triggers
+
+| Situation | How |
+| --- | --- |
+| A task that keeps running | Before you send the message, start `sh docs/manual-tests/manual-test.sh hold HOLD-<n>` in its own terminal. It pauses the task run whose objective starts with `HOLD-<n>:` as soon as it starts, so the task stays `Running` and writes nothing. When the task page reads `Running`, stop the helper with Ctrl-C; the run stays paused. |
+| End a held task | Run `sh docs/manual-tests/manual-test.sh release HOLD-<n>`, then click **Request cancel** on the task page. Always release before you cancel: a paused process does not act on a cancel. |
+| A stalled task | Hold a task (above) and wait. After 5 minutes without output the daemon posts a stalled-task notice. A held task also counts against its wall-time limit (Settings, **Checks on running work**). |
+| An unavailable agent | Quit the app and wait two minutes. Start it as in section 4 with `AGENT_ORCH_CLAUDE_PROGRAM="$HOME/agent-orch-manual-test/missing/claude"` added. Restart without it afterwards. |
+| Failing automatic turns | No trigger. The variables that make chat turns fail (`AGENT_ORCH_CONVERSATION_TIMEOUT_MS`, a missing program) take effect only after a daemon restart, need no running task, and also fail your own messages, so the orchestrator cannot start the tasks whose events would wake it. Tests that need this are `BLOCKED`. |
+| A quiet reply to a failure or a report | No trigger. A real model answers quietly only when nothing needs the user; it does not answer a failure or a report quietly on request. Tests that need this are `BLOCKED`. |
+
+### 8d. Wake events
 
 | Event | How |
-| ------- | ----- |
-| Failed task | Write `fail` to `task-mode`, then approve a task proposal. |
-| Stalled task | Write `hang` to `task-mode`, approve a task, and wait 5 minutes with no output. |
-| Empty change set fails | Write `succeed` to `task-mode` and approve an Implement task. The task ends `Failed` with "The agent exited without changing any files." |
-| Candidate ready | Write `write` to `task-mode` and approve an Implement task. `BLOCKED` until the fake agent supports `write` (section 2). |
-| Task delivery waiting | Write `write` to `task-mode` and approve a task with a delivery. `BLOCKED` until the fake agent supports `write` (section 2). |
-| Scout report ready | Approve a `task.propose` with `task_kind` `Investigate` and `delivery` `ReportOnly`, with `task-mode` set to `succeed`. |
-| Failing agent | Quit the app, set `AGENT_ORCH_CODEX_PROGRAM` to `fake-codex-fail`, start the app, and send three user messages. |
-| Worker needs a decision | Write `ask` to `task-mode` and start a task. `BLOCKED` until the fake agent supports `ask` (section 2). |
-| Worker blocked | Write `block` to `task-mode` and start a task. `BLOCKED` until the fake agent supports `block` (section 2). |
+| --- | --- |
+| Failed task | A NO-CHANGE task (8b). The wake comes after the retry also fails. |
+| Stalled task | A held task (8c), then 5 minutes. |
+| Empty change set fails | A NO-CHANGE task. |
+| Candidate ready | A WRITE task. |
+| Task delivery waiting | A WRITE task; its LocalReview delivery waits for review. |
+| Scout report ready | A REPORT task. |
+| Worker needs a decision | An ASK task. |
+| Worker blocked | A BLOCK task. |
+| Failing agent | No trigger (8c). |
 
-## 7. Reset between tests
+## 9. Reset between test files
 
-Each test lists its own preconditions. To start clean, quit the app, wait two minutes, delete `$HOME/agent-orch-manual-test`, and repeat sections 3 to 5.
+Every test file starts clean, including file 01:
 
-## 8. Clean up after the run
+1. Release any held runs: `sh docs/manual-tests/manual-test.sh release HOLD-`.
+2. Quit the app. Wait two minutes. `pgrep -fl orchestrator-daemon` prints nothing.
+3. Delete the data directory: `rm -rf "$HOME/agent-orch-manual-test/data"`.
+4. Run the fixture command (section 3). It prints the same two SHAs.
+5. Do sections 4, 5 and 6.
 
-Quit the app. Delete `$HOME/agent-orch-manual-test`, `$HOME/agent-orch-manual-test-bin`, and `$HOME/agent-orch-manual-test-project`. Keep `docs/evidence/manual-tests/<run-UTC>/`.
+Inside a file, a test's own **Reset** line says what to undo before the next test.
+
+## 10. Clean up after the run
+
+1. Stop the prompt capture with Ctrl-C. Release any held runs (section 9, step 1).
+2. Quit the app. Wait two minutes.
+3. Delete `$HOME/agent-orch-manual-test` and, if file 11 left it, `$HOME/agent-orch-manual-test-upgrade` and the `../mcao-before` worktree.
+4. Delete the Claude Code session records of the test tasks: `rm -rf ~/.claude/projects/*agent-orch-manual-test*`.
+5. Keep `docs/evidence/manual-tests/<run-UTC>/`.

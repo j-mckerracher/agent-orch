@@ -16,7 +16,9 @@ These test cases check documented behaviors of the Global Orchestrator through t
 | 10 | Reply etiquette, pull request links and wake caps | [10-etiquette-and-caps.md](10-etiquette-and-caps.md) |
 | 11 | An older database upgrades without losing data | [11-upgrade.md](11-upgrade.md) |
 
-Start with [00-setup.md](00-setup.md). Every test file assumes that setup is complete.
+Start with [00-setup.md](00-setup.md). Every test file starts from that setup. To run the tests, paste the prompt in [RUNNER.md](RUNNER.md) into a computer-use agent; a human tester follows the same rules.
+
+The tests always run on the real app, built from the tip of `main`, with real agents: Claude Code, model "Sonnet (alias)" at effort "medium". There is no fake agent. Real agents cost money: each file states its cost class, and a run stops at its spend limit.
 
 ## How the docs define these terms
 
@@ -27,18 +29,9 @@ The docs describe these behaviors differently from the plain-language names abov
 - **Sub-orchestrator.** A sub-orchestrator is a workstream conversation, made by a `workstream.create` action: on its own when the switch is on, after the user's approval when it is off. It has its own entry in the conversation target picker. It cannot create workstreams itself. A project coordinator is the other kind: one orchestrator per project, which receives work routed from Global (`09-coordinators.md`).
 - **Intermediary.** The Global conversation reaches the user through cards, wake notices, relayed scout reports, the "Needs your decision" list, coordinator reports, and the "Routed here by the global orchestrator" strip. The user talks to a workstream or a coordinator directly by choosing it in the target picker. Workers never address the user. The docs do not describe the Global Orchestrator forwarding chat text to workers. A test that expects that is out of scope.
 
-## Rules for the AI runner
+## Rules for the runner
 
-1. Run tests in file order. Run each test in step order. Do not skip steps.
-2. Take a screenshot at every step marked **Screenshot**. Save it as `docs/evidence/manual-tests/<run-UTC>/<TC-ID>-<step>.png`. `<run-UTC>` looks like `20261117T180000Z`.
-3. Compare UI text with the quoted expected strings. Quoted strings are exact. Treat a difference in wording as a FAIL and quote what you saw.
-4. Record one result per test case: `PASS`, `FAIL`, or `BLOCKED`.
-   - `FAIL`: a step ran and the result differed from the expected result.
-   - `BLOCKED`: a precondition could not be met. Say which one.
-5. After the last test, write `docs/evidence/manual-tests/<run-UTC>/RESULTS.md`. Put one row per test case: ID, result, and one line of notes.
-6. Do not run a paid agent. Use the fake agent from `00-setup.md`. Stop and report if a step would call a real provider. A step marked **Real agent** runs only when the person who asked for the run allows it; otherwise mark it `BLOCKED`.
-7. Do not use the keyboard to change application state when a UI control exists. Use the UI control.
-8. If the app shows "Fixture data: nothing was saved", the app is not connected to a real daemon. Stop and fix setup. Results from fixture mode do not count.
+[RUNNER.md](RUNNER.md) owns the rules: real app and real agents only, verbatim prompts, fixed settings and waits, retries for model-dependent steps, evidence names, and the layout of `RESULTS.md`. This README does not repeat them.
 
 ## Test case format
 
@@ -46,11 +39,14 @@ Each test case has:
 
 - **ID.** `TC-D-nn` (dispatch), `TC-W-nn` (wake), `TC-S-nn` (sub-orchestrator), `TC-I-nn` (intermediary), `TC-Q-nn` (questions), `TC-B-nn` (worker brief and status), `TC-A-nn` (authority), `TC-P-nn` (preferences), `TC-C-nn` (coordinators), `TC-E-nn` (etiquette and caps), `TC-M-nn` (upgrade).
 - **Source.** The doc and the line the expected behavior comes from.
-- **Preconditions.** State that must be true before step 1, including the fake agent behaviors it needs (`00-setup.md` section 2).
-- **Steps.** Numbered. Each step names the control to use.
+- **Preconditions.** State that must be true before step 1, and the worker objectives or triggers it needs (`00-setup.md` section 8).
+- **Steps.** Numbered. Each step names the control to use and gives every message to send, word for word.
 - **Expected.** What must be visible after the steps.
+- **Real agent.** The model and effort, and the cost class.
 
-Tests from `05` on also have a one-line purpose under the heading, a **Reset** line when the test leaves state behind, and a **Known limitations** line when part of the behavior has no UI to check. Checks marked **Prompt log** read `prompts.log` from the fake agent: they check what the daemon sent to an agent, which the app does not show.
+Cost classes: **low** means chat turns only, no task run. **Medium** means one or more task runs; a failed task can run twice, because the daemon retries it once on its own.
+
+Tests from `05` on also have a one-line purpose under the heading, a **Reset** line when the test leaves state behind, and a **Known limitations** line when part of the behavior has no UI to check. A step marked **Model-dependent** needs the model to take an action; RUNNER.md rule 8 says how to retry it. Checks marked **Prompt log** read what the daemon sent to an agent, which the app does not show (`00-setup.md` section 7). A test marked `BLOCKED` in its preconditions has no reliable way to cause its situation with a real agent; the reason is stated, and the runner records it as `BLOCKED` without running it.
 
 ## Coverage matrix
 
