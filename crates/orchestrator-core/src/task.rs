@@ -16,8 +16,13 @@
 //!   ([`TaskState::Failed`], [`TaskState::VerificationFailed`]) accept only
 //!   [`TaskEvent::RetryRequested`], which re-queues the task with a fresh
 //!   [`Attempt`]; the failed attempt is preserved, never erased. There is no
-//!   path from any state back to `Running` except `Queued -> Running`, and
-//!   no transition mutates a recorded attempt.
+//!   path from any state back to `Running` except `Queued -> Running` and
+//!   `Waiting -> Running`, which continues the same attempt in a new session,
+//!   and no transition mutates a recorded attempt.
+//! - [`TaskState::Waiting`] is a parked attempt (DPES-1108 phase 4): the worker
+//!   reported that it needs a decision or is blocked, and ended its turn. No
+//!   process runs and the worktree stays leased; only an answer or a message
+//!   resumes it, and a cancel or a failed resume ends it.
 //!
 //! The state machine is a table, not scattered conditionals: [`MOVE`] is the
 //! exhaustive set of legal edges and the tests walk it.
@@ -37,6 +42,10 @@ pub enum TaskState {
     Queued,
     /// An attempt is executing in a task-owned worktree.
     Running,
+    /// The attempt's worker reported that it needs a decision or is blocked and
+    /// ended its turn. No agent process runs; the worktree stays leased. Not
+    /// terminal: an answer or a message resumes the same attempt.
+    Waiting,
     /// Execution produced a candidate commit; verification is running or its
     /// outcome is pending. The candidate commit is recorded here, and only the
     /// verified commit may be delivered.
@@ -87,7 +96,7 @@ pub enum TaskEvent {
     /// `Failed` or `VerificationFailed`.
     RetryRequested,
     /// Origin: engine, while no agent process exists. Legal from `Created`,
-    /// `Queued` or `Verifying` (the candidate is discarded). A request for a
+    /// `Queued`, `Waiting` or `Verifying` (the candidate is discarded). A request for a
     /// running task is not cancellation confirmation and must not use this
     /// event.
     CancelRequested,
@@ -95,6 +104,24 @@ pub enum TaskEvent {
     /// waited for the managed child to exit. A separate cancellation request
     /// remains pending until this event is committed.
     CancellationConfirmed,
+    /// Origin: engine (supervisor), after the agent exited cleanly having
+    /// reported `needs-decision` or `blocked` on its status channel. The run
+    /// is parked; the agent's own claim decides only which wait it is.
+    WorkerWaiting { reason: WaitReason },
+    /// Origin: engine (scheduler), when an answer or a message for a waiting
+    /// task is delivered by resuming the same agent session.
+    ResumeStarted,
+}
+
+/// Why a task is [`TaskState::Waiting`].
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
+pub enum WaitReason {
+    /// The worker asked a question only the user can answer.
+    Decision,
+    /// The worker cannot continue without help.
+    Blocker,
 }
 
 /// Audit events. One is emitted per accepted transition; the pair (event,
@@ -117,12 +144,18 @@ pub enum AuditEvent {
     ExecutionFailed,
     /// `Failed | VerificationFailed -> Queued` on [`TaskEvent::RetryRequested`].
     RetryScheduled,
-    /// `Created | Queued -> Cancelled` on [`TaskEvent::CancelRequested`], or
+    /// `Created | Queued | Waiting -> Cancelled` on [`TaskEvent::CancelRequested`], or
     /// `Running -> Cancelled` on [`TaskEvent::CancellationConfirmed`].
     TaskCancelled,
     /// `Verifying -> Cancelled` on [`TaskEvent::CancelRequested`]: the
     /// candidate is discarded before any verification outcome is recorded.
     VerificationCancelled,
+    /// `Running -> Waiting` on a [`TaskEvent::WorkerWaiting`] for a decision.
+    WorkerNeedsDecision,
+    /// `Running -> Waiting` on a [`TaskEvent::WorkerWaiting`] for a blocker.
+    WorkerBlocked,
+    /// `Waiting -> Running` on [`TaskEvent::ResumeStarted`].
+    ExecutionResumed,
 }
 
 /// Result of a rejected transition.
@@ -218,6 +251,42 @@ const MOVE: &[(TaskState, TaskEvent, TaskState, AuditEvent)] = &[
         TaskState::Cancelled,
         AuditEvent::TaskCancelled,
     ),
+    (
+        TaskState::Running,
+        TaskEvent::WorkerWaiting {
+            reason: WaitReason::Decision,
+        },
+        TaskState::Waiting,
+        AuditEvent::WorkerNeedsDecision,
+    ),
+    (
+        TaskState::Running,
+        TaskEvent::WorkerWaiting {
+            reason: WaitReason::Blocker,
+        },
+        TaskState::Waiting,
+        AuditEvent::WorkerBlocked,
+    ),
+    (
+        TaskState::Waiting,
+        TaskEvent::ResumeStarted,
+        TaskState::Running,
+        AuditEvent::ExecutionResumed,
+    ),
+    // No process runs while waiting, so a cancel needs no owner confirmation.
+    (
+        TaskState::Waiting,
+        TaskEvent::CancelRequested,
+        TaskState::Cancelled,
+        AuditEvent::TaskCancelled,
+    ),
+    // A resume that cannot run at the same permission level fails closed.
+    (
+        TaskState::Waiting,
+        TaskEvent::ExecutionFailed,
+        TaskState::Failed,
+        AuditEvent::ExecutionFailed,
+    ),
 ];
 
 /// Apply `event` to `current` and return the next state plus the audit event
@@ -269,6 +338,9 @@ pub enum AttemptState {
     Pending,
     /// Agent session is running.
     Running,
+    /// The agent ended its turn to wait for an answer or a message. No session
+    /// is live; a resume continues this attempt in a new session.
+    Waiting,
     /// Produced a candidate commit; verification pending.
     CandidateReady,
     /// Attempt terminated with a failure reason; preserved, never mutated.
@@ -325,15 +397,20 @@ impl SessionState {
     }
 }
 
-/// Monotonic lifecycle of one execution attempt. Same rule as the task
-/// table: the table is the exhaustive set of legal edges, terminal
-/// states accept no moves, and no state regresses.
+/// Lifecycle of one execution attempt. Same rule as the task table: the table
+/// is the exhaustive set of legal edges and terminal states accept no moves.
+/// The one return is `Waiting -> Running`, a resumed turn of the same attempt;
+/// nothing else regresses.
 const ATTEMPT_MOVE: &[(AttemptState, AttemptState)] = &[
     (AttemptState::Pending, AttemptState::Running),
     (AttemptState::Pending, AttemptState::Cancelled),
     (AttemptState::Running, AttemptState::CandidateReady),
     (AttemptState::Running, AttemptState::Failed),
     (AttemptState::Running, AttemptState::Cancelled),
+    (AttemptState::Running, AttemptState::Waiting),
+    (AttemptState::Waiting, AttemptState::Running),
+    (AttemptState::Waiting, AttemptState::Failed),
+    (AttemptState::Waiting, AttemptState::Cancelled),
     (AttemptState::CandidateReady, AttemptState::Succeeded),
     (AttemptState::CandidateReady, AttemptState::Failed),
     (AttemptState::CandidateReady, AttemptState::Cancelled),
@@ -403,11 +480,12 @@ impl std::error::Error for LifecycleError {}
 mod tests {
     use super::*;
 
-    fn all_states() -> [TaskState; 8] {
+    fn all_states() -> [TaskState; 9] {
         [
             TaskState::Created,
             TaskState::Queued,
             TaskState::Running,
+            TaskState::Waiting,
             TaskState::Verifying,
             TaskState::Succeeded,
             TaskState::VerificationFailed,
@@ -416,7 +494,7 @@ mod tests {
         ]
     }
 
-    fn all_events() -> [TaskEvent; 9] {
+    fn all_events() -> [TaskEvent; 12] {
         [
             TaskEvent::Admit,
             TaskEvent::ExecutionStarted,
@@ -427,7 +505,65 @@ mod tests {
             TaskEvent::RetryRequested,
             TaskEvent::CancelRequested,
             TaskEvent::CancellationConfirmed,
+            TaskEvent::WorkerWaiting {
+                reason: WaitReason::Decision,
+            },
+            TaskEvent::WorkerWaiting {
+                reason: WaitReason::Blocker,
+            },
+            TaskEvent::ResumeStarted,
         ]
+    }
+
+    #[test]
+    fn a_worker_wait_parks_the_task_and_only_a_resume_cancel_or_failure_leaves_it() {
+        for (reason, audit) in [
+            (WaitReason::Decision, AuditEvent::WorkerNeedsDecision),
+            (WaitReason::Blocker, AuditEvent::WorkerBlocked),
+        ] {
+            assert_eq!(
+                transition(TaskState::Running, TaskEvent::WorkerWaiting { reason }),
+                Ok((TaskState::Waiting, audit))
+            );
+        }
+        assert!(!TaskState::Waiting.is_terminal());
+        let leaves: Vec<_> = all_events()
+            .into_iter()
+            .filter_map(|event| {
+                transition(TaskState::Waiting, event)
+                    .ok()
+                    .map(|(next, _)| (event, next))
+            })
+            .collect();
+        assert_eq!(
+            leaves,
+            vec![
+                (TaskEvent::ExecutionFailed, TaskState::Failed),
+                (TaskEvent::CancelRequested, TaskState::Cancelled),
+                (TaskEvent::ResumeStarted, TaskState::Running),
+            ]
+        );
+        // A wait is reported only by a run: no other state parks.
+        for state in all_states() {
+            for reason in [WaitReason::Decision, WaitReason::Blocker] {
+                let parked = transition(state, TaskEvent::WorkerWaiting { reason }).is_ok();
+                assert_eq!(parked, state == TaskState::Running, "{state:?}");
+            }
+            let resumed = transition(state, TaskEvent::ResumeStarted).is_ok();
+            assert_eq!(resumed, state == TaskState::Waiting, "{state:?}");
+        }
+    }
+
+    #[test]
+    fn a_waiting_attempt_resumes_or_ends_and_holds_no_session() {
+        assert!(!AttemptState::Waiting.is_terminal());
+        assert!(attempt_transition(AttemptState::Running, AttemptState::Waiting).is_ok());
+        assert!(attempt_transition(AttemptState::Waiting, AttemptState::Running).is_ok());
+        assert!(attempt_transition(AttemptState::Waiting, AttemptState::Failed).is_ok());
+        assert!(attempt_transition(AttemptState::Waiting, AttemptState::Cancelled).is_ok());
+        // A parked attempt has no candidate: verification never starts from it.
+        assert!(attempt_transition(AttemptState::Waiting, AttemptState::CandidateReady).is_err());
+        assert!(attempt_transition(AttemptState::Pending, AttemptState::Waiting).is_err());
     }
 
     #[test]
@@ -552,7 +688,7 @@ mod tests {
 
     #[test]
     fn cancel_requested_is_legal_only_without_a_live_agent() {
-        for state in [TaskState::Created, TaskState::Queued] {
+        for state in [TaskState::Created, TaskState::Queued, TaskState::Waiting] {
             assert_eq!(
                 transition(state, TaskEvent::CancelRequested),
                 Ok((TaskState::Cancelled, AuditEvent::TaskCancelled)),
@@ -588,6 +724,7 @@ mod tests {
         for state in [
             TaskState::Created,
             TaskState::Queued,
+            TaskState::Waiting,
             TaskState::Verifying,
             TaskState::Failed,
             TaskState::VerificationFailed,
@@ -654,10 +791,11 @@ mod tests {
         }
     }
 
-    fn all_attempt_states() -> [AttemptState; 6] {
+    fn all_attempt_states() -> [AttemptState; 7] {
         [
             AttemptState::Pending,
             AttemptState::Running,
+            AttemptState::Waiting,
             AttemptState::CandidateReady,
             AttemptState::Failed,
             AttemptState::Succeeded,

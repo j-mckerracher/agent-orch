@@ -67,11 +67,12 @@ pub enum ActionKind {
     ProjectRemove,
     DecisionHold,
     DecisionAsk,
+    TaskMessage,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
@@ -85,6 +86,7 @@ impl ActionKind {
         Self::ProjectRemove,
         Self::DecisionHold,
         Self::DecisionAsk,
+        Self::TaskMessage,
     ];
 
     /// Wire name, such as `workstream.create`.
@@ -103,6 +105,7 @@ impl ActionKind {
             Self::ProjectRemove => "project.remove",
             Self::DecisionHold => "decision.hold",
             Self::DecisionAsk => "decision.ask",
+            Self::TaskMessage => "task.message",
         }
     }
 
@@ -147,6 +150,8 @@ pub enum Action {
     DecisionHold(HoldDecision),
     #[serde(rename = "decision.ask")]
     DecisionAsk(AskDecision),
+    #[serde(rename = "task.message")]
+    TaskMessage(MessageTask),
 }
 
 /// `workstream.create`. `ref` names the workstream for later actions in the block.
@@ -331,6 +336,18 @@ pub struct AskDecision {
     /// with the same key finds the open one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<String>,
+}
+
+/// `task.message` (DPES-1108 phase 4). Text for a task whose worker is waiting. The daemon
+/// delivers it by resuming the worker's own session with it as the next prompt. Only a waiting
+/// task takes one; `task.revise` stays the way to change a task's scope.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MessageTask {
+    pub task_id: String,
+    /// The message, as the worker will read it. The rules of a reply:
+    /// [`crate::question::check_reply`].
+    pub text: String,
 }
 
 /// A validated block. `parent(i)` is the index of the earlier
@@ -675,6 +692,11 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
             crate::question::check_question(&ask.question, &ask.options, ask.key.as_deref())
                 .map_err(|field| BlockError::InvalidField(field.as_str()))
         }
+        Action::TaskMessage(message) => {
+            check(validate_id("task_id", &message.task_id), "task_id")?;
+            crate::question::check_reply(&message.text)
+                .map_err(|_| BlockError::InvalidField("text"))
+        }
         Action::WorkstreamLinkTask(link) => {
             check(
                 validate_id("workstream_id", &link.workstream_id),
@@ -818,7 +840,8 @@ fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockErr
             Action::TaskRevise(_)
             | Action::DeliveryMerge(_)
             | Action::DecisionHold(_)
-            | Action::DecisionAsk(_) => true,
+            | Action::DecisionAsk(_)
+            | Action::TaskMessage(_) => true,
             // A workstream conversation never removes a project.
             Action::ProjectRemove(_) => false,
         };
@@ -854,6 +877,7 @@ impl Action {
             Self::ProjectRemove(_) => ActionKind::ProjectRemove,
             Self::DecisionHold(_) => ActionKind::DecisionHold,
             Self::DecisionAsk(_) => ActionKind::DecisionAsk,
+            Self::TaskMessage(_) => ActionKind::TaskMessage,
         }
     }
 
@@ -897,6 +921,7 @@ impl Action {
             Self::DeliveryMerge(merge) => Some(merge.task_id.as_str()),
             Self::DecisionHold(hold) => Some(hold.task_id.as_str()),
             Self::DecisionAsk(ask) => Some(ask.task_id.as_str()),
+            Self::TaskMessage(message) => Some(message.task_id.as_str()),
             _ => None,
         }
     }
@@ -965,6 +990,8 @@ impl Action {
                     format!("decision.ask:{}:{}", ask.task_id, hex(&digest))
                 }
             },
+            // A newer message to the same task replaces one the user has not approved yet.
+            Self::TaskMessage(message) => format!("task.message:{}", message.task_id),
         }
     }
 }
@@ -1425,7 +1452,7 @@ mod tests {
     }
 
     #[test]
-    fn the_action_kind_list_names_all_thirteen_kinds() {
+    fn the_action_kind_list_names_all_fourteen_kinds() {
         let names = ActionKind::ALL.map(ActionKind::as_str);
         assert_eq!(
             names,
@@ -1443,6 +1470,7 @@ mod tests {
                 "project.remove",
                 "decision.hold",
                 "decision.ask",
+                "task.message",
             ]
         );
         assert_eq!(
@@ -2402,6 +2430,38 @@ mod tests {
         assert_eq!(bare("Ship  it?"), bare("ship it?"));
         assert_ne!(bare("Ship it?"), bare("Hold it?"));
         assert!(!bare("Ship it?").contains("Ship"));
+    }
+
+    #[test]
+    fn task_message_parses_with_one_subject_per_task_and_refuses_bad_text() {
+        let text = json!({"kind": "task.message", "task_id": "task-1",
+            "text": "The test database is back; run the suite again."})
+        .to_string();
+        let parsed = parse(&block(&text)).expect("valid block");
+        let message = &parsed.actions()[0];
+        assert_eq!(message.kind(), ActionKind::TaskMessage);
+        assert_eq!(message.target_task(), Some("task-1"));
+        assert_eq!(message.canonical(None).subject, "task.message:task-1");
+        for (fields, field) in [
+            (json!({"task_id": "t 1", "text": "go"}), "task_id"),
+            (json!({"task_id": "task-1", "text": " "}), "text"),
+            (json!({"task_id": "task-1", "text": "a\u{202E}b"}), "text"),
+            (
+                json!({"task_id": "task-1", "text": "x".repeat(4097)}),
+                "text",
+            ),
+        ] {
+            let mut action = fields;
+            action["kind"] = json!("task.message");
+            let text = action.to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{text}"
+            );
+        }
+        let unknown = r#"{"kind":"task.message","task_id":"task-1","text":"go","to":"user"}"#;
+        assert!(parse(&block(unknown)).is_err());
     }
 
     #[test]

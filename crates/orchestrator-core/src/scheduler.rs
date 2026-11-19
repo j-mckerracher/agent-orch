@@ -381,6 +381,7 @@ pub struct Scheduler<'a> {
     by_id: BTreeMap<&'a str, usize>,
     gate: StartGate,
     open_questions: &'a BTreeSet<String>,
+    resumable: &'a BTreeSet<String>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -402,6 +403,7 @@ impl<'a> Scheduler<'a> {
             by_id,
             gate: StartGate::Open,
             open_questions: &NO_QUESTIONS,
+            resumable: &NO_QUESTIONS,
         })
     }
 
@@ -419,6 +421,16 @@ impl<'a> Scheduler<'a> {
     /// none. A task already running is not touched.
     pub fn with_open_questions(mut self, task_ids: &'a BTreeSet<String>) -> Self {
         self.open_questions = task_ids;
+        self
+    }
+
+    /// Names the `Waiting` tasks that have a reply to deliver (DPES-1108 phase 4). Each one is
+    /// planned like a queued task whose dependencies succeeded, under the same capacity, load
+    /// gate, question and authorization checks, so a resume never runs past a cap. The caller
+    /// resumes a started `Waiting` task instead of launching it. [`Scheduler::new`] starts with
+    /// none; a waiting task not named here stays parked and counts toward no cap.
+    pub fn with_resumable(mut self, task_ids: &'a BTreeSet<String>) -> Self {
+        self.resumable = task_ids;
         self
     }
 
@@ -441,14 +453,17 @@ impl<'a> Scheduler<'a> {
         let mut eligible = Vec::new();
         for &index in order {
             let task = &tasks[index];
-            if task.state != TaskState::Queued {
+            let resumes =
+                task.state == TaskState::Waiting && self.resumable.contains(&task.contract.id);
+            if task.state != TaskState::Queued && !resumes {
                 rejections[index] = Some(RejectionReason::TaskNotQueued { state: task.state });
                 continue;
             }
-            if let Some(dependency_id) = task
-                .contract
-                .dependencies
-                .iter()
+            // A waiting task started once, so its dependencies had succeeded.
+            if let Some(dependency_id) = (!resumes)
+                .then_some(task)
+                .into_iter()
+                .flat_map(|task| task.contract.dependencies.iter())
                 .filter(|dependency_id| match by_id.get(dependency_id.as_str()) {
                     Some(&dependency_index) => {
                         tasks[dependency_index].state != TaskState::Succeeded
@@ -1085,5 +1100,58 @@ mod tests {
                 state: TaskState::Running
             }
         );
+    }
+
+    #[test]
+    fn a_waiting_task_resumes_only_with_a_reply_under_the_same_caps_and_holds_no_slot() {
+        let tasks = [
+            (
+                contract("parked", "project-a", &["gone"]),
+                TaskState::Waiting,
+            ),
+            (
+                contract("replied", "project-a", &["gone"]),
+                TaskState::Waiting,
+            ),
+            (contract("asked", "project-b", &[]), TaskState::Waiting),
+            (contract("queued", "project-c", &[]), TaskState::Queued),
+        ];
+        let snapshots: Vec<_> = tasks
+            .iter()
+            .map(|(contract, state)| TaskSnapshot {
+                contract,
+                state: *state,
+                workspace: None,
+            })
+            .collect();
+        let snapshot = SchedulerSnapshot {
+            tasks: &snapshots,
+            last_started_project: None,
+        };
+        let resumable: BTreeSet<String> = ["replied".to_owned(), "asked".to_owned()].into();
+        let open: BTreeSet<String> = ["asked".to_owned()].into();
+        let plan = Scheduler::new(snapshot, SchedulerLimits::default())
+            .unwrap()
+            .with_resumable(&resumable)
+            .with_open_questions(&open)
+            .schedule(Some(&allow_all));
+        // A waiting task counts toward no cap, and its old dependency is not checked again.
+        assert_eq!(plan.started, ["replied", "queued"]);
+        assert_eq!(
+            reason(&plan, "parked"),
+            &RejectionReason::TaskNotQueued {
+                state: TaskState::Waiting
+            }
+        );
+        // An open question still holds a reply back.
+        assert_eq!(reason(&plan, "asked"), &RejectionReason::AwaitingDecision);
+
+        // A resume takes a worker slot like a start.
+        let one = SchedulerLimits::new(Some(1), Some(1)).unwrap();
+        let capped = Scheduler::new(snapshot, one)
+            .unwrap()
+            .with_resumable(&resumable)
+            .schedule(Some(&allow_all));
+        assert_eq!(capped.started.len(), 1);
     }
 }

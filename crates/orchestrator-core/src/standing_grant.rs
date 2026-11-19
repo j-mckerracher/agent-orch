@@ -36,8 +36,8 @@ pub const MAX_BRANCH_PREFIX_CHARS: usize = 64;
 
 /// Kinds a grant may name. Fail closed: a kind that is on no list is not grantable, and the
 /// walk test fails until a person classifies it. `decision.hold` is left out by least
-/// authority until its parameters are reviewed, and `decision.ask` until the authority model
-/// (DPES-1108 phase 5) classifies it; `workstream.create` is left out because it
+/// authority until its parameters are reviewed, and `decision.ask` and `task.message` until the
+/// authority model (DPES-1108 phase 5) classifies them; `workstream.create` is left out because it
 /// names no project or workstream to bind a grant to. `delivery.merge` is listed, but a grant
 /// may name it only as the one kind, on a project, with the unattended-merge confirmation:
 /// [`GrantTerms::validate`] holds those rules.
@@ -392,6 +392,7 @@ mod tests {
             ActionKind::WorkstreamCreate,
             ActionKind::DecisionHold,
             ActionKind::DecisionAsk,
+            ActionKind::TaskMessage,
         ];
         for kind in ActionKind::ALL {
             let never = NEVER_GRANTABLE.contains(&kind.as_str());
