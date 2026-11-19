@@ -68,6 +68,7 @@ mod sqlite_notes;
 mod sqlite_ops;
 mod sqlite_project_defaults;
 mod sqlite_pull_requests;
+mod sqlite_questions;
 mod sqlite_reports;
 mod sqlite_review;
 mod sqlite_settings;
@@ -96,6 +97,9 @@ pub use sqlite_project_defaults::{ProjectDefaultsError, ProjectDefaultsPatch, Pr
 pub use sqlite_pull_requests::{
     GrantIssue, MergeAttempt, MergeClaim, MergeState, PullRequestChange, PullRequestError,
     PullRequestRow, PullRequestSeen, StoredCheck, MAX_STORED_CHECKS,
+};
+pub use sqlite_questions::{
+    ClosingKind, DecisionQuestion, QuestionClosing, QuestionError, QuestionRaiser,
 };
 pub use sqlite_reports::{
     ReportScope, TaskReport, TaskReportError, TaskReportSummary, MAX_REPORT_BYTES,
