@@ -17,6 +17,7 @@
 pub mod approval;
 pub mod authorization;
 pub mod brief;
+pub mod charter;
 pub mod contract;
 pub mod decomposition;
 pub mod identity;

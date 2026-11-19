@@ -68,11 +68,13 @@ pub enum ActionKind {
     DecisionHold,
     DecisionAsk,
     TaskMessage,
+    CoordinatorRoute,
+    CoordinatorReport,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 16] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
@@ -87,6 +89,8 @@ impl ActionKind {
         Self::DecisionHold,
         Self::DecisionAsk,
         Self::TaskMessage,
+        Self::CoordinatorRoute,
+        Self::CoordinatorReport,
     ];
 
     /// Wire name, such as `workstream.create`.
@@ -106,6 +110,8 @@ impl ActionKind {
             Self::DecisionHold => "decision.hold",
             Self::DecisionAsk => "decision.ask",
             Self::TaskMessage => "task.message",
+            Self::CoordinatorRoute => "coordinator.route",
+            Self::CoordinatorReport => "coordinator.report",
         }
     }
 
@@ -152,6 +158,10 @@ pub enum Action {
     DecisionAsk(AskDecision),
     #[serde(rename = "task.message")]
     TaskMessage(MessageTask),
+    #[serde(rename = "coordinator.route")]
+    CoordinatorRoute(RouteWork),
+    #[serde(rename = "coordinator.report")]
+    CoordinatorReport(ReportToOrchestrator),
 }
 
 /// `workstream.create`. `ref` names the workstream for later actions in the block.
@@ -244,6 +254,11 @@ pub struct ProposeTask {
     /// the canonical form when absent, so a stored digest stays valid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub promote_from: Option<String>,
+    /// The routed request this task serves (DPES-1108 phase 7). Only a coordinator conversation
+    /// may name one, and only an open request of its own project. Left out of the canonical
+    /// form when absent, so a stored digest stays valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
 }
 
 /// `task.cancel`.
@@ -350,6 +365,36 @@ pub struct MessageTask {
     pub text: String,
 }
 
+/// `coordinator.route` (DPES-1108 phase 7). The global orchestrator hands work to the coordinator
+/// of the project the work belongs to. The daemon records a routed request whose id is the
+/// correlation id, and the coordinator owns the tasks made for it. Only the global conversation
+/// may route, so a coordinator never routes to another one (depth stays two).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteWork {
+    /// The `p-xxxxxxxx` code, as in [`ProposeTask::project`].
+    pub project: String,
+    /// What the coordinator is asked to do. See [`crate::charter::check_routed_work`].
+    pub work: String,
+}
+
+/// `coordinator.report` (DPES-1108 phase 7). A coordinator's judgment for the global
+/// orchestrator: the answer to a routed request, a caveat, or a blocker of its own. Durable facts
+/// (a task done, a question raised) are written by the daemon, never by this action.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReportToOrchestrator {
+    pub verb: crate::charter::ReportVerb,
+    /// See [`crate::charter::check_report_note`].
+    pub note: String,
+    /// The routed request this answers or concerns. Required for `answer`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// A short slug naming the matter, as a question key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
 /// A validated block. `parent(i)` is the index of the earlier
 /// `workstream.create` that action `i`'s `workstream_ref` names.
 #[derive(Clone, Debug, PartialEq)]
@@ -426,11 +471,14 @@ impl ActionBlock {
     }
 }
 
-/// Where a block was written. A workstream conversation may change only its own workstream.
+/// Where a block was written. A workstream conversation may change only its own workstream. A
+/// project coordinator (DPES-1108 phase 7) acts only inside its project, named by its
+/// `p-xxxxxxxx` code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockScope<'a> {
     Global,
     Workstream(&'a str),
+    Project(&'a str),
 }
 
 /// Why a block was rejected. Diagnostics only; never stored.
@@ -697,6 +745,34 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
             crate::question::check_reply(&message.text)
                 .map_err(|_| BlockError::InvalidField("text"))
         }
+        Action::CoordinatorRoute(route) => {
+            if !is_project_code(&route.project) {
+                return Err(BlockError::InvalidField("project"));
+            }
+            if !crate::charter::check_routed_work(&route.work) {
+                return Err(BlockError::InvalidField("work"));
+            }
+            Ok(())
+        }
+        Action::CoordinatorReport(report) => {
+            if !crate::charter::check_report_note(&report.note) {
+                return Err(BlockError::InvalidField("note"));
+            }
+            match &report.request {
+                Some(request) if !crate::charter::is_request_id(request) => {
+                    return Err(BlockError::InvalidField("request"));
+                }
+                None if report.verb == crate::charter::ReportVerb::Answer => {
+                    return Err(BlockError::InvalidField("request"));
+                }
+                _ => {}
+            }
+            if let Some(key) = &report.key {
+                crate::question::check_question("key", &[], Some(key))
+                    .map_err(|_| BlockError::InvalidField("key"))?;
+            }
+            Ok(())
+        }
         Action::WorkstreamLinkTask(link) => {
             check(
                 validate_id("workstream_id", &link.workstream_id),
@@ -737,6 +813,11 @@ fn check_propose(propose: &ProposeTask) -> Result<(), BlockError> {
     }
     if let Some(source) = &propose.promote_from {
         check(validate_id("promote_from", source), "promote_from")?;
+    }
+    if let Some(request) = &propose.request {
+        if !crate::charter::is_request_id(request) {
+            return Err(BlockError::InvalidField("request"));
+        }
     }
     Ok(())
 }
@@ -814,42 +895,89 @@ fn check_gates(gates: &[String]) -> Result<(), BlockError> {
     Ok(())
 }
 
-/// Refuses actions outside a workstream conversation's workstream.
+/// Refuses actions outside the conversation's scope. Only the global conversation routes work,
+/// and only a coordinator reports to it or names a routed request.
 fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockError> {
-    let BlockScope::Workstream(workstream) = scope else {
-        return Ok(());
+    let inside = |action: &Action| match scope {
+        BlockScope::Global => global_scope(action),
+        BlockScope::Workstream(workstream) => workstream_scope(action, workstream),
+        BlockScope::Project(project) => project_scope(action, project),
     };
-    for action in actions {
-        let inside = match action {
-            Action::WorkstreamCreate(_) => false,
-            Action::WorkstreamUpdate(update) => update.workstream_id == workstream,
-            Action::ObjectiveAdd(add) => {
-                add.workstream_ref.is_none() && add.workstream_id.as_deref() == Some(workstream)
-            }
-            // The owning workstream of a revised objective is checked against the store.
-            Action::ObjectiveRevise(_) => true,
-            // A task proposed here is always linked to this workstream.
-            Action::TaskPropose(propose) => {
-                propose.workstream_ref.is_none()
-                    && propose.workstream_id.as_deref() == Some(workstream)
-            }
-            // The workstream that owns a cancelled or retried task is checked against the store.
-            Action::TaskCancel(_) | Action::TaskRetry(_) => true,
-            Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
-            // The owning workstream of a revised, held or merged task is checked against the store.
-            Action::TaskRevise(_)
-            | Action::DeliveryMerge(_)
-            | Action::DecisionHold(_)
-            | Action::DecisionAsk(_)
-            | Action::TaskMessage(_) => true,
-            // A workstream conversation never removes a project.
-            Action::ProjectRemove(_) => false,
-        };
-        if !inside {
-            return Err(BlockError::OutOfScope);
+    if actions.iter().all(inside) {
+        Ok(())
+    } else {
+        Err(BlockError::OutOfScope)
+    }
+}
+
+/// The global conversation may do anything but report, and a task it proposes serves no routed
+/// request.
+fn global_scope(action: &Action) -> bool {
+    match action {
+        Action::CoordinatorReport(_) => false,
+        Action::TaskPropose(propose) => propose.request.is_none(),
+        _ => true,
+    }
+}
+
+fn workstream_scope(action: &Action, workstream: &str) -> bool {
+    match action {
+        Action::WorkstreamCreate(_) => false,
+        Action::WorkstreamUpdate(update) => update.workstream_id == workstream,
+        Action::ObjectiveAdd(add) => {
+            add.workstream_ref.is_none() && add.workstream_id.as_deref() == Some(workstream)
+        }
+        // The owning workstream of a revised objective is checked against the store.
+        Action::ObjectiveRevise(_) => true,
+        // A task proposed here is always linked to this workstream.
+        Action::TaskPropose(propose) => {
+            propose.workstream_ref.is_none()
+                && propose.workstream_id.as_deref() == Some(workstream)
+                && propose.request.is_none()
+        }
+        // The workstream that owns a cancelled or retried task is checked against the store.
+        Action::TaskCancel(_) | Action::TaskRetry(_) => true,
+        Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
+        // The owning workstream of a revised, held or merged task is checked against the store.
+        Action::TaskRevise(_)
+        | Action::DeliveryMerge(_)
+        | Action::DecisionHold(_)
+        | Action::DecisionAsk(_)
+        | Action::TaskMessage(_) => true,
+        // A workstream conversation never removes a project, routes or reports.
+        Action::ProjectRemove(_) | Action::CoordinatorRoute(_) | Action::CoordinatorReport(_) => {
+            false
         }
     }
-    Ok(())
+}
+
+/// A coordinator acts only on its own project (`project` is its code): tasks it proposes there,
+/// with no workstream, and tasks of the project, which the daemon checks against the store. It
+/// never touches workstreams, removes the project or routes work, so depth stays two.
+fn project_scope(action: &Action, project: &str) -> bool {
+    match action {
+        Action::TaskPropose(propose) => {
+            propose.project == project
+                && propose.workstream_id.is_none()
+                && propose.workstream_ref.is_none()
+                && propose.objective_id.is_none()
+        }
+        Action::TaskCancel(_)
+        | Action::TaskRetry(_)
+        | Action::TaskRevise(_)
+        | Action::DeliveryMerge(_)
+        | Action::DecisionHold(_)
+        | Action::DecisionAsk(_)
+        | Action::TaskMessage(_)
+        | Action::CoordinatorReport(_) => true,
+        Action::WorkstreamCreate(_)
+        | Action::WorkstreamUpdate(_)
+        | Action::ObjectiveAdd(_)
+        | Action::ObjectiveRevise(_)
+        | Action::WorkstreamLinkTask(_)
+        | Action::ProjectRemove(_)
+        | Action::CoordinatorRoute(_) => false,
+    }
 }
 
 /// The canonical form of one action, as stored.
@@ -878,6 +1006,8 @@ impl Action {
             Self::DecisionHold(_) => ActionKind::DecisionHold,
             Self::DecisionAsk(_) => ActionKind::DecisionAsk,
             Self::TaskMessage(_) => ActionKind::TaskMessage,
+            Self::CoordinatorRoute(_) => ActionKind::CoordinatorRoute,
+            Self::CoordinatorReport(_) => ActionKind::CoordinatorReport,
         }
     }
 
@@ -922,6 +1052,16 @@ impl Action {
             Self::DecisionHold(hold) => Some(hold.task_id.as_str()),
             Self::DecisionAsk(ask) => Some(ask.task_id.as_str()),
             Self::TaskMessage(message) => Some(message.task_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The routed request a `task.propose` or a `coordinator.report` names, which the daemon
+    /// checks is an open request of the coordinator's project.
+    pub fn routed_request(&self) -> Option<&str> {
+        match self {
+            Self::TaskPropose(propose) => propose.request.as_deref(),
+            Self::CoordinatorReport(report) => report.request.as_deref(),
             _ => None,
         }
     }
@@ -992,6 +1132,22 @@ impl Action {
             },
             // A newer message to the same task replaces one the user has not approved yet.
             Self::TaskMessage(message) => format!("task.message:{}", message.task_id),
+            // The same work routed to the same project again is the same card.
+            Self::CoordinatorRoute(route) => {
+                let digest = Sha256::digest(normalize(&route.work).as_bytes());
+                format!("coordinator.route:{}:{}", route.project, hex(&digest))
+            }
+            // A request has one answer, so a newer answer replaces a pending one. Other reports
+            // are their text.
+            Self::CoordinatorReport(report) => match (report.verb, &report.request) {
+                (crate::charter::ReportVerb::Answer, Some(request)) => {
+                    format!("coordinator.report:answer:{request}")
+                }
+                (verb, _) => {
+                    let digest = Sha256::digest(normalize(&report.note).as_bytes());
+                    format!("coordinator.report:{}:{}", verb.as_str(), hex(&digest))
+                }
+            },
         }
     }
 }
@@ -1452,7 +1608,7 @@ mod tests {
     }
 
     #[test]
-    fn the_action_kind_list_names_all_fourteen_kinds() {
+    fn the_action_kind_list_names_all_sixteen_kinds() {
         let names = ActionKind::ALL.map(ActionKind::as_str);
         assert_eq!(
             names,
@@ -1471,6 +1627,8 @@ mod tests {
                 "decision.hold",
                 "decision.ask",
                 "task.message",
+                "coordinator.route",
+                "coordinator.report",
             ]
         );
         assert_eq!(
@@ -2656,5 +2814,163 @@ mod tests {
             assert_eq!(filter.push(&chunk), "");
         }
         assert_eq!(filter.finish().block, Some(HeldBlock::Overflow));
+    }
+}
+
+/// Project coordinators (DPES-1108 phase 7): the project scope and the two coordinator kinds.
+#[cfg(test)]
+mod coordinator_tests {
+    use super::*;
+
+    const CODE: &str = "p-3fa9c1d2";
+
+    fn block(actions: &str) -> String {
+        format!("{ACTION_FENCE}\n{{\"mcao_actions\":1,\"actions\":[{actions}]}}\n```")
+    }
+
+    fn in_project(actions: &str) -> Result<ActionBlock, BlockError> {
+        parse_block(&block(actions), BlockScope::Project(CODE))
+    }
+
+    const ROUTE: &str =
+        r#"{"kind":"coordinator.route","project":"p-3fa9c1d2","work":"Fix the nightly export."}"#;
+    const ANSWER: &str = r#"{"kind":"coordinator.report","verb":"answer","request":"r-0a1b2c","note":"The export runs again."}"#;
+    const OWN_TASK: &str = r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"Fix the export.","request":"r-0a1b2c"}"#;
+
+    #[test]
+    fn a_coordinator_acts_on_its_own_project_and_answers_its_requests() {
+        let parsed = in_project(&format!(
+            "{OWN_TASK},{ANSWER},{},{}",
+            r#"{"kind":"task.retry","task_id":"task-1"}"#,
+            r#"{"kind":"decision.ask","task_id":"task-1","question":"Which?"}"#
+        ))
+        .unwrap();
+        assert_eq!(parsed.actions().len(), 4);
+        assert_eq!(parsed.actions()[0].routed_request(), Some("r-0a1b2c"));
+        assert_eq!(parsed.actions()[1].routed_request(), Some("r-0a1b2c"));
+    }
+
+    #[test]
+    fn a_coordinator_cannot_route_reach_another_project_or_touch_workstreams() {
+        for refused in [
+            ROUTE.to_owned(),
+            r#"{"kind":"task.propose","project":"p-00000000","objective":"Elsewhere."}"#.to_owned(),
+            r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"X.","workstream_id":"ws-1"}"#.to_owned(),
+            r#"{"kind":"workstream.create","title":"New"}"#.to_owned(),
+            r#"{"kind":"workstream.link_task","workstream_id":"ws-1","task_id":"task-1"}"#.to_owned(),
+            r#"{"kind":"project.remove","project":"p-3fa9c1d2"}"#.to_owned(),
+        ] {
+            assert_eq!(in_project(&refused).unwrap_err(), BlockError::OutOfScope, "{refused}");
+        }
+    }
+
+    #[test]
+    fn only_the_global_conversation_routes_and_only_a_coordinator_reports() {
+        assert!(parse_block(&block(ROUTE), BlockScope::Global).is_ok());
+        assert_eq!(
+            parse_block(&block(ROUTE), BlockScope::Workstream("ws-1")).unwrap_err(),
+            BlockError::OutOfScope
+        );
+        for scope in [BlockScope::Global, BlockScope::Workstream("ws-1")] {
+            assert_eq!(
+                parse_block(&block(ANSWER), scope).unwrap_err(),
+                BlockError::OutOfScope
+            );
+            // Only a coordinator's task serves a routed request.
+            assert_eq!(
+                parse_block(&block(OWN_TASK), scope).unwrap_err(),
+                BlockError::OutOfScope
+            );
+        }
+    }
+
+    #[test]
+    fn coordinator_fields_are_checked() {
+        let refused = [
+            (
+                r#"{"kind":"coordinator.route","project":"billing","work":"X."}"#,
+                "project",
+            ),
+            (
+                r#"{"kind":"coordinator.route","project":"p-3fa9c1d2","work":" "}"#,
+                "work",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"answer","note":"Done."}"#,
+                "request",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"caveat","request":"R-1","note":"Done."}"#,
+                "request",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"caveat","note":""}"#,
+                "note",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"blocked","note":"Stuck.","key":"Bad Key"}"#,
+                "key",
+            ),
+            (
+                r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"X.","request":"q-1"}"#,
+                "request",
+            ),
+        ];
+        for (action, field) in refused {
+            let scope = if action.contains("route") {
+                BlockScope::Global
+            } else {
+                BlockScope::Project(CODE)
+            };
+            assert_eq!(
+                parse_block(&block(action), scope).unwrap_err(),
+                BlockError::InvalidField(field),
+                "{action}"
+            );
+        }
+        assert_eq!(
+            parse_block(
+                &block(r#"{"kind":"coordinator.report","verb":"later","note":"X."}"#),
+                BlockScope::Project(CODE)
+            )
+            .unwrap_err(),
+            BlockError::Malformed
+        );
+        // A caveat or a blocker needs no request.
+        assert!(in_project(
+            r#"{"kind":"coordinator.report","verb":"caveat","note":"Slow CI.","key":"ci-slow"}"#
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn an_answer_replaces_a_pending_answer_to_the_same_request() {
+        let first = in_project(ANSWER).unwrap().actions()[0].canonical(None);
+        let second = in_project(
+            r#"{"kind":"coordinator.report","verb":"answer","request":"r-0a1b2c","note":"Fixed and merged."}"#,
+        )
+        .unwrap()
+        .actions()[0]
+            .canonical(None);
+        assert_eq!(first.subject, "coordinator.report:answer:r-0a1b2c");
+        assert_eq!(first.subject, second.subject);
+        assert_ne!(first.digest, second.digest);
+        let route = parse_block(&block(ROUTE), BlockScope::Global)
+            .unwrap()
+            .actions()[0]
+            .canonical(None);
+        assert!(route.subject.starts_with("coordinator.route:p-3fa9c1d2:"));
+        assert!(route.json.contains(r#""work":"Fix the nightly export.""#));
+    }
+
+    #[test]
+    fn a_task_propose_without_a_request_keeps_its_old_digest() {
+        let text =
+            r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"Fix the export."}"#;
+        let canonical = parse_block(&block(text), BlockScope::Global)
+            .unwrap()
+            .actions()[0]
+            .canonical(None);
+        assert!(!canonical.json.contains("request"));
     }
 }
