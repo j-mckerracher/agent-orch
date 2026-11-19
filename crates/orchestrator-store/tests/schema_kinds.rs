@@ -7,12 +7,16 @@
 //! to an empty database and writes one row of each kind through a raw connection, so the
 //! database's own CHECKs are what is tested.
 
+use std::borrow::Cow;
 use std::path::Path;
 
 use orchestrator_core::orchestrator_action::ActionKind;
 use orchestrator_store::{SqliteStore, WakeKind};
+use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::Connection;
+
+static MIGRATIONS: Migrator = sqlx::migrate!("./migrations");
 
 /// Every wake kind. The match below has no wildcard, so a new kind does not compile until it is
 /// listed here too.
@@ -95,7 +99,43 @@ fn every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("store.sqlite");
     drop(SqliteStore::new(&path).unwrap());
+    takes_every_kind_and_keeps_every_column(&path);
+}
 
+/// A development database of phase 8 alone ran 0071 before 0065 to 0070 existed. The runner
+/// applies the missing lower versions when the store opens, and the result is the same schema.
+#[test]
+fn a_database_that_ran_0071_first_gets_0065_to_0070_and_the_same_schema() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    runtime().block_on(async {
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .unwrap();
+        let phase_8_alone = Migrator {
+            migrations: Cow::Owned(
+                MIGRATIONS
+                    .iter()
+                    .filter(|m| m.version <= 64 || m.version == 71)
+                    .cloned()
+                    .collect(),
+            ),
+            ..Migrator::DEFAULT
+        };
+        phase_8_alone.run(&mut connection).await.unwrap();
+        connection.close().await.unwrap();
+    });
+    drop(SqliteStore::new(&path).unwrap());
+    takes_every_kind_and_keeps_every_column(&path);
+}
+
+/// Writes one row of every action and wake kind through a raw connection and checks the columns
+/// every phase added.
+fn takes_every_kind_and_keeps_every_column(path: &Path) {
     for statement in [
         "INSERT INTO conversations (id, target_kind) VALUES ('conversation:global', 'global')",
         "INSERT INTO conversation_turns (id, conversation_id, state, runtime_name, runtime_version) \
@@ -103,7 +143,7 @@ fn every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind
         "INSERT INTO conversation_turns (id, conversation_id, state, runtime_name, runtime_version) \
          VALUES ('turn-2', 'conversation:global', 'completed', 'rt', '1.0.0')",
     ] {
-        run(&path, statement, &[]).unwrap();
+        run(path, statement, &[]).unwrap();
     }
 
     // One proposal of each kind core parses; a turn holds at most ten (`idx BETWEEN 0 AND 9`).
@@ -114,7 +154,7 @@ fn every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind
         );
         let (idx, digest) = ((position % 10).to_string(), format!("{position:064x}"));
         run(
-            &path,
+            path,
             "INSERT INTO action_proposals \
              (id, scope, turn_id, idx, kind, params_json, digest, subject) \
              VALUES (?, 'conversation:global', ?, CAST(? AS INTEGER), ?, '{}', ?, 's')",
@@ -123,7 +163,7 @@ fn every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind
         .unwrap_or_else(|error| panic!("{}: {error}", kind.as_str()));
     }
     assert!(run(
-        &path,
+        path,
         "INSERT INTO action_proposals (id, scope, turn_id, idx, kind, params_json, digest, subject) \
          VALUES ('unknown', 'conversation:global', 'turn-2', 9, 'task.delete', '{}', ?, 's')",
         &[&format!("{:064x}", 99)],
@@ -140,7 +180,7 @@ fn every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind
             "noticed"
         };
         run(
-            &path,
+            path,
             "INSERT INTO wake_records \
              (id, scope, event_kind, subject, dedupe_key, notice, needs_model, state) \
              VALUES (?, 'conversation:global', ?, 'subject', ?, 'A notice.', \
@@ -157,13 +197,13 @@ fn every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind
     }
 
     // Every phase's columns survive the rebuilds.
-    assert!(columns(&path, "conversation_turns").contains(&"pull_request_links".to_owned()));
-    let tasks = columns(&path, "tasks");
+    assert!(columns(path, "conversation_turns").contains(&"pull_request_links".to_owned()));
+    let tasks = columns(path, "tasks");
     for column in ["coordinator_project_id", "routed_request_id"] {
         assert!(tasks.contains(&column.to_owned()), "{column}");
     }
-    assert!(columns(&path, "orchestrator_settings").contains(&"autonomous_actions".to_owned()));
-    let proposals = columns(&path, "action_proposals");
+    assert!(columns(path, "orchestrator_settings").contains(&"autonomous_actions".to_owned()));
+    let proposals = columns(path, "action_proposals");
     for column in ["denial", "grant_tried"] {
         assert!(proposals.contains(&column.to_owned()), "{column}");
     }
