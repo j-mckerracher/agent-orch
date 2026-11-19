@@ -141,7 +141,7 @@ DPES-1108, branch `feat/DPES-1108_coordinators`, based on phase 4 (`feat/DPES-11
   - A trigger keeps the owner write-once, keeps it in the task's own project, and requires an open request of that project.
 - **11. A task the coordinator proposes never joins "Global tasks".** `default_link` is false for project scope.
 - **12. A revised task keeps its owner.** It keeps the request too, while that request is open. A promotion inherits the owner from the scope of the proposal that made it.
-- **13. Ownership counts only while the coordinator is active.** The scope queries read the owner through `coordinator_scopes.removed = 0`. If the coordinator is removed, its finished or failed tasks go back to Global: a retry then wakes Global, not a removed conversation. Removal itself is refused while a task is open (decision 19).
+- **13. Ownership counts only while the coordinator is active.** The scope queries read the owner through `coordinator_scopes.removed = 0`. If the coordinator is removed, its finished or failed tasks go back to Global: a retry then wakes Global, not a removed conversation. Removal itself is refused while a task is open (decision 24).
 
 ### Wakes
 
