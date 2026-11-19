@@ -1,8 +1,22 @@
 # 10 Etiquette, pull request links and wake caps
 
-Setup: [00-setup.md](00-setup.md), sections 2a and 2b. Monitoring **On**.
+Setup: [00-setup.md](00-setup.md), sections 6, 7 and 8. **Let the orchestrator act on its own** is on. Monitoring **On**.
 
 Sources: `docs/chat.md` "How the orchestrator writes to you"; `docs/settings.md` "Automatic replies"; `docs/design/firstmate-behavior-decisions.md` "Phase 8".
+
+**Messages used here.** Send them to Global word for word. Each step that sends one and expects a task is **Model-dependent** (RUNNER.md rule 8).
+
+- **Failing task message** (NO-CHANGE, setup section 8b; the task ends `Failed` after the daemon's one retry):
+
+  ```text
+  Propose exactly one action and nothing else: task.propose for project manual-test-project, task_kind Implement, delivery ReportOnly, objective "Read README.md. Do not create, change or delete any file."
+  ```
+
+- **Held task message** (start the hold helper for `HOLD-1` first, setup section 8c):
+
+  ```text
+  Propose exactly one action and nothing else: task.propose for project manual-test-project, task_kind Investigate, delivery ReportOnly, objective "HOLD-1: Read README.md and report its first line. Change no file."
+  ```
 
 ---
 
@@ -10,32 +24,48 @@ Sources: `docs/chat.md` "How the orchestrator writes to you"; `docs/settings.md`
 
 Purpose: the reply rules reach the agent on user and wake turns alike.
 **Source:** `docs/chat.md` ("Every reply, including automatic updates, follows the same rules"); Phase 8 items 1 and 2.
-**Preconditions:** Prompt log. One user turn and one wake turn have run (for example TC-W-04).
+**Real agent:** Sonnet (alias), medium, for the chat turns and two NO-CHANGE runs. Cost: medium.
+**Preconditions:** Prompt log running (setup section 7).
 
-1. **Prompt log:** read a `turn` entry from a user turn and one from a wake turn.
+1. Send the failing task message. Wait until the task has failed, then up to 5 minutes for the wake turn.
+2. **Prompt log:** read the turn entry of step 1's user turn and the turn entry of the wake turn.
 
 **Expected:** Both contain the paragraph that starts "How to write to the user: give outcomes, what they mean for the user, and the next decision the user has." and contains "Do not type pull request links; name a pull request by its number." It comes just before `Current message:`.
 
-**Known limitations:** whether a real model follows these rules (outcomes first, no internal words such as slot, wake or attempt, a last paragraph that restates every outcome and open decision) can only be judged with a real agent. **Real agent:** with Codex or Claude Code as the chat agent, ask Global `What happened to my last task?` after a failed task, and check the reply against the rules in `docs/chat.md`.
+**Known limitations:** whether the model follows these rules (outcomes first, no internal words such as slot, wake or attempt, a last paragraph that restates every outcome and open decision) is a judgment of wording. The runner copies the replies (RUNNER.md rule 9) and does not judge them; a human can check them against `docs/chat.md`.
 
 ## TC-E-02 A link the reply types is not a recorded link
 
 Purpose: pull request links come from the app's records, never from the model's text.
 **Source:** `docs/chat.md` ("The app builds each link from its own records, not from the reply text"); Phase 8 items 6 and 7.
-**Preconditions:** `next-reply.txt` holds `The pull request is ready: https://github.com/example/repo/pull/999`, with no action block.
+**Real agent:** Sonnet (alias), medium. Cost: low.
+**Preconditions:** None.
 
-1. Send `Where is the pull request?` to Global.
+1. Send this message to Global:
+
+   ```text
+   Reply with exactly this sentence and propose no action: The pull request is ready: https://github.com/example/repo/pull/999
+   ```
+
 2. Look under the reply. Click the URL in the reply text.
 
 **Expected:** The reply text shows the URL, but there is no "Pull requests" list under the reply and no "Copy the link to pull request 999" button. Clicking the URL does not open a browser or change the app window.
+
+**Model-dependent:** if the reply does not contain the URL, count a miss.
 
 ## TC-E-03 A recorded pull request is listed under the reply
 
 Purpose: a turn that acts on or reports a task with a pull request shows its link.
 **Source:** `docs/chat.md` ("the links are listed under the reply as `Pull request 12: https://github.com/<owner>/<repo>/pull/12`"); Phase 8 items 4 to 7.
-**Preconditions:** A task of a `direct-pr` project with a pull request MCAO recorded and bound to its GitHub repository. That needs a GitHub repository you may push to, the GitHub command line signed in, and a candidate (the fake agent's `write` mode). **BLOCKED** until all three are available.
+**Real agent:** Sonnet (alias), medium. Cost: medium.
+**Preconditions:** `BLOCKED` unless the person who asked for the run provides a GitHub repository you may push to, registered as a `direct-pr` project, with the GitHub command line signed in. A WRITE task (setup section 8b) in that project, delivered as a pull request MCAO recorded and bound to the repository, is then needed. The fixture projects have no remote. Without all of this, record `BLOCKED` with that reason and do not run the steps.
 
-1. Put a `task.retry` or `decision.ask` for that task in `next-reply.txt`. Send `Check on the pull request`. Clear `next-reply.txt`.
+1. Send this message to Global. Replace `<task id>` with the id of that task.
+
+   ```text
+   Propose exactly one action and nothing else: decision.ask for the task <task id>, question "Is the pull request ready to merge?", options ["yes", "no"], key "pr-ready".
+   ```
+
 2. Look under the reply.
 3. Click **Copy the link to pull request N** and paste the clipboard into a text editor.
 
@@ -50,7 +80,8 @@ Purpose: a turn that acts on or reports a task with a pull request shows its lin
 
 Purpose: wake caps were raised for autonomous supervision.
 **Source:** `docs/settings.md` ("The defaults are 20 replies per hour and 160 per day, with no token budget").
-**Preconditions:** A new data directory (setup section 7).
+**Real agent:** none. Cost: low.
+**Preconditions:** A new data directory (setup section 9).
 
 1. Open **Settings > Automatic replies**.
 
@@ -60,29 +91,31 @@ Purpose: wake caps were raised for autonomous supervision.
 
 Purpose: periodic checks cannot spend the cap that outcome events need.
 **Source:** `docs/settings.md` ("Checks on running work may use only half of each limit. Once they have, the next check is not made, and no notice is shown for it; events such as a failed task … still get a reply from the other half"); Phase 8 item 10.
+**Real agent:** Sonnet (alias), medium, for the chat turns, one work check and four NO-CHANGE runs. Cost: medium.
 **Preconditions:** **Settings > Automatic replies**: replies per hour `2`, saved with **Save reply limits**. **Checks on running work**: base interval `1` minute, saved with **Save check settings**. Acting on its own on.
 
-1. Write `hang` to `task-mode`. Put the standard `task.propose` in `next-reply.txt` and send `Run the README task`. When the reply arrives, write `MCAO_QUIET` to `next-reply.txt`. A user turn never hides the token, so do not send a message while it is in the file.
+1. Start the hold helper for `HOLD-1`. Send the held task message. Stop the helper when the task reads `Running`.
 2. Wait five minutes. Read Global.
-3. Write `fail` to `task-mode`. Put the standard `task.propose` in `next-reply.txt` and send `Run it again`. When the reply arrives, write `The task failed.` to `next-reply.txt`.
-4. Wait up to two minutes. Read Global.
-5. Repeat step 3 for a third task. Wait up to two minutes. Read Global and its header.
+3. Send the failing task message. Wait until the task has failed, then up to 5 minutes.
+4. Read Global.
+5. Repeat step 3 for a second failing task. Read Global and its header.
 
 **Expected:**
 
-- Step 2: one collapsed line reads "Checked 1 update. Nothing needs you." It still says 1 after five minutes: half of 2 is 1, and later checks are not made or shown.
-- Step 4: the failure notice is followed by the reply "The task failed.".
-- Step 5: the third failure still shows its notice, but no reply. The header reads "Monitoring paused: limit reached" (it may end with ", resumes about" and a time).
+- Step 2: exactly one work check got a turn: one collapsed line "Checked 1 update. Nothing needs you.", or one reply from the model to the check. Nothing more after five minutes: half of 2 is 1, and later checks are not made or shown.
+- Step 4: the failure notice is followed by a reply from the orchestrator; any wording passes.
+- Step 5: the second failure still shows its notice, but no reply. The header reads "Monitoring paused: limit reached" (it may end with ", resumes about" and a time).
 
-**Reset:** cancel the running task. Set the caps back to `20` and `160`, the base interval to `10`, and `task-mode` to `succeed`.
+**Reset:** release `HOLD-1` and cancel the task. Set the caps back to `20` and `160` and the base interval to `10`.
 **Known limitations:** caps are counted per conversation. Each workstream and each active coordinator has its own 20 and 160.
 
 ## TC-E-06 A quiet automatic update shows nothing but the fold
 
 Purpose: an update with nothing to tell the user posts no reply text.
 **Source:** `docs/chat.md` ("An automatic update about running work posts nothing when there is nothing to tell you"); Phase 8 item 3.
-**Preconditions:** As TC-W-06.
+**Real agent:** Sonnet (alias), medium. Cost: low.
+**Preconditions:** As TC-W-06, in this file's clean data directory.
 
-1. Run TC-W-06.
+1. Run TC-W-06 (`02-wake.md`), including its Reset.
 
-**Expected:** As TC-W-06: only the collapsed line "Checked N updates. Nothing needs you.", and the token `MCAO_QUIET` is never shown. A quiet reply never hides a failure (TC-W-17) or a report (TC-W-18).
+**Expected:** As TC-W-06: only the collapsed line "Checked N updates. Nothing needs you.", and the token `MCAO_QUIET` is never shown. TC-W-17 and TC-W-18, which check that a quiet reply never hides a failure or a report, are `BLOCKED` with a real agent.

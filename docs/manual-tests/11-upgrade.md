@@ -10,15 +10,21 @@ Sources: `docs/design/firstmate-behavior-decisions.md` "Integration" I0 and I1, 
 
 Purpose: migrations 0064 to 0072 apply to a real older database and lose nothing.
 **Source:** Integration I0 ("The stack's migrations are numbered 0064 to 0072"); Phase 6 item 1 (each note moves into the preferences of its own scope); Phase 8 item 11 (the old default caps 6 and 40 move to 20 and 160).
-**Preconditions:** `sqlite3` is installed. A second checkout of the commit before this change: `git worktree add ../mcao-before 8eff2599^1`. Build it as in setup section 1, inside that checkout. The fake agent from setup section 2.
+**Real agent:** Sonnet (alias), medium, for the chat turns of both builds and two NO-CHANGE runs. Cost: medium.
+**Preconditions:** `sqlite3` is installed. Setup sections 1 to 3 done for this repository. A second checkout of the commit before this change: `git worktree add ../mcao-before 8eff2599^1`. Build it as in setup section 1, inside that checkout. Record its SHA in `ENVIRONMENT.md`. Both builds use the real agent of setup section 4.
 
-1. Start the old build (setup section 3 from `../mcao-before`), with `AGENT_ORCH_DATA_DIR="$HOME/agent-orch-manual-test-upgrade"`. Do setup sections 4 and 5, steps 1 to 4.
+1. Start the old build with the command of setup section 4, run from `../mcao-before`, with `AGENT_ORCH_DATA_DIR="$HOME/agent-orch-manual-test-upgrade"`. Do setup section 5, and section 6 steps 1 to 4. If the old build lacks a setting, skip it and note that in `RESULTS.md`.
 2. In **Settings > Notes for the orchestrator**, choose **Global** under "Notes for", type `Keep pull requests small` in "New note" and click **Add note**.
-3. Create a workstream `Old stream` (TC-S-01 and TC-S-02). Back in **Notes for the orchestrator**, choose **One workstream**, pick `Old stream`, and add the note `Old stream note`.
-4. In Global, make the agent propose the standard task with `task-mode` `fail`. Approve it and wait until it is `Failed`.
-5. Make the agent propose a second standard task. Leave its card pending.
+3. Create a workstream `Old stream`: in Global, send the message below and approve its card (**Model-dependent**). Back in **Notes for the orchestrator**, choose **One workstream**, pick `Old stream`, and add the note `Old stream note`.
+
+   ```text
+   Propose exactly one action and nothing else: workstream.create with title "Old stream", summary "Made before the upgrade" and ref "a".
+   ```
+
+4. In Global, send the standard task message of `01-dispatch.md`. Approve the card and wait until the task is `Failed`. **Model-dependent.**
+5. Send the same message again. Leave its card pending. **Model-dependent.**
 6. Quit the app. Wait two minutes.
-7. Start the new build from this repository with the same `AGENT_ORCH_DATA_DIR`.
+7. Start the new build from this repository with the command of setup section 4 and the same `AGENT_ORCH_DATA_DIR`.
 8. Run `sqlite3 "$HOME/agent-orch-manual-test-upgrade/store.sqlite" "SELECT version, success FROM _sqlx_migrations WHERE version >= 63 ORDER BY version"`.
 9. Open **Settings > Preferences and learnings**. Read **Shared preferences**. Choose `Old stream` in "Preferences for".
 10. Open **Settings > Automatic replies**.

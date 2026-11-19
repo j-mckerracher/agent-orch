@@ -115,15 +115,15 @@ With **Let the orchestrator act on its own** on, the daemon runs the actions it 
 
 ### 8b. Worker objectives
 
-A task's objective is the worker's instruction. These objectives make the worker end the same way every time. Tests use them word for word inside their messages.
+A task's objective is the worker's instruction. These objectives make the worker end the same way every time. Tests use them word for word inside their messages. A test may put a short label in front, such as `Q-TASK:`, so a later message can name the task by the start of its objective.
 
 | Name | Kind | Delivery | Objective | Outcome |
 | --- | --- | --- | --- | --- |
 | WRITE | Implement | LocalReview | `Add the line 'Manual test line.' at the end of README.md. Change no other file.` | A candidate with one changed file. The task is `Verifying` and waits for review. |
 | NO-CHANGE | Implement | ReportOnly | `Read README.md. Do not create, change or delete any file.` | `Failed` with "The agent exited without changing any files." The daemon retries once; the retry fails the same way. |
 | REPORT | Investigate | ReportOnly | `Read README.md and report its first line. Change no file.` | `Succeeded` with a report, no file changed. |
-| ASK | Investigate | ReportOnly | `Change no file. Add the line 'needs-decision [key=readme-word] Should the README line say alpha or beta?' to the end of your status file, then end your turn.` | `Waiting for a reply`, with the question under **Needs your decision**. After the answer, the resumed run ends `Succeeded`. |
-| BLOCK | Investigate | ReportOnly | `Change no file. Add the line 'blocked The test database does not answer.' to the end of your status file, then end your turn.` | `Waiting for a reply`, blocked. After a message, the resumed run ends `Succeeded`. |
+| ASK | Investigate | ReportOnly | `Change no file. Add the line 'needs-decision [key=readme-word] Should the README line say alpha or beta?' to the end of your status file, then end your turn. When MCAO resumes you, report the answer you got and finish.` | `Waiting for a reply`, with the question under **Needs your decision**. After the answer, the resumed run ends `Succeeded`. |
+| BLOCK | Investigate | ReportOnly | `Change no file. Add the line 'blocked The test database does not answer.' to the end of your status file, then end your turn. When MCAO resumes you, report the first line of README.md and finish.` | `Waiting for a reply`, blocked. After a message, the resumed run ends `Succeeded`. |
 | HOLD | Investigate | ReportOnly | `HOLD-<n>: Read README.md and report its first line. Change no file.` | With the hold helper (8c), `Running` until you release it. |
 
 The worker writes the status file through its file tools; the daemon grants it that one folder outside the worktree. A run that ends without the expected status line is a model miss (RUNNER.md rule 8), not an app failure.
