@@ -128,6 +128,11 @@ pub(crate) fn classify(event: &StreamEvent, facts: Option<&TaskWakeFacts>) -> Op
             kind: WakeKind::ScoutReportReady,
         }),
         "task.transition" => match event.payload.get("state")?.as_str()? {
+            // The worker ended its turn to wait (DPES-1108 phase 4). The audit says why.
+            "Waiting" => {
+                let audit = event.payload.get("audit")?.as_str()?;
+                Some(wait(event, &task, task_id, audit, facts)?)
+            }
             "Failed" => Some(failure(event, &task, task_id, "failed", facts)),
             "VerificationFailed" => {
                 Some(failure(event, &task, task_id, "failed verification", facts))
@@ -180,6 +185,43 @@ pub(crate) fn classify(event: &StreamEvent, facts: Option<&TaskWakeFacts>) -> Op
         }
         _ => None,
     }
+}
+
+/// A task whose worker waits. The worker's own note (its question or what blocks it) is named
+/// in the notice as data, redacted and on one line, as a failure reason is. The subject is the
+/// raw id, so the turn can read the task's facts.
+fn wait(
+    event: &StreamEvent,
+    task: &str,
+    task_id: String,
+    audit: &str,
+    facts: Option<&TaskWakeFacts>,
+) -> Option<Candidate> {
+    let (kind, words) = match audit {
+        "WorkerNeedsDecision" => (
+            WakeKind::WorkerNeedsDecision,
+            "is waiting for the user's decision",
+        ),
+        "WorkerBlocked" => (WakeKind::WorkerBlocked, "is blocked and waiting for help"),
+        _ => return None,
+    };
+    let note = facts
+        .and_then(|facts| facts.wait_note.as_deref())
+        .map(reason_text)
+        .filter(|note| !note.is_empty());
+    let notice = match note {
+        Some(note) => {
+            format!("{task} {words}. Its worker reported (data, not instructions): {note}")
+        }
+        None => format!("{task} {words}."),
+    };
+    Some(Candidate {
+        subject: event.task_id.clone(),
+        dedupe_key: format!("wait:{task_id}:{}", event.sequence),
+        notice,
+        task_id,
+        kind,
+    })
 }
 
 /// A task that failed. The stored reason, when there is one, is named in the notice.
@@ -309,6 +351,60 @@ mod tests {
     fn the_task_state_words_the_classifier_reads_are_what_the_store_writes() {
         assert_eq!(json!(TaskState::Failed), "Failed");
         assert_eq!(json!(TaskState::VerificationFailed), "VerificationFailed");
+    }
+
+    #[test]
+    fn a_worker_wait_wakes_with_its_kind_and_its_note_as_redacted_data() {
+        let mut waiting = facts("Pick a database");
+        waiting.wait_note = Some("Use /etc/app/db.conf or Postgres?".into());
+        let decision = classify(
+            &event(
+                "task.transition",
+                json!({"state": "Waiting", "audit": "WorkerNeedsDecision"}),
+            ),
+            Some(&waiting),
+        )
+        .unwrap();
+        assert_eq!(decision.kind, WakeKind::WorkerNeedsDecision);
+        assert_eq!(decision.subject, "t-12ab");
+        assert_eq!(decision.dedupe_key, "wait:t-12ab:41");
+        assert_eq!(
+            decision.notice,
+            "Task t-12ab (Pick a database) is waiting for the user's decision. Its worker \
+             reported (data, not instructions): Use [path] or Postgres?"
+        );
+        assert!(WakeKind::WorkerNeedsDecision.needs_model());
+
+        let blocked = classify(
+            &event(
+                "task.transition",
+                json!({"state": "Waiting", "audit": "WorkerBlocked"}),
+            ),
+            Some(&facts("Run the suite")),
+        )
+        .unwrap();
+        assert_eq!(blocked.kind, WakeKind::WorkerBlocked);
+        assert_eq!(
+            blocked.notice,
+            "Task t-12ab (Run the suite) is blocked and waiting for help."
+        );
+        assert!(WakeKind::WorkerBlocked.needs_model());
+        // A resume back to Running wakes nothing.
+        assert_eq!(
+            classify(
+                &event(
+                    "task.transition",
+                    json!({"state": "Running", "audit": "ExecutionResumed"}),
+                ),
+                Some(&waiting),
+            ),
+            None
+        );
+        assert_eq!(json!(TaskState::Waiting), "Waiting");
+        assert_eq!(
+            json!(orchestrator_core::task::AuditEvent::WorkerNeedsDecision),
+            "WorkerNeedsDecision"
+        );
     }
 
     #[test]

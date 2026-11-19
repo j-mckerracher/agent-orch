@@ -810,6 +810,13 @@ fn task_line(task: &OpenTask) -> String {
                 line.push_str(&reason);
             }
         }
+        // The worker ended its turn; an answer or a task.message resumes it (DPES-1108 phase 4).
+        TaskState::Waiting => {
+            line.push_str("; worker waiting for a reply");
+            if let Some(minutes) = task.minutes_in_state {
+                line.push_str(&format!(" {minutes} min"));
+            }
+        }
         TaskState::Verifying => {
             let files = task.changed_files.map(|count| format!("{count} files"));
             let waited = task
@@ -962,7 +969,8 @@ mod tests {
             actions.contains(concat!(
                 "Action kinds: workstream.create, workstream.update, objective.add, ",
                 "objective.revise, task.propose, task.cancel, task.retry, workstream.link_task, ",
-                "task.revise, delivery.merge, project.remove, decision.hold, decision.ask\n"
+                "task.revise, delivery.merge, project.remove, decision.hold, decision.ask, ",
+                "task.message\n"
             )),
             "{actions}"
         );

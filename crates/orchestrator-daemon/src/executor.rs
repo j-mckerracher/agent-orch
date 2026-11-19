@@ -1128,12 +1128,6 @@ impl Inner {
                 },
             )
             .map_err(|error| format!("cannot record session: {error}"))?;
-        // Claude and Copilot take the id the daemon chose; Codex reports its own when it starts.
-        if let (JobSession::New(id), true) = (&job.session, job.agent != CODEX_AGENT) {
-            store
-                .record_agent_session_id(&task_id, &job.session_id, id)
-                .map_err(|error| format!("cannot record the agent session id: {error}"))?;
-        }
         self.start_supervisor(job)
     }
 
@@ -1195,7 +1189,7 @@ impl Inner {
             return fail(refusal);
         }
         let Some(agent_session_id) = target.agent_session_id else {
-            return fail("the agent never reported its session id");
+            return fail("its CLI session id is not known");
         };
         let replies = store
             .pending_replies(&task_id)
@@ -1464,30 +1458,77 @@ pub(crate) fn placeholder_status_dir(config: &ExecutorConfig) -> PathBuf {
     worker_status::status_dir(&config.data_dir, "task-0000000000000000", 1)
 }
 
-/// The channel the submit-time checks measure: a new session and the placeholder directory.
-pub(crate) fn submit_channel(status_dir: &Path) -> RunChannel<'_> {
+/// The channel the submit-time checks measure: a new session and the placeholder directory,
+/// as far as the installed CLI offers them.
+pub(crate) fn submit_channel(status_dir: &Path, support: ChannelSupport) -> RunChannel<'_> {
     RunChannel {
-        status_dir,
-        session: TaskSession::New(SESSION_PLACEHOLDER),
+        status_dir: support.status_dir.then_some(status_dir),
+        session: support
+            .session
+            .then_some(TaskSession::New(SESSION_PLACEHOLDER)),
         in_place: false,
     }
 }
 
-/// What a task run passes beyond its prompt: its status directory, its session, and whether it
-/// runs in place (Codex then needs `--skip-git-repo-check`).
+/// Which status-channel flags the installed CLI offers (DPES-1108 phase 4). A CLI without
+/// them still runs, as one without the workflow agent's flags does: without `--add-dir` its
+/// worker cannot write the status file outside a full-access sandbox, and without the session
+/// flags a wait fails closed instead of waiting. Codex names its own session, and `exec
+/// resume` is a subcommand that `exec --help` cannot show, so Codex always counts as offering
+/// it; a resume on a Codex without it fails to start and fails the task.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ChannelSupport {
+    pub(crate) status_dir: bool,
+    pub(crate) session: bool,
+}
+
+impl ChannelSupport {
+    /// What the length checks measure: everything a run may add.
+    pub(crate) const ALL: Self = Self {
+        status_dir: true,
+        session: true,
+    };
+
+    fn from_help(agent: &str, help: &CliHelp) -> Self {
+        Self {
+            status_dir: help.offers("--add-dir"),
+            session: agent == CODEX_AGENT
+                || (help.offers("--session-id") && help.offers("--resume")),
+        }
+    }
+}
+
+impl ExecutorConfig {
+    /// The channel flags the CLI at `program` offers. Without help (the probe failed) every
+    /// flag is kept, and the launch check refuses the CLI.
+    pub(crate) async fn offered_channel(
+        &self,
+        agent: &str,
+        program: &Path,
+        executable: &Executable,
+    ) -> ChannelSupport {
+        match self.help_for(agent, program, executable).await {
+            Some(help) => ChannelSupport::from_help(agent, &help),
+            None => ChannelSupport::ALL,
+        }
+    }
+}
+
+/// What a task run passes beyond its prompt: its status directory and its session, when the
+/// CLI offers them, and whether it runs in place (Codex then needs `--skip-git-repo-check`).
 #[derive(Clone, Copy)]
 pub(crate) struct RunChannel<'a> {
-    pub(crate) status_dir: &'a Path,
-    pub(crate) session: TaskSession<'a>,
+    pub(crate) status_dir: Option<&'a Path>,
+    pub(crate) session: Option<TaskSession<'a>>,
     pub(crate) in_place: bool,
 }
 
 /// The program and argument vector the daemon launches for `agent`, or `None`
-/// when the agent has no daemon launcher, or cannot run `channel`'s session at `permission`
-/// (a Codex resume below Full other than Restricted). Shared by the launch and by the
-/// submit-time command-line check so the two cannot disagree; the selected model, effort,
-/// workflow agent, status directory and session are part of the vector, so the check
-/// measures them too.
+/// when the agent has no daemon launcher, or cannot resume `channel`'s session at
+/// `permission`. Shared by the launch and by the submit-time command-line check so the two
+/// cannot disagree; the selected model, effort, workflow agent, status directory and session
+/// are part of the vector, so the check measures them too. The channel flags come after the
+/// level's own, so a CLI that lacks a level flag is named for that flag first.
 pub(crate) fn agent_command(
     config: &ExecutorConfig,
     agent: &str,
@@ -1505,8 +1546,8 @@ pub(crate) fn agent_command(
                 .codex_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("codex"));
-            let args = match channel.session {
-                TaskSession::Resume(id) => CodexAdapter::args_for_resume(
+            if let Some(TaskSession::Resume(id)) = channel.session {
+                let args = CodexAdapter::args_for_resume(
                     permission,
                     id,
                     objective,
@@ -1515,25 +1556,19 @@ pub(crate) fn agent_command(
                     workflow_agent,
                     channel.status_dir,
                     channel.in_place,
-                )?,
-                TaskSession::New(_) => {
-                    let mut args = CodexAdapter::args_for_task(
-                        permission,
-                        objective,
-                        model,
-                        effort,
-                        workflow_agent,
-                    )?;
-                    // `codex exec` refuses a directory that is not a Git repository unless told
-                    // otherwise.
-                    let mut extra = task_session::codex_launch_args(channel.status_dir).to_vec();
-                    if channel.in_place {
-                        extra.push("--skip-git-repo-check".to_owned());
-                    }
-                    args.splice(1..1, extra);
-                    args
-                }
-            };
+                )?;
+                return Some((program, args));
+            }
+            let mut args =
+                CodexAdapter::args_for_task(permission, objective, model, effort, workflow_agent)?;
+            if let Some(dir) = channel.status_dir {
+                let separator = args.iter().rposition(|arg| arg == "--")?;
+                args.splice(separator..separator, task_session::status_dir_args(dir));
+            }
+            // `codex exec` refuses a directory that is not a Git repository unless told otherwise.
+            if channel.in_place {
+                args.insert(1, "--skip-git-repo-check".to_owned());
+            }
             Some((program, args))
         }
         CLAUDE_AGENT => {
@@ -1544,10 +1579,12 @@ pub(crate) fn agent_command(
                 effort,
                 workflow_agent,
             );
-            args.extend(task_session::claude_args(
-                channel.status_dir,
-                channel.session,
-            ));
+            if let Some(dir) = channel.status_dir {
+                args.extend(task_session::status_dir_args(dir));
+            }
+            if let Some(session) = channel.session {
+                args.extend(task_session::claude_session_args(session));
+            }
             Some((
                 config
                     .claude_program
@@ -1568,11 +1605,7 @@ pub(crate) fn agent_command(
                 config.copilot_credit_cap,
                 workflow_agent,
             );
-            args.extend(task_session::copilot_args(
-                channel.status_dir,
-                permission,
-                channel.session,
-            ));
+            extend_copilot_channel(&mut args, permission, channel);
             Some((
                 config
                     .copilot_program
@@ -1585,14 +1618,66 @@ pub(crate) fn agent_command(
     }
 }
 
+/// Copilot's status directory, write rule and session flag, in that order.
+fn extend_copilot_channel(
+    args: &mut Vec<String>,
+    permission: PermissionLevel,
+    channel: RunChannel<'_>,
+) {
+    if let Some(dir) = channel.status_dir {
+        args.extend(task_session::copilot_status_args(dir, permission));
+    }
+    if let Some(session) = channel.session {
+        args.push(task_session::copilot_session_arg(session));
+    }
+}
+
 impl Job {
-    fn channel(&self) -> RunChannel<'_> {
+    /// The run's channel, limited to what the CLI offers.
+    fn channel(&self, support: ChannelSupport) -> RunChannel<'_> {
         RunChannel {
-            status_dir: &self.status_dir,
-            session: self.session.as_task_session(),
+            status_dir: support.status_dir.then_some(self.status_dir.as_path()),
+            session: support.session.then(|| self.session.as_task_session()),
             in_place: self.in_place,
         }
     }
+}
+
+/// Says the installed CLI lacks a channel flag, so the run launches without it. A resume
+/// never launches without its session flag: the caller refuses it first.
+fn warn_unsupported_channel(job: &Job, support: ChannelSupport) {
+    let missing = match (support.status_dir, support.session) {
+        (true, true) => return,
+        (false, true) => "--add-dir",
+        (true, false) => "--session-id or --resume",
+        (false, false) => "--add-dir, --session-id or --resume",
+    };
+    let reason = format!(
+        "installed CLI does not offer {missing}; the worker cannot report its status or wait"
+    );
+    job.diag.warn(
+        LOG,
+        "status_channel_unsupported",
+        &job.event_fields(&[("reason", &reason)]),
+    );
+}
+
+/// The channel one launch uses, and the refusal of a resume the CLI cannot run.
+async fn launch_channel(
+    inner: &Inner,
+    job: &Job,
+    program: &Path,
+    executable: &Executable,
+) -> Result<ChannelSupport, LaunchFailure> {
+    let support = inner
+        .config
+        .offered_channel(&job.agent, program, executable)
+        .await;
+    if matches!(job.session, JobSession::Resume(_)) && !support.session {
+        return Err(CompatibilityError::MissingFlag("--resume".to_owned()).into());
+    }
+    warn_unsupported_channel(job, support);
+    Ok(support)
 }
 
 /// Launches a Copilot task. The run directory lives in the handle, so it is
@@ -1602,7 +1687,7 @@ async fn spawn_copilot(
     inner: &Inner,
     job: &Job,
     workflow_agent: Option<WorkflowAgent>,
-) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
+) -> Result<(Box<dyn AgentHandle>, ChannelSupport), LaunchFailure> {
     if job.model_selection.is_some() {
         return Err(
             "model selection refused: GitHub Copilot offers no model or effort selection".into(),
@@ -1623,6 +1708,7 @@ async fn spawn_copilot(
     if let Some(flag) = missing {
         warn_unsupported_workflow_agent(job, flag);
     }
+    let support = launch_channel(inner, job, &program, &executable).await?;
     let run = CopilotRun::create(&inner.config.data_dir.join(COPILOT_RUNS_DIR))
         .map_err(|error| format!("cannot create the Copilot run directory: {error}"))?;
     let mut args = CopilotAdapter::task_args(
@@ -1633,11 +1719,7 @@ async fn spawn_copilot(
         inner.config.copilot_credit_cap,
         workflow_agent.as_ref(),
     );
-    args.extend(task_session::copilot_args(
-        &job.status_dir,
-        job.permission,
-        job.session.as_task_session(),
-    ));
+    extend_copilot_channel(&mut args, job.permission, job.channel(support));
     inner
         .config
         .check_launch(&job.agent, &program, &executable, &args)
@@ -1650,6 +1732,7 @@ async fn spawn_copilot(
     adapter
         .spawn_run(request, Some(run))
         .await
+        .map(|handle| (handle, support))
         .map_err(|error| error.to_string().into())
 }
 
@@ -1709,7 +1792,7 @@ async fn spawn_agent(
     inner: &Inner,
     job: &Job,
     workflow_agent: Option<WorkflowAgent>,
-) -> Result<Box<dyn AgentHandle>, LaunchFailure> {
+) -> Result<(Box<dyn AgentHandle>, ChannelSupport), LaunchFailure> {
     if job.agent == COPILOT_AGENT {
         return spawn_copilot(inner, job, workflow_agent).await;
     }
@@ -1726,6 +1809,7 @@ async fn spawn_agent(
     if let Some(flag) = missing {
         warn_unsupported_workflow_agent(job, flag);
     }
+    let support = launch_channel(inner, job, &program, &executable).await?;
     let Some((_, args)) = agent_command(
         &inner.config,
         &job.agent,
@@ -1733,7 +1817,7 @@ async fn spawn_agent(
         selection,
         job.permission,
         workflow_agent.as_ref(),
-        job.channel(),
+        job.channel(support),
     ) else {
         return Err(format!(
             "agent {:?} has no daemon launcher for this run at {} permission",
@@ -1782,7 +1866,9 @@ async fn spawn_agent(
         AdapterChoice::Codex(adapter) => adapter.spawn(request).await,
         AdapterChoice::Claude(adapter) => adapter.spawn(request).await,
     };
-    result.map_err(|error| error.to_string().into())
+    result
+        .map(|handle| (handle, support))
+        .map_err(|error| error.to_string().into())
 }
 
 enum AdapterChoice {
@@ -1792,8 +1878,10 @@ enum AdapterChoice {
 
 async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let store = &*inner.store;
-    let mut handle = match spawn_agent(inner, job, launch_workflow_agent(inner, job)).await {
-        Ok(handle) => handle,
+    let (mut handle, support) = match spawn_agent(inner, job, launch_workflow_agent(inner, job))
+        .await
+    {
+        Ok(spawned) => spawned,
         Err(error) => {
             let (reason, detail) = match error {
                 LaunchFailure::Compatibility(error) => {
@@ -1905,9 +1993,24 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let after = store
         .last_status_line(&job.task_id, &job.attempt_id)
         .unwrap_or(0);
+    // Claude and Copilot took the id the daemon chose, when the CLI offers the flag; Codex
+    // reports its own when it starts. A resume continues the id it named.
     let known_session = match &job.session {
-        JobSession::New(_) if job.agent == CODEX_AGENT => None,
-        JobSession::New(id) | JobSession::Resume(id) => Some(id.clone()),
+        JobSession::New(_) if job.agent == CODEX_AGENT || !support.session => None,
+        JobSession::New(id) => {
+            match store.record_agent_session_id(&job.task_id, &job.session_id, id) {
+                Ok(()) => Some(id.clone()),
+                Err(error) => {
+                    job.diag.error(
+                        LOG,
+                        "agent_session_id_not_recorded",
+                        &job.event_fields(&[("error", &error.to_string())]),
+                    );
+                    None
+                }
+            }
+        }
+        JobSession::Resume(id) => Some(id.clone()),
     };
     let mut tail = StatusTail::new(
         job.status_dir
@@ -2453,7 +2556,7 @@ fn park(
     let refusal = resume_refusal(&job.agent, job.permission).or_else(|| {
         tail.agent_session_id
             .is_none()
-            .then_some("the agent never reported its session id")
+            .then_some("its CLI session id is not known")
     });
     if let Some(why) = refusal {
         let reason = format!(

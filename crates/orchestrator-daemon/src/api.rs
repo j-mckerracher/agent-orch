@@ -43,8 +43,8 @@ use sha2::{Digest, Sha256};
 use orchestrator_core::permission::PermissionLevel;
 
 use crate::executor::{
-    agent_command, placeholder_status_dir, submit_channel, Executor, ExecutorConfig,
-    COPILOT_RUNS_DIR,
+    agent_command, placeholder_status_dir, submit_channel, ChannelSupport, Executor,
+    ExecutorConfig, COPILOT_RUNS_DIR,
 };
 use crate::idempotency;
 use orchestrator_diagnostics::Level;
@@ -723,7 +723,7 @@ impl DaemonApi {
             submission.model_selection.as_ref(),
             permission,
             None,
-            submit_channel(&status_dir),
+            submit_channel(&status_dir, ChannelSupport::ALL),
         )
         .is_none()
         {
@@ -752,6 +752,11 @@ impl DaemonApi {
                             (self.config.locate_workflow_agent)(),
                         )
                         .await;
+                    // The channel flags the CLI lacks are left out, as the launch leaves them.
+                    let support = self
+                        .config
+                        .offered_channel(&submission.agent, &program, &executable)
+                        .await;
                     let Some((_, args)) = agent_command(
                         &self.config,
                         &submission.agent,
@@ -759,7 +764,7 @@ impl DaemonApi {
                         submission.model_selection.as_ref(),
                         permission,
                         workflow_agent.as_ref(),
-                        submit_channel(&status_dir),
+                        submit_channel(&status_dir, support),
                     ) else {
                         return Ok(());
                     };
@@ -1121,7 +1126,7 @@ impl DaemonApi {
             contract.model_selection.as_ref(),
             contract.permission,
             workflow_agent.as_ref(),
-            submit_channel(&status_dir),
+            submit_channel(&status_dir, ChannelSupport::ALL),
         ) else {
             return Ok(());
         };

@@ -1226,7 +1226,7 @@ fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_characte
             None,
             Default::default(),
             None,
-            crate::executor::submit_channel(&status_dir),
+            crate::executor::submit_channel(&status_dir, crate::executor::ChannelSupport::ALL),
         )
         .unwrap();
         assert!(
@@ -1245,7 +1245,7 @@ fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_characte
         None,
         Default::default(),
         None,
-        crate::executor::submit_channel(&status_dir),
+        crate::executor::submit_channel(&status_dir, crate::executor::ChannelSupport::ALL),
     )
     .is_none());
 }
