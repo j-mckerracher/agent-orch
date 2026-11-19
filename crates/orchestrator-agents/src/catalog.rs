@@ -931,8 +931,8 @@ impl CodexAdapter {
     /// none of `--sandbox`, `--add-dir`, `-C` and `--approve-for-me`, so:
     ///
     /// - Restricted pins the same `workspace-write` sandbox through `-c sandbox_mode` and
-    ///   grants the status directory through `-c sandbox_workspace_write.writable_roots`,
-    ///   under `--ignore-user-config` as at launch. Whether `exec resume` applies these over the
+    ///   grants the status directory, when given, through
+    ///   `-c sandbox_workspace_write.writable_roots`, under `--ignore-user-config` as at launch. Whether `exec resume` applies these over the
     ///   sandbox the session was started with is not shown by `--help`. Either way the run is
     ///   never wider than workspace-write; at worst the status file is not writable.
     /// - Full adds no sandbox flag, as at launch, so the user's config decides. The status
@@ -949,20 +949,24 @@ impl CodexAdapter {
         model: Option<&str>,
         effort: Option<&str>,
         agent: Option<&WorkflowAgent>,
-        status_dir: &Path,
+        status_dir: Option<&Path>,
         in_place: bool,
     ) -> Option<Vec<String>> {
         let mut args: Vec<String> = ["exec", "resume", "--json"].map(str::to_owned).into();
         match level {
             PermissionLevel::Restricted => {
-                let root = toml_basic_string(&status_dir.to_string_lossy());
                 args.extend([
                     "--ignore-user-config".to_owned(),
                     "-c".to_owned(),
                     "sandbox_mode=\"workspace-write\"".to_owned(),
-                    "-c".to_owned(),
-                    format!("sandbox_workspace_write.writable_roots=[{root}]"),
                 ]);
+                if let Some(dir) = status_dir {
+                    let root = toml_basic_string(&dir.to_string_lossy());
+                    args.extend([
+                        "-c".to_owned(),
+                        format!("sandbox_workspace_write.writable_roots=[{root}]"),
+                    ]);
+                }
             }
             PermissionLevel::Full => {}
             PermissionLevel::Auto | PermissionLevel::Extended => return None,
@@ -1620,7 +1624,7 @@ mod tests {
             Some("m"),
             None,
             None,
-            dir,
+            Some(dir),
             true,
         )
         .unwrap();
@@ -1651,7 +1655,7 @@ mod tests {
             None,
             None,
             None,
-            dir,
+            Some(dir),
             false,
         )
         .unwrap();
@@ -1667,7 +1671,7 @@ mod tests {
         }
         for level in [PermissionLevel::Auto, PermissionLevel::Extended] {
             assert_eq!(
-                CodexAdapter::args_for_resume(level, "id", "p", None, None, None, dir, false),
+                CodexAdapter::args_for_resume(level, "id", "p", None, None, None, Some(dir), false),
                 None
             );
         }

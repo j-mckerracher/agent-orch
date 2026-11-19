@@ -38,8 +38,8 @@ pub enum TaskSession<'a> {
 pub fn resume_refusal(agent: &str, level: PermissionLevel) -> Option<&'static str> {
     match (agent, level) {
         ("codex", PermissionLevel::Auto) => Some(
-            "Codex cannot continue an Auto task's session at the same permission level: \
-             `codex exec resume` has no --approve-for-me",
+            "Codex cannot continue an Auto task's session at the same permission level, \
+             because `codex exec resume` has no --approve-for-me",
         ),
         ("codex", PermissionLevel::Extended) => {
             Some("Codex has no mapping for the Extended permission level")
@@ -53,44 +53,38 @@ fn path_text(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// Claude Code: the status directory and the session, appended to the task arguments.
-pub fn claude_args(status_dir: &Path, session: TaskSession<'_>) -> Vec<String> {
-    let (flag, id) = match session {
-        TaskSession::New(id) => ("--session-id", id),
-        TaskSession::Resume(id) => ("--resume", id),
-    };
-    vec![
-        "--add-dir".to_owned(),
-        path_text(status_dir),
-        flag.to_owned(),
-        id.to_owned(),
-    ]
+/// `--add-dir <dir>`: the one directory outside the worktree a run may write. Claude, Codex
+/// `exec` and Copilot all take this form.
+pub fn status_dir_args(status_dir: &Path) -> [String; 2] {
+    ["--add-dir".to_owned(), path_text(status_dir)]
 }
 
-/// Copilot: the status directory, a write rule for it below Full (`--allow-all` covers it at
-/// Full), and the session, appended to the task arguments. The session flag comes last, so the
-/// variadic `--allow-tool` list ends at a flag.
-pub fn copilot_args(
-    status_dir: &Path,
-    level: PermissionLevel,
-    session: TaskSession<'_>,
-) -> Vec<String> {
-    let dir = path_text(status_dir);
-    let mut args = vec!["--add-dir".to_owned(), dir.clone()];
+/// Copilot below Full also needs a write rule for the status directory; `--allow-all` covers
+/// it at Full. The session flag is meant to follow, so the variadic `--allow-tool` list ends at
+/// a flag.
+pub fn copilot_status_args(status_dir: &Path, level: PermissionLevel) -> Vec<String> {
+    let mut args = status_dir_args(status_dir).to_vec();
     if level != PermissionLevel::Full {
         args.push("--allow-tool".to_owned());
-        args.push(format!("write({dir}/**)"));
+        args.push(format!("write({}/**)", path_text(status_dir)));
     }
-    args.push(match session {
-        TaskSession::New(id) => format!("--session-id={id}"),
-        TaskSession::Resume(id) => format!("--resume={id}"),
-    });
     args
 }
 
-/// Codex `exec`: the status directory, inserted after `exec`.
-pub fn codex_launch_args(status_dir: &Path) -> [String; 2] {
-    ["--add-dir".to_owned(), path_text(status_dir)]
+/// Claude Code's session flag and its value.
+pub fn claude_session_args(session: TaskSession<'_>) -> [String; 2] {
+    match session {
+        TaskSession::New(id) => ["--session-id".to_owned(), id.to_owned()],
+        TaskSession::Resume(id) => ["--resume".to_owned(), id.to_owned()],
+    }
+}
+
+/// Copilot's session flag, with its value in the same argument.
+pub fn copilot_session_arg(session: TaskSession<'_>) -> String {
+    match session {
+        TaskSession::New(id) => format!("--session-id={id}"),
+        TaskSession::Resume(id) => format!("--resume={id}"),
+    }
 }
 
 #[cfg(test)]
@@ -99,32 +93,39 @@ mod tests {
 
     #[test]
     fn claude_and_copilot_name_a_new_session_and_continue_it_with_the_same_id() {
-        let dir = Path::new("/data/tasks/t-1/1");
+        let dir = Path::new("/data/task-status/t-1/1");
         assert_eq!(
-            claude_args(dir, TaskSession::New("u-1")),
-            ["--add-dir", "/data/tasks/t-1/1", "--session-id", "u-1"]
+            status_dir_args(dir),
+            ["--add-dir".to_owned(), "/data/task-status/t-1/1".to_owned()]
         );
         assert_eq!(
-            claude_args(dir, TaskSession::Resume("u-1")),
-            ["--add-dir", "/data/tasks/t-1/1", "--resume", "u-1"]
+            claude_session_args(TaskSession::New("u-1")),
+            ["--session-id".to_owned(), "u-1".to_owned()]
         );
         assert_eq!(
-            copilot_args(dir, PermissionLevel::Restricted, TaskSession::New("u-1")),
+            claude_session_args(TaskSession::Resume("u-1")),
+            ["--resume".to_owned(), "u-1".to_owned()]
+        );
+        assert_eq!(
+            copilot_status_args(dir, PermissionLevel::Restricted),
             [
                 "--add-dir",
-                "/data/tasks/t-1/1",
+                "/data/task-status/t-1/1",
                 "--allow-tool",
-                "write(/data/tasks/t-1/1/**)",
-                "--session-id=u-1"
+                "write(/data/task-status/t-1/1/**)",
             ]
         );
         assert_eq!(
-            copilot_args(dir, PermissionLevel::Full, TaskSession::Resume("u-1")),
-            ["--add-dir", "/data/tasks/t-1/1", "--resume=u-1"]
+            copilot_status_args(dir, PermissionLevel::Full),
+            ["--add-dir", "/data/task-status/t-1/1"]
         );
         assert_eq!(
-            codex_launch_args(dir),
-            ["--add-dir".to_owned(), "/data/tasks/t-1/1".to_owned()]
+            copilot_session_arg(TaskSession::New("u-1")),
+            "--session-id=u-1"
+        );
+        assert_eq!(
+            copilot_session_arg(TaskSession::Resume("u-1")),
+            "--resume=u-1"
         );
     }
 
