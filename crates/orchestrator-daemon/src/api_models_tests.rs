@@ -42,7 +42,7 @@ fn agents(fixture: &Fixture) -> Agents {
              login) if [ -f '{signed_out}' ]; then echo 'Not logged in'; exit 1; fi; echo 'Logged in using ChatGPT'; exit 0;;\n\
              debug) cat '{models}'; exit 0;;\n\
              esac\n\
-             printf '%s\\n' \"$@\" > '{argv}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}'\n\
              echo produced > agent-output.txt\n\
              {THREAD_STARTED}{TURN_COMPLETED}",
             signed_out = signed_out.display(),
@@ -57,7 +57,7 @@ fn agents(fixture: &Fixture) -> Agents {
              auth) echo '{{\"loggedIn\":true}}'; exit 0;;\n\
              --help) cat '{help}'; exit 0;;\n\
              esac\n\
-             printf '%s\\n' \"$@\" > '{argv}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}'\n\
              echo '{{}}'\n",
             help = help.display(),
             argv = claude_argv.display(),
@@ -762,7 +762,7 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
             "-c",
             "model_reasoning_effort=\"low\"",
             "--",
-            "objective of sel-1",
+            "# MCAO worker brief",
         ]
     );
     let session_id = task(&api, &task_id)["sessions"][0]["id"]
@@ -816,7 +816,7 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
             "-c",
             "developer_instructions=\"fixture instructions\"",
             "--",
-            "objective of plain-1"
+            "# MCAO worker brief"
         ]
     );
     let session_id = task(&api, &task_id)["sessions"][0]["id"]

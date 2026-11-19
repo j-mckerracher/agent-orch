@@ -1241,12 +1241,15 @@ fn recording_agent(fixture: &Fixture, record: &Path) -> PathBuf {
         "recording-agent",
         &format!(
             "if [ \"$1\" = \"--version\" ]; then echo 'GitHub Copilot CLI 1.0.109'; exit 0; fi\n\
-             printf '%s\\n' \"$@\" > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
              {THREAD_STARTED}{TURN_COMPLETED}",
             record.display()
         ),
     )
 }
+
+/// A launched agent gets the brief, and the recorder keeps the first line of each argument.
+const BRIEF_FIRST_LINE: &str = "# MCAO worker brief";
 
 fn strs(argv: &[String]) -> Vec<&str> {
     argv.iter().map(String::as_str).collect()
@@ -1316,7 +1319,7 @@ fn launch_contract(fixture: &Fixture, agent: &str) -> Value {
 /// The head every Claude task vector shares, up to its tool flags.
 const CLAUDE_TASK_HEAD: [&str; 13] = [
     "-p",
-    "objective of launch",
+    BRIEF_FIRST_LINE,
     "--verbose",
     "--output-format",
     "stream-json",
@@ -1332,7 +1335,7 @@ const CLAUDE_TASK_HEAD: [&str; 13] = [
 
 #[test]
 fn codex_task_argv_per_level_is_exact() {
-    let objective = "objective of launch";
+    let objective = BRIEF_FIRST_LINE;
     let argv = |permission| launched_argv("codex", permission, |_| {});
     // The fixture workflow agent is sent as developer instructions before the objective.
     let restricted = vec![
@@ -1457,7 +1460,7 @@ fn claude_task_argv_per_level_is_exact() {
 
     let auto = [
         "-p",
-        "objective of launch",
+        BRIEF_FIRST_LINE,
         "--verbose",
         "--output-format",
         "stream-json",
@@ -1483,7 +1486,7 @@ fn claude_task_argv_per_level_is_exact() {
 
     let full = [
         "-p",
-        "objective of launch",
+        BRIEF_FIRST_LINE,
         "--verbose",
         "--output-format",
         "stream-json",
@@ -1502,7 +1505,7 @@ fn claude_task_argv_per_level_is_exact() {
 
 #[test]
 fn copilot_task_argv_per_level_is_exact() {
-    let prompt = "--prompt=objective of launch";
+    let prompt = concat!("--prompt=", "# MCAO worker brief");
     let mut restricted = vec![
         prompt,
         "--output-format",

@@ -1045,6 +1045,11 @@ impl Inner {
             }
         };
         job.worktree = checkout.path.clone();
+        // The agent launches with the brief, never the bare objective (DPES-1108).
+        job.objective = orchestrator_core::brief::render(
+            &task.contract,
+            (!in_place).then_some(checkout.path.as_path()),
+        );
         let path = checkout.path.display().to_string();
         let workspace = if in_place {
             Workspace::in_place(workspace_id, task_id.clone(), path)
