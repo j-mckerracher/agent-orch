@@ -963,7 +963,13 @@
    "api::decisions_tests::an_answer_is_stored_verbatim_closes_once_and_frees_the_task",
    "api::decisions_tests::an_approved_ask_raises_one_question_that_holds_its_task",
    "api::decisions_tests::an_ask_on_a_missing_task_fails_and_raises_nothing",
-   "api::decisions_tests::the_methods_refuse_unknown_questions_and_bad_text"
+   "api::decisions_tests::the_methods_refuse_unknown_questions_and_bad_text",
+   "api::wake_events::tests::a_worker_wait_wakes_with_its_kind_and_its_note_as_redacted_data",
+   "executor::tests::a_failed_report_fails_the_attempt_and_a_done_claim_does_not_make_a_candidate",
+   "executor::tests::a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it",
+   "executor::tests::a_waiting_task_is_cancelled_without_an_owner",
+   "executor::tests::a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_with_the_answer",
+   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1542,7 +1548,18 @@
    "a_scout_report_is_not_relayed_while_its_worker_question_is_open",
    "an_answer_keeps_the_exact_words_and_closes_the_question_once",
    "the_database_refuses_every_close_that_is_not_an_answer_or_a_reconcile",
-   "migration_0063_applies_to_a_0062_style_database_and_keeps_every_row"
+   "migration_0063_applies_to_a_0062_style_database_and_keeps_every_row",
+   "a_wait_parks_session_attempt_and_task_together_and_raises_the_workers_questions",
+   "a_waiting_task_cancels_without_an_owner_and_is_not_archived_while_it_waits",
+   "a_reconcile_is_a_reply_and_a_question_on_a_running_task_queues_none",
+   "a_message_is_taken_only_by_a_waiting_task_and_only_up_to_the_queue",
+   "a_waiting_task_is_neither_running_work_nor_a_stall_and_its_note_reaches_the_wake_facts",
+   "a_waiting_task_that_cannot_resume_fails_with_its_reason",
+   "no_candidate_is_recorded_while_a_workers_question_is_open",
+   "an_agent_session_id_is_written_once",
+   "answers_queue_replies_and_a_resume_delivers_them_once_in_a_new_session",
+   "migration_0064_applies_to_a_0063_style_database_and_keeps_every_row",
+   "status_lines_are_stored_once_per_line_and_reads_continue_after_the_last"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
