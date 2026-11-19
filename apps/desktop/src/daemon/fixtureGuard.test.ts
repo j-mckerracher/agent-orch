@@ -45,6 +45,7 @@ const ROWS: Row[] = [
   row("sessionsGet", "sessions.get", (a) => a.sessionsGet(REAL, FX), (a) => a.sessionsGet(REAL, "s1")),
   row("sessionsEvents", "sessions.events", (a) => a.sessionsEvents(REAL, FX), (a) => a.sessionsEvents(REAL, "s1")),
   row("sessionsOutputTail", "sessions.output_tail", (a) => a.sessionsOutputTail(REAL, FX), (a) => a.sessionsOutputTail(REAL, "s1")),
+  row("sessionsThinking", "sessions.thinking", (a) => a.sessionsThinking(FX), (a) => a.sessionsThinking("s1")),
   row("approvalsResolve", "approvals.resolve", (a) => a.approvalsResolve(FX, "approve", "k"), (a) => a.approvalsResolve(REAL, "approve", "k")),
   row("workspacesDiff", "workspaces.diff", (a) => a.workspacesDiff({ task_id: FX }), (a) => a.workspacesDiff({ task_id: REAL })),
   row(

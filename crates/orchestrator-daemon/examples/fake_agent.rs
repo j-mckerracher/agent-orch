@@ -186,6 +186,19 @@ fn piece(dialect: Dialect, text: &str) {
     }
 }
 
+/// A thinking event, as each CLI reports reasoning.
+fn thinking(dialect: Dialect, text: &str) {
+    let text = serde_json::Value::String(text.to_owned());
+    match dialect {
+        Dialect::Codex => emit(&format!(
+            r#"{{"type":"item.completed","item":{{"id":"item_0","type":"reasoning","text":{text}}}}}"#
+        )),
+        Dialect::Claude => emit(&format!(
+            r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"thinking_delta","thinking":{text}}}}}}}"#
+        )),
+    }
+}
+
 fn finished(dialect: Dialect, whole: &str) {
     match dialect {
         Dialect::Codex => {
@@ -309,6 +322,7 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
             .join("\n");
         pieces.push(format!("echo\n{context}"));
     } else {
+        thinking(dialect, &format!("fake thinking about: {}", message.trim()));
         pieces.push(format!("fake reply to: {}", message.trim()));
     }
     let delay = message.contains("[fake:slow]");

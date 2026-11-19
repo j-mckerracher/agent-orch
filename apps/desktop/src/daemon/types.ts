@@ -239,6 +239,15 @@ export interface SessionOutputTail {
   last_sequence: number;
 }
 
+/** `sessions.thinking`: one page of a session's recorded thinking, in order. */
+export interface SessionThinkingPage {
+  chunks: Array<{ sequence: number; body: string }>;
+  /** Pass as `after` to read what follows this page. */
+  next_cursor: number;
+  /** The daemon's size cap was reached, so the log ends early. */
+  truncated: boolean;
+}
+
 /** `Actor` serializes as `{kind, id}`. */
 export interface Actor {
   kind: "user" | "agent" | "approved";
@@ -732,6 +741,7 @@ export type ConversationWireTarget =
 
 export type ConversationEntryKind =
   | "user_message"
+  | "thinking_chunk"
   | "reply_chunk"
   | "turn_completed"
   | "turn_failed"

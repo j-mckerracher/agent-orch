@@ -30,6 +30,8 @@ pub struct CopilotParser {
     session_error: Option<String>,
     result_seen: bool,
     result_exit_code: Option<i64>,
+    /// The message event of a line that also yielded a thinking event.
+    pending: Option<AgentEvent>,
 }
 
 impl CopilotParser {
@@ -80,6 +82,11 @@ impl CopilotParser {
         })
     }
 
+    /// The event a previous `feed` held back; drain it before the next line.
+    pub fn take_pending(&mut self) -> Option<AgentEvent> {
+        self.pending.take()
+    }
+
     /// Translates one stdout line. Returns `None` for lines that have no
     /// canonical event, including lines that are not JSON.
     pub fn feed(&mut self, line: &str) -> Option<AgentEvent> {
@@ -96,15 +103,26 @@ impl CopilotParser {
                 Some(AgentEvent::SessionStarted { session_id })
             }
             // Whole messages, not deltas: one final reply per assistant message.
+            // One line can carry reasoning and a reply: thinking first, then the
+            // message (held in `pending`).
             "assistant.message" => {
-                let text = data?
-                    .get("content")?
-                    .as_str()
-                    .filter(|text| !text.is_empty())?;
-                self.last_message = Some(text.to_owned());
-                Some(AgentEvent::MessageDelta {
-                    text: text.to_owned(),
-                })
+                let data = data?;
+                let non_empty = |key| data.get(key)?.as_str().filter(|text| !text.is_empty());
+                let message = non_empty("content").map(|text| {
+                    self.last_message = Some(text.to_owned());
+                    AgentEvent::MessageDelta {
+                        text: text.to_owned(),
+                    }
+                });
+                match non_empty("reasoningText") {
+                    Some(text) => {
+                        self.pending = message;
+                        Some(AgentEvent::ThinkingDelta {
+                            text: text.to_owned(),
+                        })
+                    }
+                    None => message,
+                }
             }
             "session.error" => {
                 if self.session_error.is_none() {

@@ -430,6 +430,33 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(await navigator.clipboard.readText()).toBe("**Done**: shipped `v2`.");
   });
 
+  it("shows a turn's thinking in a Thinking disclosure: open while it runs, collapsed once the reply lands", async () => {
+    const fake = liveDaemon();
+    const convo = stubConversation(fake, "running");
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "plan it");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    await screen.findByText(/Waiting for the orchestrator.s reply…/);
+
+    act(() => convo.think("First **idea**."));
+    const body = await screen.findByText("idea", {}, { timeout: 3000 });
+    const block = body.closest("details") as HTMLDetailsElement;
+    expect(block).toHaveTextContent("Thinking");
+    expect(block).toHaveTextContent("Streaming");
+    expect(block.open).toBe(true);
+    expect(block.closest("article")).toBeNull();
+
+    act(() => convo.finishRunning(null, "Done."));
+    await screen.findByText("Done.", {}, { timeout: 3000 });
+    await waitFor(() => expect(block.open).toBe(false));
+    expect(block).not.toHaveTextContent("Streaming");
+    expect(block).toHaveTextContent("First idea.");
+  });
+
   it.each([
     { label: "Global orchestrator", target: /Global orchestrator/ },
     { label: "Session hardening orchestrator", target: /Session hardening orchestrator/ },

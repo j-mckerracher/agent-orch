@@ -332,6 +332,7 @@ impl DaemonApi {
     pub(crate) fn shutdown(&self) {
         self.stop_landing();
         self.stop_grant_matcher();
+        self.conversations.shutdown();
         if let Some(wake) = &self.wake {
             wake.stop();
         }
@@ -422,6 +423,7 @@ impl RpcHandler for DaemonApi {
             "sessions.get" => self.get_session(params),
             "sessions.events" => self.session_events(params),
             "sessions.output_tail" => self.session_output_tail(params),
+            "sessions.thinking" => self.session_thinking(params),
             "approvals.list" => self.list_approvals(params),
             "approvals.resolve" => self.resolve_approval(params),
             "workspaces.diff" => self.workspace_diff(params),
@@ -2049,6 +2051,8 @@ pub(crate) mod report;
 mod reports;
 #[path = "api_review.rs"]
 mod review;
+#[path = "api_thinking.rs"]
+mod thinking;
 use review::map_review_error;
 #[path = "api_settings.rs"]
 mod settings;

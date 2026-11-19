@@ -40,6 +40,7 @@ import type {
   SessionEntry,
   SessionEventsPage,
   SessionOutputTail,
+  SessionThinkingPage,
   TaskRecord,
   TaskSubmission,
   WorkspaceDiff,
@@ -234,6 +235,15 @@ export class DaemonApi {
       session_id: realId(sessionId),
       ...(options.limit === undefined ? {} : { limit: options.limit }),
       ...(options.afterSequence === undefined ? {} : { after_sequence: options.afterSequence }),
+    });
+  }
+
+  /** Read-only; `after` is the previous page's `next_cursor`. */
+  async sessionsThinking(sessionId: string, options: { after?: number; limit?: number } = {}): Promise<SessionThinkingPage> {
+    return this.session.request("sessions.thinking", {
+      session_id: realId(sessionId),
+      ...(options.after === undefined ? {} : { after: options.after }),
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
     });
   }
 

@@ -843,7 +843,8 @@
    "api::archive_tests::archived_tasks_leave_the_list_and_tasks_get_still_answers",
    "api::archive_tests::archiving_again_is_a_no_op_and_an_unknown_task_is_not_found",
    "api::home_directory_tests::a_git_home_directory_registers_as_a_worktree_project",
-   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup"
+   "api::home_directory_tests::an_in_place_flag_on_a_git_repo_is_cleared_at_startup",
+   "thinking_is_stored_before_the_reply_and_never_enters_history"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -1402,7 +1403,13 @@
    "an_unknown_task_is_not_found_and_writes_nothing",
    "a_task_that_is_not_finished_refuses_the_whole_call_and_writes_nothing",
    "finished_tasks_archive_once_keep_their_rows_and_each_emit_one_event",
-   "clearing_in_place_removes_only_the_flag_from_the_project_settings"
+   "clearing_in_place_removes_only_the_flag_from_the_project_settings",
+   "sqlite_thinking::tests::split_chunks_cuts_on_char_boundaries_and_loses_nothing",
+   "session_thinking_pages_by_cursor",
+   "migration_0063_keeps_entries_and_the_sequence_counter",
+   "session_thinking_writes_one_marker_at_the_cap_then_drops_text",
+   "thinking_does_not_use_the_reply_budget_and_overflow_marks_once",
+   "thinking_entries_round_trip_but_stay_append_only_and_clearable"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",

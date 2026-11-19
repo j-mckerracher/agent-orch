@@ -147,6 +147,20 @@ where
         Source::Reading(flight)
     }
 
+    /// Waits until no read is running, for `limit` at most.
+    pub(crate) fn wait_idle(&self, limit: Duration) {
+        let deadline = Instant::now() + limit;
+        while Instant::now() < deadline
+            && !self
+                .flights
+                .lock()
+                .unwrap_or_else(|error| error.into_inner())
+                .is_empty()
+        {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
     fn cached(&self, key: &K, ttl: Duration) -> Option<V> {
         let entries = self
             .entries

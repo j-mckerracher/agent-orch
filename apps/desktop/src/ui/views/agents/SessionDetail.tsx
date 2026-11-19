@@ -8,6 +8,7 @@ import { DisabledAction, PlaceholderMark, StatePill } from "./common";
 import { OutputTail } from "./OutputTail";
 import { rowFromTask, type WorkRow } from "./model";
 import { SessionControls } from "./SessionControls";
+import { SessionThinking } from "./SessionThinking";
 import { TaskControls } from "./TaskControls";
 
 const PAYLOAD_LIMIT = 200;
@@ -55,6 +56,8 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
   const row = record ? rowFromTask(record, snapshot.taskSessions[initial.id]?.data ?? null, initial.blocked) : initial;
   const sessions = row.sessions ?? [];
   const session = sessions.find((s) => s.id === chosen) ?? sessions[sessions.length - 1] ?? null;
+
+  const running = session?.state === "Spawning" || session?.state === "Running";
 
   useEffect(() => {
     if (!real || !session) return;
@@ -115,12 +118,10 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
       <SessionControls row={row} session={session} live={live} />
 
       {real && session && (
-        <OutputTail
-          key={session.id}
-          taskId={row.id}
-          sessionId={session.id}
-          running={session.state === "Spawning" || session.state === "Running"}
-        />
+        <>
+          <OutputTail key={session.id} taskId={row.id} sessionId={session.id} running={running} />
+          <SessionThinking key={`${session.id}:thinking`} sessionId={session.id} running={running} />
+        </>
       )}
 
       <Disclosure summary="Execution feed, side effects and supplied context">

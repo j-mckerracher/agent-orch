@@ -38,6 +38,14 @@ A task that Succeeded, Failed, VerificationFailed, or Canceled can be archived. 
 
 Open the task to see attempts, sessions, and the timeline. Click Review candidate when the task has a pending approval. A Failed or VerificationFailed task can be retried from its page.
 
+## Thinking
+
+Open a task, pick a session, and open Thinking under Recent output to read that session's thinking. It refreshes about every 2 seconds while the session runs. Copy thinking copies the full text. Empty means nothing was recorded.
+
+The panel shows everything the provider exposes. Newer Claude and GitHub Copilot models return summarized thinking. Codex returns raw reasoning only on models that support it. Sessions from before this feature have no thinking.
+
+Thinking is capped at 8 MiB per task session. When the cap is reached, the text ends with "[thinking truncated: limit reached]" and the panel says the log hit its size limit.
+
 ## Workflow agent
 
 Every task attempt runs as the pstack `workflow-agent` (Codex, Claude Code and GitHub Copilot, at every permission level). MCAO finds the plugin under `~/.claude/plugins`. If it is missing, the attempt records a warning and runs without it.

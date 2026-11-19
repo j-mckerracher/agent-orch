@@ -259,6 +259,10 @@ pub(crate) trait ConversationRuntime: Send + Sync {
     /// agent drops it, so the next selection reads the settings again.
     fn settings_changed(&self) {}
 
+    /// The daemon is stopping. A runtime ends the child processes it started in
+    /// the background, so none outlives the daemon.
+    fn shutdown(&self) {}
+
     fn start_turn(
         &self,
         request: TurnRequest,
@@ -398,6 +402,17 @@ impl ReplySink {
             return Ok(());
         }
         self.append(&shown)
+    }
+
+    /// Appends thinking text, outside the reply budget and the reply filter. Returns
+    /// false once thinking can no longer be stored; the turn itself is never affected.
+    pub(crate) fn thinking(&self, text: &str) -> bool {
+        chunks(text).all(|piece| {
+            self.shared
+                .store
+                .append_thinking_chunk(&self.turn_id, piece)
+                .is_ok()
+        })
     }
 
     /// Stores already shown text as reply chunks. Held text never reaches here.
@@ -631,6 +646,11 @@ impl ConversationService {
     /// See [`ConversationRuntime::prepare`].
     pub(crate) fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
         self.runtime.prepare(choice)
+    }
+
+    /// See [`ConversationRuntime::shutdown`].
+    pub(crate) fn shutdown(&self) {
+        self.runtime.shutdown();
     }
 
     /// See [`ConversationRuntime::settings_changed`]. Called after the daemon's settings are

@@ -872,7 +872,7 @@ fn an_unverified_version_with_every_chat_flag_runs_and_is_marked_unverified() {
     let lines = launch_lines(&log);
     assert_eq!(lines.len(), 1, "{lines:?}");
     assert!(
-        lines[0].contains(r#""exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--""#),
+        lines[0].contains(r#""exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "-c", "show_raw_agent_reasoning=true", "-c", "model_reasoning_summary=\"detailed\"", "--""#),
         "{}",
         lines[0]
     );
@@ -1610,18 +1610,18 @@ fn each_codex_level_launches_with_its_exact_flags_and_records_it() {
     let lines = launch_lines(&log);
     assert_eq!(lines.len(), 3, "{lines:?}");
     assert!(
-        lines[0].contains(r#""exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "--""#),
+        lines[0].contains(r#""exec", "--json", "--sandbox", "read-only", "--skip-git-repo-check", "--ephemeral", "-c", "show_raw_agent_reasoning=true", "-c", "model_reasoning_summary=\"detailed\"", "--""#),
         "{}",
         lines[0]
     );
     assert!(
-        lines[1].contains(r#""exec", "--json", "--sandbox", "workspace-write", "--approve-for-me", "--skip-git-repo-check", "--ephemeral", "--""#),
+        lines[1].contains(r#""exec", "--json", "--sandbox", "workspace-write", "--approve-for-me", "--skip-git-repo-check", "--ephemeral", "-c", "show_raw_agent_reasoning=true", "-c", "model_reasoning_summary=\"detailed\"", "--""#),
         "{}",
         lines[1]
     );
     // Full adds no sandbox or approval flag, and keeps the two flags that loosen nothing.
     assert!(
-        lines[2].contains(r#""exec", "--json", "--skip-git-repo-check", "--ephemeral", "--""#),
+        lines[2].contains(r#""exec", "--json", "--skip-git-repo-check", "--ephemeral", "-c", "show_raw_agent_reasoning=true", "-c", "model_reasoning_summary=\"detailed\"", "--""#),
         "{}",
         lines[2]
     );
@@ -4283,4 +4283,38 @@ fn a_token_only_session_cannot_approve_a_merge_card() {
         .latest_pull_request_merge(SEEDED_TASK)
         .unwrap()
         .is_none());
+}
+
+#[test]
+fn thinking_is_stored_before_the_reply_and_never_enters_history() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "hello thinker", "t-1");
+    let page = chat.settled(&global());
+    let kinds: Vec<&str> = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        [
+            "user_message",
+            "thinking_chunk",
+            "reply_chunk",
+            "turn_completed"
+        ],
+        "{page}"
+    );
+    assert_eq!(
+        page["entries"][1]["body"],
+        "fake thinking about: hello thinker"
+    );
+    assert_eq!(reply(&page), "fake reply to: hello thinker");
+    chat.send(&global(), "[fake:echo]", "t-2");
+    let page = chat.settled(&global());
+    assert!(!reply(&page).contains("fake thinking"), "{}", reply(&page));
+    stop(&layout, daemon, chat);
 }

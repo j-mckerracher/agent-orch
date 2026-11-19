@@ -60,7 +60,7 @@ export const WINDOWS = {
   // Settling the default agent before wake and relay turns adds one portable unit test and one conversation_runtime test.
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 677 becomes 678.
   // The shared compatibility policy replaces six obsolete chat-only helper tests.
-  daemon: { passed: 696, ignored: 1, sequence: [593, 88, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 697, ignored: 1, sequence: [593, 89, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -104,10 +104,10 @@ export const WINDOWS = {
   // The home directory setting adds 1 portable store test (orchestrator_settings 12 becomes 13): 351 becomes 352.
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 352 becomes 353 passed.
   // Workstream priority adds 2 portable workstreams.rs tests: 13 becomes 15, so 359 becomes 361 passed.
-  store: { passed: 378, ignored: 1, sequence: [113, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 15, 0] },
+  store: { passed: 384, ignored: 1, sequence: [114, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 3, 2, 5, 14, 7, 20, 3, 11, 4, 14, 3, 7, 2, 5, 1, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 112 },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 113 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
@@ -157,7 +157,8 @@ export const MACOS = {
   // Workstream priority adds one portable daemon unit test (workstreams.prioritize): 794 becomes 795.
   // Six chat-only helper tests removed; the Unix executable-replacement regression adds one.
   // Running task attempts as the pstack workflow agent (DPES-1044) adds four Unix-only executor tests: 820 becomes 824 (CI run 44356323793, measured on macOS).
-  daemon: { passed: 833, ignored: 1, sequence: [703, 93, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // A daemon shutdown kills a `--version` read in flight (DPES-1106): one Unix-only unit test, so 833 becomes 834.
+  daemon: { passed: 836, ignored: 1, sequence: [705, 94, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // Measured on the DPES-1105 branch (`cargo test --locked --workspace`): 998 plus 21 history tests, then the
   // 2 model-picker tests (the Claude alias catalog and the rejected-model adapter failure): 1021.
@@ -192,7 +193,8 @@ export const MACOS = {
   // Dispatch defaults add 6 tests (5 daemon, 1 store): 2105 becomes 2111.
   // Settling the default agent before wake and relay turns adds 2 daemon tests: 2202 becomes 2204.
   // The workflow agent (DPES-1044) adds 13 tests (4 daemon, 7 agents unit, 1 agents integration, 1 cli), as the macOS gate measured them in CI run 44356323793: 2281 becomes 2294.
-  workspace: { passed: 2309, ignored: 2 },
+  // The macOS workspace-tests gate measured 2311 on main (CI run 44458538573); the shutdown test above and the thinking tests of this branch make 2323.
+  workspace: { passed: 2323, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
@@ -213,10 +215,10 @@ export const MACOS = {
   // The home directory setting adds 1 store test (orchestrator_settings 12 becomes 13): 355 becomes 356.
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 356 becomes 357 passed.
   // Workstream priority adds 2 workstreams.rs tests: 13 becomes 15, so 363 becomes 365 passed.
-  store: { passed: 382, ignored: 1, sequence: [115, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 15, 0] },
+  store: { passed: 388, ignored: 1, sequence: [116, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 114 },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 115 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   // DPES-1105 usage controls (PR #97) adds two real-daemon e2e files (3 and 1 tests): 8 files and 46 tests become 10 and 50,
   // as the macOS desktop-e2e gate measured them in CI run 43945842537.
@@ -280,7 +282,8 @@ export const NODE_SELF_TESTS = { passed: 147 };
 // The top bar open task count adds one test in TopBar.test.tsx: 2355.
 // The archived workstreams box and the settings layout (DPES-1044) add one file and six tests: 126 files, 2361 tests, as the
 // Windows desktop-vitest gate measured them in CI run 44380025826.
-export const VITEST = { files: 126, tests: 2366 };
+// Agent thinking (chat and task sessions) adds ThinkingBlock.test.tsx and SessionThinking.test.tsx and 20 tests in all: 128 files, 2386 tests.
+export const VITEST = { files: 128, tests: 2386 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

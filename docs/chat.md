@@ -24,6 +24,14 @@ Copilot does not expose a free model or effort inventory to the picker. Choose C
 
 After an update to Copilot, Claude Code, or Codex, an unfamiliar version can still run. The daemon checks the installed CLI's help for the command options and permission controls the operation needs. When it cannot confirm those options, it does not start the agent. Retry the check or change your selection. MCAO does not silently replace a saved provider or weaken the requested permissions.
 
+## Thinking
+
+When the agent exposes its reasoning, a "Thinking" block appears above that turn's reply. It is open while the agent works and collapses when the reply starts. Click it to open it again. Copy thinking copies the full text.
+
+The block shows everything the provider exposes. Newer Claude and GitHub Copilot models return summarized thinking. Codex returns raw reasoning only on models that support it. Turns from before this feature have no thinking.
+
+Thinking is capped at 1 MiB per chat turn. When the cap is reached, the text ends with "[thinking truncated: limit reached]".
+
 ## Clear history or remove a coordinator
 
 The conversation header menu has Clear history and, for a project coordinator, Remove coordinator. Both ask for confirmation first.

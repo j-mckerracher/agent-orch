@@ -434,9 +434,11 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "usage.localTools.refresh"
         | "settings.workClasses.get"
         | "settings.workClasses.set" => Some(Capability::Agents),
-        "sessions.list" | "sessions.get" | "sessions.events" | "sessions.output_tail" => {
-            Some(Capability::Sessions)
-        }
+        "sessions.list"
+        | "sessions.get"
+        | "sessions.events"
+        | "sessions.output_tail"
+        | "sessions.thinking" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
         "delivery.request" => Some(Capability::Delivery),
@@ -677,7 +679,12 @@ mod tests {
 
     #[test]
     fn output_tail_maps_to_the_sessions_capability_like_other_session_reads() {
-        for method in ["sessions.get", "sessions.events", "sessions.output_tail"] {
+        for method in [
+            "sessions.get",
+            "sessions.events",
+            "sessions.output_tail",
+            "sessions.thinking",
+        ] {
             assert_eq!(method_capability(method), Some(Capability::Sessions));
         }
     }

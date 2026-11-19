@@ -370,6 +370,14 @@ impl StreamParser {
             .get("type")
             .and_then(Value::as_str)
             .ok_or(ProtocolViolation::BadField("delta.type"))?;
+        if delta_type == "thinking_delta" {
+            // Thinking never feeds last_message.
+            return Ok(delta
+                .get("thinking")
+                .and_then(Value::as_str)
+                .filter(|t| !t.is_empty())
+                .map(|t| AgentEvent::ThinkingDelta { text: t.to_owned() }));
+        }
         if delta_type != "text_delta" {
             return Ok(None);
         }
@@ -486,6 +494,28 @@ mod tests {
             }
             other => panic!("expected a failed exit with code 7, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn thinking_deltas_surface_without_touching_last_message() {
+        let mut parser = StreamParser::new();
+        let thinking = |kind: &str, field: &str, value: &str| {
+            format!(
+                r#"{{"type":"stream_event","event":{{"type":"content_block_delta","index":0,"delta":{{"type":"{kind}","{field}":"{value}"}}}}}}"#
+            )
+        };
+        let event = parser
+            .feed(&thinking("thinking_delta", "thinking", "hmm"))
+            .expect("event")
+            .expect("no violation");
+        assert_eq!(event, AgentEvent::ThinkingDelta { text: "hmm".into() });
+        assert!(parser
+            .feed(&thinking("thinking_delta", "thinking", ""))
+            .is_none());
+        assert!(parser
+            .feed(&thinking("signature_delta", "signature", "sig"))
+            .is_none());
+        assert_eq!(parser.last_message(), None);
     }
 
     #[test]

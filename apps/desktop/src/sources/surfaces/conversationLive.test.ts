@@ -27,7 +27,7 @@ const wire = (
   id: `${turn}:${kind}:${sequence}`,
   turn_id: turn,
   kind,
-  author: kind === "user_message" ? "user" : kind === "reply_chunk" ? "orchestrator" : "system",
+  author: kind === "user_message" ? "user" : kind === "reply_chunk" || kind === "thinking_chunk" ? "orchestrator" : "system",
   body,
   error_code: code,
   created_at: "2026-11-10T21:00:00Z",
@@ -51,6 +51,41 @@ describe("mapEntries", () => {
     ]);
     expect(done).toHaveLength(2);
     expect(done[1]).toMatchObject({ text: "Hello", streaming: false });
+  });
+
+  it("joins a turn's thinking chunks into one entry before its reply and ends it when the reply starts", () => {
+    const thinking = [
+      wire(1, "t1", "user_message", "hi"),
+      wire(2, "t1", "thinking_chunk", "Let me "),
+      wire(3, "t1", "thinking_chunk", "think."),
+    ];
+    expect(mapEntries(thinking).map((e) => [e.kind, e.role, e.text, e.streaming, e.sequence])).toEqual([
+      ["message", "user", "hi", undefined, 1],
+      ["thinking", "coordinator", "Let me think.", true, 3],
+    ]);
+    const replied = mapEntries([...thinking, wire(4, "t1", "reply_chunk", "Hello")]);
+    expect(replied.map((e) => [e.kind, e.text, e.streaming])).toEqual([
+      ["message", "hi", undefined],
+      ["thinking", "Let me think.", false],
+      ["message", "Hello", true],
+    ]);
+  });
+
+  it("keeps thinking apart per turn and ends it with the turn when there is no reply", () => {
+    const entries = mapEntries([
+      wire(1, "t1", "user_message", "a"),
+      wire(2, "t1", "thinking_chunk", "one"),
+      wire(3, "t1", "turn_cancelled"),
+      wire(4, "t2", "user_message", "b"),
+      wire(5, "t2", "thinking_chunk", "two"),
+    ]);
+    expect(entries.map((e) => [e.kind, e.text, e.streaming])).toEqual([
+      ["message", "a", undefined],
+      ["thinking", "one", false],
+      ["status", "This turn was canceled.", undefined],
+      ["message", "b", undefined],
+      ["thinking", "two", true],
+    ]);
   });
 
   it("turns a runtime_unavailable failure into a system status, never reply text", () => {
