@@ -217,7 +217,8 @@ fn partial_start(adapter: &str, out: &mut impl Write) {
 
 fn oversized_stream(adapter: &str, out: &mut impl Write) {
     start_stream(adapter, out);
-    let text = "a".repeat(70_000);
+    // One byte over the supervisor's 16 MiB stdout line cap.
+    let text = "a".repeat(16 * 1024 * 1024 + 1);
     match adapter {
         "codex" => writeln!(out, r#"{{"type":"item.completed","item":{{"type":"agent_message","text":"{text}"}}}}"#),
         "claude" => writeln!(out, r#"{{"type":"stream_event","event":{{"type":"content_block_delta","delta":{{"type":"text_delta","text":"{text}"}}}}}}"#),
@@ -245,7 +246,7 @@ fn pi(scenario: &str, variant: &str, argument: Option<&str>) {
     let mut out = stdout.lock();
     match scenario {
         "framing" if variant == "oversized" => {
-            let padding = "a".repeat(70_000);
+            let padding = "a".repeat(16 * 1024 * 1024 + 1);
             writeln!(
                 out,
                 r#"{{"type":"response","id":"{id}","command":"{command}","success":true,"data":{{"padding":"{padding}"}}}}"#

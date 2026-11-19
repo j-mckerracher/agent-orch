@@ -80,7 +80,7 @@ fn main() {
             std::thread::sleep(Duration::from_secs(300));
         }
         "oversized" => {
-            for _ in 0..1024 {
+            for _ in 0..17 * 1024 {
                 out.write_all(&[b'o'; 1024]).unwrap();
             }
             writeln!(out).unwrap();
@@ -264,7 +264,8 @@ fn deprecated_error_item_and_command_lifecycle_do_not_fail_a_successful_turn() {
 
 #[test]
 fn oversized_stdout_and_stderr_lines_are_truncated_with_a_marker() {
-    const MAX_CAPTURE_BYTES: usize = 64 * 1024;
+    const MAX_STDOUT_BYTES: usize = 16 * 1024 * 1024;
+    const MAX_STDERR_BYTES: usize = 64 * 1024;
     const TRUNCATION_MARKER: &str = "...[truncated]";
 
     with_runtime(async {
@@ -291,10 +292,10 @@ fn oversized_stdout_and_stderr_lines_are_truncated_with_a_marker() {
 
         let stdout = stdout.expect("stdout line");
         let stderr = stderr.expect("stderr line");
-        assert_eq!(stdout.len(), MAX_CAPTURE_BYTES + TRUNCATION_MARKER.len());
-        assert_eq!(stderr.len(), MAX_CAPTURE_BYTES + TRUNCATION_MARKER.len());
-        assert!(stdout.starts_with(&"o".repeat(MAX_CAPTURE_BYTES)));
-        assert!(stderr.starts_with(&"e".repeat(MAX_CAPTURE_BYTES)));
+        assert_eq!(stdout.len(), MAX_STDOUT_BYTES + TRUNCATION_MARKER.len());
+        assert_eq!(stderr.len(), MAX_STDERR_BYTES + TRUNCATION_MARKER.len());
+        assert!(stdout.starts_with(&"o".repeat(MAX_STDOUT_BYTES)));
+        assert!(stderr.starts_with(&"e".repeat(MAX_STDERR_BYTES)));
         assert!(stdout.ends_with(TRUNCATION_MARKER));
         assert!(stderr.ends_with(TRUNCATION_MARKER));
     });

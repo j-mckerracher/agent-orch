@@ -273,7 +273,7 @@ no flag.
   Claude Code turn runs in its own empty directory under
   `<data-dir>/conversation-scratch`, removed when the turn ends. The adapter's
   `ChildSupervisor` provides a Unix process group (killed as a
-  group), a Windows Job Object, and a 64 KiB line cap. Turn deadline 180 s
+  group), a Windows Job Object, and a line cap (16 MiB stdout, 64 KiB stderr). Turn deadline 180 s
   (`AGENT_ORCH_CONVERSATION_TIMEOUT_MS`, clamped 100 ms to 600 s) gives
   `runtime_timeout`; at most 4 turns run at once, otherwise `runtime_busy`.
   The catalog and version probes kill only the direct child on Windows; a Job
