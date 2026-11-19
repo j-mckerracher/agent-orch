@@ -489,8 +489,10 @@ impl RpcHandler for DaemonApi {
             "grants.create" => self.grants_create(params),
             "grants.revoke" => self.grants_revoke(params),
             "grants.list" => self.grants_list(params),
-            "notes.list" => self.notes_list(params),
-            "notes.set" => self.notes_set(params),
+            "memory.list" => self.memory_list(params),
+            "memory.set" => self.memory_set(params),
+            "memory.remove" => self.memory_remove(params),
+            "memory.restore" => self.memory_restore(params),
             "reports.list" => self.reports_list(params),
             "reports.get" => self.reports_get(params),
             "reports.relay" => {
@@ -2058,12 +2060,12 @@ mod landing;
 mod landing_api;
 #[path = "api_load.rs"]
 pub(crate) mod load;
+#[path = "api_memory.rs"]
+mod memory;
 #[path = "api_models.rs"]
 mod models;
 #[path = "api_monitoring.rs"]
 mod monitoring;
-#[path = "api_notes.rs"]
-mod notes;
 #[path = "api_output.rs"]
 mod output;
 #[path = "api_projects_defaults.rs"]
@@ -2138,8 +2140,8 @@ mod landing_merge_tests;
 #[path = "api_landing_tests.rs"]
 mod landing_tests;
 #[cfg(test)]
-#[path = "api_notes_tests.rs"]
-mod notes_tests;
+#[path = "api_memory_tests.rs"]
+mod memory_tests;
 #[cfg(test)]
 #[path = "api_projects_defaults_tests.rs"]
 mod projects_defaults_tests;

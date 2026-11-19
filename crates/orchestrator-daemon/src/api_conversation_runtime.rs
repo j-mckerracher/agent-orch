@@ -35,7 +35,7 @@ use orchestrator_store::{
 };
 
 use super::actions::promotion_denial;
-use super::conversation_snapshot::build_snapshot_with_notes;
+use super::conversation_snapshot::build_snapshot;
 use super::home_directory::with_in_place_delivery;
 use super::landing_api::{merge_denial, with_project_merge_methods};
 use super::load::LoadHandle;
@@ -492,23 +492,34 @@ impl ReplySink {
                 let block = with_project_merge_methods(store, block);
                 // A task for the home directory can only end in a report.
                 let block = with_in_place_delivery(store, block);
-                TurnBlock::Accepted(block.checked_with(|action| match action {
-                    Action::TaskPropose(propose) => {
-                        denial_of(store, propose).or_else(|| promotion_denial(store, propose))
+                TurnBlock::Accepted(block.checked_with(|action| {
+                    match action {
+                        Action::TaskPropose(propose) => {
+                            denial_of(store, propose).or_else(|| promotion_denial(store, propose))
+                        }
+                        Action::TaskRevise(revise) => revise_denial(store, revise),
+                        // A merge from a turn above Restricted, for a pull request the app has not
+                        // read, at another head, or that would be refused now is stored already
+                        // `failed`, never approvable.
+                        Action::DeliveryMerge(_) if self.level != PermissionLevel::Restricted => {
+                            Some(orchestrator_core::task_envelope::Denial::Delivery)
+                        }
+                        Action::DeliveryMerge(merge) => merge_denial(
+                            store,
+                            merge,
+                            i64::try_from(crate::executor::unix_now_ms()).unwrap_or(i64::MAX),
+                        ),
+                        // Shared preferences are read-only outside the global conversation: the
+                        // card is stored failed, and the next snapshot tells the agent why, so it
+                        // reports the preference up instead (DPES-1108 phase 6).
+                        Action::MemorySet(set) => orchestrator_core::memory::resolve(
+                            set.document,
+                            &self.target.memory_scope(),
+                        )
+                        .err()
+                        .map(orchestrator_core::task_envelope::Denial::Memory),
+                        _ => None,
                     }
-                    Action::TaskRevise(revise) => revise_denial(store, revise),
-                    // A merge from a turn above Restricted, for a pull request the app has not
-                    // read, at another head, or that would be refused now is stored already
-                    // `failed`, never approvable.
-                    Action::DeliveryMerge(_) if self.level != PermissionLevel::Restricted => {
-                        Some(orchestrator_core::task_envelope::Denial::Delivery)
-                    }
-                    Action::DeliveryMerge(merge) => merge_denial(
-                        store,
-                        merge,
-                        i64::try_from(crate::executor::unix_now_ms()).unwrap_or(i64::MAX),
-                    ),
-                    _ => None,
                 }))
             }
             _ => TurnBlock::Rejected,
@@ -883,12 +894,11 @@ impl ConversationService {
             level,
             history: self.history(target, turn_id),
             context: Some({
-                let snapshot = build_snapshot_with_notes(
+                let snapshot = build_snapshot(
                     &self.shared.store,
                     target,
                     actions,
                     &self.shared.load.read(Instant::now()),
-                    wake.is_none(),
                 );
                 // A turn nobody asked for sees no path or token a task title may hold.
                 let snapshot = if wake.is_some() {
