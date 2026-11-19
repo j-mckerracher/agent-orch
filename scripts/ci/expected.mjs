@@ -215,7 +215,8 @@ export const MACOS = {
   // The home directory setting adds 1 store test (orchestrator_settings 12 becomes 13): 355 becomes 356.
   // Dispatch defaults add one orchestrator_settings test: 13 becomes 14, so 356 becomes 357 passed.
   // Workstream priority adds 2 workstreams.rs tests: 13 becomes 15, so 363 becomes 365 passed.
-  store: { passed: 382, ignored: 1, sequence: [115, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 11, 3, 7, 14, 4, 2, 5, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 15, 0] },
+  // DPES-1108 phase 3 user decisions add the decision_questions binary (8 tests): 382 becomes 390 (CI run 44475972106).
+  store: { passed: 390, ignored: 1, sequence: [115, 7, 31, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 4, 2, 5, 14, 7, 20, 3, 11, 5, 14, 3, 7, 2, 5, 1, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 114 },
