@@ -22,6 +22,7 @@ pub mod mcp_wiring;
 pub mod permission;
 pub mod pi_rpc_adapter;
 pub mod routing;
+pub mod task_session;
 pub mod usage;
 pub mod workflow_agent;
 
@@ -46,4 +47,5 @@ pub use pi_rpc_adapter::PiRpcAdapter;
 pub use routing::{
     select_adapter, AdapterCapabilityGap, Capability, RoutableAdapter, RoutingError,
 };
+pub use task_session::{resume_refusal, TaskSession};
 pub use usage::{ReportedCost, UsageReport};

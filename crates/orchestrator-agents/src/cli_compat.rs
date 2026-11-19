@@ -108,7 +108,7 @@ impl CliHelp {
 // or a model ID as an unsupported option.
 fn takes_value(agent: &str, flag: &str) -> bool {
     match agent {
-        "codex" => matches!(flag, "-c" | "-m" | "--sandbox"),
+        "codex" => matches!(flag, "-c" | "-m" | "--sandbox" | "--add-dir"),
         "claude-code" => matches!(
             flag,
             "-p" | "--system-prompt"
@@ -124,6 +124,9 @@ fn takes_value(agent: &str, flag: &str) -> bool {
                 | "--effort"
                 | "--agent"
                 | "--plugin-dir"
+                | "--add-dir"
+                | "--session-id"
+                | "--resume"
         ),
         "github-copilot" => matches!(
             flag,
@@ -138,6 +141,7 @@ fn takes_value(agent: &str, flag: &str) -> bool {
                 | "--max-ai-credits"
                 | "--agent"
                 | "--plugin-dir"
+                | "--add-dir"
         ),
         _ => false,
     }
