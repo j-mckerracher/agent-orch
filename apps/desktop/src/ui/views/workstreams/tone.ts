@@ -6,6 +6,7 @@ export const STATE_TONE: Record<TaskState, Tone> = {
   Created: "neutral",
   Queued: "neutral",
   Running: "info",
+  Waiting: "warn",
   Verifying: "info",
   Succeeded: "ok",
   VerificationFailed: "bad",

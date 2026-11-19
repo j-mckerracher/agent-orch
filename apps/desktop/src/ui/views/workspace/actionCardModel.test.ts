@@ -48,6 +48,22 @@ const dependent = proposal({
 });
 
 describe("approval card copy", () => {
+  it("shows a task.message with its text and the task it resumes", () => {
+    const message = proposal({
+      kind: "task.message",
+      params: { task_id: "task-9", text: "The database is back.\nRun the suite again." },
+      target: { taskTitle: "Run the suite", taskState: "Waiting" },
+    });
+    expect(cardTitle("task.message")).toBe("Proposed: Message the waiting worker");
+    expect(fieldsOf(message, NAMES, null)).toEqual([
+      { label: "Task title", value: "Run the suite" },
+      { label: "Task state now", value: "Waiting" },
+      { label: "Message", value: ["The database is back.", "Run the suite again."] },
+      { label: "Task id", value: "task-9" },
+    ]);
+    expect(openTaskId(message)).toBe("task-9");
+  });
+
   it("names each kind's heading, fields and button action", () => {
     expect(cardTitle("workstream.create")).toBe("Proposed: Create workstream");
     expect(actionPhrase(create, NAMES)).toBe("create workstream Post-MVP work");

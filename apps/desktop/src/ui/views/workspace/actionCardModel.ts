@@ -33,6 +33,7 @@ const KINDS: Readonly<Record<string, KindCopy>> = {
   "task.revise": { heading: "Revise task", done: "Revision started" },
   "decision.hold": { heading: "Hold decision", done: "Held" },
   "decision.ask": { heading: "Ask for your decision", done: "Asked" },
+  "task.message": { heading: "Message the waiting worker", done: "Sent" },
   "project.remove": { heading: "Remove project", done: "Removed" },
   "delivery.merge": { heading: "Merge pull request", done: "Merged" },
 };
@@ -235,7 +236,8 @@ function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
     p.kind === "workstream.link_task" ||
     p.kind === "task.revise" ||
     p.kind === "decision.hold" ||
-    p.kind === "decision.ask"
+    p.kind === "decision.ask" ||
+    p.kind === "task.message"
   ) {
     return shorten(p.target?.taskTitle || text(p.params.task_id));
   }
@@ -381,6 +383,13 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("Options", Array.isArray(x.options) ? x.options.map(text) : []),
         field("Task id", text(x.task_id)),
       ];
+    case "task.message":
+      return [
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task state now", p.target?.taskState ?? "(not available)"),
+        field("Message", linesOf(text(x.text))),
+        field("Task id", text(x.task_id)),
+      ];
     case "delivery.merge": {
       const pull = p.target?.pull;
       const verdict = mergeVerdict(pull, p.denial);
@@ -494,6 +503,7 @@ export function openTaskId(p: ActionProposal): string | null {
     case "task.retry":
     case "decision.hold":
     case "decision.ask":
+    case "task.message":
     case "delivery.merge":
       return text(p.params.task_id) || null;
     case "task.revise":
@@ -520,6 +530,8 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
       return `Held the decision for “${subjectOf(p, names)}” until ${formatHoldDay(text(p.params.until), true)}.`;
     case "decision.ask":
       return `Asked you about “${subjectOf(p, names)}”. Answer it under Needs your decision in Review & Decisions.`;
+    case "task.message":
+      return `Sent the message to the waiting worker of “${subjectOf(p, names)}”. It continues with it.`;
     case "project.remove":
       return `Removed project “${subjectOf(p, names)}”. Its tasks stay in history.`;
     case "delivery.merge":

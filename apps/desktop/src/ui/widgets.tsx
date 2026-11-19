@@ -31,6 +31,7 @@ export function Notice({
 const STATE_TONE: Record<string, Tone> = {
   Succeeded: "ok",
   Running: "info",
+  Waiting: "warn",
   Verifying: "info",
   Spawning: "info",
   Failed: "bad",

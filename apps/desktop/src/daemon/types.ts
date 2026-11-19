@@ -97,6 +97,8 @@ export type TaskState =
   | "Created"
   | "Queued"
   | "Running"
+  /** The worker ended its turn to wait for the user's decision or for help (DPES-1108). */
+  | "Waiting"
   | "Verifying"
   | "Succeeded"
   | "VerificationFailed"
@@ -106,6 +108,7 @@ export type TaskState =
 export type AttemptState =
   | "Pending"
   | "Running"
+  | "Waiting"
   | "CandidateReady"
   | "Failed"
   | "Succeeded"
@@ -820,6 +823,7 @@ export type ActionKindWire =
   | "task.revise"
   | "decision.hold"
   | "decision.ask"
+  | "task.message"
   | "project.remove";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
