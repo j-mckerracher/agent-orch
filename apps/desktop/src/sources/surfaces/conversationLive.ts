@@ -21,6 +21,7 @@ import { DaemonError, asDaemonError } from "../../daemon/errors";
 import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type {
   ActionProposalWire,
+  ConversationCoordinatorWire,
   ConversationRoutedInWire,
   ConversationWireEntry,
   ConversationWireTarget,
@@ -37,9 +38,11 @@ import type {
   ConversationSource,
   ConversationTarget,
   ConversationTurnInfo,
+  CoordinatorState,
   ModelChoice,
   PermissionLevel,
   Provenance,
+  PullRequestLink,
   RoutedIn,
   SendReceipt,
   WakeRecord,
@@ -147,6 +150,31 @@ export function mapRoutedIn(wire: ConversationRoutedInWire): RoutedIn {
   return { taskId: wire.task_id, title: wire.title, routedAt: wire.routed_at, state: wire.state };
 }
 
+/** Copies a coordinator's state from the wire (DPES-1108). Verbs and authors stay the daemon's strings. */
+export function mapCoordinator(wire: ConversationCoordinatorWire): CoordinatorState {
+  return {
+    scopeSentence: wire.scope_sentence,
+    openTasks: wire.open_tasks,
+    openRequests: wire.open_requests,
+    routedRequests: wire.routed_requests.map((request) => ({
+      id: request.id,
+      work: request.work,
+      answered: request.answered,
+      createdAt: request.created_at,
+    })),
+    reports: wire.reports.map((report) => ({
+      id: report.id,
+      author: report.author,
+      verb: report.verb,
+      requestId: report.request_id,
+      taskId: report.task_id,
+      key: report.key,
+      note: report.note,
+      createdAt: report.created_at,
+    })),
+  };
+}
+
 /** Copies a wake record from the wire. State, outcome and reason stay the daemon's strings, so an unknown one shows as unknown. */
 export function mapWakeRecord(wire: WakeRecordWire): WakeRecord {
   return {
@@ -191,6 +219,28 @@ function actionBlocksOf(entries: readonly ConversationWireEntry[], latest: Conve
   }
   if (latest?.action_block && !(latest.id in blocks)) blocks[latest.id] = latest.action_block;
   return blocks;
+}
+
+/** Exactly the shape the daemon builds. Anything else is dropped, never shown. */
+const PULL_REQUEST_URL = /^https:\/\/github\.com\/[A-Za-z0-9._-]{1,100}\/[A-Za-z0-9._-]{1,100}\/pull\/([1-9][0-9]{0,5})$/;
+
+/** The most links one turn shows; the daemon keeps at most this many. */
+const MAX_PULL_REQUEST_LINKS = 5;
+
+/**
+ * The pull request links of a `turn_completed` entry (DPES-1108). Each URL must match the daemon's form and name the
+ * entry's own number; any other entry, or an older daemon, gives none.
+ */
+export function pullRequestLinks(entry: ConversationWireEntry): PullRequestLink[] {
+  if (entry.kind !== "turn_completed" || !Array.isArray(entry.pull_requests)) return [];
+  const links: PullRequestLink[] = [];
+  for (const wire of entry.pull_requests) {
+    if (links.length === MAX_PULL_REQUEST_LINKS) break;
+    const match = typeof wire?.url === "string" ? PULL_REQUEST_URL.exec(wire.url) : null;
+    if (!match || Number(match[1]) !== wire.number || typeof wire.task_id !== "string") continue;
+    links.push({ taskId: wire.task_id, number: wire.number, url: wire.url });
+  }
+  return links;
 }
 
 /**
@@ -274,12 +324,25 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
           out.push(created);
         }
         break;
-      case "turn_completed":
+      case "turn_completed": {
         endThinking(entry.turn_id);
-        if (reply) reply.streaming = false;
-        else if (withProposals?.has(entry.turn_id)) out.push(status(entry, "The orchestrator proposed actions without a written reply."));
-        else out.push(status(entry, "The orchestrator finished this turn without a reply."));
+        let ended: ConversationEntry;
+        if (reply) {
+          reply.streaming = false;
+          ended = reply;
+        } else {
+          ended = status(
+            entry,
+            withProposals?.has(entry.turn_id)
+              ? "The orchestrator proposed actions without a written reply."
+              : "The orchestrator finished this turn without a reply.",
+          );
+          out.push(ended);
+        }
+        const links = pullRequestLinks(entry);
+        if (links.length > 0) ended.pullRequests = links;
         break;
+      }
       case "turn_failed":
         endThinking(entry.turn_id);
         if (reply) reply.streaming = false;
@@ -386,6 +449,7 @@ export function createLiveConversation(
           let wakeRecords: WakeRecordWire[] | undefined;
           let wakeMore: boolean | undefined;
           let routedIn: ConversationRoutedInWire[] | undefined;
+          let coordinator: ConversationCoordinatorWire | undefined;
           let jumpedTo: number | null = null;
           // The first read starts at the beginning and learns `latest_sequence`. A long log is then
           // read from `latest_sequence - MAX_LIVE_SEQUENCE_SPAN`, so the newest entries and the
@@ -404,6 +468,7 @@ export function createLiveConversation(
             wakeRecords = result.wake_records;
             wakeMore = result.wake_records_more;
             routedIn = result.routed_in;
+            coordinator = result.coordinator;
             more = result.more;
             if (!more) break;
             after = result.next_after_sequence;
@@ -430,6 +495,7 @@ export function createLiveConversation(
             ...(wakeRecords ? { wake: wakeRecords.map(mapWakeRecord) } : {}),
             wakeMore: wakeMore ?? false,
             ...(routedIn && routedIn.length > 0 ? { routedIn: routedIn.map(mapRoutedIn) } : {}),
+            ...(coordinator ? { coordinator: mapCoordinator(coordinator) } : {}),
           };
       };
       return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));

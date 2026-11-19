@@ -5,7 +5,9 @@
 //! reply, [`parse_block`] validates it strictly, and [`Action::canonical`]
 //! gives the form, digest, and supersede subject the store deduplicates on.
 //! A parsed block carries no authority. The store records pending proposals,
-//! and only a later user approval can act on them.
+//! and only an approval can act on them: the user's, a standing grant's, or, for a kind
+//! [`ActionAuthority::Autonomous`] inside the daemon's bounds, the orchestrator's own
+//! (DPES-1108 phase 5).
 //!
 //! Design: `docs/design/orchestrator-actions.md`.
 
@@ -47,6 +49,83 @@ pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 /// `delivery.merge` is not here: only a merge grant covers it (see `standing_grant`), and
 /// that grant may name no other kind.
 pub const NEVER_GRANTABLE: [&str; 3] = ["project.remove", "task.cancel", "task.revise"];
+/// Most actions one turn may run on its own. The rest of its block stays cards for the user.
+pub const MAX_AUTONOMOUS_PER_TURN: usize = 5;
+/// Most tasks a coordinator may start on its own for one routed request (DPES-1108
+/// integration). A request stays open until it is answered, and every coordinator wake may
+/// propose tasks for it, so without this a wake loop could keep making work. Past it, a task for
+/// the request is a card for the user.
+pub const MAX_AUTONOMOUS_TASKS_PER_REQUEST: usize = 5;
+
+/// Who may make an action happen (DPES-1108 phase 5, plan 5.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionAuthority {
+    /// The orchestrator runs it at once, inside the daemon's bounds. The audit trail records
+    /// the turn that issued it.
+    Autonomous,
+    /// Needs the user's word: a card the user approves. Only `delivery.merge` may instead be
+    /// covered by a merge grant, and [`NEVER_GRANTABLE`] is unchanged.
+    UserWord,
+}
+
+/// Why the daemon does not run an action on its own and leaves it a card for the user.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AutonomyRefusal {
+    /// The action needs the user's word ([`ActionAuthority::UserWord`]).
+    UserWord,
+    /// The turn has no user words to cite: a wake turn, or a turn that read an agent's report.
+    /// Such a turn may only retry, message or ask about existing work.
+    NoUserOrigin,
+    /// A task that would end in a pull request, which publishes to a remote.
+    PullRequest,
+    /// The turn already ran [`MAX_AUTONOMOUS_PER_TURN`] actions.
+    TurnCap,
+}
+
+impl AutonomyRefusal {
+    /// The stable code a proposal that fails this check at execution records.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::UserWord => "user_word_required",
+            Self::NoUserOrigin => "no_user_origin",
+            Self::PullRequest => "pull_request_needs_user",
+            Self::TurnCap => "autonomy_turn_cap",
+        }
+    }
+}
+
+/// Whether the daemon may run `action` on its own as the `ran`-th action of its turn (zero
+/// first). `from_user` is true only for a turn the user's own message opened and that read no
+/// agent report: only then is there a user instruction the action can cite as its origin.
+///
+/// A turn with no user origin may still retry, message or raise a decision for existing work;
+/// anything that would create or reshape work stays a card. Pure, so the live pass and the
+/// restart path apply the same rule.
+pub fn autonomy_check(action: &Action, from_user: bool, ran: usize) -> Result<(), AutonomyRefusal> {
+    if action.authority() == ActionAuthority::UserWord {
+        return Err(AutonomyRefusal::UserWord);
+    }
+    if !from_user && !action.kind().acts_on_existing_work() && !serves_routed_request(action) {
+        return Err(AutonomyRefusal::NoUserOrigin);
+    }
+    if let Action::TaskPropose(propose) = action {
+        if propose.delivery == DeliveryPolicy::PullRequest {
+            return Err(AutonomyRefusal::PullRequest);
+        }
+    }
+    if ran >= MAX_AUTONOMOUS_PER_TURN {
+        return Err(AutonomyRefusal::TurnCap);
+    }
+    Ok(())
+}
+
+/// Whether `action` is a task a coordinator proposes for a routed request. Only a coordinator's
+/// block may name a request (the global and workstream scopes refuse it), and the daemon checks
+/// that the request is open and of the coordinator's project. The request was routed by the
+/// global orchestrator from a user's word, so it is the task's origin even in a wake turn.
+fn serves_routed_request(action: &Action) -> bool {
+    matches!(action, Action::TaskPropose(propose) if propose.request.is_some())
+}
 
 /// Most text the filter holds: the block plus its fences and slack.
 const HELD_LIMIT: usize = MAX_ACTION_BLOCK_BYTES + 256;
@@ -66,11 +145,16 @@ pub enum ActionKind {
     DeliveryMerge,
     ProjectRemove,
     DecisionHold,
+    DecisionAsk,
+    TaskMessage,
+    MemorySet,
+    CoordinatorRoute,
+    CoordinatorReport,
 }
 
 impl ActionKind {
     /// Every kind, in wire order.
-    pub const ALL: [Self; 12] = [
+    pub const ALL: [Self; 17] = [
         Self::WorkstreamCreate,
         Self::WorkstreamUpdate,
         Self::ObjectiveAdd,
@@ -83,6 +167,11 @@ impl ActionKind {
         Self::DeliveryMerge,
         Self::ProjectRemove,
         Self::DecisionHold,
+        Self::DecisionAsk,
+        Self::TaskMessage,
+        Self::MemorySet,
+        Self::CoordinatorRoute,
+        Self::CoordinatorReport,
     ];
 
     /// Wire name, such as `workstream.create`.
@@ -100,12 +189,63 @@ impl ActionKind {
             Self::DeliveryMerge => "delivery.merge",
             Self::ProjectRemove => "project.remove",
             Self::DecisionHold => "decision.hold",
+            Self::DecisionAsk => "decision.ask",
+            Self::TaskMessage => "task.message",
+            Self::MemorySet => "memory.set",
+            Self::CoordinatorRoute => "coordinator.route",
+            Self::CoordinatorReport => "coordinator.report",
         }
     }
 
     /// Whether a grant may cover this kind: not one of [`NEVER_GRANTABLE`].
     pub fn is_grantable(self) -> bool {
         !NEVER_GRANTABLE.contains(&self.as_str())
+    }
+
+    /// Whether the kind only acts on work that already exists: a retry, a message to a waiting
+    /// worker, a question for the user, or a coordinator's report up the parent channel, which
+    /// only informs. Only these may run on their own from a turn with no user words to cite (a
+    /// wake, or a turn that read an agent's report). A coordinator's `task.propose` that serves an
+    /// open routed request is the one exception: the request is its origin ([`autonomy_check`]).
+    pub const fn acts_on_existing_work(self) -> bool {
+        matches!(
+            self,
+            Self::TaskRetry | Self::TaskMessage | Self::DecisionAsk | Self::CoordinatorReport
+        )
+    }
+
+    /// Who may make an action of this kind happen. One match with no wildcard, so a new kind
+    /// does not compile until it is classified. [`Action::authority`] narrows one case further.
+    ///
+    /// User word: cancelling, revising and merging work and removing a project (plan 5.5), and
+    /// `decision.hold`, which hides the user's pending cards until a date: an orchestrator that
+    /// read hostile text must not be able to bury a card the user has to see.
+    ///
+    /// `memory.set` is autonomous only for a learning; [`Action::authority`] makes a preference
+    /// the user's word. `coordinator.report` only informs Global. `coordinator.route` creates
+    /// work for a coordinator, like `task.propose` creates a task: the parser lets only the global
+    /// conversation route, and the daemon runs it on its own only to a registered project whose
+    /// coordinator is active (DPES-1108 integration).
+    pub const fn authority(self) -> ActionAuthority {
+        match self {
+            Self::WorkstreamCreate
+            | Self::WorkstreamUpdate
+            | Self::ObjectiveAdd
+            | Self::ObjectiveRevise
+            | Self::TaskPropose
+            | Self::TaskRetry
+            | Self::WorkstreamLinkTask
+            | Self::DecisionAsk
+            | Self::TaskMessage
+            | Self::MemorySet
+            | Self::CoordinatorRoute
+            | Self::CoordinatorReport => ActionAuthority::Autonomous,
+            Self::TaskCancel
+            | Self::TaskRevise
+            | Self::DeliveryMerge
+            | Self::ProjectRemove
+            | Self::DecisionHold => ActionAuthority::UserWord,
+        }
     }
 
     /// Parses a wire name.
@@ -142,6 +282,16 @@ pub enum Action {
     ProjectRemove(RemoveProject),
     #[serde(rename = "decision.hold")]
     DecisionHold(HoldDecision),
+    #[serde(rename = "decision.ask")]
+    DecisionAsk(AskDecision),
+    #[serde(rename = "task.message")]
+    TaskMessage(MessageTask),
+    #[serde(rename = "memory.set")]
+    MemorySet(SetMemory),
+    #[serde(rename = "coordinator.route")]
+    CoordinatorRoute(RouteWork),
+    #[serde(rename = "coordinator.report")]
+    CoordinatorReport(ReportToOrchestrator),
 }
 
 /// `workstream.create`. `ref` names the workstream for later actions in the block.
@@ -234,6 +384,11 @@ pub struct ProposeTask {
     /// the canonical form when absent, so a stored digest stays valid.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub promote_from: Option<String>,
+    /// The routed request this task serves (DPES-1108 phase 7). Only a coordinator conversation
+    /// may name one, and only an open request of its own project. Left out of the canonical
+    /// form when absent, so a stored digest stays valid.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
 }
 
 /// `task.cancel`.
@@ -308,6 +463,79 @@ pub struct HoldDecision {
     /// `YYYY-MM-DD`. Only the shape is checked here; the daemon checks the
     /// range against its clock when it runs the action.
     pub until: String,
+}
+
+/// `decision.ask`. Raises a question for the user, bound to a task. While it is open the task
+/// does not start. Only the user closes it (`decisions.answer` or `decisions.reconcile`).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct AskDecision {
+    pub task_id: String,
+    /// The question, as the user will read it. See [`crate::question::check_question`].
+    pub question: String,
+    /// Suggested answers. The user may still answer in their own words. Left out of the
+    /// canonical form when empty.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub options: Vec<String>,
+    /// A short slug naming the decision. One open question per task and key: asking again
+    /// with the same key finds the open one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+/// `task.message` (DPES-1108 phase 4). Text for a task whose worker is waiting. The daemon
+/// delivers it by resuming the worker's own session with it as the next prompt. Only a waiting
+/// task takes one; `task.revise` stays the way to change a task's scope.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct MessageTask {
+    pub task_id: String,
+    /// The message, as the worker will read it. The rules of a reply:
+    /// [`crate::question::check_reply`].
+    pub text: String,
+}
+
+/// `memory.set` (DPES-1108 phase 6). Writes one entry of a preference or learning document,
+/// keyed, so the same key updates the entry in place. `document` is relative to the
+/// conversation: the shared preferences, its own preferences, or its own learnings. The daemon
+/// refuses a write to the shared preferences from any conversation but the global one
+/// ([`crate::memory::resolve`]).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct SetMemory {
+    pub document: crate::memory::MemoryDocument,
+    pub key: String,
+    pub text: String,
+}
+
+/// `coordinator.route` (DPES-1108 phase 7). The global orchestrator hands work to the coordinator
+/// of the project the work belongs to. The daemon records a routed request whose id is the
+/// correlation id, and the coordinator owns the tasks made for it. Only the global conversation
+/// may route, so a coordinator never routes to another one (depth stays two).
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouteWork {
+    /// The `p-xxxxxxxx` code, as in [`ProposeTask::project`].
+    pub project: String,
+    /// What the coordinator is asked to do. See [`crate::charter::check_routed_work`].
+    pub work: String,
+}
+
+/// `coordinator.report` (DPES-1108 phase 7). A coordinator's judgment for the global
+/// orchestrator: the answer to a routed request, a caveat, or a blocker of its own. Durable facts
+/// (a task done, a question raised) are written by the daemon, never by this action.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReportToOrchestrator {
+    pub verb: crate::charter::ReportVerb,
+    /// See [`crate::charter::check_report_note`].
+    pub note: String,
+    /// The routed request this answers or concerns. Required for `answer`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request: Option<String>,
+    /// A short slug naming the matter, as a question key.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
 }
 
 /// A validated block. `parent(i)` is the index of the earlier
@@ -386,11 +614,14 @@ impl ActionBlock {
     }
 }
 
-/// Where a block was written. A workstream conversation may change only its own workstream.
+/// Where a block was written. A workstream conversation may change only its own workstream. A
+/// project coordinator (DPES-1108 phase 7) acts only inside its project, named by its
+/// `p-xxxxxxxx` code.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BlockScope<'a> {
     Global,
     Workstream(&'a str),
+    Project(&'a str),
 }
 
 /// Why a block was rejected. Diagnostics only; never stored.
@@ -647,6 +878,48 @@ fn check_fields(action: &Action) -> Result<(), BlockError> {
                 Err(BlockError::InvalidField("until"))
             }
         }
+        Action::DecisionAsk(ask) => {
+            check(validate_id("task_id", &ask.task_id), "task_id")?;
+            crate::question::check_question(&ask.question, &ask.options, ask.key.as_deref())
+                .map_err(|field| BlockError::InvalidField(field.as_str()))
+        }
+        Action::TaskMessage(message) => {
+            check(validate_id("task_id", &message.task_id), "task_id")?;
+            crate::question::check_reply(&message.text)
+                .map_err(|_| BlockError::InvalidField("text"))
+        }
+        Action::MemorySet(set) => {
+            crate::memory::check_key(&set.key).map_err(|_| BlockError::InvalidField("key"))?;
+            crate::memory::check_text(&set.text).map_err(|_| BlockError::InvalidField("text"))
+        }
+        Action::CoordinatorRoute(route) => {
+            if !is_project_code(&route.project) {
+                return Err(BlockError::InvalidField("project"));
+            }
+            if !crate::charter::check_routed_work(&route.work) {
+                return Err(BlockError::InvalidField("work"));
+            }
+            Ok(())
+        }
+        Action::CoordinatorReport(report) => {
+            if !crate::charter::check_report_note(&report.note) {
+                return Err(BlockError::InvalidField("note"));
+            }
+            match &report.request {
+                Some(request) if !crate::charter::is_request_id(request) => {
+                    return Err(BlockError::InvalidField("request"));
+                }
+                None if report.verb == crate::charter::ReportVerb::Answer => {
+                    return Err(BlockError::InvalidField("request"));
+                }
+                _ => {}
+            }
+            if let Some(key) = &report.key {
+                crate::question::check_question("key", &[], Some(key))
+                    .map_err(|_| BlockError::InvalidField("key"))?;
+            }
+            Ok(())
+        }
         Action::WorkstreamLinkTask(link) => {
             check(
                 validate_id("workstream_id", &link.workstream_id),
@@ -688,6 +961,11 @@ fn check_propose(propose: &ProposeTask) -> Result<(), BlockError> {
     if let Some(source) = &propose.promote_from {
         check(validate_id("promote_from", source), "promote_from")?;
     }
+    if let Some(request) = &propose.request {
+        if !crate::charter::is_request_id(request) {
+            return Err(BlockError::InvalidField("request"));
+        }
+    }
     Ok(())
 }
 
@@ -716,7 +994,7 @@ fn is_project_code(code: &str) -> bool {
 /// character except tab, LF and CR, the bidirectional formatting controls, and
 /// the characters that render as nothing. The first two are the set
 /// `contract::check_free_text` refuses; a test keeps them in step.
-fn is_disallowed_objective_char(c: char) -> bool {
+pub(crate) fn is_disallowed_objective_char(c: char) -> bool {
     let bidi_control = matches!(
         c,
         '\u{061C}' | '\u{200E}' | '\u{200F}' | '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}'
@@ -764,38 +1042,95 @@ fn check_gates(gates: &[String]) -> Result<(), BlockError> {
     Ok(())
 }
 
-/// Refuses actions outside a workstream conversation's workstream.
+/// Refuses actions outside the conversation's scope. Only the global conversation routes work,
+/// and only a coordinator reports to it or names a routed request.
 fn check_scope(actions: &[Action], scope: BlockScope<'_>) -> Result<(), BlockError> {
-    let BlockScope::Workstream(workstream) = scope else {
-        return Ok(());
+    let inside = |action: &Action| match scope {
+        BlockScope::Global => global_scope(action),
+        BlockScope::Workstream(workstream) => workstream_scope(action, workstream),
+        BlockScope::Project(project) => project_scope(action, project),
     };
-    for action in actions {
-        let inside = match action {
-            Action::WorkstreamCreate(_) => false,
-            Action::WorkstreamUpdate(update) => update.workstream_id == workstream,
-            Action::ObjectiveAdd(add) => {
-                add.workstream_ref.is_none() && add.workstream_id.as_deref() == Some(workstream)
-            }
-            // The owning workstream of a revised objective is checked against the store.
-            Action::ObjectiveRevise(_) => true,
-            // A task proposed here is always linked to this workstream.
-            Action::TaskPropose(propose) => {
-                propose.workstream_ref.is_none()
-                    && propose.workstream_id.as_deref() == Some(workstream)
-            }
-            // The workstream that owns a cancelled or retried task is checked against the store.
-            Action::TaskCancel(_) | Action::TaskRetry(_) => true,
-            Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
-            // The owning workstream of a revised, held or merged task is checked against the store.
-            Action::TaskRevise(_) | Action::DeliveryMerge(_) | Action::DecisionHold(_) => true,
-            // A workstream conversation never removes a project.
-            Action::ProjectRemove(_) => false,
-        };
-        if !inside {
-            return Err(BlockError::OutOfScope);
+    if actions.iter().all(inside) {
+        Ok(())
+    } else {
+        Err(BlockError::OutOfScope)
+    }
+}
+
+/// The global conversation may do anything but report, and a task it proposes serves no routed
+/// request.
+fn global_scope(action: &Action) -> bool {
+    match action {
+        Action::CoordinatorReport(_) => false,
+        Action::TaskPropose(propose) => propose.request.is_none(),
+        _ => true,
+    }
+}
+
+fn workstream_scope(action: &Action, workstream: &str) -> bool {
+    match action {
+        Action::WorkstreamCreate(_) => false,
+        Action::WorkstreamUpdate(update) => update.workstream_id == workstream,
+        Action::ObjectiveAdd(add) => {
+            add.workstream_ref.is_none() && add.workstream_id.as_deref() == Some(workstream)
+        }
+        // The owning workstream of a revised objective is checked against the store.
+        Action::ObjectiveRevise(_) => true,
+        // A task proposed here is always linked to this workstream.
+        Action::TaskPropose(propose) => {
+            propose.workstream_ref.is_none()
+                && propose.workstream_id.as_deref() == Some(workstream)
+                && propose.request.is_none()
+        }
+        // The workstream that owns a cancelled or retried task is checked against the store.
+        Action::TaskCancel(_) | Action::TaskRetry(_) => true,
+        Action::WorkstreamLinkTask(link) => link.workstream_id == workstream,
+        // The owning workstream of a revised, held or merged task is checked against the store.
+        Action::TaskRevise(_)
+        | Action::DeliveryMerge(_)
+        | Action::DecisionHold(_)
+        | Action::DecisionAsk(_)
+        | Action::TaskMessage(_) => true,
+        // Which document a conversation may write is a denial, not a parse error, so the
+        // agent is told to report a shared preference up (`crate::memory::resolve`).
+        Action::MemorySet(_) => true,
+        // A workstream conversation never removes a project, routes or reports.
+        Action::ProjectRemove(_) | Action::CoordinatorRoute(_) | Action::CoordinatorReport(_) => {
+            false
         }
     }
-    Ok(())
+}
+
+/// A coordinator acts only on its own project (`project` is its code): tasks it proposes there,
+/// with no workstream, and tasks of the project, which the daemon checks against the store. It
+/// never touches workstreams, removes the project or routes work, so depth stays two.
+fn project_scope(action: &Action, project: &str) -> bool {
+    match action {
+        Action::TaskPropose(propose) => {
+            propose.project == project
+                && propose.workstream_id.is_none()
+                && propose.workstream_ref.is_none()
+                && propose.objective_id.is_none()
+        }
+        Action::TaskCancel(_)
+        | Action::TaskRetry(_)
+        | Action::TaskRevise(_)
+        | Action::DeliveryMerge(_)
+        | Action::DecisionHold(_)
+        | Action::DecisionAsk(_)
+        | Action::TaskMessage(_)
+        | Action::CoordinatorReport(_) => true,
+        // A coordinator writes its project's preferences and learnings; a write to the shared
+        // preferences is a denial, as in a workstream (`crate::memory::resolve`).
+        Action::MemorySet(_) => true,
+        Action::WorkstreamCreate(_)
+        | Action::WorkstreamUpdate(_)
+        | Action::ObjectiveAdd(_)
+        | Action::ObjectiveRevise(_)
+        | Action::WorkstreamLinkTask(_)
+        | Action::ProjectRemove(_)
+        | Action::CoordinatorRoute(_) => false,
+    }
 }
 
 /// The canonical form of one action, as stored.
@@ -822,6 +1157,33 @@ impl Action {
             Self::DeliveryMerge(_) => ActionKind::DeliveryMerge,
             Self::ProjectRemove(_) => ActionKind::ProjectRemove,
             Self::DecisionHold(_) => ActionKind::DecisionHold,
+            Self::DecisionAsk(_) => ActionKind::DecisionAsk,
+            Self::TaskMessage(_) => ActionKind::TaskMessage,
+            Self::MemorySet(_) => ActionKind::MemorySet,
+            Self::CoordinatorRoute(_) => ActionKind::CoordinatorRoute,
+            Self::CoordinatorReport(_) => ActionKind::CoordinatorReport,
+        }
+    }
+
+    /// Who may make this action happen: its kind's [`ActionKind::authority`], with two
+    /// narrower cases that need the user's word:
+    /// - a `workstream.update` that archives the workstream: Archived is terminal, so it cannot
+    ///   be undone;
+    /// - a `memory.set` of a preference (shared or local). Preferences are the user's standing
+    ///   instructions, which later prompts follow, so the orchestrator may only propose them. A
+    ///   learning is the orchestrator's own note, framed as data, so it runs on its own.
+    pub fn authority(&self) -> ActionAuthority {
+        match self {
+            Self::WorkstreamUpdate(UpdateWorkstream {
+                state: Some(WorkstreamState::Archived),
+                ..
+            }) => ActionAuthority::UserWord,
+            Self::MemorySet(SetMemory {
+                document:
+                    crate::memory::MemoryDocument::Shared | crate::memory::MemoryDocument::Local,
+                ..
+            }) => ActionAuthority::UserWord,
+            _ => self.kind().authority(),
         }
     }
 
@@ -864,6 +1226,18 @@ impl Action {
             Self::TaskRevise(revise) => Some(revise.task_id.as_str()),
             Self::DeliveryMerge(merge) => Some(merge.task_id.as_str()),
             Self::DecisionHold(hold) => Some(hold.task_id.as_str()),
+            Self::DecisionAsk(ask) => Some(ask.task_id.as_str()),
+            Self::TaskMessage(message) => Some(message.task_id.as_str()),
+            _ => None,
+        }
+    }
+
+    /// The routed request a `task.propose` or a `coordinator.report` names, which the daemon
+    /// checks is an open request of the coordinator's project.
+    pub fn routed_request(&self) -> Option<&str> {
+        match self {
+            Self::TaskPropose(propose) => propose.request.as_deref(),
+            Self::CoordinatorReport(report) => report.request.as_deref(),
             _ => None,
         }
     }
@@ -924,6 +1298,34 @@ impl Action {
             }
             Self::ProjectRemove(remove) => format!("project.remove:{}", remove.project),
             Self::DecisionHold(hold) => format!("decision.hold:{}", hold.task_id),
+            // A keyed question is one decision whatever its wording; an unkeyed one is its text.
+            Self::DecisionAsk(ask) => match &ask.key {
+                Some(key) => format!("decision.ask:{}:{key}", ask.task_id),
+                None => {
+                    let digest = Sha256::digest(normalize(&ask.question).as_bytes());
+                    format!("decision.ask:{}:{}", ask.task_id, hex(&digest))
+                }
+            },
+            // A newer message to the same task replaces one the user has not approved yet.
+            Self::TaskMessage(message) => format!("task.message:{}", message.task_id),
+            // A newer write to the same entry replaces one the user has not approved yet.
+            Self::MemorySet(set) => format!("memory.set:{}:{}", set.document.as_str(), set.key),
+            // The same work routed to the same project again is the same card.
+            Self::CoordinatorRoute(route) => {
+                let digest = Sha256::digest(normalize(&route.work).as_bytes());
+                format!("coordinator.route:{}:{}", route.project, hex(&digest))
+            }
+            // A request has one answer, so a newer answer replaces a pending one. Other reports
+            // are their text.
+            Self::CoordinatorReport(report) => match (report.verb, &report.request) {
+                (crate::charter::ReportVerb::Answer, Some(request)) => {
+                    format!("coordinator.report:answer:{request}")
+                }
+                (verb, _) => {
+                    let digest = Sha256::digest(normalize(&report.note).as_bytes());
+                    format!("coordinator.report:{}:{}", verb.as_str(), hex(&digest))
+                }
+            },
         }
     }
 }
@@ -1127,6 +1529,206 @@ mod tests {
             shown.push_str(&filter.push(chunk));
         }
         (shown, filter.finish())
+    }
+
+    fn action(text: &str) -> Action {
+        serde_json::from_str(text).unwrap()
+    }
+
+    /// Plan 5.5's table, kind by kind. A new kind fails to compile in `authority` and then
+    /// fails here until the table below names it.
+    #[test]
+    fn every_kind_has_the_authority_of_the_plan_table() {
+        use ActionAuthority::{Autonomous, UserWord};
+        for kind in ActionKind::ALL {
+            let expected = match kind.as_str() {
+                "workstream.create"
+                | "workstream.update"
+                | "objective.add"
+                | "objective.revise"
+                | "task.propose"
+                | "task.retry"
+                | "workstream.link_task"
+                | "decision.ask"
+                | "task.message"
+                // A preference narrows to the user's word in `Action::authority`.
+                | "memory.set"
+                // Only the global conversation may route; the daemon adds the project bound.
+                | "coordinator.route"
+                | "coordinator.report" => Autonomous,
+                "task.cancel" | "task.revise" | "delivery.merge" | "project.remove"
+                | "decision.hold" => UserWord,
+                other => panic!("{other} is not classified in this test"),
+            };
+            assert_eq!(kind.authority(), expected, "{}", kind.as_str());
+        }
+    }
+
+    /// Nothing a grant may never cover, and no merge, can run on its own.
+    #[test]
+    fn never_grantable_kinds_and_merge_need_the_users_word() {
+        for kind in ActionKind::ALL {
+            if NEVER_GRANTABLE.contains(&kind.as_str()) || kind == ActionKind::DeliveryMerge {
+                assert_eq!(kind.authority(), ActionAuthority::UserWord, "{kind:?}");
+            }
+        }
+        for name in NEVER_GRANTABLE {
+            assert!(ActionKind::parse(name).is_some(), "{name}");
+        }
+    }
+
+    #[test]
+    fn archiving_a_workstream_needs_the_users_word_and_other_updates_do_not() {
+        let archive = action(
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"state":"archived"}"#,
+        );
+        assert_eq!(archive.authority(), ActionAuthority::UserWord);
+        assert_eq!(
+            autonomy_check(&archive, true, 0),
+            Err(AutonomyRefusal::UserWord)
+        );
+        for update in [
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"state":"suspended"}"#,
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"title":"New"}"#,
+        ] {
+            assert_eq!(action(update).authority(), ActionAuthority::Autonomous);
+            assert_eq!(autonomy_check(&action(update), true, 0), Ok(()));
+        }
+    }
+
+    /// A turn with no user words (a wake, or one that read a report) may act only on existing
+    /// work. It may not create a task, a workstream or an objective.
+    #[test]
+    fn a_turn_without_a_user_origin_may_only_retry_message_or_ask() {
+        let existing = [
+            RETRY,
+            r#"{"kind":"task.message","task_id":"task-1","text":"Use the main branch."}"#,
+            r#"{"kind":"decision.ask","task_id":"task-1","question":"Ship it?"}"#,
+        ];
+        for text in existing {
+            assert_eq!(autonomy_check(&action(text), false, 0), Ok(()), "{text}");
+        }
+        let new_work = [
+            PROPOSE,
+            CREATE,
+            LINK,
+            r#"{"kind":"objective.add","workstream_id":"ws-1","title":"Plan"}"#,
+            r#"{"kind":"objective.revise","objective_id":"obj-1","expected_revision":1,"title":"T"}"#,
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"title":"T"}"#,
+        ];
+        for text in new_work {
+            assert_eq!(
+                autonomy_check(&action(text), false, 0),
+                Err(AutonomyRefusal::NoUserOrigin),
+                "{text}"
+            );
+            assert_eq!(autonomy_check(&action(text), true, 0), Ok(()), "{text}");
+        }
+    }
+
+    /// A coordinator's wake turn may report up and start a task for an open routed request: the
+    /// request is the origin. A route creates work, so a turn with no user words never routes
+    /// (DPES-1108 integration).
+    #[test]
+    fn a_coordinator_wake_may_report_and_serve_a_routed_request_but_never_route() {
+        let report = action(
+            r#"{"kind":"coordinator.report","verb":"answer","note":"Done.","request":"r-0123456789abcdef"}"#,
+        );
+        assert_eq!(autonomy_check(&report, false, 0), Ok(()));
+        let routed = action(&propose(&[("request", json!("r-0123456789abcdef"))]));
+        assert_eq!(autonomy_check(&routed, false, 0), Ok(()));
+        // The same task with no request has no origin in a wake turn.
+        assert_eq!(
+            autonomy_check(&action(PROPOSE), false, 0),
+            Err(AutonomyRefusal::NoUserOrigin)
+        );
+        let route = action(
+            r#"{"kind":"coordinator.route","project":"p-3fa9c1d2","work":"Fix the build."}"#,
+        );
+        assert_eq!(autonomy_check(&route, true, 0), Ok(()));
+        assert_eq!(
+            autonomy_check(&route, false, 0),
+            Err(AutonomyRefusal::NoUserOrigin)
+        );
+        // A routed task still may not open a pull request on its own.
+        let routed_pr = action(&propose(&[
+            ("request", json!("r-0123456789abcdef")),
+            ("delivery", json!("PullRequest")),
+        ]));
+        assert_eq!(
+            autonomy_check(&routed_pr, false, 0),
+            Err(AutonomyRefusal::PullRequest)
+        );
+    }
+
+    #[test]
+    fn user_word_kinds_stay_cards_whatever_the_turn() {
+        for text in [
+            CANCEL,
+            r#"{"kind":"task.revise","task_id":"task-1","added_intent":"More."}"#,
+            r#"{"kind":"project.remove","project":"p-3fa9c1d2"}"#,
+            r#"{"kind":"decision.hold","task_id":"task-1","until":"2030-01-01"}"#,
+            r#"{"kind":"delivery.merge","task_id":"task-1","pr_number":7,"head_sha":"0123456789abcdef0123456789abcdef01234567"}"#,
+        ] {
+            for from_user in [true, false] {
+                assert_eq!(
+                    autonomy_check(&action(text), from_user, 0),
+                    Err(AutonomyRefusal::UserWord),
+                    "{text}"
+                );
+            }
+        }
+    }
+
+    /// A learning runs on its own from a user turn; a preference is the user's standing
+    /// instruction, so the orchestrator may only propose it (DPES-1108 integration).
+    #[test]
+    fn a_learning_runs_on_its_own_and_a_preference_stays_a_card() {
+        let learning = action(
+            r#"{"kind":"memory.set","document":"learnings","key":"ci","text":"CI runs on push."}"#,
+        );
+        assert_eq!(learning.authority(), ActionAuthority::Autonomous);
+        assert_eq!(autonomy_check(&learning, true, 0), Ok(()));
+        // A turn with no user words writes no learning on its own: worker output is its input.
+        assert_eq!(
+            autonomy_check(&learning, false, 0),
+            Err(AutonomyRefusal::NoUserOrigin)
+        );
+        for document in ["shared", "local"] {
+            let preference = action(&format!(
+                r#"{{"kind":"memory.set","document":"{document}","key":"tone","text":"Be brief."}}"#
+            ));
+            assert_eq!(
+                preference.authority(),
+                ActionAuthority::UserWord,
+                "{document}"
+            );
+            for from_user in [true, false] {
+                assert_eq!(
+                    autonomy_check(&preference, from_user, 0),
+                    Err(AutonomyRefusal::UserWord),
+                    "{document}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_pull_request_task_and_the_turn_cap_stay_cards() {
+        let pull_request = action(&propose(&[("delivery", json!("PullRequest"))]));
+        assert_eq!(
+            autonomy_check(&pull_request, true, 0),
+            Err(AutonomyRefusal::PullRequest)
+        );
+        let local = action(&propose(&[("delivery", json!("LocalReview"))]));
+        assert_eq!(
+            autonomy_check(&local, true, MAX_AUTONOMOUS_PER_TURN - 1),
+            Ok(())
+        );
+        assert_eq!(
+            autonomy_check(&local, true, MAX_AUTONOMOUS_PER_TURN),
+            Err(AutonomyRefusal::TurnCap)
+        );
     }
 
     #[test]
@@ -1384,7 +1986,7 @@ mod tests {
     }
 
     #[test]
-    fn the_action_kind_list_names_all_twelve_kinds() {
+    fn the_action_kind_list_names_all_seventeen_kinds() {
         let names = ActionKind::ALL.map(ActionKind::as_str);
         assert_eq!(
             names,
@@ -1401,6 +2003,11 @@ mod tests {
                 "delivery.merge",
                 "project.remove",
                 "decision.hold",
+                "decision.ask",
+                "task.message",
+                "memory.set",
+                "coordinator.route",
+                "coordinator.report",
             ]
         );
         assert_eq!(
@@ -2335,6 +2942,145 @@ mod tests {
     }
 
     #[test]
+    fn decision_ask_parses_with_a_subject_per_key_or_question() {
+        let keyed = json!({"kind": "decision.ask", "task_id": "task-1",
+            "question": "Use SQLite or Postgres?", "options": ["SQLite", "Postgres"],
+            "key": "db-choice"})
+        .to_string();
+        let parsed = parse(&block(&keyed)).expect("valid block");
+        let ask = &parsed.actions()[0];
+        assert_eq!(ask.kind(), ActionKind::DecisionAsk);
+        assert_eq!(ask.target_task(), Some("task-1"));
+        assert_eq!(ask.canonical(None).subject, "decision.ask:task-1:db-choice");
+        assert_eq!(
+            ask.canonical(None).json,
+            r#"{"key":"db-choice","kind":"decision.ask","options":["SQLite","Postgres"],"question":"Use SQLite or Postgres?","task_id":"task-1"}"#
+        );
+        // Without a key the subject follows the question text, so another question is another card.
+        let bare = |question: &str| {
+            let text = json!({"kind": "decision.ask", "task_id": "task-1", "question": question})
+                .to_string();
+            parse(&block(&text)).expect("valid block").actions()[0]
+                .canonical(None)
+                .subject
+        };
+        assert_eq!(bare("Ship  it?"), bare("ship it?"));
+        assert_ne!(bare("Ship it?"), bare("Hold it?"));
+        assert!(!bare("Ship it?").contains("Ship"));
+    }
+
+    #[test]
+    fn task_message_parses_with_one_subject_per_task_and_refuses_bad_text() {
+        let text = json!({"kind": "task.message", "task_id": "task-1",
+            "text": "The test database is back; run the suite again."})
+        .to_string();
+        let parsed = parse(&block(&text)).expect("valid block");
+        let message = &parsed.actions()[0];
+        assert_eq!(message.kind(), ActionKind::TaskMessage);
+        assert_eq!(message.target_task(), Some("task-1"));
+        assert_eq!(message.canonical(None).subject, "task.message:task-1");
+        for (fields, field) in [
+            (json!({"task_id": "t 1", "text": "go"}), "task_id"),
+            (json!({"task_id": "task-1", "text": " "}), "text"),
+            (json!({"task_id": "task-1", "text": "a\u{202E}b"}), "text"),
+            (
+                json!({"task_id": "task-1", "text": "x".repeat(4097)}),
+                "text",
+            ),
+        ] {
+            let mut action = fields;
+            action["kind"] = json!("task.message");
+            let text = action.to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{text}"
+            );
+        }
+        let unknown = r#"{"kind":"task.message","task_id":"task-1","text":"go","to":"user"}"#;
+        assert!(parse(&block(unknown)).is_err());
+    }
+
+    #[test]
+    fn memory_set_parses_with_one_subject_per_entry_and_refuses_bad_fields() {
+        let text = json!({"kind": "memory.set", "document": "shared", "key": "pr-size",
+            "text": "Keep pull requests under 400 changed lines."})
+        .to_string();
+        let parsed = parse(&block(&text)).expect("valid block");
+        let set = &parsed.actions()[0];
+        assert_eq!(set.kind(), ActionKind::MemorySet);
+        assert_eq!(set.target_task(), None);
+        assert_eq!(set.canonical(None).subject, "memory.set:shared:pr-size");
+        // A workstream conversation may name any document; which one it may write is a
+        // denial the daemon adds, so the agent learns why.
+        assert!(parse_block(&block(&text), BlockScope::Workstream("ws-1")).is_ok());
+        for (fields, field) in [
+            (
+                json!({"document": "local", "key": "Bad Key", "text": "x"}),
+                "key",
+            ),
+            (
+                json!({"document": "local", "key": "k", "text": " "}),
+                "text",
+            ),
+            (
+                json!({"document": "local", "key": "k", "text": "a\nb"}),
+                "text",
+            ),
+            (
+                json!({"document": "local", "key": "k", "text": "see /etc/hosts"}),
+                "text",
+            ),
+            (
+                json!({"document": "learnings", "key": "k", "text": "x".repeat(281)}),
+                "text",
+            ),
+        ] {
+            let mut action = fields;
+            action["kind"] = json!("memory.set");
+            let text = action.to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{text}"
+            );
+        }
+        for unknown in [
+            r#"{"kind":"memory.set","document":"global","key":"k","text":"x"}"#,
+            r#"{"kind":"memory.set","document":"local","key":"k","text":"x","scope":"global"}"#,
+        ] {
+            assert!(parse(&block(unknown)).is_err(), "{unknown}");
+        }
+    }
+
+    #[test]
+    fn decision_ask_refuses_bad_fields() {
+        for (fields, field) in [
+            (json!({"task_id": "t 1", "question": "Q?"}), "task_id"),
+            (json!({"task_id": "task-1", "question": "  "}), "question"),
+            (
+                json!({"task_id": "task-1", "question": "Q?", "options": ["a\nb"]}),
+                "options",
+            ),
+            (
+                json!({"task_id": "task-1", "question": "Q?", "key": "Not A Slug"}),
+                "key",
+            ),
+        ] {
+            let mut action = fields;
+            action["kind"] = json!("decision.ask");
+            let text = action.to_string();
+            assert_eq!(
+                parse(&block(&text)),
+                Err(BlockError::InvalidField(field)),
+                "{text}"
+            );
+        }
+        let unknown = r#"{"kind":"decision.ask","task_id":"task-1","question":"Q?","answer":"A"}"#;
+        assert!(parse(&block(unknown)).is_err());
+    }
+
+    #[test]
     fn a_workstream_scope_refuses_project_remove_and_allows_revise_and_hold() {
         let scope = BlockScope::Workstream("ws-1");
         assert_eq!(
@@ -2499,5 +3245,163 @@ mod tests {
             assert_eq!(filter.push(&chunk), "");
         }
         assert_eq!(filter.finish().block, Some(HeldBlock::Overflow));
+    }
+}
+
+/// Project coordinators (DPES-1108 phase 7): the project scope and the two coordinator kinds.
+#[cfg(test)]
+mod coordinator_tests {
+    use super::*;
+
+    const CODE: &str = "p-3fa9c1d2";
+
+    fn block(actions: &str) -> String {
+        format!("{ACTION_FENCE}\n{{\"mcao_actions\":1,\"actions\":[{actions}]}}\n```")
+    }
+
+    fn in_project(actions: &str) -> Result<ActionBlock, BlockError> {
+        parse_block(&block(actions), BlockScope::Project(CODE))
+    }
+
+    const ROUTE: &str =
+        r#"{"kind":"coordinator.route","project":"p-3fa9c1d2","work":"Fix the nightly export."}"#;
+    const ANSWER: &str = r#"{"kind":"coordinator.report","verb":"answer","request":"r-0a1b2c","note":"The export runs again."}"#;
+    const OWN_TASK: &str = r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"Fix the export.","request":"r-0a1b2c"}"#;
+
+    #[test]
+    fn a_coordinator_acts_on_its_own_project_and_answers_its_requests() {
+        let parsed = in_project(&format!(
+            "{OWN_TASK},{ANSWER},{},{}",
+            r#"{"kind":"task.retry","task_id":"task-1"}"#,
+            r#"{"kind":"decision.ask","task_id":"task-1","question":"Which?"}"#
+        ))
+        .unwrap();
+        assert_eq!(parsed.actions().len(), 4);
+        assert_eq!(parsed.actions()[0].routed_request(), Some("r-0a1b2c"));
+        assert_eq!(parsed.actions()[1].routed_request(), Some("r-0a1b2c"));
+    }
+
+    #[test]
+    fn a_coordinator_cannot_route_reach_another_project_or_touch_workstreams() {
+        for refused in [
+            ROUTE.to_owned(),
+            r#"{"kind":"task.propose","project":"p-00000000","objective":"Elsewhere."}"#.to_owned(),
+            r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"X.","workstream_id":"ws-1"}"#.to_owned(),
+            r#"{"kind":"workstream.create","title":"New"}"#.to_owned(),
+            r#"{"kind":"workstream.link_task","workstream_id":"ws-1","task_id":"task-1"}"#.to_owned(),
+            r#"{"kind":"project.remove","project":"p-3fa9c1d2"}"#.to_owned(),
+        ] {
+            assert_eq!(in_project(&refused).unwrap_err(), BlockError::OutOfScope, "{refused}");
+        }
+    }
+
+    #[test]
+    fn only_the_global_conversation_routes_and_only_a_coordinator_reports() {
+        assert!(parse_block(&block(ROUTE), BlockScope::Global).is_ok());
+        assert_eq!(
+            parse_block(&block(ROUTE), BlockScope::Workstream("ws-1")).unwrap_err(),
+            BlockError::OutOfScope
+        );
+        for scope in [BlockScope::Global, BlockScope::Workstream("ws-1")] {
+            assert_eq!(
+                parse_block(&block(ANSWER), scope).unwrap_err(),
+                BlockError::OutOfScope
+            );
+            // Only a coordinator's task serves a routed request.
+            assert_eq!(
+                parse_block(&block(OWN_TASK), scope).unwrap_err(),
+                BlockError::OutOfScope
+            );
+        }
+    }
+
+    #[test]
+    fn coordinator_fields_are_checked() {
+        let refused = [
+            (
+                r#"{"kind":"coordinator.route","project":"billing","work":"X."}"#,
+                "project",
+            ),
+            (
+                r#"{"kind":"coordinator.route","project":"p-3fa9c1d2","work":" "}"#,
+                "work",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"answer","note":"Done."}"#,
+                "request",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"caveat","request":"R-1","note":"Done."}"#,
+                "request",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"caveat","note":""}"#,
+                "note",
+            ),
+            (
+                r#"{"kind":"coordinator.report","verb":"blocked","note":"Stuck.","key":"Bad Key"}"#,
+                "key",
+            ),
+            (
+                r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"X.","request":"q-1"}"#,
+                "request",
+            ),
+        ];
+        for (action, field) in refused {
+            let scope = if action.contains("route") {
+                BlockScope::Global
+            } else {
+                BlockScope::Project(CODE)
+            };
+            assert_eq!(
+                parse_block(&block(action), scope).unwrap_err(),
+                BlockError::InvalidField(field),
+                "{action}"
+            );
+        }
+        assert_eq!(
+            parse_block(
+                &block(r#"{"kind":"coordinator.report","verb":"later","note":"X."}"#),
+                BlockScope::Project(CODE)
+            )
+            .unwrap_err(),
+            BlockError::Malformed
+        );
+        // A caveat or a blocker needs no request.
+        assert!(in_project(
+            r#"{"kind":"coordinator.report","verb":"caveat","note":"Slow CI.","key":"ci-slow"}"#
+        )
+        .is_ok());
+    }
+
+    #[test]
+    fn an_answer_replaces_a_pending_answer_to_the_same_request() {
+        let first = in_project(ANSWER).unwrap().actions()[0].canonical(None);
+        let second = in_project(
+            r#"{"kind":"coordinator.report","verb":"answer","request":"r-0a1b2c","note":"Fixed and merged."}"#,
+        )
+        .unwrap()
+        .actions()[0]
+            .canonical(None);
+        assert_eq!(first.subject, "coordinator.report:answer:r-0a1b2c");
+        assert_eq!(first.subject, second.subject);
+        assert_ne!(first.digest, second.digest);
+        let route = parse_block(&block(ROUTE), BlockScope::Global)
+            .unwrap()
+            .actions()[0]
+            .canonical(None);
+        assert!(route.subject.starts_with("coordinator.route:p-3fa9c1d2:"));
+        assert!(route.json.contains(r#""work":"Fix the nightly export.""#));
+    }
+
+    #[test]
+    fn a_task_propose_without_a_request_keeps_its_old_digest() {
+        let text =
+            r#"{"kind":"task.propose","project":"p-3fa9c1d2","objective":"Fix the export."}"#;
+        let canonical = parse_block(&block(text), BlockScope::Global)
+            .unwrap()
+            .actions()[0]
+            .canonical(None);
+        assert!(!canonical.json.contains("request"));
     }
 }

@@ -16,16 +16,19 @@
 
 pub mod approval;
 pub mod authorization;
+pub mod brief;
+pub mod charter;
 pub mod contract;
 pub mod decomposition;
 pub mod identity;
 pub mod interval;
 pub mod landing;
 pub mod load_gate;
-pub mod notes;
+pub mod memory;
 pub mod orchestrator_action;
 pub mod permission;
 pub mod project_mode;
+pub mod question;
 pub mod records;
 pub mod retry;
 pub mod return_brief;
@@ -35,6 +38,7 @@ pub mod supervision;
 pub mod task;
 pub mod task_envelope;
 pub mod work_item;
+pub mod worker_status;
 pub mod workstream;
 
 pub use identity::ProcessIdentity;

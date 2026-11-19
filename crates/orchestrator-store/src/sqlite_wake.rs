@@ -45,6 +45,16 @@ pub enum WakeKind {
     AgentFailing,
     /// A task's agent exited with changes ready for review. A wake turn reports it.
     CandidateReady,
+    /// A task's worker asked a question only the user can answer and waits (DPES-1108 phase 4).
+    WorkerNeedsDecision,
+    /// A task's worker reported that it is blocked and waits for help.
+    WorkerBlocked,
+    /// Work the global orchestrator routed to a project's coordinator (DPES-1108 phase 7). Its
+    /// record is in the coordinator's scope.
+    RoutedRequest,
+    /// A coordinator's report for the global orchestrator: a fact the daemon wrote or the
+    /// coordinator's own judgment. Its record is in the global scope.
+    CoordinatorReport,
 }
 
 impl WakeKind {
@@ -60,6 +70,10 @@ impl WakeKind {
             Self::ScoutReportReady => "scout_report_ready",
             Self::AgentFailing => "agent_failing",
             Self::CandidateReady => "candidate_ready",
+            Self::WorkerNeedsDecision => "worker_needs_decision",
+            Self::WorkerBlocked => "worker_blocked",
+            Self::RoutedRequest => "routed_request",
+            Self::CoordinatorReport => "coordinator_report",
         }
     }
 
@@ -75,6 +89,10 @@ impl WakeKind {
             "scout_report_ready" => Some(Self::ScoutReportReady),
             "agent_failing" => Some(Self::AgentFailing),
             "candidate_ready" => Some(Self::CandidateReady),
+            "worker_needs_decision" => Some(Self::WorkerNeedsDecision),
+            "worker_blocked" => Some(Self::WorkerBlocked),
+            "routed_request" => Some(Self::RoutedRequest),
+            "coordinator_report" => Some(Self::CoordinatorReport),
             _ => None,
         }
     }
@@ -90,6 +108,10 @@ impl WakeKind {
                 | Self::WorkCheck
                 | Self::ScoutReportReady
                 | Self::CandidateReady
+                | Self::WorkerNeedsDecision
+                | Self::WorkerBlocked
+                | Self::RoutedRequest
+                | Self::CoordinatorReport
         )
     }
 }

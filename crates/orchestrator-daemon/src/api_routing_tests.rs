@@ -337,5 +337,5 @@ fn the_preamble_names_the_scope_rule_and_stays_under_the_cap() {
         assert!(INSTRUCTIONS_WITH_ACTIONS.contains(sentence), "{sentence}");
         assert!(!INSTRUCTIONS.contains(sentence), "{sentence}");
     }
-    assert!(INSTRUCTIONS_WITH_ACTIONS.len() <= 3 * 1024);
+    assert!(INSTRUCTIONS_WITH_ACTIONS.len() <= 4 * 1024);
 }

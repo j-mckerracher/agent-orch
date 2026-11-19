@@ -10,7 +10,7 @@ Start with [Install](install.md) and [Getting started](getting-started.md). The 
 - [Permission levels](permission-levels.md): what Restricted, Extended, Auto, and Full allow.
 - [Tasks](tasks.md): submit work that runs in an isolated worktree, then review it.
 - [Project defaults](project-defaults.md): delivery mode, base branch, branch prefix, checks, and merge method.
-- [Settings](settings.md): load limits, standing approvals, notes, and monitoring.
+- [Settings](settings.md): load limits, standing approvals, preferences and learnings, and monitoring.
 
 ## Reference
 

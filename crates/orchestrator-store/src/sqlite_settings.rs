@@ -39,6 +39,9 @@ pub struct OrchestratorSettings {
     /// belongs to. The daemon validates the path before it is stored. `None` means none is set.
     pub home_directory: Option<String>,
     pub dispatch_defaults: DispatchDefaults,
+    /// Migration 0066 (DPES-1108 phase 5): the orchestrator runs autonomous-class actions on its
+    /// own. On by default; off makes every action a card for the user again.
+    pub autonomous_actions: bool,
 }
 
 /// Defaults for new tasks only. Provider keys are canonical agent adapter ids.
@@ -155,6 +158,7 @@ pub struct SettingsPatch {
     pub home_directory: Option<Option<String>>,
     /// Replaces this group; an absent group leaves it unchanged.
     pub dispatch_defaults: Option<DispatchDefaults>,
+    pub autonomous_actions: Option<bool>,
 }
 
 impl SettingsPatch {
@@ -180,7 +184,7 @@ impl Bound {
 const SETTINGS_COLUMNS: &str = "load_cpu_percent, load_memory_percent, load_disk_percent, \
     monitoring_mode, base_interval_secs, min_interval_secs, wake_hourly_cap, wake_daily_cap, \
     wake_daily_token_budget, attempt_wall_minutes, chat_pr_delivery, mcp_server_enabled, \
-    home_directory, dispatch_defaults";
+    home_directory, dispatch_defaults, autonomous_actions";
 
 impl SqliteStore {
     /// The settings row. A new store holds the defaults: load limits 80, 85 and 90, mode on,
@@ -293,6 +297,9 @@ impl SqliteStore {
             }
             if let Some(value) = patch.chat_pr_delivery {
                 named.push(("chat_pr_delivery", Bound::Integer(i64::from(value))));
+            }
+            if let Some(value) = patch.autonomous_actions {
+                named.push(("autonomous_actions", Bound::Integer(i64::from(value))));
             }
             if let Some(value) = patch.mcp.enabled {
                 named.push(("mcp_server_enabled", Bound::Integer(i64::from(value))));
@@ -500,6 +507,7 @@ async fn read_settings(
         },
         home_directory: row.try_get("home_directory")?,
         dispatch_defaults,
+        autonomous_actions: row.try_get::<i64, _>("autonomous_actions")? != 0,
     })
 }
 

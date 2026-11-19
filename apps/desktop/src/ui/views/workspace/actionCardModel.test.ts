@@ -3,13 +3,16 @@ import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import type { ActionProposal } from "../../../sources/surfaces/types";
 import {
   actionPhrase,
+  approvedByText,
   cardTitle,
+  doneOnItsOwnText,
   failureText,
   fieldsOf,
   newerRecord,
   openTaskId,
   openWorkstreamId,
   outcomeAnnouncement,
+  overrideLines,
   requestErrorText,
   viewOf,
 } from "./actionCardModel";
@@ -47,9 +50,64 @@ const dependent = proposal({
   dependsOn: "proposal-1",
 });
 
+describe("memory.set card", () => {
+  const text = "Prefer small pull requests, one concern each, with a test for every fix and no drive-by refactors in the same change.";
+  const memory = (document: string, over: Partial<ActionProposal> = {}) =>
+    proposal({ kind: "memory.set", params: { kind: "memory.set", document, key: "small-prs-with-tests", text }, ...over });
+
+  it("names the document in the heading and shows the full key and text", () => {
+    expect(cardTitle("memory.set", memory("shared").params)).toBe("Proposed: Save a shared preference");
+    expect(cardTitle("memory.set", memory("local").params)).toBe("Proposed: Save a preference for this conversation");
+    expect(cardTitle("memory.set", memory("learnings").params)).toBe("Proposed: Record a learning");
+    expect(fieldsOf(memory("shared"), NAMES, null)).toEqual([
+      { label: "Saves to", value: "Shared preferences" },
+      { label: "Key", value: "small-prs-with-tests" },
+      { label: "Text", value: text },
+    ]);
+    expect(actionPhrase(memory("learnings"), NAMES)).toBe("record a learning small-prs-with-tests");
+  });
+
+  it("says Saved once executed and is a normal approvable proposal", () => {
+    expect(viewOf(memory("local", { state: "executed" }), null, LIVE).pill.text).toBe("Saved");
+    expect(viewOf(memory("learnings", { state: "executed" }), null, LIVE).message.text).toBe("Recorded the learning “small-prs-with-tests”.");
+    const pending = viewOf(memory("shared"), null, LIVE);
+    expect(pending.approve).toMatchObject({ enabled: true, variant: "primary" });
+  });
+
+  it("explains each denial and the budget failure in plain words", () => {
+    const denied = (denial: string | null) => memory("shared", { state: "failed", errorCode: "action_denied", denial });
+    expect(failureText(denied("shared_preferences_read_only"))).toBe(
+      "Shared preferences are read-only here. Report it to the global conversation, or set it in Settings.",
+    );
+    expect(failureText(denied("no_local_preferences_here"))).toBe(
+      "The global conversation has no local preferences. Use a shared preference instead.",
+    );
+    expect(failureText(denied("something_new"))).toBe("The app refused this entry. Nothing was saved.");
+    expect(failureText(memory("shared", { state: "failed", errorCode: "over_budget" }))).toBe(
+      "The document is over its byte budget. Nothing was saved.",
+    );
+  });
+});
+
 describe("approval card copy", () => {
+  it("shows a task.message with its text and the task it resumes", () => {
+    const message = proposal({
+      kind: "task.message",
+      params: { task_id: "task-9", text: "The database is back.\nRun the suite again." },
+      target: { taskTitle: "Run the suite", taskState: "Waiting" },
+    });
+    expect(cardTitle("task.message", {})).toBe("Proposed: Message the waiting worker");
+    expect(fieldsOf(message, NAMES, null)).toEqual([
+      { label: "Task title", value: "Run the suite" },
+      { label: "Task state now", value: "Waiting" },
+      { label: "Message", value: ["The database is back.", "Run the suite again."] },
+      { label: "Task id", value: "task-9" },
+    ]);
+    expect(openTaskId(message)).toBe("task-9");
+  });
+
   it("names each kind's heading, fields and button action", () => {
-    expect(cardTitle("workstream.create")).toBe("Proposed: Create workstream");
+    expect(cardTitle("workstream.create", {})).toBe("Proposed: Create workstream");
     expect(actionPhrase(create, NAMES)).toBe("create workstream Post-MVP work");
     expect(fieldsOf(create, NAMES, null)).toEqual([
       { label: "Title", value: "Post-MVP work" },
@@ -60,7 +118,7 @@ describe("approval card copy", () => {
       kind: "workstream.update",
       params: { workstream_id: "ws-1", expected_revision: 3, state: "archived" },
     });
-    expect(cardTitle(update.kind)).toBe("Proposed: Update workstream");
+    expect(cardTitle(update.kind, {})).toBe("Proposed: Update workstream");
     expect(actionPhrase(update, NAMES)).toBe("update workstream Alpha stream");
     expect(fieldsOf(update, NAMES, null).map((field) => field.label)).toEqual([
       "Workstream",
@@ -80,7 +138,7 @@ describe("approval card copy", () => {
 
   it("shows the canonical fields of an unknown kind as sorted JSON", () => {
     const unknown = proposal({ kind: "workstream.delete", params: { zeta: 1, alpha: "x" } });
-    expect(cardTitle(unknown.kind)).toBe("Proposed: Unknown action");
+    expect(cardTitle(unknown.kind, {})).toBe("Proposed: Unknown action");
     expect(fieldsOf(unknown, NAMES, null)).toEqual([
       { label: "alpha", value: '"x"' },
       { label: "zeta", value: "1" },
@@ -270,10 +328,10 @@ const executedOf = (p: ActionProposal, over: Partial<ActionProposal> = {}): Acti
 
 describe("task card copy", () => {
   it("names each task kind's heading and button phrase", () => {
-    expect(cardTitle("task.propose")).toBe("Proposed: Create task");
-    expect(cardTitle("task.cancel")).toBe("Proposed: Cancel task");
-    expect(cardTitle("task.retry")).toBe("Proposed: Retry task");
-    expect(cardTitle("workstream.link_task")).toBe("Proposed: Link task");
+    expect(cardTitle("task.propose", {})).toBe("Proposed: Create task");
+    expect(cardTitle("task.cancel", {})).toBe("Proposed: Cancel task");
+    expect(cardTitle("task.retry", {})).toBe("Proposed: Retry task");
+    expect(cardTitle("workstream.link_task", {})).toBe("Proposed: Link task");
     expect(actionPhrase(propose, NAMES)).toBe("create task Add unit tests for the retry module. Run them locally and re…");
     expect(actionPhrase(cancel, NAMES)).toBe("cancel task Add refresh-token expiry");
     expect(actionPhrase(retry, NAMES)).toBe("retry task Add refresh-token expiry");
@@ -473,9 +531,9 @@ const failedWith = (p: ActionProposal, errorCode: string): ActionProposal => ({ 
 
 describe("revise, hold and remove card copy", () => {
   it("phase4d_names_the_three_kinds_headings_button_phrases_and_done_labels", () => {
-    expect(cardTitle("task.revise")).toBe("Proposed: Revise task");
-    expect(cardTitle("decision.hold")).toBe("Proposed: Hold decision");
-    expect(cardTitle("project.remove")).toBe("Proposed: Remove project");
+    expect(cardTitle("task.revise", {})).toBe("Proposed: Revise task");
+    expect(cardTitle("decision.hold", {})).toBe("Proposed: Hold decision");
+    expect(cardTitle("project.remove", {})).toBe("Proposed: Remove project");
     expect(actionPhrase(revise, NAMES)).toBe("revise task Add refresh-token expiry");
     expect(actionPhrase(hold, NAMES)).toBe("hold decision Add refresh-token expiry");
     expect(actionPhrase(remove, NAMES)).toBe("remove project alpha");
@@ -561,5 +619,112 @@ describe("revise, hold and remove card copy", () => {
     expect(openTaskId(revise)).toBeNull();
     expect(openTaskId(hold)).toBe("task-0123");
     expect(openTaskId(remove)).toBeNull();
+  });
+});
+
+describe("cards the orchestrator ran on its own (DPES-1108)", () => {
+  const task = proposal({ kind: "task.propose", state: "executed", resultRef: "task-1", params: { title: "Fix it" } });
+
+  it("authority_marks_an_executed_autonomous_card_as_done_on_its_own_without_decisions", () => {
+    const view = viewOf({ ...task, autonomous: true }, null, LIVE);
+    expect(view.pill).toEqual({ tone: "ok", text: "Done on its own" });
+    expect(view.approve.enabled).toBe(false);
+    expect(view.reject.enabled).toBe(false);
+    expect(doneOnItsOwnText({ ...task, autonomous: true })).toBe("The orchestrator did this on its own. You did not need to approve it.");
+  });
+
+  it("authority_keeps_the_usual_copy_for_a_card_the_user_or_a_standing_approval_approved", () => {
+    expect(viewOf(task, null, LIVE).pill.text).toBe("Queued");
+    expect(doneOnItsOwnText(task)).toBeNull();
+    const granted = { ...task, approvedBy: { kind: "grant" as const, grantId: "grant-1234567890ab" } };
+    expect(approvedByText(granted)).toBe("Approved by a standing approval (grant-1234).");
+    expect(doneOnItsOwnText(granted)).toBeNull();
+  });
+
+  it("authority_never_says_done_for_an_autonomous_card_that_failed_or_is_running", () => {
+    expect(doneOnItsOwnText({ ...task, autonomous: true, state: "failed", errorCode: "conflict" })).toBeNull();
+    expect(doneOnItsOwnText({ ...task, autonomous: true, state: "approved" })).toBeNull();
+    expect(viewOf({ ...task, autonomous: true, state: "failed", errorCode: "conflict" }, null, LIVE).pill.text).toBe("Failed");
+    expect(failureText({ ...task, autonomous: true, state: "failed", errorCode: "autonomy_off" })).toMatch(/^Acting on its own was turned off/);
+  });
+
+  it("authority_names_each_one_task_override_in_plain_words", () => {
+    expect(overrideLines(task)).toEqual([]);
+    expect(overrideLines({ ...task, overrides: [{ field: "delivery", projectDefault: "LocalReview", chosen: "ReportOnly" }] })).toEqual([
+      "For this task only: delivery report only instead of the project's local review.",
+    ]);
+  });
+});
+
+// DPES-1108 phase 7: the global orchestrator routes work to a coordinator, and a coordinator reports back.
+const route = proposal({
+  id: "proposal-11",
+  kind: "coordinator.route",
+  params: { project: "p-3fa9c1d2", work: "Write the troubleshooting page.\nCover sign-in failures." },
+  target: { projectName: "alpha", coordinatorActive: true },
+});
+const report = proposal({
+  id: "proposal-12",
+  kind: "coordinator.report",
+  params: { verb: "answer", note: "The page is written.", request: "r-0123456789abcdef", key: "docs" },
+  target: { requestWork: "Write the troubleshooting page.", requestAnswered: false },
+});
+
+describe("coordinator route and report card copy", () => {
+  it("phase7_names_both_kinds_headings_button_phrases_and_done_labels", () => {
+    expect(cardTitle("coordinator.route", route.params)).toBe("Proposed: Route work to the project coordinator");
+    expect(cardTitle("coordinator.report", report.params)).toBe("Proposed: Report to the orchestrator");
+    expect(actionPhrase(route, NAMES)).toBe("route work to the project coordinator alpha");
+    expect(actionPhrase({ ...route, target: null }, NAMES)).toBe("route work to the project coordinator p-3fa9c1d2");
+    expect(actionPhrase(report, NAMES)).toBe("report to the orchestrator r-0123456789abcdef");
+    const done = (p: ActionProposal) => viewOf({ ...p, state: "executed" }, null, LIVE).pill.text;
+    expect([done(route), done(report)]).toEqual(["Routed", "Reported"]);
+  });
+
+  it("phase7_route_card_shows_the_project_whether_its_coordinator_is_active_and_the_whole_work", () => {
+    expect(fieldsOf(route, NAMES, null)).toEqual([
+      { label: "Project", value: "alpha (p-3fa9c1d2)" },
+      { label: "Coordinator", value: "Active" },
+      { label: "Work", value: ["Write the troubleshooting page.", "Cover sign-in failures."] },
+      expect.objectContaining({ label: "What happens" }),
+    ]);
+    const inactive = { ...route, target: { projectName: "alpha", coordinatorActive: false } };
+    expect(fieldsOf(inactive, NAMES, null)[1]!.value).toMatch(/^Not active/);
+    expect(fieldsOf({ ...route, target: null }, NAMES, null)[1]).toEqual({ label: "Coordinator", value: "(not available)" });
+  });
+
+  it("phase7_report_card_shows_the_verb_the_note_and_the_routed_request", () => {
+    expect(fieldsOf(report, NAMES, null)).toEqual([
+      { label: "Report", value: "Answer" },
+      { label: "Note", value: ["The page is written."] },
+      { label: "Routed request", value: "r-0123456789abcdef" },
+      { label: "Request work", value: ["Write the troubleshooting page."] },
+      { label: "Request answered", value: "No" },
+      { label: "Key", value: "docs" },
+      expect.objectContaining({ label: "What happens" }),
+    ]);
+    const caveat = proposal({ kind: "coordinator.report", params: { verb: "caveat", note: "Screens may go stale." } });
+    expect(fieldsOf(caveat, NAMES, null).map((row) => row.label)).toEqual(["Report", "Note", "What happens"]);
+    expect(actionPhrase(caveat, NAMES)).toBe("report to the orchestrator Screens may go stale.");
+  });
+
+  it("phase7_task_propose_card_names_the_routed_request_it_belongs_to", () => {
+    const owned = proposal({
+      kind: "task.propose",
+      params: { project: "p-3fa9c1d2", objective: "Write it", agent: "codex", task_kind: "Implement", delivery: "LocalReview", request: "r-0123456789abcdef" },
+    });
+    expect(fieldsOf(owned, NAMES, null)).toContainEqual({ label: "Routed request", value: "r-0123456789abcdef" });
+    const plain = { ...owned, params: { ...owned.params, request: undefined } };
+    expect(fieldsOf(plain, NAMES, null).map((row) => row.label)).not.toContain("Routed request");
+  });
+
+  it("phase7_failures_say_nothing_was_routed_or_reported", () => {
+    for (const code of ["conflict", "invalid", "not_found"]) {
+      expect(failureText(failedWith(route, code))).toMatch(/Nothing was routed\./);
+      expect(failureText(failedWith(report, code))).toMatch(/Nothing was reported\.$/);
+    }
+    expect(failureText(failedWith(route, "not_found"))).toMatch(/no active coordinator/);
+    expect(failureText(failedWith(report, "conflict"))).toMatch(/already answered/);
+    expect(viewOf(route, null, { ...LIVE, approver: false }).approve).toMatchObject({ enabled: false, reason: APPROVER_REQUIRED_NOTICE });
   });
 });

@@ -79,7 +79,7 @@ describe("grants model", () => {
   });
 
   it("grants_offered_kinds_are_the_daemons_list_without_a_never_grantable_kind", () => {
-    const wide: GrantPolicy = { ...POLICY, grantableKinds: [...POLICY.grantableKinds, "task.cancel", "task.revise", "project.remove", "delivery.merge", "future.kind"] };
+    const wide: GrantPolicy = { ...POLICY, grantableKinds: [...POLICY.grantableKinds, "task.cancel", "task.revise", "project.remove", "delivery.merge", "memory.set", "future.kind"] };
     expect(offeredKinds(wide)).toEqual(POLICY.grantableKinds);
   });
 

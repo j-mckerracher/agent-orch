@@ -318,6 +318,11 @@ impl DaemonApi {
                 result["routed_in"] = Value::Array(routed);
             }
         }
+        // A coordinator's view shows its scope, its open work and its parent channel
+        // (DPES-1108 phase 7).
+        if let ConversationTarget::Project(project_id) = &target {
+            result["coordinator"] = self.coordinator_wire(project_id)?;
+        }
         Ok(result)
     }
 
@@ -377,6 +382,12 @@ impl DaemonApi {
 pub(super) fn map_clear_error(error: ConversationError) -> RpcError {
     match error {
         ConversationError::TurnRunning { .. } => RpcError::ConversationBusy,
+        // A coordinator that owns open work is not removed (DPES-1108 phase 7).
+        ConversationError::Store(error)
+            if orchestrator_store::CoordinatorError::of(&error).is_some() =>
+        {
+            RpcError::Conflict
+        }
         other => map_conversation_error(other),
     }
 }
@@ -447,6 +458,16 @@ fn entry_wire(store: &SqliteStore, entry: &ConversationEntry) -> Result<Value, R
             }
             if let (true, Some(block)) = (is_completed, turn.action_block) {
                 value["action_block"] = json!(block.as_str());
+            }
+            // The recorded pull requests of the tasks the turn acted on or reported (DPES-1108
+            // phase 8). Absent when there are none.
+            if is_completed {
+                let links = store
+                    .turn_pull_request_links(&entry.turn_id)
+                    .map_err(map_conversation_error)?;
+                if !links.is_empty() {
+                    value["pull_requests"] = json!(links);
+                }
             }
             // The opening entry of a wake turn is stored as a user message, but the wire
             // never calls it one (DPES-1105).

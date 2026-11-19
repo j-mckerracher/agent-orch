@@ -97,6 +97,8 @@ export type TaskState =
   | "Created"
   | "Queued"
   | "Running"
+  /** The worker ended its turn to wait for the user's decision or for help (DPES-1108). */
+  | "Waiting"
   | "Verifying"
   | "Succeeded"
   | "VerificationFailed"
@@ -106,6 +108,7 @@ export type TaskState =
 export type AttemptState =
   | "Pending"
   | "Running"
+  | "Waiting"
   | "CandidateReady"
   | "Failed"
   | "Succeeded"
@@ -757,11 +760,23 @@ export interface ConversationWireEntry {
   error_code: string | null;
   /** Set on a `turn_completed` entry (DPES-1105). Absent from older daemons; null when the turn had no action block. */
   action_block?: ActionBlockWire | null;
+  /**
+   * Set on a `turn_completed` entry when the turn acted on or reported tasks with a recorded pull request (DPES-1108).
+   * The daemon builds each URL from its own records, never from reply text. Absent otherwise and from older daemons.
+   */
+  pull_requests?: PullRequestLinkWire[];
   /** Set on a `version_mismatch` entry: the agent and version the turn refused (DPES-1106). */
   runtime?: { name: string; version: string };
   /** `wake` on the opening entry of an automatic turn only. Absent otherwise and from older daemons. */
   origin?: string;
   created_at: string;
+}
+
+/** One recorded pull request of a turn's task. `url` is `https://github.com/<owner>/<name>/pull/<number>`. */
+export interface PullRequestLinkWire {
+  task_id: string;
+  number: number;
+  url: string;
 }
 
 /** The permission level a message runs at (DPES-1105). Absent from older daemons; null when no agent launched. */
@@ -829,7 +844,12 @@ export type ActionKindWire =
   | "workstream.link_task"
   | "task.revise"
   | "decision.hold"
-  | "project.remove";
+  | "decision.ask"
+  | "task.message"
+  | "memory.set"
+  | "project.remove"
+  | "coordinator.route"
+  | "coordinator.report";
 
 /** An action proposal's state on the wire (DPES-1105). Unknown states arrive as strings. */
 export type ProposalStateWire = "pending" | "approved" | "executed" | "failed" | "rejected" | "superseded" | "expired";
@@ -851,6 +871,11 @@ export interface ProposalTargetWire {
   running_tasks?: number;
   /** Present only on a `delivery.merge` card: the pull request as the daemon last read it. */
   pull?: PullFactsWire;
+  /** Present only on a `coordinator.route` card (DPES-1108): whether the project has an active coordinator. */
+  coordinator_active?: boolean;
+  /** Present only on a `coordinator.report` card that names a routed request: its work and whether it is answered. */
+  request_work?: string;
+  request_answered?: boolean;
 }
 
 /** One proposed action (DPES-1105). `params` is the canonical JSON the digest binds; it may hold `kind`. */
@@ -876,8 +901,19 @@ export interface ActionProposalWire {
   approved_by?: { kind: "user" } | { kind: "grant"; grant_id: string } | string | null;
   /** The daemon sends the approving grant's id here (null when a person approved or nobody has). */
   grant_id?: string | null;
+  /** True when the orchestrator approved and ran it itself after the user's message (DPES-1108). Absent from older daemons. */
+  autonomous?: boolean;
+  /** On an executed `task.propose`: what this one task changes from the project default, at the user's request. Absent from older daemons. */
+  overrides?: ProposalOverrideWire[];
   created_at: string;
   updated_at: string;
+}
+
+/** One field a task sets differently from its project's default, for that task only (DPES-1108). */
+export interface ProposalOverrideWire {
+  field: string;
+  project_default: string;
+  chosen: string;
 }
 
 /** `actions.resolve` result: the proposal as the daemon now holds it (DPES-1105). */
@@ -886,7 +922,10 @@ export interface ActionsResolveWire {
 }
 
 /** The conversation that holds a proposal's card. */
-export type ProposalScopeWire = { kind: "global" } | { kind: "workstream"; workstream_id: string };
+export type ProposalScopeWire =
+  | { kind: "global" }
+  | { kind: "workstream"; workstream_id: string }
+  | { kind: "project"; project_id: string };
 
 /** `actions.pending` result: pending proposals only, newest first. `more` is true when any were left out. */
 export interface ActionsPendingWire {
@@ -928,6 +967,8 @@ export interface SettingsWire {
   wake_limits?: WakeLimitsWire;
   /** Whether chat may propose tasks that end in a pull request. Absent from an older daemon (DPES-1105). */
   chat_pr_delivery?: boolean;
+  /** Whether the orchestrator runs some actions itself after the user's messages (DPES-1108). Absent from an older daemon. */
+  autonomous_actions?: boolean;
   /** The read-only task tools for the orchestrator chat. Absent from an older daemon (DPES-1105 phase 6b). */
   mcp?: McpWire;
   /** The folder a task runs in when it is not clear which project it belongs to; `null` while none is set. Absent from an older daemon. */
@@ -965,6 +1006,7 @@ export interface SettingsPatchWire {
   supervision?: Partial<SupervisionWire>;
   wake_limits?: Partial<WakeLimitsWire>;
   chat_pr_delivery?: boolean;
+  autonomous_actions?: boolean;
   mcp?: McpWire;
   /** The folder to run in when no project is clear; `null` clears it. The daemon refuses a folder that does not exist. */
   home_directory?: string | null;
@@ -1092,6 +1134,36 @@ export interface HoldsListWire {
   holds: HoldWire[];
 }
 
+/** One question for the user, bound to a task (capability `holds`). Kinds and states stay strings so a new value degrades. */
+export interface QuestionWire {
+  id: string;
+  task_id: string;
+  task_title: string;
+  /** A `p-xxxxxxxx` project code, or "". */
+  project: string;
+  question: string;
+  options: string[];
+  key: string | null;
+  /** `orchestrator` or `worker`. */
+  raised_by: string;
+  /** `open`, `answered` or `reconciled`. */
+  state: string;
+  /** `YYYY-MM-DD` while a deferral is in the future, else null. */
+  deferred_until: string | null;
+  created_at: string;
+  closing: { kind: string; text: string; recorded_at: string } | null;
+}
+
+/** `decisions.list` result: every open question, oldest first. */
+export interface QuestionsListWire {
+  questions: QuestionWire[];
+}
+
+/** `decisions.answer`, `decisions.defer` and `decisions.reconcile` result. */
+export interface QuestionResultWire {
+  question: QuestionWire;
+}
+
 /** One check of a pull request. `name` is remote text; `result` is the host's word for the outcome (pass, fail, pending). */
 export interface PullCheckWire {
   name: string;
@@ -1217,24 +1289,72 @@ export interface GrantRevokeResultWire {
   stopped: number;
 }
 
-/** One orchestrator note on the wire (capability `standing_approvals`, DPES-1105 5b). */
-export interface NoteWire {
-  position: number;
-  body: string;
+/** A memory document's kind (capability `standing_approvals`, DPES-1108 phase 6). */
+export type MemoryKindWire = "preference" | "learning";
+
+/** Who wrote a memory entry: the user in Settings, or the orchestrator through an approved proposal. */
+export type MemoryAuthorWire = "user" | "orchestrator";
+
+/** One keyed, one-line memory entry. `stale` is the daemon's: unconfirmed for longer than `stale_after_days`. */
+export interface MemoryEntryWire {
+  key: string;
+  text: string;
+  written_by: MemoryAuthorWire;
+  created_at_ms: number;
+  confirmed_at_ms: number;
+  stale: boolean;
 }
 
-/** `notes.list` and `notes.set` result: one scope's notes in order and the limits the editor must respect. */
-export interface NotesWire {
-  /** `global`, or `workstream:` plus a workstream id. */
-  scope: string;
-  notes: NoteWire[];
-  limits: { max_notes: number; max_bytes: number };
+/** A removed or replaced entry. Nothing is deleted: a row can be restored once. */
+export interface MemoryArchivedWire {
+  id: number;
+  key: string;
+  text: string;
+  written_by: MemoryAuthorWire;
+  archived_at_ms: number;
+  reason: "removed" | "replaced";
+  restored: boolean;
 }
 
-/** `notes.set` result: the scope and how many notes it now holds. It carries no note text (the reply is cached). */
-export interface NotesSetWire {
+/**
+ * `memory.list` result: one (kind, scope) document. `scope` is `global`, `workstream:` plus an id, or `project:` plus a
+ * project id. Entries are most recently confirmed first; archived rows newest first, at most 50.
+ */
+export interface MemoryListWire {
+  kind: MemoryKindWire;
   scope: string;
-  count: number;
+  entries: MemoryEntryWire[];
+  /** Bytes used: the sum of key bytes plus text bytes of every entry. */
+  bytes: number;
+  budget: number;
+  archived: MemoryArchivedWire[];
+  limits: { max_key_bytes: number; max_text_bytes: number; stale_after_days: number | null };
+}
+
+/** `memory.set` result. It never echoes the text. `over_budget` wrote nothing; `bytes` is what the document would have been. */
+export interface MemorySetWire {
+  kind: MemoryKindWire;
+  scope: string;
+  key: string;
+  outcome: "created" | "updated" | "confirmed" | "over_budget";
+  bytes: number;
+  budget: number;
+}
+
+/** `memory.remove` result. A removed entry moves to the archive. */
+export interface MemoryRemoveWire {
+  kind: MemoryKindWire;
+  scope: string;
+  key: string;
+  removed: boolean;
+}
+
+/** `memory.restore` result. `bytes` and `budget` come with `over_budget`. */
+export interface MemoryRestoreWire {
+  archive_id: number;
+  outcome: "restored" | "over_budget";
+  bytes?: number;
+  budget?: number;
 }
 
 /** A task the global conversation routed to this workstream (DPES-1105 6a). `title` is the daemon's short objective. */
@@ -1243,6 +1363,41 @@ export interface ConversationRoutedInWire {
   title: string;
   routed_at: string;
   state: string;
+}
+
+/** A request the global orchestrator routed to a project coordinator (DPES-1108). `id` is the correlation id. */
+export interface CoordinatorRoutedRequestWire {
+  id: string;
+  work: string;
+  answered: boolean;
+  created_at: string;
+}
+
+/** One entry of a coordinator's parent channel. A `daemon` row is an app fact; a `coordinator` note is agent text. */
+export interface CoordinatorReportWire {
+  id: string;
+  author: "daemon" | "coordinator" | (string & {});
+  verb: string;
+  request_id: string | null;
+  task_id: string | null;
+  key: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+/** A project coordinator's state on `conversations.get` (DPES-1108). Lists are newest first, at most 20 each. */
+export interface ConversationCoordinatorWire {
+  scope_sentence: string | null;
+  open_tasks: number;
+  open_requests: number;
+  routed_requests: CoordinatorRoutedRequestWire[];
+  reports: CoordinatorReportWire[];
+}
+
+/** `coordinator.set_scope` result (DPES-1108). A null sentence means the scope was cleared. */
+export interface CoordinatorSetScopeResult {
+  project_id: string;
+  scope_sentence: string | null;
 }
 
 /** `conversations.get` result: cursor paging, no push stream. */
@@ -1266,6 +1421,8 @@ export interface ConversationWirePage {
   wake_records_more?: boolean;
   /** Workstream target only: tasks the global conversation routed here, newest first. Absent or empty otherwise (DPES-1105). */
   routed_in?: ConversationRoutedInWire[];
+  /** Project target only: the coordinator's scope, open work and parent channel. Absent from older daemons (DPES-1108). */
+  coordinator?: ConversationCoordinatorWire;
 }
 
 /** `conversations.clear` result (DPES-1105). Idempotent: nothing to clear reports `cleared: false`. */

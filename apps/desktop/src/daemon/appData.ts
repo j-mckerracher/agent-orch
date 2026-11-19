@@ -383,6 +383,21 @@ export class AppData extends Store<AppDataSnapshot> {
     }
   }
 
+  /** Records that a finished task's undelivered work is not wanted (DPES-1108), so archive can take it. User-only. */
+  async discardTask(taskId: string): Promise<MutationResult<boolean>> {
+    const scope = `discard:${taskId}`;
+    const key = this.tracker.keyFor(scope, taskId);
+    try {
+      const { discarded } = await this.connection.api().tasksDiscard(taskId, key);
+      this.tracker.settle(scope, null);
+      return { ok: true, value: discarded };
+    } catch (error) {
+      const failure = asDaemonError(error);
+      this.tracker.settle(scope, failure);
+      return { ok: false, error: failure };
+    }
+  }
+
   /** Archives finished tasks (DPES-1106). Returns the ids this call newly archived. */
   async archiveTasks(taskIds: string[]): Promise<MutationResult<string[]>> {
     const scope = "archive";

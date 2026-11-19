@@ -558,9 +558,10 @@ impl Client {
         self.call_feature(Capability::StandingApprovals, "grants.list", params)
     }
 
-    /// `notes.list`: one scope's notes and the note limits, from `params` (`scope`).
-    pub fn notes_list(&mut self, params: Value) -> Result<Value, IpcError> {
-        self.call_feature(Capability::StandingApprovals, "notes.list", params)
+    /// `memory.list`: one preference or learning document, its budget and its archive, from
+    /// `params` (`kind`, `scope`).
+    pub fn memory_list(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "memory.list", params)
     }
 
     /// `pulls.list`: the watched pull requests, from `params` (`project_id`, optional).
@@ -574,10 +575,22 @@ impl Client {
         self.call_feature(Capability::Landing, "pulls.refresh", params)
     }
 
-    /// `notes.set`: replaces one scope's notes, from `params` (`scope`, `notes`, an idempotency
-    /// key). The daemon refuses a session that did not prove the approver secret.
-    pub fn notes_set(&mut self, params: Value) -> Result<Value, IpcError> {
-        self.call_feature(Capability::StandingApprovals, "notes.set", params)
+    /// `memory.set`: writes one entry in place, from `params` (`kind`, `scope`, `key`, `text`,
+    /// an idempotency key). The daemon refuses a session that did not prove the approver secret.
+    pub fn memory_set(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "memory.set", params)
+    }
+
+    /// `memory.remove`: moves one entry to the archive, from `params` (`kind`, `scope`, `key`,
+    /// an idempotency key). User-only.
+    pub fn memory_remove(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "memory.remove", params)
+    }
+
+    /// `memory.restore`: puts an archived entry back, from `params` (`archive_id`, an
+    /// idempotency key). User-only.
+    pub fn memory_restore(&mut self, params: Value) -> Result<Value, IpcError> {
+        self.call_feature(Capability::StandingApprovals, "memory.restore", params)
     }
 
     /// `holds.list`: the holds in place.

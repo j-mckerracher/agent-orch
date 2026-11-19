@@ -179,6 +179,9 @@ function waitingOf(entry: QueueQueuedEntry, snapshot: QueueSnapshotWire): QueueW
         ? wait("approval", "Project not registered", "The project is not registered.", "Register the project before this task can start.")
         : wait("approval", "Start authorization withheld", "Start authorization is withheld.",
           "Check pending decisions in Review & Decisions and the project's start authorization.");
+    case "decision":
+      return wait("approval", "Waiting for your decision", "This task has an open question for you.",
+        "Answer or defer it under Needs your decision in Review & Decisions.");
     case "other":
       switch (entry.waiting_detail) {
         case "worktree_owned":

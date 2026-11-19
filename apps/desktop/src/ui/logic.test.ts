@@ -139,7 +139,7 @@ describe("matchesFilter", () => {
 
 describe("canCancel", () => {
   it("allows cancel only in the states the daemon accepts it from", () => {
-    expect(TASK_STATES.filter(canCancel)).toEqual(["Created", "Queued", "Running", "Verifying"]);
+    expect(TASK_STATES.filter(canCancel)).toEqual(["Created", "Queued", "Running", "Waiting", "Verifying"]);
   });
 });
 

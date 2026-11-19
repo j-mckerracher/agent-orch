@@ -115,7 +115,7 @@ Cancel the task and set the base interval back to `10` minutes afterward.
 **Preconditions:** None.
 
 1. Open Settings, group **Automatic replies**. Set the per-conversation hourly cap to `1`. Click **Save**.
-2. Cause two wake events that need a model turn, at least 70 seconds apart.
+2. Cause two wake events that need a model turn, at least 70 seconds apart, such as two failed tasks. Do not use work checks: a work check past half of the cap is not made at all, so it shows no notice.
 3. Open Global.
 
 **Expected:**

@@ -180,7 +180,8 @@ impl SqliteStore {
 
     /// Records that a relay handed the report to a turn, once. Returns `true` when it
     /// set `relayed_at` and `false` when the report was already relayed. A task with no report
-    /// fails with `RecordNotFound`.
+    /// fails with `RecordNotFound`. While the task has an open question its worker raised, the
+    /// report is not final: the mark is refused with `QuestionError::WorkerQuestionOpen`.
     pub fn mark_task_report_relayed(
         &self,
         task_id: &str,
@@ -192,6 +193,10 @@ impl SqliteStore {
         let (task_id, relayed_at) = (task_id.to_owned(), relayed_at.to_owned());
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            // A scout that asked the user something has not reported yet (DPES-1108 phase 3).
+            if crate::sqlite_questions::worker_question_open(&mut transaction, &task_id).await? {
+                return Err(crate::QuestionError::WorkerQuestionOpen.into());
+            }
             let changed = sqlx::query(
                 "UPDATE task_reports SET relayed_at = ? WHERE task_id = ? AND relayed_at IS NULL",
             )

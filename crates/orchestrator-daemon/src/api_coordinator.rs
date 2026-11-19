@@ -9,9 +9,13 @@
 //! and hides the coordinator. `coordinator.restore` adds a coordinator, empty. A project
 //! has none until it is added: registration does not create one. The idempotency
 //! record for a send keeps references only, so a cleared message leaves no text behind.
+//!
+//! DPES-1108 phase 7: `coordinator.set_scope` stores the scope sentence a coordinator's
+//! charter is rendered from, and `coordinator.remove` is refused (`conflict`) while the
+//! coordinator owns unfinished tasks or an unanswered routed request.
 
 use orchestrator_core::decomposition::{self, DecompositionError};
-use orchestrator_store::{CoordinatorChange, CoordinatorEntry};
+use orchestrator_store::{CoordinatorChange, CoordinatorEntry, CoordinatorError};
 
 use super::conversations::reference_str;
 use super::*;
@@ -20,6 +24,8 @@ const MAX_MESSAGE_BYTES: usize = 8 * 1024;
 const MAX_PROPOSAL_BYTES: usize = 64 * 1024;
 const COORDINATOR_PAGE_SIZE: usize = 100;
 const MAX_ERROR_CHARS: usize = 512;
+/// Newest routed requests and reports a coordinator view lists.
+const COORDINATOR_WIRE_ROWS: usize = 20;
 
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -205,6 +211,44 @@ impl DaemonApi {
         )
     }
 
+    /// Sets or clears the scope sentence of an active coordinator (DPES-1108 phase 7). The
+    /// charter of every later coordinator turn is rendered from it, and the global orchestrator
+    /// routes work by it. A blank or empty sentence clears it. User-only.
+    pub(super) fn coordinator_set_scope(&self, params: Value) -> Result<Value, RpcError> {
+        let request: SetScopeParams = parse_params(params)?;
+        let sentence = request
+            .scope_sentence
+            .as_deref()
+            .filter(|sentence| !sentence.trim().is_empty());
+        if sentence
+            .is_some_and(|sentence| !orchestrator_core::charter::check_scope_sentence(sentence))
+        {
+            return Err(RpcError::InvalidParams);
+        }
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "coordinator.set_scope",
+            &key,
+            &request,
+            || {
+                self.require_active_coordinator(&request.project_id)?;
+                self.store
+                    .set_coordinator_scope_sentence(&request.project_id, sentence)
+                    .map_err(|error| match CoordinatorError::of(&error) {
+                        Some(CoordinatorError::NotActive) => RpcError::NotFound,
+                        Some(_) => RpcError::InvalidParams,
+                        None => map_store_error(error),
+                    })?;
+                Ok(json!({
+                    "project_id": request.project_id,
+                    "scope_sentence": sentence,
+                }))
+            },
+        )
+    }
+
     /// Builds a message or proposal response from its cached reference. The entry is
     /// read back from the store; a cleared entry is answered as a reference with
     /// `cleared: true`.
@@ -224,6 +268,51 @@ impl DaemonApi {
                 "cleared": true
             })),
         }
+    }
+
+    /// What a coordinator's conversation view shows besides its log (DPES-1108 phase 7): the
+    /// scope sentence, how many owned tasks are not finished, the newest routed requests and the
+    /// newest reports on its parent channel. A report's note is the coordinator's own text.
+    pub(super) fn coordinator_wire(&self, project_id: &str) -> Result<Value, RpcError> {
+        let sentence = self
+            .store
+            .coordinator_scope_sentence(project_id)
+            .map_err(map_store_error)?;
+        let summary = self
+            .store
+            .coordinator_summaries()
+            .map_err(map_store_error)?
+            .into_iter()
+            .find(|summary| summary.project_id == project_id);
+        let requests = self
+            .store
+            .routed_requests(project_id, COORDINATOR_WIRE_ROWS)
+            .map_err(map_store_error)?;
+        let reports = self
+            .store
+            .coordinator_reports(project_id, COORDINATOR_WIRE_ROWS)
+            .map_err(map_store_error)?;
+        Ok(json!({
+            "scope_sentence": sentence,
+            "open_tasks": summary.as_ref().map_or(0, |summary| summary.open_tasks),
+            "open_requests": summary.as_ref().map_or(0, |summary| summary.open_requests),
+            "routed_requests": requests.iter().map(|request| json!({
+                "id": request.id,
+                "work": request.work,
+                "answered": request.answered,
+                "created_at": request.created_at,
+            })).collect::<Vec<_>>(),
+            "reports": reports.iter().map(|report| json!({
+                "id": report.id,
+                "author": report.author,
+                "verb": report.verb,
+                "request_id": report.request_id,
+                "task_id": report.task_id,
+                "key": report.key,
+                "note": report.note,
+                "created_at": report.created_at,
+            })).collect::<Vec<_>>(),
+        }))
     }
 
     /// Fails with NotFound for an unknown project and for a project without an active
@@ -246,6 +335,15 @@ impl DaemonApi {
             .map(|_| ())
             .map_err(map_store_error)
     }
+}
+
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct SetScopeParams {
+    project_id: String,
+    /// `null` or blank clears the sentence.
+    scope_sentence: Option<String>,
+    idempotency_key: String,
 }
 
 #[derive(Deserialize, Serialize)]

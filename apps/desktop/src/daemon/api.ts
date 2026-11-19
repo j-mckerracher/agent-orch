@@ -63,6 +63,7 @@ import type {
   ConversationClearResult,
   CoordinatorChangeResult,
   CoordinatorClearResult,
+  CoordinatorSetScopeResult,
   CopilotSignInRecord,
   LoadLimitsWire,
   SettingsWire,
@@ -75,10 +76,15 @@ import type {
   GrantRevokeResultWire,
   GrantsCreateParams,
   GrantsListWire,
-  NotesSetWire,
-  NotesWire,
+  MemoryKindWire,
+  MemoryListWire,
+  MemoryRemoveWire,
+  MemoryRestoreWire,
+  MemorySetWire,
   HoldResultWire,
   HoldsListWire,
+  QuestionResultWire,
+  QuestionsListWire,
   PullsListWire,
   PullsRefreshWire,
 } from "./types";
@@ -99,9 +105,11 @@ function realId(id: string): string {
   return id;
 }
 
-/** A notes scope is `global` or `workstream:` plus an id; the id must not be a placeholder. */
+/** A memory scope is `global`, `workstream:` plus an id, or `project:` plus an id; the id must not be a placeholder. */
 function realScope(scope: string): string {
-  if (scope.startsWith("workstream:")) realId(scope.slice("workstream:".length));
+  for (const prefix of ["workstream:", "project:"]) {
+    if (scope.startsWith(prefix)) realId(scope.slice(prefix.length));
+  }
   return scope;
 }
 
@@ -201,6 +209,17 @@ export class DaemonApi {
   async tasksArchive(taskIds: string[], idempotencyKey: string): Promise<{ archived: string[] }> {
     return this.session.request("tasks.archive", {
       task_ids: taskIds.map(realId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /**
+   * DPES-1108. Records the user's word that a finished task's committed work is not wanted, so it can be archived.
+   * Deletes nothing: the branch stays. User-only. Conflict when the task is not finished.
+   */
+  async tasksDiscard(taskId: string, idempotencyKey: string): Promise<{ task_id: string; discarded: boolean }> {
+    return this.session.request("tasks.discard", {
+      task_id: realId(taskId),
       idempotency_key: idempotencyKey,
     });
   }
@@ -378,6 +397,15 @@ export class DaemonApi {
   async coordinatorRestore(projectId: string, idempotencyKey: string): Promise<CoordinatorChangeResult> {
     return this.session.request("coordinator.restore", {
       project_id: realId(projectId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /** DPES-1108. Sets or clears (null) the scope sentence of an active coordinator. User-only: needs the approver session. */
+  async coordinatorSetScope(projectId: string, scopeSentence: string | null, idempotencyKey: string): Promise<CoordinatorSetScopeResult> {
+    return this.session.request("coordinator.set_scope", {
+      project_id: realId(projectId),
+      scope_sentence: scopeSentence,
       idempotency_key: idempotencyKey,
     });
   }
@@ -697,7 +725,7 @@ export class DaemonApi {
    * must name at least one field. User-only, like `settingsSet`.
    */
   settingsSetGroups(
-    patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "home_directory" | "dispatch_defaults">,
+    patch: Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "autonomous_actions" | "mcp" | "home_directory" | "dispatch_defaults">,
     idempotencyKey: string,
   ): Promise<SettingsWire> {
     return this.session.request("settings.set", { idempotency_key: idempotencyKey, ...patch });
@@ -748,6 +776,26 @@ export class DaemonApi {
     return this.session.request("holds.list", {});
   }
 
+  /** DPES-1108. Every open question for the user, oldest first. A read; needs `holds`. */
+  async decisionsList(): Promise<QuestionsListWire> {
+    return this.session.request("decisions.list", {});
+  }
+
+  /** DPES-1108. Answers a question with the user's exact words, sent as typed. User-only. */
+  async decisionsAnswer(questionId: string, answer: string, idempotencyKey: string): Promise<QuestionResultWire> {
+    return this.session.request("decisions.answer", { question_id: realId(questionId), answer, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108. Defers a question until a date (`YYYY-MM-DD`); it stays open. User-only. */
+  async decisionsDefer(questionId: string, until: string, idempotencyKey: string): Promise<QuestionResultWire> {
+    return this.session.request("decisions.defer", { question_id: realId(questionId), until, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108. Closes a question that became moot, with evidence text. User-only. */
+  async decisionsReconcile(questionId: string, evidence: string, idempotencyKey: string): Promise<QuestionResultWire> {
+    return this.session.request("decisions.reconcile", { question_id: realId(questionId), evidence, idempotency_key: idempotencyKey });
+  }
+
   /** DPES-1105 Phase 4c. The pull requests the daemon watches. A read; needs `landing`. */
   async pullsList(): Promise<PullsListWire> {
     return this.session.request("pulls.list", {});
@@ -774,14 +822,24 @@ export class DaemonApi {
     return this.session.request("grants.revoke", { grant_id: realId(grantId), idempotency_key: idempotencyKey });
   }
 
-  /** DPES-1105 5b. One scope's orchestrator notes and their limits. A read; needs `standing_approvals`. */
-  async notesList(scope: string): Promise<NotesWire> {
-    return this.session.request("notes.list", { scope: realScope(scope) });
+  /** DPES-1108 phase 6. One memory document with its archive and limits. A read; needs `standing_approvals`. */
+  async memoryList(kind: MemoryKindWire, scope: string): Promise<MemoryListWire> {
+    return this.session.request("memory.list", { kind, scope: realScope(scope) });
   }
 
-  /** DPES-1105 5b. Replaces one scope's whole list of notes. User-only. */
-  async notesSet(scope: string, notes: string[], idempotencyKey: string): Promise<NotesSetWire> {
-    return this.session.request("notes.set", { scope: realScope(scope), notes, idempotency_key: idempotencyKey });
+  /** DPES-1108 phase 6. Adds, changes or confirms one entry by key. User-only. */
+  async memorySet(kind: MemoryKindWire, scope: string, key: string, text: string, idempotencyKey: string): Promise<MemorySetWire> {
+    return this.session.request("memory.set", { kind, scope: realScope(scope), key, text, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108 phase 6. Moves one entry to the archive. User-only. */
+  async memoryRemove(kind: MemoryKindWire, scope: string, key: string, idempotencyKey: string): Promise<MemoryRemoveWire> {
+    return this.session.request("memory.remove", { kind, scope: realScope(scope), key, idempotency_key: idempotencyKey });
+  }
+
+  /** DPES-1108 phase 6. Puts one archived entry back. User-only. */
+  async memoryRestore(archiveId: number, idempotencyKey: string): Promise<MemoryRestoreWire> {
+    return this.session.request("memory.restore", { archive_id: archiveId, idempotency_key: idempotencyKey });
   }
 
   /** M7-09. Per-model efforts; a cold catalog answers state `unknown` ("retry shortly"). */

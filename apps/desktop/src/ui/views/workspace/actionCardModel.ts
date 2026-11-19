@@ -8,6 +8,7 @@ import type { ActionProposal } from "../../../sources/surfaces/types";
 import type { Tone } from "../../theme";
 import { formatHoldDay } from "../review/holdDates";
 import { agoText, checkLine, mergeMethodText, mergeVerdict, plainRemote, shortSha } from "../review/pullsModel";
+import { verbText } from "./coordinatorModel";
 
 export type CardState = "pending" | "approved" | "executed" | "rejected" | "failed" | "superseded" | "expired" | "unknown";
 
@@ -32,8 +33,28 @@ const KINDS: Readonly<Record<string, KindCopy>> = {
   "workstream.link_task": { heading: "Link task", done: "Linked" },
   "task.revise": { heading: "Revise task", done: "Revision started" },
   "decision.hold": { heading: "Hold decision", done: "Held" },
+  "decision.ask": { heading: "Ask for your decision", done: "Asked" },
+  "task.message": { heading: "Message the waiting worker", done: "Sent" },
+  // The heading names the document: see `MEMORY_HEADINGS`.
+  "memory.set": { heading: "Save a preference", done: "Saved" },
   "project.remove": { heading: "Remove project", done: "Removed" },
   "delivery.merge": { heading: "Merge pull request", done: "Merged" },
+  "coordinator.route": { heading: "Route work to the project coordinator", done: "Routed" },
+  "coordinator.report": { heading: "Report to the orchestrator", done: "Reported" },
+};
+
+/** A `memory.set` heading by its `document` param. */
+const MEMORY_HEADINGS: Readonly<Record<string, string>> = {
+  shared: "Save a shared preference",
+  local: "Save a preference for this conversation",
+  learnings: "Record a learning",
+};
+
+/** Where a `memory.set` saves, in card words. */
+const MEMORY_DOCUMENTS: Readonly<Record<string, string>> = {
+  shared: "Shared preferences",
+  local: "This conversation's preferences",
+  learnings: "Learnings",
 };
 
 /** The kinds that act on a task. Their failures read in task words. */
@@ -47,6 +68,9 @@ const FAILURE_TEXT: Readonly<Record<string, string>> = {
   dependency_not_executed: "The workstream this needs was not created, so this did not run. Nothing was changed.",
   forbidden: "The app does not allow this change. Nothing was changed.",
   grant_revoked: "The standing approval was revoked before this ran. Nothing was changed. Ask the orchestrator to propose again, or approve it yourself.",
+  autonomy_off: "Acting on its own was turned off before this ran. Nothing was changed. Ask the orchestrator to propose again.",
+  no_user_origin: "The orchestrator cannot start new work on its own without a message from you. Nothing was changed.",
+  user_word_required: "This change needs your approval, so it did not run on its own. Nothing was changed.",
   grant_expired: "The standing approval had expired before this ran. Nothing was changed. Ask the orchestrator to propose again, or approve it yourself.",
   internal: "The app could not finish this change. Nothing else was changed. Ask the orchestrator to propose it again.",
 };
@@ -90,6 +114,22 @@ const KIND_FAILURE_TEXT: Readonly<Record<string, Readonly<Record<string, string>
     conflict: "The task is not in a state that allows a merge. Nothing was merged.",
     invalid: "The app could not read this merge request. Nothing was merged. Ask the orchestrator to propose again.",
   },
+  "memory.set": {
+    over_budget: "The document is over its byte budget. Nothing was saved.",
+    invalid:
+      "The app refused this entry: the key or the text is not allowed, for example it looks like a password, a token or a file path. Nothing was saved.",
+    not_found: "The project or workstream of this conversation is gone. Nothing was saved.",
+  },
+  "coordinator.route": {
+    not_found: "The project has no active coordinator. Nothing was routed. Add its coordinator, then ask again.",
+    conflict: "The coordinator cannot take this work now. Nothing was routed.",
+    invalid: "The request is outside this conversation, or the work is not valid. Nothing was routed.",
+  },
+  "coordinator.report": {
+    not_found: "This coordinator is no longer active. Nothing was reported.",
+    conflict: "The routed request this names is unknown or already answered. Nothing was reported.",
+    invalid: "The request is outside this conversation, or the note is not valid. Nothing was reported.",
+  },
   "project.remove": {
     not_found: "The project is gone. Nothing was changed.",
     conflict: "The project still has running work or decisions waiting, so it was not removed. Nothing was changed.",
@@ -104,15 +144,23 @@ const DENIAL_TEXT: Readonly<Record<string, string>> = {
   autonomy_not_authorized: "This task asks for more autonomy than chat may request. Nothing was created.",
   verification_not_authorized: "This task asks for verification commands, which chat may not request. Nothing was created.",
   contract_invalid: "The task text is not valid. Nothing was created. Ask the orchestrator to propose again.",
+  shared_preferences_read_only:
+    "Shared preferences are read-only here. Report it to the global conversation, or set it in Settings.",
+  no_local_preferences_here: "The global conversation has no local preferences. Use a shared preference instead.",
 };
 
 const DENIAL_FALLBACK = "The app refused this task. Nothing was created.";
 const MERGE_DENIAL_FALLBACK = "The app refused this merge. Nothing was merged.";
+const MEMORY_DENIAL_FALLBACK = "The app refused this entry. Nothing was saved.";
 
 const REVISE_EFFECT =
   "The current attempt stops. Its work is kept. A new task starts with the old objective plus this instruction.";
 const HOLD_EFFECT = "It stays in Review and Decisions, marked Held, and comes back on that day.";
 const MERGE_WARNING = "Approving merges exactly this commit on GitHub and cannot be undone from here.";
+const ROUTE_EFFECT =
+  "The project coordinator gets this work as a routed request and reports back here. Its tasks wake the coordinator, not this conversation.";
+const REPORT_EFFECT = "The global orchestrator reads this report. An answer closes the routed request it names.";
+
 const REMOVE_EFFECT =
   "The project leaves the project list. Its folder, worktrees and branches are not touched. Register the folder again to bring it back.";
 
@@ -176,6 +224,14 @@ function copyOf(kind: string): KindCopy | null {
   return Object.prototype.hasOwnProperty.call(KINDS, kind) ? KINDS[kind] : null;
 }
 
+/** The heading of a proposal: a `memory.set` names the document it saves to. Null for a kind this app does not know. */
+function headingOf(kind: string, params: Readonly<Record<string, unknown>>): string | null {
+  const copy = copyOf(kind);
+  if (copy === null) return null;
+  if (kind === "memory.set") return lookup(MEMORY_HEADINGS, typeof params.document === "string" ? params.document : null) ?? copy.heading;
+  return copy.heading;
+}
+
 function text(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
@@ -214,7 +270,7 @@ function isDenied(p: ActionProposal): boolean {
 
 function denialText(p: ActionProposal): string {
   if (p.kind === "delivery.merge") return lookup(KIND_FAILURE_TEXT["delivery.merge"], p.denial) ?? MERGE_DENIAL_FALLBACK;
-  return lookup(DENIAL_TEXT, p.denial) ?? DENIAL_FALLBACK;
+  return lookup(DENIAL_TEXT, p.denial) ?? (p.kind === "memory.set" ? MEMORY_DENIAL_FALLBACK : DENIAL_FALLBACK);
 }
 
 /**
@@ -233,11 +289,16 @@ function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
     p.kind === "task.retry" ||
     p.kind === "workstream.link_task" ||
     p.kind === "task.revise" ||
-    p.kind === "decision.hold"
+    p.kind === "decision.hold" ||
+    p.kind === "decision.ask" ||
+    p.kind === "task.message"
   ) {
     return shorten(p.target?.taskTitle || text(p.params.task_id));
   }
   if (p.kind === "project.remove") return shorten(p.target?.projectName || text(p.params.project));
+  if (p.kind === "memory.set") return shorten(text(p.params.key));
+  if (p.kind === "project.remove" || p.kind === "coordinator.route") return shorten(p.target?.projectName || text(p.params.project));
+  if (p.kind === "coordinator.report") return text(p.params.request) || shorten(text(p.params.note));
   // The number and the commit name the merge in a button, so the title (remote text) stays out of it.
   if (p.kind === "delivery.merge") return `${text(p.params.pr_number)} at commit ${shortSha(text(p.params.head_sha))}`;
   return text(p.params.title);
@@ -245,7 +306,7 @@ function subjectOf(p: ActionProposal, names: WorkstreamNames): string {
 
 /** "Create workstream: Post-MVP work", the label a dependent card gives its parent. */
 function parentLabel(parent: ActionProposal): string {
-  return `${copyOf(parent.kind)?.heading ?? parent.kind}: ${subjectOf(parent, NO_NAMES)}`;
+  return `${headingOf(parent.kind, parent.params) ?? parent.kind}: ${subjectOf(parent, NO_NAMES)}`;
 }
 
 function field(label: string, value: string | string[]): Field {
@@ -274,16 +335,19 @@ export function newerRecord(listed: ActionProposal, confirmed: ActionProposal | 
   return Date.parse(confirmed.updatedAt) >= Date.parse(listed.updatedAt) ? confirmed : listed;
 }
 
-/** "Proposed: Create workstream". The heading never changes with the state, so the card's name stays stable. */
-export function cardTitle(kind: string): string {
-  return `Proposed: ${copyOf(kind)?.heading ?? "Unknown action"}`;
+/**
+ * "Proposed: Create workstream". The heading never changes with the state, so the card's name stays stable. `params`
+ * are the proposal's: a `memory.set` heading names its document.
+ */
+export function cardTitle(kind: string, params: Readonly<Record<string, unknown>>): string {
+  return `Proposed: ${headingOf(kind, params) ?? "Unknown action"}`;
 }
 
 /** The lower-case action phrase used in button names and announcements, for example "create workstream Post-MVP work". */
 export function actionPhrase(p: ActionProposal, names: WorkstreamNames): string {
-  const copy = copyOf(p.kind);
-  if (copy === null) return `action ${p.kind}`;
-  return `${copy.heading.toLowerCase()} ${subjectOf(p, names)}`.trim();
+  const heading = headingOf(p.kind, p.params);
+  if (heading === null) return `action ${p.kind}`;
+  return `${heading.toLowerCase()} ${subjectOf(p, names)}`.trim();
 }
 
 /**
@@ -337,6 +401,39 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("Verification", "None, fixed by the app"),
         ...(workstream !== "" ? [field("Workstream", workstream)] : []),
         ...(objective !== "" ? [field("Objective", objective)] : []),
+        ...(text(x.request) !== "" ? [field("Routed request", text(x.request))] : []),
+      ];
+    }
+    case "coordinator.route": {
+      const project = text(x.project);
+      const name = p.target?.projectName;
+      const active = p.target?.coordinatorActive;
+      return [
+        field("Project", name ? `${name} (${project})` : project),
+        field(
+          "Coordinator",
+          active === undefined ? "(not available)" : active ? "Active" : "Not active. Add the coordinator before approving.",
+        ),
+        field("Work", linesOf(text(x.work))),
+        field("What happens", ROUTE_EFFECT),
+      ];
+    }
+    case "coordinator.report": {
+      const request = text(x.request);
+      const work = p.target?.requestWork;
+      const answered = p.target?.requestAnswered;
+      return [
+        field("Report", verbText(text(x.verb))),
+        field("Note", linesOf(text(x.note))),
+        ...(request !== ""
+          ? [
+              field("Routed request", request),
+              field("Request work", work === undefined ? "(not available)" : linesOf(work)),
+              field("Request answered", answered === undefined ? "(not available)" : answered ? "Yes" : "No"),
+            ]
+          : []),
+        ...(text(x.key) !== "" ? [field("Key", text(x.key))] : []),
+        field("What happens", REPORT_EFFECT),
       ];
     }
     case "task.cancel":
@@ -371,6 +468,30 @@ export function fieldsOf(p: ActionProposal, names: WorkstreamNames, parent: Acti
         field("What happens", HOLD_EFFECT),
         field("Task id", text(x.task_id)),
       ];
+    case "decision.ask":
+      return [
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task state now", p.target?.taskState ?? "(not available)"),
+        field("Question", linesOf(text(x.question))),
+        field("Options", Array.isArray(x.options) ? x.options.map(text) : []),
+        field("Task id", text(x.task_id)),
+      ];
+    case "task.message":
+      return [
+        field("Task title", p.target?.taskTitle ?? "(not available)"),
+        field("Task state now", p.target?.taskState ?? "(not available)"),
+        field("Message", linesOf(text(x.text))),
+        field("Task id", text(x.task_id)),
+      ];
+    case "memory.set": {
+      const document = text(x.document);
+      // The key and the text are shown whole, exactly as they would be saved.
+      return [
+        field("Saves to", lookup(MEMORY_DOCUMENTS, document) ?? document),
+        field("Key", text(x.key)),
+        field("Text", text(x.text)),
+      ];
+    }
     case "delivery.merge": {
       const pull = p.target?.pull;
       const verdict = mergeVerdict(pull, p.denial);
@@ -436,6 +557,19 @@ export function approvedByText(p: ActionProposal): string | null {
   return `Approved by a standing approval (${p.approvedBy.grantId.slice(0, GRANT_LABEL_CHARS)}).`;
 }
 
+/** The line under an executed card the orchestrator ran itself (DPES-1108 phase 5). Null otherwise. */
+export function doneOnItsOwnText(p: ActionProposal): string | null {
+  return p.autonomous === true && stateOf(p) === "executed" ? "The orchestrator did this on its own. You did not need to approve it." : null;
+}
+
+/** One line per field this task sets differently from its project's default, at the user's request. */
+export function overrideLines(p: ActionProposal): string[] {
+  return (p.overrides ?? []).map((o) => {
+    const words = (value: string) => (o.field === "delivery" ? deliveryWords(value) : value);
+    return `For this task only: ${o.field} ${words(o.chosen)} instead of the project's ${words(o.projectDefault)}.`;
+  });
+}
+
 /** The inline text for a request that the daemon refused or never answered. */
 export function requestErrorText(error: DaemonError, parent: ActionProposal | null): string {
   switch (error.kind) {
@@ -483,6 +617,8 @@ export function openTaskId(p: ActionProposal): string | null {
     case "task.cancel":
     case "task.retry":
     case "decision.hold":
+    case "decision.ask":
+    case "task.message":
     case "delivery.merge":
       return text(p.params.task_id) || null;
     case "task.revise":
@@ -507,8 +643,20 @@ function executedText(p: ActionProposal, names: WorkstreamNames): string {
       return `Revision started for “${subjectOf(p, names)}”. The old attempt is stopping and a new task is queued.`;
     case "decision.hold":
       return `Held the decision for “${subjectOf(p, names)}” until ${formatHoldDay(text(p.params.until), true)}.`;
+    case "decision.ask":
+      return `Asked you about “${subjectOf(p, names)}”. Answer it under Needs your decision in Review & Decisions.`;
+    case "task.message":
+      return `Sent the message to the waiting worker of “${subjectOf(p, names)}”. It continues with it.`;
     case "project.remove":
       return `Removed project “${subjectOf(p, names)}”. Its tasks stay in history.`;
+    case "memory.set":
+      return text(p.params.document) === "learnings"
+        ? `Recorded the learning “${subjectOf(p, names)}”.`
+        : `Saved the preference “${subjectOf(p, names)}”.`;
+    case "coordinator.route":
+      return `Routed the work to the “${subjectOf(p, names)}” coordinator. It reports back in this conversation.`;
+    case "coordinator.report":
+      return "Reported to the global orchestrator.";
     case "delivery.merge":
       return `Merged pull request ${text(p.params.pr_number)} at commit ${shortSha(text(p.params.head_sha))}.`;
     case "workstream.create":
@@ -602,7 +750,7 @@ export function viewOf(p: ActionProposal, parent: ActionProposal | null, ctx: Vi
     case "executed":
       return closedView(
         state,
-        { tone: "ok", text: copyOf(p.kind)?.done ?? "Executed" },
+        { tone: "ok", text: p.autonomous === true ? "Done on its own" : (copyOf(p.kind)?.done ?? "Executed") },
         { tone: "ok", text: executedText(p, ctx.names) },
       );
     case "rejected":

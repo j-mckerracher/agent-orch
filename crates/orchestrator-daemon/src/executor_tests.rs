@@ -75,7 +75,8 @@ impl Fixture {
               --strict-mcp-config --tools --allowedTools --disallowedTools --allow-dangerously-skip-permissions --model --effort \
               --plugin-dir --agent \
               --prompt --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir \
-              --usage-output-file -C --allow-tool --deny-tool --allow-all --assisted-approval --max-ai-credits\n\
+              --usage-output-file -C --allow-tool --deny-tool --allow-all --assisted-approval --max-ai-credits \
+              --add-dir --session-id --resume\n\
               exit 0\nfi\n"
         };
         fs::write(&path, format!("#!/bin/sh\n{help}{body}")).unwrap();
@@ -337,7 +338,7 @@ fn a_claude_cli_without_the_agent_flags_launches_plain_and_warns_naming_the_flag
             "if [ \"$1\" = \"--help\" ]; then\n\
              printf '%s\\n' -p --verbose --output-format --include-partial-messages --permission-mode \\\n\
              --permission-prompts --restricted --strict-mcp-config --tools --allowedTools \\\n\
-             --disallowedTools --model --effort\n\
+             --disallowedTools --model --effort --add-dir --session-id --resume\n\
              exit 0\nfi\n\
              printf '%s\\n' \"$@\" > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
              {THREAD_STARTED}{TURN_COMPLETED}",
@@ -1241,12 +1242,15 @@ fn recording_agent(fixture: &Fixture, record: &Path) -> PathBuf {
         "recording-agent",
         &format!(
             "if [ \"$1\" = \"--version\" ]; then echo 'GitHub Copilot CLI 1.0.109'; exit 0; fi\n\
-             printf '%s\\n' \"$@\" > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{0}.tmp' && mv '{0}.tmp' '{0}'\n\
              {THREAD_STARTED}{TURN_COMPLETED}",
             record.display()
         ),
     )
 }
+
+/// A launched agent gets the brief, and the recorder keeps the first line of each argument.
+const BRIEF_FIRST_LINE: &str = "# MCAO worker brief";
 
 fn strs(argv: &[String]) -> Vec<&str> {
     argv.iter().map(String::as_str).collect()
@@ -1294,8 +1298,39 @@ fn launched_argv(
             .map(|arg| arg.replace(&worktree, "<worktree>"))
             .collect();
     }
+    // The status directory and the new session id differ per run.
+    if let Some(i) = argv.iter().position(|arg| arg == "--add-dir") {
+        let status = argv[i + 1].clone();
+        assert!(status.contains("task-status"), "{status}");
+        argv = argv
+            .into_iter()
+            .map(|arg| arg.replace(&status, "<status>"))
+            .collect();
+    }
+    if let Some(i) = argv.iter().position(|arg| arg == "--session-id") {
+        argv[i + 1] = "<session>".to_owned();
+    }
+    for arg in &mut argv {
+        if arg.starts_with("--session-id=") {
+            *arg = "--session-id=<session>".to_owned();
+        }
+    }
     argv
 }
+
+/// What a Claude task run adds after its level's flags: the status directory and the session it
+/// starts (DPES-1108 phase 4).
+const CLAUDE_CHANNEL: [&str; 4] = ["--add-dir", "<status>", "--session-id", "<session>"];
+/// The same for Copilot below Full, where a write rule must cover the status directory.
+const COPILOT_CHANNEL: [&str; 5] = [
+    "--add-dir",
+    "<status>",
+    "--allow-tool",
+    "write(<status>/**)",
+    "--session-id=<session>",
+];
+/// At Full, `--allow-all` already covers the status directory.
+const COPILOT_FULL_CHANNEL: [&str; 3] = ["--add-dir", "<status>", "--session-id=<session>"];
 
 fn launch_contract(fixture: &Fixture, agent: &str) -> Value {
     json!({
@@ -1316,7 +1351,7 @@ fn launch_contract(fixture: &Fixture, agent: &str) -> Value {
 /// The head every Claude task vector shares, up to its tool flags.
 const CLAUDE_TASK_HEAD: [&str; 13] = [
     "-p",
-    "objective of launch",
+    BRIEF_FIRST_LINE,
     "--verbose",
     "--output-format",
     "stream-json",
@@ -1332,9 +1367,10 @@ const CLAUDE_TASK_HEAD: [&str; 13] = [
 
 #[test]
 fn codex_task_argv_per_level_is_exact() {
-    let objective = "objective of launch";
+    let objective = BRIEF_FIRST_LINE;
     let argv = |permission| launched_argv("codex", permission, |_| {});
     // The fixture workflow agent is sent as developer instructions before the objective.
+    // The status directory goes after the level's flags (DPES-1108 phase 4).
     let restricted = vec![
         "exec",
         "--json",
@@ -1347,6 +1383,8 @@ fn codex_task_argv_per_level_is_exact() {
         "show_raw_agent_reasoning=true",
         "-c",
         "model_reasoning_summary=\"detailed\"",
+        "--add-dir",
+        "<status>",
         "--",
         objective,
     ];
@@ -1368,6 +1406,8 @@ fn codex_task_argv_per_level_is_exact() {
             "show_raw_agent_reasoning=true",
             "-c",
             "model_reasoning_summary=\"detailed\"",
+            "--add-dir",
+            "<status>",
             "--",
             objective,
         ]
@@ -1383,11 +1423,14 @@ fn codex_task_argv_per_level_is_exact() {
             "show_raw_agent_reasoning=true",
             "-c",
             "model_reasoning_summary=\"detailed\"",
+            "--add-dir",
+            "<status>",
             "--",
             objective,
         ]
     );
-    // Without a workflow agent the vector is the one Codex launched before.
+    // Without a workflow agent the vector is the one Codex launched before, plus the status
+    // directory.
     let plain = launched_argv("codex", None, |config| {
         config.locate_workflow_agent = no_workflow_agent
     });
@@ -1403,6 +1446,8 @@ fn codex_task_argv_per_level_is_exact() {
             "show_raw_agent_reasoning=true",
             "-c",
             "model_reasoning_summary=\"detailed\"",
+            "--add-dir",
+            "<status>",
             "--",
             objective,
         ]
@@ -1446,14 +1491,17 @@ fn claude_task_argv_per_level_is_exact() {
     restricted.extend(["Read,Edit,Write", "--allowedTools", "Read,Edit,Write"]);
     // Every level ends with the fixture workflow agent's flags. Without one, Absent and
     // Restricted launch the vector a Claude task has always had.
-    let restricted_agent = with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS);
+    let restricted_agent = with_flags(
+        with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS),
+        &CLAUDE_CHANNEL,
+    );
     assert_eq!(strs(&claude(None, |_| {})), restricted_agent);
     assert_eq!(strs(&claude(Some("restricted"), |_| {})), restricted_agent);
     assert_eq!(
         strs(&claude(Some("restricted"), |config| {
             config.locate_workflow_agent = no_workflow_agent
         })),
-        restricted
+        with_flags(restricted, &CLAUDE_CHANNEL)
     );
 
     let mut extended = CLAUDE_TASK_HEAD.to_vec();
@@ -1468,12 +1516,12 @@ fn claude_task_argv_per_level_is_exact() {
     ]);
     assert_eq!(
         strs(&claude(Some("extended"), |_| {})),
-        with_flags(extended, &FIXTURE_AGENT_FLAGS)
+        with_flags(with_flags(extended, &FIXTURE_AGENT_FLAGS), &CLAUDE_CHANNEL)
     );
 
     let auto = [
         "-p",
-        "objective of launch",
+        BRIEF_FIRST_LINE,
         "--verbose",
         "--output-format",
         "stream-json",
@@ -1494,12 +1542,15 @@ fn claude_task_argv_per_level_is_exact() {
     ];
     assert_eq!(
         strs(&claude(Some("auto"), |_| {})),
-        with_flags(auto.to_vec(), &FIXTURE_AGENT_FLAGS)
+        with_flags(
+            with_flags(auto.to_vec(), &FIXTURE_AGENT_FLAGS),
+            &CLAUDE_CHANNEL
+        )
     );
 
     let full = [
         "-p",
-        "objective of launch",
+        BRIEF_FIRST_LINE,
         "--verbose",
         "--output-format",
         "stream-json",
@@ -1512,13 +1563,16 @@ fn claude_task_argv_per_level_is_exact() {
     ];
     assert_eq!(
         strs(&claude(Some("full"), |_| {})),
-        with_flags(full.to_vec(), &FIXTURE_AGENT_FLAGS)
+        with_flags(
+            with_flags(full.to_vec(), &FIXTURE_AGENT_FLAGS),
+            &CLAUDE_CHANNEL
+        )
     );
 }
 
 #[test]
 fn copilot_task_argv_per_level_is_exact() {
-    let prompt = "--prompt=objective of launch";
+    let prompt = concat!("--prompt=", "# MCAO worker brief");
     let mut restricted = vec![
         prompt,
         "--output-format",
@@ -1548,18 +1602,25 @@ fn copilot_task_argv_per_level_is_exact() {
         "memory",
     ]);
     let head = restricted[..restricted.len() - 10].to_vec();
+    let restricted_agent = with_flags(
+        with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS),
+        &COPILOT_CHANNEL,
+    );
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, None, |_| {})),
-        with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS)
+        restricted_agent
     );
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("restricted"), |_| {})),
-        with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS)
+        restricted_agent
     );
     let plain = launched_argv(COPILOT_AGENT, None, |config| {
         config.locate_workflow_agent = no_workflow_agent
     });
-    assert_eq!(strs(&plain), restricted);
+    assert_eq!(
+        strs(&plain),
+        with_flags(restricted.clone(), &COPILOT_CHANNEL)
+    );
 
     let mut extended = head.clone();
     extended.extend([
@@ -1582,7 +1643,7 @@ fn copilot_task_argv_per_level_is_exact() {
     ]);
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("extended"), |_| {})),
-        with_flags(extended, &FIXTURE_AGENT_FLAGS)
+        with_flags(with_flags(extended, &FIXTURE_AGENT_FLAGS), &COPILOT_CHANNEL)
     );
 
     let mut auto = head.clone();
@@ -1601,7 +1662,7 @@ fn copilot_task_argv_per_level_is_exact() {
     ]);
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("auto"), |_| {})),
-        with_flags(auto, &FIXTURE_AGENT_FLAGS)
+        with_flags(with_flags(auto, &FIXTURE_AGENT_FLAGS), &COPILOT_CHANNEL)
     );
 
     let full = [
@@ -1621,7 +1682,10 @@ fn copilot_task_argv_per_level_is_exact() {
     ];
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("full"), |_| {})),
-        with_flags(full.to_vec(), &FIXTURE_AGENT_FLAGS)
+        with_flags(
+            with_flags(full.to_vec(), &FIXTURE_AGENT_FLAGS),
+            &COPILOT_FULL_CHANNEL
+        )
     );
 }
 
@@ -2177,6 +2241,22 @@ fn archiving_a_finished_task_returns_its_worktree_slot_to_the_pool() {
     wait_state(&api, &task_id, "Succeeded");
     let leased = workspace_path(&fixture, &task_id);
 
+    // The run committed work that was never delivered: the archive is refused until the user
+    // discards it (DPES-1108 phase 5).
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    assert!(store.has_unlanded_candidate(&task_id).unwrap());
+    assert_eq!(
+        api.dispatch(
+            "tasks.archive",
+            json!({"task_ids": [task_id], "idempotency_key": "archive-refused-call"}),
+        ),
+        Err(RpcError::Conflict)
+    );
+    api.dispatch(
+        "tasks.discard",
+        json!({"task_id": task_id, "idempotency_key": "archive-release-discard"}),
+    )
+    .unwrap();
     api.dispatch(
         "tasks.archive",
         json!({"task_ids": [task_id], "idempotency_key": "archive-release-call"}),
@@ -2200,6 +2280,11 @@ fn archiving_keeps_the_slot_of_a_task_whose_worktree_is_dirty() {
     wait_state(&api, &task_id, "Succeeded");
     let leased = workspace_path(&fixture, &task_id);
     fs::write(Path::new(&leased).join("scratch.txt"), "uncommitted\n").unwrap();
+    api.dispatch(
+        "tasks.discard",
+        json!({"task_id": task_id, "idempotency_key": "archive-dirty-discard"}),
+    )
+    .unwrap();
 
     let archived = api
         .dispatch(
@@ -2717,6 +2802,8 @@ mod usage_paths {
             permission: Default::default(),
             worktree: PathBuf::new(),
             in_place: false,
+            status_dir: PathBuf::new(),
+            session: JobSession::New(String::new()),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
             output: Default::default(),
         };
@@ -2902,6 +2989,8 @@ mod usage_paths {
             permission: PermissionLevel::Restricted,
             worktree: PathBuf::from("."),
             in_place: false,
+            status_dir: PathBuf::new(),
+            session: JobSession::New(String::new()),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
             output: Default::default(),
         };
@@ -3191,6 +3280,267 @@ fn an_in_place_home_that_became_a_repository_runs_in_a_worktree() {
         .unwrap();
     assert!(!workspace.is_in_place());
     assert!(!workspace.branch.is_empty());
+    api.shutdown();
+}
+
+/// A scripted Codex worker for the status channel (DPES-1108 phase 4). A first run records its
+/// argv to `first`, appends `lines` to the status file the daemon granted (`--add-dir`) and
+/// exits cleanly without changing a file. A resume (`exec resume`) records its argv to
+/// `resumed`, changes a file and exits cleanly. A task whose objective names `plain` skips the
+/// status file and just changes a file.
+fn status_agent(fixture: &Fixture, first: &Path, resumed: &Path, lines: &[&str]) -> PathBuf {
+    let lines: String = lines.iter().map(|line| format!(" '{line}'")).collect();
+    fixture.script(
+        "status-agent",
+        &format!(
+            "if [ \"$2\" = resume ]; then\n\
+             printf '%s\\n' \"$@\" > '{resumed}.tmp' && mv '{resumed}.tmp' '{resumed}'\n\
+             echo resumed > agent-output.txt\n\
+             {THREAD_STARTED}{TURN_COMPLETED}exit 0\nfi\n\
+             case \"$*\" in *'objective of plain'*)\n\
+             echo plain > agent-output.txt\n{THREAD_STARTED}{TURN_COMPLETED}exit 0;;\nesac\n\
+             printf '%s\\n' \"$@\" > '{first}.tmp' && mv '{first}.tmp' '{first}'\n\
+             dir=''\nprev=''\n\
+             for arg in \"$@\"; do if [ \"$prev\" = --add-dir ]; then dir=\"$arg\"; fi; prev=\"$arg\"; done\n\
+             {THREAD_STARTED}printf '%s\\n'{lines} >> \"$dir/status\"\n{TURN_COMPLETED}",
+            first = first.display(),
+            resumed = resumed.display(),
+        ),
+    )
+}
+
+/// The thread id `THREAD_STARTED` reports, which a Codex resume must continue.
+const FIXTURE_THREAD: &str = "01a1b721-1f91-7393-ae1d-6aace8e4646a";
+
+#[test]
+fn a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_with_the_answer() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(
+        &fixture,
+        &first,
+        &resumed,
+        &[
+            "working reading the schema",
+            "needs-decision [key=db] SQLite or Postgres? key=abcdefghijklmnopqrstuvwxyz0123456789",
+            "done claimed but it waits",
+        ],
+    );
+    let api = fixture.api(&program);
+    let task_id = fixture.submit(&api, "asks-1", 0);
+
+    let waiting = wait_state(&api, &task_id, "Waiting");
+    assert_eq!(waiting["attempts"][0]["state"], "Waiting");
+    assert_eq!(waiting["sessions"][0]["state"], "Exited");
+    let first_argv = fs::read_to_string(&first).unwrap();
+    let status_dir = worker_status::status_dir(&fixture.data(), &task_id, 1);
+    assert!(
+        first_argv.contains(&status_dir.display().to_string()),
+        "the brief and --add-dir name the status directory: {first_argv}"
+    );
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    // Each accepted line is stored, the token-like word redacted.
+    let events = store.status_events(&task_id).unwrap();
+    let verbs: Vec<_> = events.iter().map(|event| event.verb.as_str()).collect();
+    assert_eq!(verbs, ["working", "needs-decision", "done"]);
+    let question = store.open_questions().unwrap().pop().unwrap();
+    assert_eq!(question.task_id, task_id);
+    assert_eq!(
+        question.raised_by,
+        orchestrator_store::QuestionRaiser::Worker
+    );
+    assert_eq!(question.key.as_deref(), Some("db"));
+    assert!(question.question.starts_with("SQLite or Postgres?"));
+    assert!(
+        !question.question.contains("abcdefghijklmnop"),
+        "{}",
+        question.question
+    );
+    // A wait runs no process and holds no slot while the question is open.
+    assert!(store.running_attempts().unwrap().is_empty());
+    assert!(!resumed.exists());
+
+    api.dispatch(
+        "decisions.answer",
+        json!({"question_id": question.id, "answer": "Postgres, please.", "idempotency_key": "a-1"}),
+    )
+    .unwrap();
+    let done = wait_state(&api, &task_id, "Succeeded");
+    let resumed_argv = fs::read_to_string(&resumed).unwrap();
+    let lines: Vec<&str> = resumed_argv.lines().collect();
+    assert_eq!(&lines[..3], ["exec", "resume", "--json"], "{resumed_argv}");
+    // The same session, at the same level, with the user's words as the prompt.
+    assert!(lines.contains(&FIXTURE_THREAD), "{resumed_argv}");
+    assert!(
+        lines.contains(&"sandbox_mode=\"workspace-write\""),
+        "{resumed_argv}"
+    );
+    assert!(lines.contains(&"--ignore-user-config"), "{resumed_argv}");
+    // A resumed turn emits its thinking like the first one (DPES-1106).
+    assert!(
+        lines.contains(&"show_raw_agent_reasoning=true"),
+        "{resumed_argv}"
+    );
+    assert!(!lines.contains(&"--sandbox") && !lines.contains(&"--add-dir"));
+    assert!(
+        resumed_argv.contains("Question: SQLite or Postgres?"),
+        "{resumed_argv}"
+    );
+    assert!(
+        resumed_argv.contains("Answer: Postgres, please."),
+        "{resumed_argv}"
+    );
+    // One attempt, two sessions, one worktree; the resumed run's change is the candidate.
+    assert_eq!(done["attempts"].as_array().unwrap().len(), 1);
+    assert_eq!(done["sessions"].as_array().unwrap().len(), 2);
+    assert_eq!(done["sessions"][1]["state"], "Exited");
+    let workspaces: Vec<_> = store
+        .list_workspaces()
+        .unwrap()
+        .into_iter()
+        .filter(|workspace| workspace.task_id == task_id)
+        .collect();
+    assert_eq!(workspaces.len(), 1);
+    let output = fs::read_to_string(Path::new(&workspaces[0].path).join("agent-output.txt"));
+    assert_eq!(output.unwrap(), "resumed\n");
+    api.shutdown();
+}
+
+#[test]
+fn a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(
+        &fixture,
+        &first,
+        &resumed,
+        &["blocked the fixture database is down"],
+    );
+    let api = fixture.api(&program);
+    let task_id = fixture.submit(&api, "blocked-1", 0);
+    wait_state(&api, &task_id, "Waiting");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    assert!(store.open_questions().unwrap().is_empty());
+    assert_eq!(
+        store
+            .task_wake_facts(&task_id)
+            .unwrap()
+            .unwrap()
+            .wait_note
+            .as_deref(),
+        Some("the fixture database is down")
+    );
+    api.shutdown();
+
+    // A restart is a non-event: the gate opens, the task still waits, other work runs.
+    let mut diagnostics = None;
+    let api = fixture.api_with(&program, |config| {
+        diagnostics = Some(config.diagnostics.clone());
+    });
+    let other = fixture.submit(&api, "plain", 0);
+    wait_state(&api, &other, "Succeeded");
+    assert_eq!(task(&api, &task_id)["state"], "Waiting");
+    let lines = diagnostics.unwrap().lines().join("\n");
+    assert!(!lines.contains("recovery_gate_blocked"), "{lines}");
+    assert!(!lines.contains("orphan_terminated"), "{lines}");
+
+    store
+        .queue_task_message(
+            &task_id,
+            "msg-1",
+            "The database is back; run the suite again.",
+        )
+        .unwrap();
+    wait_state(&api, &task_id, "Succeeded");
+    let resumed_argv = fs::read_to_string(&resumed).unwrap();
+    assert!(
+        resumed_argv.contains("Message: The database is back; run the suite again."),
+        "{resumed_argv}"
+    );
+    assert!(resumed_argv.lines().any(|line| line == FIXTURE_THREAD));
+    api.shutdown();
+}
+
+#[test]
+fn a_waiting_task_is_cancelled_without_an_owner() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(&fixture, &first, &resumed, &["blocked no access"]);
+    let api = fixture.api(&program);
+    let task_id = fixture.submit(&api, "cancel-wait", 0);
+    wait_state(&api, &task_id, "Waiting");
+    api.dispatch(
+        "tasks.cancel",
+        json!({"task_id": task_id, "idempotency_key": "cancel-1"}),
+    )
+    .unwrap();
+    let cancelled = task(&api, &task_id);
+    assert_eq!(cancelled["state"], "Cancelled");
+    assert_eq!(cancelled["attempts"][0]["state"], "Cancelled");
+    assert!(!resumed.exists());
+    api.shutdown();
+}
+
+#[test]
+fn codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(
+        &fixture,
+        &first,
+        &resumed,
+        &["needs-decision Which schema?"],
+    );
+    let api = fixture.api(&program);
+    let mut contract = launch_contract(&fixture, "codex");
+    contract["permission"] = json!("auto");
+    let submitted = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "auto-asks", "contract": contract}),
+        )
+        .unwrap();
+    let task_id = submitted["contract"]["id"].as_str().unwrap().to_owned();
+    let failed = wait_state(&api, &task_id, "Failed");
+    let reason = failed["attempts"][0]["failure_reason"].as_str().unwrap();
+    assert!(reason.contains("cannot resume"), "{reason}");
+    assert!(reason.contains("--approve-for-me"), "{reason}");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    // No question is left waiting on a task that cannot continue.
+    assert!(store.open_questions().unwrap().is_empty());
+    assert!(!resumed.exists());
+    api.shutdown();
+}
+
+#[test]
+fn a_failed_report_fails_the_attempt_and_a_done_claim_does_not_make_a_candidate() {
+    let fixture = Fixture::new();
+    let reporter = fixture.script(
+        "failing-reporter",
+        &format!(
+            "dir=''\nprev=''\n\
+             for arg in \"$@\"; do if [ \"$prev\" = --add-dir ]; then dir=\"$arg\"; fi; prev=\"$arg\"; done\n\
+             case \"$*\" in *'objective of claims'*)\n\
+             printf 'done all finished\\n' >> \"$dir/status\";;\n\
+             *) echo partial > agent-output.txt\n\
+             printf 'failed the build tool is missing\\n' >> \"$dir/status\";;\nesac\n\
+             {THREAD_STARTED}{TURN_COMPLETED}"
+        ),
+    );
+    let api = fixture.api(&reporter);
+    let failing = fixture.submit(&api, "fails", 0);
+    let failed = wait_state(&api, &failing, "Failed");
+    assert_eq!(
+        failed["attempts"][0]["failure_reason"],
+        "The agent reported that it failed: the build tool is missing."
+    );
+    // `done` is only a claim: an Implement task that changed nothing still fails.
+    let claims = fixture.submit(&api, "claims", 0);
+    let claimed = wait_state(&api, &claims, "Failed");
+    assert!(claimed["attempts"][0]["failure_reason"]
+        .as_str()
+        .unwrap()
+        .starts_with("The agent exited without changing any files."));
     api.shutdown();
 }
 

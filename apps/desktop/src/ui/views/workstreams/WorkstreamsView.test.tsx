@@ -51,6 +51,7 @@ function d9CountSurfaces(): SurfaceSources {
         Created: 0,
         Queued: 0,
         Running: 1,
+        Waiting: 0,
         Verifying: 0,
         Succeeded: 0,
         VerificationFailed: 0,

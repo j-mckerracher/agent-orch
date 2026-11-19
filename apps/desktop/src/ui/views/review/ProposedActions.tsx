@@ -2,14 +2,14 @@
 // on the card in the conversation (decisions-2 Q8), so there is no Approve or Reject here.
 import { useId } from "react";
 import { NO_HELD, type HeldSets } from "../../../sources/surfaces/holds";
-import type { ConversationTarget, DecisionQueue, ProposalItem } from "../../../sources/surfaces/types";
+import type { DecisionQueue, ProposalItem } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
 import { decisionCountText } from "../../format";
 import { useGate, useServices, useStore, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { Badge, Pill } from "../../theme";
 import { actionPhrase, cardTitle, type WorkstreamNames } from "../workspace/actionCardModel";
-import { targetKey } from "../workspace/targets";
+import { projectLabel, targetKey } from "../workspace/targets";
 import "./ProposedActions.css";
 
 /** Every card is shown in the Workspace view, in the conversation of its scope. */
@@ -18,11 +18,10 @@ const WORKSPACE: Route = { name: "global", view: "workspace" };
 /** The queue holds no workstream titles, so a card is named by its action alone and the line above it names the scope. */
 const NO_NAMES: WorkstreamNames = new Map();
 
-const targetOf = (scope: ProposalItem["scope"]): ConversationTarget =>
-  scope.kind === "global" ? { kind: "global" } : { kind: "workstream", workstreamId: scope.workstreamId };
-
-const whereOf = (scope: ProposalItem["scope"]): string =>
-  scope.kind === "global" ? "Global orchestrator" : `Workstream ${scope.workstreamId}`;
+const whereOf = (scope: ProposalItem["scope"]): string => {
+  if (scope.kind === "global") return "Global orchestrator";
+  return scope.kind === "project" ? projectLabel(scope.projectId) : `Workstream ${scope.workstreamId}`;
+};
 
 /** `more`: the daemon held more than it sent, so the list is cut short and the count is a lower bound ("100+"). */
 const countText = (count: number, more: boolean): string => {
@@ -38,7 +37,7 @@ const countText = (count: number, more: boolean): string => {
 function CardLink({ item }: { item: ProposalItem }) {
   const { drafts } = useServices();
   return (
-    <span onClickCapture={() => drafts.setWorkspaceTarget(targetKey(targetOf(item.scope)))}>
+    <span onClickCapture={() => drafts.setWorkspaceTarget(targetKey(item.scope))}>
       <NavLink to={WORKSPACE} className="pa-link">
         Open the card: {actionPhrase(item.proposal, NO_NAMES)}
       </NavLink>
@@ -81,7 +80,7 @@ export function ProposedActions({ decisions, held = NO_HELD }: { decisions: Surf
           {items.map((item) => (
             <li key={item.proposal.id} className="pa-row">
               <span className="rd-row-title">
-                {cardTitle(item.proposal.kind)}
+                {cardTitle(item.proposal.kind, item.proposal.params)}
                 <span>
                   <Pill tone="info">Pending approval</Pill>
                   {fixture && <Badge tone="placeholder">Fixture data</Badge>}

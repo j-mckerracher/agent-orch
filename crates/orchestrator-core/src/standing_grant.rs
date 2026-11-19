@@ -36,7 +36,11 @@ pub const MAX_BRANCH_PREFIX_CHARS: usize = 64;
 
 /// Kinds a grant may name. Fail closed: a kind that is on no list is not grantable, and the
 /// walk test fails until a person classifies it. `decision.hold` is left out by least
-/// authority until its parameters are reviewed; `workstream.create` is left out because it
+/// authority until its parameters are reviewed. `decision.ask`, `task.message`, `memory.set`
+/// (DPES-1108 phase 6), `coordinator.route` and `coordinator.report` (phase 7) are left out too,
+/// until a person classifies them for grants: the authority model (phase 5) already runs their
+/// autonomous cases on its own inside the daemon's bounds, and a `memory.set` writes text that
+/// later prompts follow. `workstream.create` is left out because it
 /// names no project or workstream to bind a grant to. `delivery.merge` is listed, but a grant
 /// may name it only as the one kind, on a project, with the unattended-merge confirmation:
 /// [`GrantTerms::validate`] holds those rules.
@@ -387,7 +391,15 @@ mod tests {
     fn every_action_kind_is_on_exactly_one_grant_list() {
         // The kinds a person reviewed and left off the allowlist without making them never
         // grantable. Adding a kind fails this test until it is placed on one list.
-        let excluded = [ActionKind::WorkstreamCreate, ActionKind::DecisionHold];
+        let excluded = [
+            ActionKind::WorkstreamCreate,
+            ActionKind::DecisionHold,
+            ActionKind::DecisionAsk,
+            ActionKind::TaskMessage,
+            ActionKind::MemorySet,
+            ActionKind::CoordinatorRoute,
+            ActionKind::CoordinatorReport,
+        ];
         for kind in ActionKind::ALL {
             let never = NEVER_GRANTABLE.contains(&kind.as_str());
             let allowed = GRANTABLE_KINDS.contains(&kind);

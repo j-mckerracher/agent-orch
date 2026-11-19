@@ -24,8 +24,11 @@ use tempfile::TempDir;
 /// secret, so it may appear in a failure message.
 const FIXED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const NEGOTIATED: [Capability; 10] = [
+/// Every capability a user-only method needs, so a refusal can only come from the approver gate.
+/// `ConversationHistory` routes `coordinator.set_scope` (DPES-1108 phase 7).
+const NEGOTIATED: [Capability; 12] = [
     Capability::Health,
+    Capability::Tasks,
     Capability::OrchestratorActions,
     Capability::Approvals,
     Capability::Review,
@@ -35,6 +38,7 @@ const NEGOTIATED: [Capability; 10] = [
     Capability::Holds,
     Capability::StandingApprovals,
     Capability::Coordinator,
+    Capability::ConversationHistory,
 ];
 
 /// Answers with the method name and records every call that reaches it, so a
@@ -581,11 +585,32 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "projects.set_defaults",
             "grants.create",
             "grants.revoke",
-            "notes.set",
+            "memory.set",
+            "memory.remove",
+            "memory.restore",
             "reports.get",
             "reports.relay",
+            "decisions.list",
+            "decisions.answer",
+            "decisions.defer",
+            "decisions.reconcile",
+            "tasks.discard",
+            "coordinator.set_scope",
         ]
     );
+    assert_eq!(method_capability("tasks.discard"), Some(Capability::Tasks));
+    for method in [
+        "decisions.list",
+        "decisions.answer",
+        "decisions.defer",
+        "decisions.reconcile",
+    ] {
+        assert_eq!(
+            method_capability(method),
+            Some(Capability::Holds),
+            "{method}"
+        );
+    }
     assert_eq!(
         method_capability("actions.resolve"),
         Some(Capability::OrchestratorActions)

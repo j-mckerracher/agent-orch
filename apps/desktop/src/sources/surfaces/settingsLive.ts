@@ -58,6 +58,7 @@ export function mapSettings(wire: SettingsWire): SettingsSnapshot {
         }
       : {}),
     ...(wire.chat_pr_delivery === undefined ? {} : { chatPrDelivery: wire.chat_pr_delivery }),
+    ...(wire.autonomous_actions === undefined ? {} : { autonomousActions: wire.autonomous_actions }),
     ...(wire.mcp === undefined ? {} : { mcpEnabled: wire.mcp.enabled }),
     ...(wire.home_directory === undefined ? {} : { homeDirectory: wire.home_directory }),
     ...(wire.dispatch_defaults === undefined ? {} : {
@@ -77,7 +78,7 @@ function patchOf(patch: Partial<LoadLimits>): Partial<LoadLimitsWire> {
 /** Only the fields present are sent, and a group with no field is left out: the daemon refuses an empty group. */
 export function groupsPatchOf(
   patch: GroupsPatch,
-): Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "mcp" | "home_directory" | "dispatch_defaults"> {
+): Pick<SettingsPatchWire, "supervision" | "wake_limits" | "chat_pr_delivery" | "autonomous_actions" | "mcp" | "home_directory" | "dispatch_defaults"> {
   const { supervision: s, wakeLimits: w } = patch;
   const supervision = {
     ...(s?.baseIntervalSecs === undefined ? {} : { base_interval_secs: s.baseIntervalSecs }),
@@ -94,6 +95,7 @@ export function groupsPatchOf(
     ...(Object.keys(supervision).length === 0 ? {} : { supervision }),
     ...(Object.keys(wake_limits).length === 0 ? {} : { wake_limits }),
     ...(patch.chatPrDelivery === undefined ? {} : { chat_pr_delivery: patch.chatPrDelivery }),
+    ...(patch.autonomousActions === undefined ? {} : { autonomous_actions: patch.autonomousActions }),
     ...(patch.mcpEnabled === undefined ? {} : { mcp: { enabled: patch.mcpEnabled } }),
     // `null` is kept: it clears the folder.
     ...(patch.homeDirectory === undefined ? {} : { home_directory: patch.homeDirectory }),

@@ -161,6 +161,8 @@ export function requiredEvidence(
     }
     case "Running":
       return `Candidate from the running attempt${unloaded}`;
+    case "Waiting":
+      return "A reply to the waiting worker";
     case "Verifying":
       return `Verification result${unloaded}`;
     case "Succeeded":

@@ -290,6 +290,66 @@ describe("derived D16 decisions", () => {
     expect(fake.callsTo("actions.pending")).toHaveLength(1);
   });
 
+  it("queue_names_a_coordinator_card_by_its_project_conversation_and_reads_its_display_facts", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.stub("actions.pending", {
+      proposals: [
+        {
+          ...pendingWire("proposal-3", {
+            kind: "coordinator.report",
+            params: { kind: "coordinator.report", verb: "answer", note: "Done.", request: "r-0123456789abcdef" },
+            target: { request_work: "Write the page.", request_answered: false },
+          }),
+          scope: { kind: "project", project_id: ALPHA },
+        },
+      ],
+      more: false,
+    });
+    const result = await (await live(fake)).decisions.queue();
+    if (result.status !== "ok") throw new Error("queue not ok");
+    expect(result.data.proposals[0]!.scope).toEqual({ kind: "project", projectId: ALPHA });
+    expect(result.data.proposals[0]!.proposal.target).toMatchObject({ requestWork: "Write the page.", requestAnswered: false });
+  });
+
+  it("coordinator_state_is_read_from_the_project_conversation_and_each_settled_scope_save_gets_a_new_key", async () => {
+    const fake = populate(new FakeDaemon());
+    const conversation = stubConversation(fake, "completed");
+    conversation.coordinator = {
+      scope_sentence: "Owns docs.",
+      open_tasks: 2,
+      open_requests: 1,
+      routed_requests: [{ id: "r-0123456789abcdef", work: "Write the page.", answered: false, created_at: "2026-11-16T21:04:11Z" }],
+      reports: [
+        { id: "rep-1", author: "daemon", verb: "task_done", request_id: null, task_id: "t-run", key: null, note: null, created_at: "2026-11-16T21:04:11Z" },
+      ],
+    };
+    fake.stub("coordinator.get", { project_id: ALPHA, entries: [], more: false, next_after_sequence: 0, clear_generation: 0 });
+    const s = await live(fake);
+    const result = await s.conversation.transcript({ kind: "project", projectId: ALPHA });
+    if (result.status !== "ok") throw new Error("transcript not ok");
+    expect(result.data.coordinator).toEqual({
+      scopeSentence: "Owns docs.",
+      openTasks: 2,
+      openRequests: 1,
+      routedRequests: [{ id: "r-0123456789abcdef", work: "Write the page.", answered: false, createdAt: "2026-11-16T21:04:11Z" }],
+      reports: [
+        { id: "rep-1", author: "daemon", verb: "task_done", requestId: null, taskId: "t-run", key: null, note: null, createdAt: "2026-11-16T21:04:11Z" },
+      ],
+    });
+
+    fake.failNext("coordinator.set_scope", { code: -32010, message: "not found" });
+    await expect(s.conversation.setCoordinatorScope!(ALPHA, "Owns docs and notes.")).rejects.toMatchObject({ kind: "not-found" });
+    fake.stub("coordinator.set_scope", (params: Record<string, unknown>) => ({ project_id: params.project_id, scope_sentence: params.scope_sentence }));
+    const saved = await s.conversation.setCoordinatorScope!(ALPHA, "Owns docs and notes.");
+    expect(saved).toMatchObject({ simulated: false, scopeSentence: "Owns docs and notes." });
+    const cleared = await s.conversation.setCoordinatorScope!(ALPHA, null);
+    expect(cleared.scopeSentence).toBeNull();
+    const calls = fake.callsTo("coordinator.set_scope").map((call) => call.params as Record<string, unknown>);
+    expect(calls.map((call) => call.scope_sentence)).toEqual(["Owns docs and notes.", "Owns docs and notes.", null]);
+    expect(calls[0]!.idempotency_key).not.toBe(calls[1]!.idempotency_key);
+    expect(calls[2]!.idempotency_key).not.toBe(calls[1]!.idempotency_key);
+  });
+
   it("queue_has_no_proposals_and_no_failure_when_the_daemon_has_no_actions_pending", async () => {
     const result = await (await live(populate(new FakeDaemon()))).decisions.queue();
     expect(result.status).toBe("ok");

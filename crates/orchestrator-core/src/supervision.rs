@@ -14,8 +14,13 @@ use sha2::{Digest, Sha256};
 pub const DEFAULT_ATTEMPT_WALL_MINUTES: u32 = 120;
 /// A task is flagged as quiet only after `max(effective interval, STALL_QUIET_FLOOR)`.
 pub const STALL_QUIET_FLOOR: Duration = Duration::from_secs(5 * 60);
-pub const DEFAULT_WAKE_HOURLY_CAP: u32 = 6;
-pub const DEFAULT_WAKE_DAILY_CAP: u32 = 40;
+/// Wake turns per scope per rolling hour. DPES-1108 phase 8 raised it from 6, which one running
+/// task's work checks (one every 10 minutes at the default interval) spent on their own. See
+/// `docs/design/firstmate-behavior-decisions.md`, phase 8.
+pub const DEFAULT_WAKE_HOURLY_CAP: u32 = 20;
+/// Wake turns per scope per rolling day: eight hours at the full hourly rate. Raised from 40 with
+/// the hourly cap.
+pub const DEFAULT_WAKE_DAILY_CAP: u32 = 160;
 pub const DEBOUNCE_MS: u64 = 60_000;
 pub const MAX_BATCH: usize = 20;
 pub const HOUR_MS: u64 = 3_600_000;
@@ -142,6 +147,18 @@ pub fn admit(limits: &WakeLimits, usage: &WakeUsage) -> Admission {
         };
     }
     Admission::Go
+}
+
+/// Whether a periodic work check may be recorded: heartbeats get half of each cap, rounded up.
+/// Outcome events (a failure, finished work, a worker waiting) still use the whole cap through
+/// [`admit`], so work checks alone never spend the turns those events need (DPES-1108 phase 8).
+pub fn admits_heartbeat(limits: &WakeLimits, usage: &WakeUsage) -> bool {
+    let share = WakeLimits {
+        hourly: limits.hourly.map(|cap| cap.div_ceil(2)),
+        daily: limits.daily.map(|cap| cap.div_ceil(2)),
+        daily_tokens: limits.daily_tokens.map(|budget| budget.div_ceil(2)),
+    };
+    admit(&share, usage) == Admission::Go
 }
 
 /// One running attempt, as the stall rule sees it.
@@ -410,11 +427,153 @@ mod tests {
     }
 
     #[test]
-    fn default_limits_are_six_per_hour_and_forty_per_day() {
+    fn default_limits_are_twenty_per_hour_and_one_hundred_sixty_per_day() {
         let limits = WakeLimits::default();
-        assert_eq!(limits.hourly, Some(6));
-        assert_eq!(limits.daily, Some(40));
+        assert_eq!(limits.hourly, Some(20));
+        assert_eq!(limits.daily, Some(160));
         assert_eq!(limits.daily_tokens, None);
+    }
+
+    #[test]
+    fn heartbeats_get_half_of_each_cap_rounded_up() {
+        let limits = WakeLimits {
+            hourly: Some(5),
+            daily: Some(9),
+            daily_tokens: Some(101),
+        };
+        let usage = |hour_count, day_count, day_tokens| WakeUsage {
+            hour_count,
+            day_count,
+            oldest_hour_ms: Some(0),
+            oldest_day_ms: Some(0),
+            day_tokens,
+        };
+        assert!(admits_heartbeat(&limits, &usage(2, 4, 50)));
+        assert!(!admits_heartbeat(&limits, &usage(3, 4, 50)));
+        assert!(!admits_heartbeat(&limits, &usage(2, 5, 50)));
+        assert!(!admits_heartbeat(&limits, &usage(2, 4, 51)));
+        // An outcome event still has the rest of the cap.
+        assert_eq!(admit(&limits, &usage(3, 5, 51)), Admission::Go);
+        // A cap of one is shared, not closed to heartbeats.
+        let one = WakeLimits {
+            hourly: Some(1),
+            daily: None,
+            daily_tokens: None,
+        };
+        assert!(admits_heartbeat(&one, &usage(0, 0, 0)));
+        let none = WakeLimits {
+            hourly: None,
+            daily: None,
+            daily_tokens: None,
+        };
+        assert!(admits_heartbeat(
+            &none,
+            &usage(u32::MAX, u32::MAX, u64::MAX)
+        ));
+    }
+
+    /// Starts wake turns the way the daemon does: one debounce window per scope, a turn per due
+    /// window, admitted against a ledger of start times. Turns are instant, the fastest case.
+    /// Returns the start times.
+    fn simulate(
+        limits: &WakeLimits,
+        events_ms: impl Iterator<Item = u64>,
+        end_ms: u64,
+    ) -> Vec<u64> {
+        let mut debounce = Debounce::default();
+        let mut ledger: Vec<u64> = Vec::new();
+        let mut events = events_ms.peekable();
+        let mut now = 0;
+        while now <= end_ms {
+            while let Some(at) = events.next_if(|at| *at <= now) {
+                debounce.offer("scope", &format!("e-{at}"), at);
+            }
+            if !debounce.due(now).is_empty() {
+                let ids = debounce.take("scope");
+                let in_window =
+                    |window: u64| ledger.iter().filter(move |start| **start + window > now);
+                let usage = WakeUsage {
+                    hour_count: u32::try_from(in_window(HOUR_MS).count()).unwrap(),
+                    day_count: u32::try_from(in_window(DAY_MS).count()).unwrap(),
+                    oldest_hour_ms: in_window(HOUR_MS).min().copied(),
+                    oldest_day_ms: in_window(DAY_MS).min().copied(),
+                    day_tokens: 0,
+                };
+                if admit(limits, &usage) == Admission::Go && !ids.is_empty() {
+                    ledger.push(now);
+                }
+            }
+            now += 1_000;
+        }
+        ledger
+    }
+
+    #[test]
+    fn a_day_long_burst_is_bounded_by_the_default_caps() {
+        // One event a second for a day: a runaway retry loop at its worst. Without caps only the
+        // length of a turn bounds it, because a window holding more than `MAX_BATCH` ids stays
+        // due and starts another turn at once.
+        let limits = WakeLimits::default();
+        let starts = simulate(&limits, (0..DAY_MS).step_by(1_000), DAY_MS - 1);
+        assert_eq!(starts.len(), 160, "the daily cap");
+        for hour in 0..24 {
+            let in_hour = starts
+                .iter()
+                .filter(|start| (hour * HOUR_MS..(hour + 1) * HOUR_MS).contains(*start))
+                .count();
+            assert!(in_hour <= 20, "hour {hour}: {in_hour}");
+        }
+        // Any rolling hour, not only clock hours, holds at most the hourly cap.
+        for (index, start) in starts.iter().enumerate() {
+            let window = starts[index..]
+                .iter()
+                .take_while(|later| **later < start + HOUR_MS)
+                .count();
+            assert!(window <= 20, "from {start}: {window}");
+        }
+        let uncapped = WakeLimits {
+            hourly: None,
+            daily: None,
+            daily_tokens: None,
+        };
+        let debounced = simulate(&uncapped, (0..HOUR_MS).step_by(1_000), HOUR_MS - 1);
+        assert!(debounced.len() > 3 * 60, "{}", debounced.len());
+    }
+
+    #[test]
+    fn default_work_checks_leave_the_outcome_share_free_at_any_load() {
+        // At the default intervals, 1 to 5 work units check every 10, 5, 2.5, 1.25 and 1 minute.
+        let limits = WakeLimits::default();
+        let policy = crate::interval::IntervalPolicy::default();
+        for units in 1..=6u32 {
+            let interval = u64::try_from(policy.interval(units).unwrap().as_millis()).unwrap();
+            let mut ledger: Vec<u64> = Vec::new();
+            let mut now = 0;
+            while now < DAY_MS {
+                let in_window = |window: u64| {
+                    let count = ledger.iter().filter(|start| **start + window > now).count();
+                    u32::try_from(count).unwrap()
+                };
+                let usage = WakeUsage {
+                    hour_count: in_window(HOUR_MS),
+                    day_count: in_window(DAY_MS),
+                    oldest_hour_ms: ledger.iter().copied().find(|s| s + HOUR_MS > now),
+                    oldest_day_ms: ledger.first().copied(),
+                    day_tokens: 0,
+                };
+                if admits_heartbeat(&limits, &usage) {
+                    ledger.push(now);
+                }
+                // The next outcome event is always admitted: heartbeats left it room.
+                assert_eq!(
+                    admit(&limits, &usage),
+                    Admission::Go,
+                    "{units} units at {now}"
+                );
+                now += interval;
+            }
+            assert!(ledger.len() <= 80, "{units} units: {}", ledger.len());
+        }
     }
 
     #[test]

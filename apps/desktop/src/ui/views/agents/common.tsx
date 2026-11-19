@@ -20,6 +20,7 @@ const STATE_TONE: Record<string, Tone> = {
   Pending: "neutral",
   Spawning: "info",
   Running: "info",
+  Waiting: "warn",
   Verifying: "info",
   CandidateReady: "info",
   Succeeded: "ok",

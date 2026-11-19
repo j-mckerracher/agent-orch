@@ -22,7 +22,7 @@ export interface QueueQueuedEntry {
   project_id: string;
   /** 1-based up-next order; null when the task cannot start for a non-capacity reason. */
   position: number | null;
-  /** `dependency | global_cap | project_cap | approval | load | other`; kept a string so new values degrade. */
+  /** `dependency | global_cap | project_cap | approval | decision | load | other`; kept a string so new values degrade. */
   waiting_reason: string;
   waiting_on: string | null;
   /** For `other`: `worktree_owned | dispatch_pending | dispatch_blocked | not_queued`. */

@@ -196,7 +196,17 @@ describe.each([fixtureHarness, derivedHarness])("D9-D16 contract: $kind adapters
       expect(Number.isNaN(Date.parse(workstream.counts.observedAt))).toBe(false);
       expect(workstream.counts.ageMs).toBeGreaterThanOrEqual(0);
       expect(Object.keys(workstream.counts.value).sort()).toEqual(
-        ["Cancelled", "Created", "Failed", "Queued", "Running", "Succeeded", "Verifying", "VerificationFailed"].sort(),
+        [
+          "Cancelled",
+          "Created",
+          "Failed",
+          "Queued",
+          "Running",
+          "Succeeded",
+          "Verifying",
+          "VerificationFailed",
+          "Waiting",
+        ].sort(),
       );
       const total = Object.values(workstream.counts.value).reduce((a, b) => a + b, 0);
       expect(total).toBe(workstream.tasks.length);

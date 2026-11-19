@@ -63,6 +63,9 @@ pub struct TaskWakeFacts {
     /// Whether the task leaves a report rather than a change. This is the executor's test for
     /// storing a report: an Investigate task, or a task of a project that runs in place.
     pub report_only: bool,
+    /// The note of the latest attempt's newest `needs-decision` or `blocked` status line, cut
+    /// to 160 bytes. Worker text, already redacted when stored. `None` when there is none.
+    pub wait_note: Option<String>,
 }
 
 /// Longest failure reason a wake fact carries, in bytes.
@@ -86,11 +89,16 @@ fn encode<T: serde::Serialize>(value: &T) -> Result<String, StoreError> {
     Ok(serde_json::to_string(value)?)
 }
 
-fn workstream_scope(workstream_id: Option<String>) -> String {
-    workstream_id.map_or_else(
-        || GLOBAL_SCOPE.to_owned(),
-        |id| ConversationTarget::Workstream(id).id(),
-    )
+/// The conversation that supervises a task: its coordinator while one owns it and is active
+/// (DPES-1108 phase 7), else its workstream, else Global. Ownership wins over a workstream link,
+/// so a coordinator's task never wakes the global orchestrator. The queries pass the owner only
+/// while its coordinator is active, so the tasks of a removed coordinator return to Global.
+fn task_scope(coordinator_project_id: Option<String>, workstream_id: Option<String>) -> String {
+    match (coordinator_project_id, workstream_id) {
+        (Some(project_id), _) => ConversationTarget::Project(project_id).id(),
+        (None, Some(id)) => ConversationTarget::Workstream(id).id(),
+        (None, None) => GLOBAL_SCOPE.to_owned(),
+    }
 }
 
 /// One line of at most 80 bytes: control characters become spaces, runs of spaces collapse,
@@ -124,6 +132,8 @@ impl SqliteStore {
         self.call(move |pool| async move {
             let rows = sqlx::query(
                 "SELECT s.task_id, s.attempt_id, s.id AS session_id, ws.workstream_id, \
+                        (SELECT cs.project_id FROM coordinator_scopes cs WHERE cs.project_id = t.coordinator_project_id \
+                          AND cs.removed = 0) AS coordinator_project_id, \
                         (SELECT CAST(strftime('%s', e.created_at) AS INTEGER) * 1000 \
                            FROM durable_events e \
                           WHERE e.task_id = s.task_id AND e.session_id = s.id \
@@ -131,6 +141,7 @@ impl SqliteStore {
                           ORDER BY e.sequence LIMIT 1) AS started_ms \
                  FROM sessions s \
                  JOIN attempts a ON a.task_id = s.task_id AND a.id = s.attempt_id \
+                 JOIN tasks t ON t.id = s.task_id \
                  LEFT JOIN workstream_tasks ws ON ws.task_id = s.task_id \
                  WHERE s.state IN (?, ?) AND a.state = ? AND started_ms IS NOT NULL \
                  ORDER BY s.sequence",
@@ -147,7 +158,10 @@ impl SqliteStore {
                         task_id: row.try_get("task_id")?,
                         attempt_id: row.try_get("attempt_id")?,
                         session_id: row.try_get("session_id")?,
-                        scope: workstream_scope(row.try_get("workstream_id")?),
+                        scope: task_scope(
+                            row.try_get("coordinator_project_id")?,
+                            row.try_get("workstream_id")?,
+                        ),
                         started_ms: u64::try_from(started).unwrap_or(0),
                     })
                 })
@@ -158,18 +172,40 @@ impl SqliteStore {
     /// The work each scope holds, sorted by scope. A scope with no work is left out, so a
     /// scope absent from the answer arms no check. Only a Running task is work: a task in
     /// Verifying waits for the user's review and must not keep the check timer going.
-    /// Workstream scopes count only their own running tasks. Global counts every running task,
-    /// and one more unit for each workstream that is an active sub-orchestrator.
+    /// Workstream scopes count only their own running tasks. Global counts every running task it
+    /// supervises, and one more unit for each workstream that is an active sub-orchestrator. A
+    /// task a coordinator owns counts for that coordinator only (DPES-1108 phase 7), so a
+    /// coordinator with no running owned task is absent and gets no work check, and Global stops
+    /// checking work it routed away.
     pub fn supervision_load(&self) -> Result<Vec<ScopeLoad>, StoreError> {
         let running = encode(&TaskState::Running)?;
         self.call(move |pool| async move {
             // scope -> (running tasks, has other activity)
             let mut scopes: BTreeMap<String, (u32, bool)> = BTreeMap::new();
             let mut total = 0_u32;
+            let owned: Vec<(String, i64)> = sqlx::query_as(
+                "SELECT t.coordinator_project_id, COUNT(*) FROM tasks t \
+                 JOIN coordinator_scopes cs ON cs.project_id = t.coordinator_project_id \
+                 WHERE t.state = ? AND cs.removed = 0 GROUP BY t.coordinator_project_id",
+            )
+            .bind(&running)
+            .fetch_all(&pool)
+            .await?;
+            let mut coordinators = Vec::new();
+            for (project_id, count) in owned {
+                coordinators.push(ScopeLoad {
+                    scope: ConversationTarget::Project(project_id).id(),
+                    running_tasks: u32::try_from(count).unwrap_or(u32::MAX),
+                    sub_active: true,
+                    work_units: u32::try_from(count).unwrap_or(u32::MAX),
+                });
+            }
             let rows: Vec<(Option<String>, i64)> = sqlx::query_as(
                 "SELECT ws.workstream_id, COUNT(*) FROM tasks t \
                  LEFT JOIN workstream_tasks ws ON ws.task_id = t.id \
-                 WHERE t.state = ? GROUP BY ws.workstream_id",
+                 WHERE t.state = ? AND NOT EXISTS (SELECT 1 FROM coordinator_scopes cs \
+                   WHERE cs.project_id = t.coordinator_project_id AND cs.removed = 0) \
+                 GROUP BY ws.workstream_id",
             )
             .bind(&running)
             .fetch_all(&pool)
@@ -218,6 +254,7 @@ impl SqliteStore {
                     work_units: global_units,
                 });
             }
+            loads.extend(coordinators);
             loads.sort_by(|a, b| a.scope.cmp(&b.scope));
             Ok(loads)
         })
@@ -231,10 +268,16 @@ impl SqliteStore {
         self.call(move |pool| async move {
             let row = sqlx::query(
                 "SELECT ws.workstream_id, \
+                        (SELECT cs.project_id FROM coordinator_scopes cs WHERE cs.project_id = t.coordinator_project_id \
+                          AND cs.removed = 0) AS coordinator_project_id, \
                         COALESCE(json_extract(t.contract_json, '$.objective'), '') AS objective, \
                         t.contract_json, p.id AS project_id, p.root_path AS project_root, \
                         p.settings AS project_settings, \
-                        latest.failure_reason, latest.changed_files, latest.summary \
+                        latest.failure_reason, latest.changed_files, latest.summary, \
+                        (SELECT e.note FROM task_status_events e \
+                          WHERE e.task_id = t.id AND e.attempt_id = latest.id \
+                            AND e.verb IN ('needs-decision', 'blocked') \
+                          ORDER BY e.line_no DESC LIMIT 1) AS wait_note \
                  FROM tasks t LEFT JOIN workstream_tasks ws ON ws.task_id = t.id \
                  LEFT JOIN projects p ON p.id = t.project_id \
                  LEFT JOIN attempts latest ON latest.task_id = t.id \
@@ -268,7 +311,10 @@ impl SqliteStore {
                     None => false,
                 };
                 Ok::<_, StoreError>(TaskWakeFacts {
-                    scope: workstream_scope(row.try_get("workstream_id")?),
+                    scope: task_scope(
+                        row.try_get("coordinator_project_id")?,
+                        row.try_get("workstream_id")?,
+                    ),
                     objective: one_line(&objective),
                     failure_reason: row
                         .try_get::<Option<String>, _>("failure_reason")?
@@ -278,6 +324,9 @@ impl SqliteStore {
                         .try_get::<Option<String>, _>("summary")?
                         .map(|summary| cut_bytes(summary, SUMMARY_BYTES)),
                     report_only: contract.kind == TaskKind::Investigate || in_place,
+                    wait_note: row
+                        .try_get::<Option<String>, _>("wait_note")?
+                        .map(|note| cut_bytes(note, FAILURE_REASON_BYTES)),
                 })
             })
             .transpose()
@@ -727,7 +776,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(cleared.wake_limits.hourly, None);
-        assert_eq!(cleared.wake_limits.daily, Some(40));
+        assert_eq!(cleared.wake_limits.daily, Some(160));
         assert_eq!(cleared.wake_limits.daily_tokens, Some(5_000));
         let back = store
             .update_orchestrator_settings(&SettingsPatch {
@@ -741,7 +790,7 @@ mod tests {
             .unwrap();
         assert_eq!(back.wake_limits.hourly, Some(3));
         assert_eq!(back.wake_limits.daily_tokens, None);
-        assert_eq!(back.wake_limits.daily, Some(40));
+        assert_eq!(back.wake_limits.daily, Some(160));
     }
 
     #[test]

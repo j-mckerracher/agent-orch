@@ -40,6 +40,7 @@ const ROWS: Row[] = [
   row("tasksSubmit", "tasks.submit", (a) => a.tasksSubmit("k", submission(FX, null, [])), (a) => a.tasksSubmit("k", submission("/p", null, []))),
   row("tasksCancel", "tasks.cancel", (a) => a.tasksCancel(FX, "k"), (a) => a.tasksCancel(REAL, "k")),
   row("tasksArchive", "tasks.archive", (a) => a.tasksArchive([REAL, FX], "k"), (a) => a.tasksArchive([REAL], "k")),
+  row("tasksDiscard", "tasks.discard", (a) => a.tasksDiscard(FX, "k"), (a) => a.tasksDiscard(REAL, "k")),
   row("tasksRetry", "tasks.retry", (a) => a.tasksRetry(FX, "k"), (a) => a.tasksRetry(REAL, "k")),
   row("sessionsList", "sessions.list", (a) => a.sessionsList(FX), (a) => a.sessionsList(REAL)),
   row("sessionsGet", "sessions.get", (a) => a.sessionsGet(REAL, FX), (a) => a.sessionsGet(REAL, "s1")),
@@ -59,6 +60,7 @@ const ROWS: Row[] = [
   row("coordinatorClear", "coordinator.clear", (a) => a.coordinatorClear(FX, "k"), (a) => a.coordinatorClear("/p", "k")),
   row("coordinatorRemove", "coordinator.remove", (a) => a.coordinatorRemove(FX, "k"), (a) => a.coordinatorRemove("/p", "k")),
   row("coordinatorRestore", "coordinator.restore", (a) => a.coordinatorRestore(FX, "k"), (a) => a.coordinatorRestore("/p", "k")),
+  row("coordinatorSetScope", "coordinator.set_scope", (a) => a.coordinatorSetScope(FX, "Docs", "k"), (a) => a.coordinatorSetScope("/p", "Docs", "k")),
   row("coordinatorGet", "coordinator.get", (a) => a.coordinatorGet(FX), (a) => a.coordinatorGet("/p")),
   row(
     "reviewRequestApproval",
@@ -100,9 +102,13 @@ const ROWS: Row[] = [
   row("monitoringAck", "monitoring.ack", (a) => a.monitoringAck({ kind: "workstream", workstream_id: FX }, "k"), (a) => a.monitoringAck({ kind: "workstream", workstream_id: "ws-1" }, "k")),
   row("holdsSet", "holds.set", (a) => a.holdsSet("approval", FX, "2026-11-21", "k"), (a) => a.holdsSet("approval", REAL, "2026-11-21", "k")),
   row("holdsRelease", "holds.release", (a) => a.holdsRelease(FX, "k"), (a) => a.holdsRelease(REAL, "k")),
+  row("decisionsAnswer", "decisions.answer", (a) => a.decisionsAnswer(FX, "yes", "k"), (a) => a.decisionsAnswer(REAL, "yes", "k")),
+  row("decisionsDefer", "decisions.defer", (a) => a.decisionsDefer(FX, "2026-11-21", "k"), (a) => a.decisionsDefer(REAL, "2026-11-21", "k")),
+  row("decisionsReconcile", "decisions.reconcile", (a) => a.decisionsReconcile(FX, "moot", "k"), (a) => a.decisionsReconcile(REAL, "moot", "k")),
   row("pullsRefresh", "pulls.refresh", (a) => a.pullsRefresh(FX), (a) => a.pullsRefresh(REAL)),
-  row("notesList", "notes.list", (a) => a.notesList(`workstream:${FX}`), (a) => a.notesList("workstream:ws-1")),
-  row("notesSet", "notes.set", (a) => a.notesSet(`workstream:${FX}`, ["a"], "k"), (a) => a.notesSet("workstream:ws-1", ["a"], "k")),
+  row("memoryList", "memory.list", (a) => a.memoryList("preference", `workstream:${FX}`), (a) => a.memoryList("preference", "workstream:ws-1")),
+  row("memorySet", "memory.set", (a) => a.memorySet("learning", `project:${FX}`, "k", "t", "k"), (a) => a.memorySet("learning", "project:/p", "k", "t", "k")),
+  row("memoryRemove", "memory.remove", (a) => a.memoryRemove("preference", `project:${FX}`, "k", "k"), (a) => a.memoryRemove("preference", "workstream:ws-1", "k", "k")),
   row("grantsRevoke", "grants.revoke", (a) => a.grantsRevoke(FX, "k"), (a) => a.grantsRevoke(REAL, "k")),
   row(
     "grantsCreate",
@@ -149,8 +155,11 @@ const NO_ID_METHODS = new Set<string>([
   "briefGet",
   "briefAck",
   "holdsList",
+  "decisionsList",
   "pullsList",
   "grantsList",
+  // The archive id is a daemon row number; no placeholder string can stand in for it.
+  "memoryRestore",
   "settingsWorkClassesGet",
   "intakeNormalize",
 ]);

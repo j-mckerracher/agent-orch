@@ -93,7 +93,11 @@ export function skipText(reason: string | null): string {
 /** Heartbeat events. A quiet reply may stand for these, and for no other event. */
 const HEARTBEAT_EVENTS: readonly string[] = ["work_check", "daemon_start"];
 
-/** Events whose subject is a task id. Their notice links to that task. */
+/**
+ * Events whose subject is a task id. Their notice links to that task. `routed_request` and `coordinator_report`
+ * (DPES-1108) are outcome events too, never folded as quiet, but their subject is a request or report id, so they
+ * are not listed here.
+ */
 const TASK_EVENTS: readonly string[] = [
   "task_failed",
   "task_stalled",
@@ -101,6 +105,8 @@ const TASK_EVENTS: readonly string[] = [
   "sign_in_needed",
   "scout_report_ready",
   "candidate_ready",
+  "worker_needs_decision",
+  "worker_blocked",
 ];
 
 /**
