@@ -409,7 +409,9 @@ impl DaemonApi {
             | Action::ProjectRemove(_)
             | Action::DecisionHold(_)
             | Action::DecisionAsk(_)
-            | Action::TaskMessage(_) => return Ok(None),
+            | Action::TaskMessage(_)
+            | Action::CoordinatorRoute(_)
+            | Action::CoordinatorReport(_) => return Ok(None),
         }
         Ok(Some(found))
     }

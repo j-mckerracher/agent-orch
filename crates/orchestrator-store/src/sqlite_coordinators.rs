@@ -362,7 +362,7 @@ impl SqliteStore {
         let id = id.to_owned();
         self.call(move |pool| async move {
             let mut connection = pool.acquire().await?;
-            load_request(&mut *connection, &id).await
+            load_request(&mut connection, &id).await
         })
     }
 

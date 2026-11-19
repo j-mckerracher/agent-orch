@@ -93,6 +93,10 @@ impl ApproverSecret {
 /// The four `decisions.*` methods (DPES-1108 phase 3) are the user's own decisions: only
 /// the user answers, defers or reconciles a question, and the list, which carries the
 /// questions the user is asked, is read by the user's app alone.
+///
+/// `coordinator.set_scope` (DPES-1108 phase 7) writes the sentence a coordinator's charter is
+/// rendered from and the global orchestrator routes by: persistent text every later prompt
+/// carries, like a note.
 #[rustfmt::skip]
 pub const USER_ONLY_METHODS: &[&str] = &[
     "actions.resolve",
@@ -113,6 +117,7 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "decisions.answer",
     "decisions.defer",
     "decisions.reconcile",
+    "coordinator.set_scope",
 ];
 
 /// The one gate. `Ok` when the method is open to every session or the session

@@ -588,6 +588,7 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "decisions.answer",
             "decisions.defer",
             "decisions.reconcile",
+            "coordinator.set_scope",
         ]
     );
     for method in [

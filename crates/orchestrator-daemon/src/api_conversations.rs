@@ -318,6 +318,11 @@ impl DaemonApi {
                 result["routed_in"] = Value::Array(routed);
             }
         }
+        // A coordinator's view shows its scope, its open work and its parent channel
+        // (DPES-1108 phase 7).
+        if let ConversationTarget::Project(project_id) = &target {
+            result["coordinator"] = self.coordinator_wire(project_id)?;
+        }
         Ok(result)
     }
 
@@ -377,6 +382,12 @@ impl DaemonApi {
 pub(super) fn map_clear_error(error: ConversationError) -> RpcError {
     match error {
         ConversationError::TurnRunning { .. } => RpcError::ConversationBusy,
+        // A coordinator that owns open work is not removed (DPES-1108 phase 7).
+        ConversationError::Store(error)
+            if orchestrator_store::CoordinatorError::of(&error).is_some() =>
+        {
+            RpcError::Conflict
+        }
         other => map_conversation_error(other),
     }
 }
