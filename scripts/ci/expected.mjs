@@ -215,7 +215,8 @@ export const MACOS = {
   // DPES-1108 phase 6 preferences adds 14 tests (CI run 44507155149 measured 2382 from 2368): 2407.
   // DPES-1108 phase 7 coordinators adds 28 tests (2396 from 2368): 2435.
   // DPES-1108 phase 8 adds 12 tests (2380 from 2368): 2447.
-  workspace: { passed: 2466, ignored: 2 },
+  // Main #229 adds one cli_compat test (CI run 44560365238 tested the merge with main): 2467.
+  workspace: { passed: 2467, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
