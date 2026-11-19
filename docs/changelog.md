@@ -5,6 +5,25 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.21](https://github.com/mc-innersource/motif-mcao/compare/v0.1.20...v0.1.21) (2026-11-19)
+
+
+### Features
+
+* **thinking:** DPES-1106 - Show the full thinking of every agent in chat and tasks ([ad0b2f9](https://github.com/mc-innersource/motif-mcao/commit/ad0b2f95ca08b9d0f8752610cb50784c0d89e3a6))
+
+
+### Bug Fixes
+
+* **daemon:** DPES-1106 - Kill in-flight version probes at daemon shutdown ([e9035a2](https://github.com/mc-innersource/motif-mcao/commit/e9035a2478100d50a4b414d14d592c4bd608d3dd))
+
+
+### Tests
+
+* **thinking:** DPES-1106 - Sync the macOS test pins ([0bfb832](https://github.com/mc-innersource/motif-mcao/commit/0bfb83249dd775355a43c8c3a0be49c0f6094c4a))
+* **thinking:** DPES-1106 - Sync the Windows daemon test pins ([1148d83](https://github.com/mc-innersource/motif-mcao/commit/1148d83cb9fb8c07d6e2ceb34fbd3580c4acd629))
+* **thinking:** DPES-1106 - Update the e2e expectations for thinking entries and the -c flag ([10ad967](https://github.com/mc-innersource/motif-mcao/commit/10ad967a0e3ad146c78cf50defb305462530fb5d))
+
 ## [0.1.20](https://github.com/mc-innersource/motif-mcao/compare/v0.1.19...v0.1.20) (2026-11-19)
 
 
