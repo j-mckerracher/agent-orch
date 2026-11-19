@@ -956,7 +956,8 @@
    "executor::tests::a_missing_treehouse_fails_the_attempt_with_a_stable_reason",
    "executor::tests::an_in_place_home_that_became_a_repository_runs_in_a_worktree",
    "executor::tests::archiving_keeps_the_slot_of_a_task_whose_worktree_is_dirty",
-   "executor::tests::archiving_a_finished_task_returns_its_worktree_slot_to_the_pool"
+   "executor::tests::archiving_a_finished_task_returns_its_worktree_slot_to_the_pool",
+   "api::conversation_agent::tests::a_wake_turn_gets_only_the_procedures_its_record_kinds_select"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
