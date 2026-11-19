@@ -248,9 +248,20 @@ export interface ActionProposal {
   denial: string | null;
   /** Who approved it: a user, or a standing approval by id. Absent from older daemons and null until approved. */
   approvedBy?: { kind: "user" } | { kind: "grant"; grantId: string } | null;
+  /** Set only when the orchestrator approved and ran it itself after the user's message. Absent reads as false. */
+  autonomous?: boolean;
+  /** Set only when the task departs from its project's default for this one task. Absent reads as none. */
+  overrides?: ProposalOverride[];
   /** Display facts the daemon read live; null for kinds that need none. No paths. */
   target: ProposalTarget | null;
   updatedAt: string;
+}
+
+/** One field a task sets differently from its project's default, for that task only. */
+export interface ProposalOverride {
+  field: string;
+  projectDefault: string;
+  chosen: string;
 }
 
 /** What the daemon read when it listed a task proposal: the project's folder name, or the task's title and state now. */
@@ -742,6 +753,8 @@ export interface GroupsPatch {
   wakeLimits?: Partial<WakeLimitSettings>;
   /** Whether chat may propose tasks that end in a pull request. */
   chatPrDelivery?: boolean;
+  /** Whether the orchestrator may run some actions itself after the user's messages. */
+  autonomousActions?: boolean;
   /** Whether the orchestrator chat gets the read-only task tools. */
   mcpEnabled?: boolean;
   /** The folder a task runs in when no project is clear. `null` clears it; a key left out leaves it alone. */
@@ -758,6 +771,8 @@ export interface SettingsSnapshot {
   wakeLimits?: WakeLimitSettings;
   /** Absent from a daemon that cannot change it. */
   chatPrDelivery?: boolean;
+  /** Absent from a daemon that cannot change it. */
+  autonomousActions?: boolean;
   /** Absent from a daemon that cannot change it. */
   mcpEnabled?: boolean;
   /** The folder a task runs in when no project is clear; `null` while none is set. Absent from a daemon that cannot change it. */

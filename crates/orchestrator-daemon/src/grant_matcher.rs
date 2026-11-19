@@ -85,8 +85,15 @@ pub(super) struct MatchReport {
 
 /// The matcher thread, kept by the API so `shutdown` can stop it.
 pub(super) struct GrantMatcherHandle {
-    stop: Arc<(Mutex<bool>, Condvar)>,
+    stop: Arc<(Mutex<Signal>, Condvar)>,
     thread: JoinHandle<()>,
+}
+
+/// What wakes the matcher thread before its tick: a stop, or a completed turn.
+#[derive(Default)]
+struct Signal {
+    stopped: bool,
+    poked: bool,
 }
 
 /// What an action writes: project codes and workstream ids.
@@ -101,13 +108,22 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 impl DaemonApi {
-    /// Spawns the thread "grant-matcher": a pass, then two seconds of sleep or until stopped.
-    /// The thread holds only a weak reference, so a dropped API ends it. Called once by
+    /// Spawns the thread "grant-matcher": a pass, then two seconds of sleep, until poked or
+    /// stopped. Each pass first runs the autonomous actions of the turns that completed since the
+    /// last one (DPES-1108 phase 5), then the grant pass, so a grant never spends a use on a card
+    /// the orchestrator may run itself. A completed turn pokes the thread, so its actions run at
+    /// once. The thread holds only a weak reference, so a dropped API ends it. Called once by
     /// `main` after the API is in an `Arc`; the API never starts it for itself, so a test that
     /// builds one never has a matcher running behind it.
     pub(crate) fn start_grant_matcher(self: &Arc<Self>) {
         let weak: Weak<Self> = Arc::downgrade(self);
-        let stop = Arc::new((Mutex::new(false), Condvar::new()));
+        let stop = Arc::new((Mutex::new(Signal::default()), Condvar::new()));
+        let poke = stop.clone();
+        self.conversations.on_turn_completed(Box::new(move || {
+            let (flag, wake) = &*poke;
+            lock(flag).poked = true;
+            wake.notify_all();
+        }));
         let signal = stop.clone();
         let spawned = thread::Builder::new()
             .name("grant-matcher".into())
@@ -117,6 +133,7 @@ impl DaemonApi {
                 };
                 let now_ms = crate::executor::unix_now_ms();
                 let passed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    api.autonomy_tick(now_ms);
                     api.grant_matcher_tick(now_ms)
                 }));
                 if passed.is_err() {
@@ -126,12 +143,13 @@ impl DaemonApi {
                 }
                 drop(api);
                 let (flag, wake) = &*signal;
-                let (stopped, _) = wake
-                    .wait_timeout_while(lock(flag), TICK, |stopped| !*stopped)
+                let (mut state, _) = wake
+                    .wait_timeout_while(lock(flag), TICK, |state| !state.stopped && !state.poked)
                     .unwrap_or_else(|error| error.into_inner());
-                if *stopped {
+                if state.stopped {
                     return;
                 }
+                state.poked = false;
             });
         match spawned {
             Ok(thread) => *lock(&self.grant_matcher) = Some(GrantMatcherHandle { stop, thread }),
@@ -148,7 +166,7 @@ impl DaemonApi {
             return;
         };
         let (flag, wake) = &*handle.stop;
-        *lock(flag) = true;
+        lock(flag).stopped = true;
         wake.notify_all();
         let _ = handle.thread.join();
     }

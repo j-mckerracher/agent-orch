@@ -49,6 +49,9 @@ const FAILURE_TEXT: Readonly<Record<string, string>> = {
   dependency_not_executed: "The workstream this needs was not created, so this did not run. Nothing was changed.",
   forbidden: "The app does not allow this change. Nothing was changed.",
   grant_revoked: "The standing approval was revoked before this ran. Nothing was changed. Ask the orchestrator to propose again, or approve it yourself.",
+  autonomy_off: "Acting on its own was turned off before this ran. Nothing was changed. Ask the orchestrator to propose again.",
+  no_user_origin: "The orchestrator cannot start new work on its own without a message from you. Nothing was changed.",
+  user_word_required: "This change needs your approval, so it did not run on its own. Nothing was changed.",
   grant_expired: "The standing approval had expired before this ran. Nothing was changed. Ask the orchestrator to propose again, or approve it yourself.",
   internal: "The app could not finish this change. Nothing else was changed. Ask the orchestrator to propose it again.",
 };
@@ -455,6 +458,19 @@ export function approvedByText(p: ActionProposal): string | null {
   return `Approved by a standing approval (${p.approvedBy.grantId.slice(0, GRANT_LABEL_CHARS)}).`;
 }
 
+/** The line under an executed card the orchestrator ran itself (DPES-1108 phase 5). Null otherwise. */
+export function doneOnItsOwnText(p: ActionProposal): string | null {
+  return p.autonomous === true && stateOf(p) === "executed" ? "The orchestrator did this on its own. You did not need to approve it." : null;
+}
+
+/** One line per field this task sets differently from its project's default, at the user's request. */
+export function overrideLines(p: ActionProposal): string[] {
+  return (p.overrides ?? []).map((o) => {
+    const words = (value: string) => (o.field === "delivery" ? deliveryWords(value) : value);
+    return `For this task only: ${o.field} ${words(o.chosen)} instead of the project's ${words(o.projectDefault)}.`;
+  });
+}
+
 /** The inline text for a request that the daemon refused or never answered. */
 export function requestErrorText(error: DaemonError, parent: ActionProposal | null): string {
   switch (error.kind) {
@@ -627,7 +643,7 @@ export function viewOf(p: ActionProposal, parent: ActionProposal | null, ctx: Vi
     case "executed":
       return closedView(
         state,
-        { tone: "ok", text: copyOf(p.kind)?.done ?? "Executed" },
+        { tone: "ok", text: p.autonomous === true ? "Done on its own" : (copyOf(p.kind)?.done ?? "Executed") },
         { tone: "ok", text: executedText(p, ctx.names) },
       );
     case "rejected":

@@ -2225,6 +2225,22 @@ fn archiving_a_finished_task_returns_its_worktree_slot_to_the_pool() {
     wait_state(&api, &task_id, "Succeeded");
     let leased = workspace_path(&fixture, &task_id);
 
+    // The run committed work that was never delivered: the archive is refused until the user
+    // discards it (DPES-1108 phase 5).
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    assert!(store.has_unlanded_candidate(&task_id).unwrap());
+    assert_eq!(
+        api.dispatch(
+            "tasks.archive",
+            json!({"task_ids": [task_id], "idempotency_key": "archive-refused-call"}),
+        ),
+        Err(RpcError::Conflict)
+    );
+    api.dispatch(
+        "tasks.discard",
+        json!({"task_id": task_id, "idempotency_key": "archive-release-discard"}),
+    )
+    .unwrap();
     api.dispatch(
         "tasks.archive",
         json!({"task_ids": [task_id], "idempotency_key": "archive-release-call"}),
@@ -2248,6 +2264,11 @@ fn archiving_keeps_the_slot_of_a_task_whose_worktree_is_dirty() {
     wait_state(&api, &task_id, "Succeeded");
     let leased = workspace_path(&fixture, &task_id);
     fs::write(Path::new(&leased).join("scratch.txt"), "uncommitted\n").unwrap();
+    api.dispatch(
+        "tasks.discard",
+        json!({"task_id": task_id, "idempotency_key": "archive-dirty-discard"}),
+    )
+    .unwrap();
 
     let archived = api
         .dispatch(

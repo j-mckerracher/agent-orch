@@ -16,6 +16,7 @@ use std::io;
 use orchestrator_core::task::TaskState;
 use serde_json::json;
 
+use crate::sqlite_authority::unlanded;
 use crate::sqlite_events::append_durable_event;
 use crate::{SqliteStore, StoreError};
 
@@ -30,6 +31,9 @@ pub enum ArchiveError {
     PendingApprovals,
     /// A task named for archiving is not `Succeeded`, `Failed`, `VerificationFailed` or `Cancelled`.
     NotFinished,
+    /// A task named for archiving has a committed candidate that is not merged, not delivered
+    /// as a pull request or a local review ref, and not discarded by the user (DPES-1108).
+    UnlandedWork,
 }
 
 impl fmt::Display for ArchiveError {
@@ -38,6 +42,9 @@ impl fmt::Display for ArchiveError {
             Self::ActiveTasks => "the project has a task that is queued, running or verifying",
             Self::PendingApprovals => "the project has an approval that is still requested",
             Self::NotFinished => "a task is not finished",
+            Self::UnlandedWork => {
+                "a task has committed work that is not delivered and was not discarded"
+            }
         })
     }
 }
@@ -180,6 +187,7 @@ impl SqliteStore {
 impl SqliteStore {
     /// Archives finished tasks, in one transaction. A task that is not `Succeeded`, `Failed`,
     /// `VerificationFailed` or `Cancelled` refuses the whole call with [`ArchiveError::NotFinished`],
+    /// and one with unlanded committed work with [`ArchiveError::UnlandedWork`],
     /// and an unknown id fails with `RecordNotFound`; either way nothing is written. A task that is
     /// already archived is skipped. Each task this call archives gets one `task.archived` durable
     /// event, in the same transaction. Returns the ids this call archived, in request order.
@@ -211,6 +219,11 @@ impl SqliteStore {
                         | TaskState::Cancelled
                 ) {
                     return Err(StoreError::from(ArchiveError::NotFinished));
+                }
+                // Archiving returns the task's slot, so committed work must be landed or
+                // discarded by the user first (DPES-1108 phase 5).
+                if unlanded(&mut transaction, &task_id).await? {
+                    return Err(StoreError::from(ArchiveError::UnlandedWork));
                 }
                 sqlx::query("UPDATE tasks SET archived_at = CURRENT_TIMESTAMP WHERE id = ?")
                     .bind(&task_id)

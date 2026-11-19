@@ -969,7 +969,20 @@
    "executor::tests::a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it",
    "executor::tests::a_waiting_task_is_cancelled_without_an_owner",
    "executor::tests::a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_with_the_answer",
-   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level"
+   "executor::tests::codex_at_auto_fails_closed_instead_of_waiting_for_a_resume_it_cannot_run_at_that_level",
+   "api::authority_tests::a_departure_from_the_default_delivery_is_kept_on_that_task_only",
+   "api::authority_tests::a_matched_card_of_an_earlier_turn_is_not_run_by_a_later_turn",
+   "api::authority_tests::a_restart_never_runs_a_wake_task_the_orchestrator_approved",
+   "api::authority_tests::a_task_for_an_unregistered_or_removed_project_stays_a_card",
+   "api::authority_tests::a_turn_runs_at_most_the_cap_and_the_rest_stay_cards",
+   "api::authority_tests::a_user_turn_runs_its_autonomous_cards_at_once_and_the_task_cites_the_turn",
+   "api::authority_tests::tasks_discard_takes_a_finished_task_only",
+   "api::authority_tests::settings_carry_the_autonomy_switch_on_by_default",
+   "api::authority_tests::the_switch_off_leaves_every_card_pending_and_turning_it_on_runs_no_old_card",
+   "api::authority_tests::user_word_cards_stay_pending",
+   "api::authority_tests::a_wake_or_relay_turn_acts_on_existing_work_and_never_creates_a_task",
+   "api::conversation_snapshot::tests::the_snapshot_says_which_kinds_run_at_once_for_this_turn",
+   "a_user_turn_runs_its_autonomous_cards_and_leaves_a_cancel_for_the_user"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1559,7 +1572,13 @@
    "an_agent_session_id_is_written_once",
    "answers_queue_replies_and_a_resume_delivers_them_once_in_a_new_session",
    "migration_0064_applies_to_a_0063_style_database_and_keeps_every_row",
-   "status_lines_are_stored_once_per_line_and_reads_continue_after_the_last"
+   "status_lines_are_stored_once_per_line_and_reads_continue_after_the_last",
+   "autonomous_actions_are_on_by_default_and_the_user_can_turn_them_off",
+   "a_running_task_cannot_be_discarded",
+   "an_override_is_kept_with_the_users_words_and_only_for_its_task",
+   "committed_work_blocks_the_archive_until_the_user_discards_it",
+   "a_run_with_no_changes_or_delivered_work_does_not_block_the_archive",
+   "only_a_user_turn_that_read_no_report_can_be_a_task_origin"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",

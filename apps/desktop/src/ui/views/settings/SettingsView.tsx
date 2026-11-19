@@ -29,6 +29,7 @@ import {
   readingText,
 } from "./settingsModel";
 import { SaveButton, useSaveGuard } from "./SaveBar";
+import { AutonomousActionsSection } from "./AutonomousActionsSection";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
 import { McpToolsSection } from "./McpToolsSection";
@@ -205,6 +206,7 @@ export function SettingsView() {
         <MachineLoad model={model} />
       </section>
       <SupervisionSections model={model} />
+      <AutonomousActionsSection model={model} />
       <ChatPullRequestSection model={model} />
       <McpToolsSection model={model} />
       <RepositoriesSection />

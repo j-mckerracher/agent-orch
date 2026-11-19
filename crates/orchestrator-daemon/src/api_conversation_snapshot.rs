@@ -16,7 +16,9 @@ use std::collections::HashMap;
 use orchestrator_core::approval::ApprovalActionKind;
 use orchestrator_core::load_gate::{Reading, Unknown};
 use orchestrator_core::notes::MAX_NOTE_BYTES;
-use orchestrator_core::orchestrator_action::ActionKind;
+use orchestrator_core::orchestrator_action::{
+    ActionAuthority, ActionKind, MAX_AUTONOMOUS_PER_TURN,
+};
 use orchestrator_core::task::TaskState;
 use orchestrator_core::workstream::{AcceptanceGate, GateState, Objective, Workstream};
 use orchestrator_store::{ConversationTarget, OpenTask, SqliteStore, Store, WorkstreamStoreError};
@@ -112,17 +114,19 @@ pub(crate) fn build_snapshot(
     actions: bool,
     load: &LoadReading,
 ) -> String {
-    build_snapshot_with_notes(store, target, actions, load, true)
+    build_snapshot_with_notes(store, target, actions, load, true, true)
 }
 
 /// [`build_snapshot`] with the notes block chosen: a wake turn passes `false`, because a
-/// note never enters a wake notice.
+/// note never enters a wake notice. `from_user` is false for a turn with no user words to cite
+/// (a wake, or a relay of an agent's report): it may run fewer kinds on its own.
 pub(crate) fn build_snapshot_with_notes(
     store: &SqliteStore,
     target: &ConversationTarget,
     actions: bool,
     load: &LoadReading,
     with_notes: bool,
+    from_user: bool,
 ) -> String {
     let scope = match target {
         ConversationTarget::Global => "Scope: the global orchestrator.",
@@ -173,6 +177,7 @@ pub(crate) fn build_snapshot_with_notes(
             .map(ActionKind::as_str)
             .collect();
         blocks.push(Block::text(format!("Action kinds: {}", kinds.join(", "))));
+        blocks.push(Block::text(run_at_once(store, target, from_user)));
         blocks.push(proposals(store, target));
         blocks.extend(pull_requests(store));
     } else {
@@ -183,6 +188,31 @@ pub(crate) fn build_snapshot_with_notes(
     }
     blocks.push(Block::text("END APP STATE"));
     lay_out(blocks)
+}
+
+/// Which kinds this turn runs on its own (DPES-1108 phase 5): the user's switch, the authority
+/// model and the turn's origin decide, never the model. Fixed text, so it is never cut. A
+/// settings read error says none, the safe answer.
+fn run_at_once(store: &SqliteStore, target: &ConversationTarget, from_user: bool) -> String {
+    let on = store
+        .orchestrator_settings()
+        .is_ok_and(|settings| settings.autonomous_actions);
+    if !on {
+        return "Run at once: none. Every action waits for the user's approval.".to_owned();
+    }
+    let in_workstream = matches!(target, ConversationTarget::Workstream(_));
+    let kinds: Vec<&str> = ActionKind::ALL
+        .into_iter()
+        .filter(|kind| kind.authority() == ActionAuthority::Autonomous)
+        .filter(|kind| from_user || kind.acts_on_existing_work())
+        .filter(|kind| !(in_workstream && *kind == ActionKind::WorkstreamCreate))
+        .map(ActionKind::as_str)
+        .collect();
+    format!(
+        "Run at once: {}, at most {MAX_AUTONOMOUS_PER_TURN} a reply. Every other kind, a \
+         pull-request task and a workstream archive wait for the user's approval.",
+        kinds.join(", ")
+    )
 }
 
 /// The monitoring mode as one word: on, quiet, off or away, or unknown when the settings
@@ -955,6 +985,62 @@ mod tests {
         (directory, store)
     }
 
+    /// The turn is told which kinds run on its own (DPES-1108 phase 5): a user turn the whole
+    /// autonomous class, a wake or relay only work on existing tasks, and none with the switch off.
+    #[test]
+    fn the_snapshot_says_which_kinds_run_at_once_for_this_turn() {
+        let (_directory, store) = store();
+        let load = open_load();
+        let line = |snapshot: &str| {
+            snapshot
+                .lines()
+                .find(|line| line.starts_with("Run at once:"))
+                .unwrap_or_else(|| panic!("{snapshot}"))
+                .to_owned()
+        };
+        let global = ConversationTarget::Global;
+        let user = line(&build_snapshot_with_notes(
+            &store, &global, true, &load, true, true,
+        ));
+        for kind in [
+            "workstream.create",
+            "task.propose",
+            "task.retry",
+            "task.message",
+        ] {
+            assert!(user.contains(kind), "{user}");
+        }
+        for kind in [
+            "task.cancel",
+            "task.revise",
+            "delivery.merge",
+            "project.remove",
+            "decision.hold",
+        ] {
+            assert!(!user.contains(&format!("{kind},")), "{user}");
+        }
+        let wake = line(&build_snapshot_with_notes(
+            &store, &global, true, &load, false, false,
+        ));
+        assert!(
+            wake.starts_with("Run at once: task.retry, decision.ask, task.message, at most 5"),
+            "{wake}"
+        );
+        store
+            .update_orchestrator_settings(&orchestrator_store::SettingsPatch {
+                autonomous_actions: Some(false),
+                ..orchestrator_store::SettingsPatch::default()
+            })
+            .unwrap();
+        let off = line(&build_snapshot_with_notes(
+            &store, &global, true, &load, true, true,
+        ));
+        assert_eq!(
+            off,
+            "Run at once: none. Every action waits for the user's approval."
+        );
+    }
+
     #[test]
     fn revisions_and_proposals_appear_only_when_actions_are_negotiated() {
         let (_directory, store) = store();
@@ -1649,10 +1735,22 @@ mod tests {
         set_notes(&store, "global", &["Release is release/2026-12"]);
         let load = open_load();
 
-        let user =
-            build_snapshot_with_notes(&store, &ConversationTarget::Global, false, &load, true);
-        let wake =
-            build_snapshot_with_notes(&store, &ConversationTarget::Global, false, &load, false);
+        let user = build_snapshot_with_notes(
+            &store,
+            &ConversationTarget::Global,
+            false,
+            &load,
+            true,
+            true,
+        );
+        let wake = build_snapshot_with_notes(
+            &store,
+            &ConversationTarget::Global,
+            false,
+            &load,
+            false,
+            false,
+        );
 
         assert!(user.contains(NOTES_HEAD), "{user}");
         assert!(!wake.contains(NOTES_HEAD), "{wake}");

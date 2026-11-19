@@ -1,6 +1,6 @@
 # Firstmate capability map (DPES-1105)
 
-Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `347c7ab`. Refreshed from `89bfc8b2d`; rows D16, D17, F8, W1 and I6 are new. Rows H2 and D11 were updated by DPES-1108 phase 3 and phase 4 (worker status, waits, steering by resume). The firstmate behavior plan is [firstmate-behavior-plan.md](firstmate-behavior-plan.md).
+Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `347c7ab`. Refreshed from `89bfc8b2d`; rows D16, D17, F8, W1 and I6 are new. Rows H2 and D11 were updated by DPES-1108 phase 3 and phase 4 (worker status, waits, steering by resume). Rows D2, D12, H4, H8 and R4 were updated by phase 5 (authority model); H4 moved from PARTIAL to HAVE. The firstmate behavior plan is [firstmate-behavior-plan.md](firstmate-behavior-plan.md).
 
 ## Source and method
 
@@ -21,8 +21,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | Status | Count |
 | --- | --- |
-| HAVE | 49 |
-| PARTIAL | 16 |
+| HAVE | 50 |
+| PARTIAL | 15 |
 | GAP | 8 |
 | Total | 73 |
 
@@ -31,7 +31,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | D1 | One liaison: the user talks to one agent | HAVE | Global conversation has app context and actions: `api_conversation_snapshot.rs` builds a 6 KiB snapshot of projects, workstreams, open tasks and pending approvals, and a reply may end in an `mcao-actions` block that becomes a pending row in `action_proposals`. |
-| D2 | The liaison dispatches a worker per request | HAVE | `task.propose` action (`orchestrator_action.rs`, executed in `api_actions.rs`). It names the project by `p-xxxxxxxx` code; the user approves it through `actions.resolve`. |
+| D2 | The liaison dispatches a worker per request | HAVE | `task.propose` action (`orchestrator_action.rs`, executed in `api_actions.rs`). It names the project by `p-xxxxxxxx` code. Since DPES-1108 phase 5 it runs on its own from a user turn (`api_authority.rs`, `ActionAuthority::Autonomous`) and the task cites that turn in `task_origins`; a wake or report turn, a pull-request task, the 6th action of a turn, or the `autonomous_actions` setting off leaves it a card the user approves through `actions.resolve`. |
 | D3 | An explicit contract before any work starts | HAVE | `TaskContract` is validated and immutable once admitted (`orchestrator-core/src/contract.rs`). |
 | D4 | A clean isolated worktree per task | HAVE | Treehouse slot pool: `orchestrator-git/src/treehouse.rs` and `worktree.rs` (`create_task_worktree`, `release_task_worktree`). Tasks never run in the primary checkout. |
 | D5 | Dispatch profiles: which agent, model and effort | HAVE | Contract `agent` and `model_selection`, `agents.validate_selection`, `agents.catalog`, assignment profile policy v1. |
@@ -41,7 +41,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | D9 | Durable wake queue, acknowledged only after handling | HAVE | `wake_records` states noticed, pending, running, handled, skipped, failed; a record closes only after its turn settles; `monitoring.ack` marks it seen. Dedupe and debounce: `orchestrator-core/src/supervision.rs`. |
 | D10 | Stuck and wedged worker detection | HAVE | `supervision::stalled`: over wall time (default 120 min) or no session event for `max(interval, 5 min)`. Deterministic, no model call, yields a `task_stalled` notice. There is no worktree-change signal. |
 | D11 | Steer a running worker with text | PARTIAL | A worker that reports `needs-decision` or `blocked` on its status file ends its turn and its task waits (`TaskState::Waiting`, no process, slot kept). The user's answer (`decisions.answer`, `decisions.reconcile`) or an approved `task.message` resumes the same CLI session with the reply as the next prompt (`claude --resume`, `codex exec resume`, `copilot --resume`; DPES-1108 phase 4, `executor.rs`, `task_messages`). `task.revise` (never grantable) still cancels and replaces a task for a change of scope. Missing: text for a worker that is still running (only a waiting one takes a message), and a Codex Auto task cannot resume at its level, so it fails closed. |
-| D12 | Interrupt, exit and relaunch a worker | HAVE | `tasks.cancel`, `tasks.retry` and the `task.cancel`, `task.retry` proposals. |
+| D12 | Interrupt, exit and relaunch a worker | HAVE | `tasks.cancel`, `tasks.retry` and the `task.cancel`, `task.retry` proposals. Since DPES-1108 phase 5 `task.retry` runs on its own (also from a wake turn, bounded by the contract's `max_retries`); `task.cancel` still needs the user's word. |
 | D13 | Busy state is semantic, per adapter | HAVE | Adapter parsers (`codex_parser.rs`, `copilot_parser.rs`, Claude stream JSON) feed `sessions.events`. |
 | D15 | Watch live worker output | HAVE | Agents and Sessions view over `sessions.list`, `sessions.events` with replay. |
 | D16 | Wake rate and cost limits | HAVE | `supervision.rs`: 6 per hour and 40 per day per scope, optional daily token cap, 60 s debounce, batch cap 20, user-turn precedence; `agent_failing` pause after repeated failures. |
@@ -78,11 +78,11 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | H1 | Escalate only real decisions, in outcome words | HAVE | `wake_events.rs::classify` is pure and runs in code; `needs_model` is false for `delivery_waiting`, so the user is notified without a model turn. |
 | H2 | A decision is a task held for the user | HAVE | Approvals (`approvals.*`), action cards (`actions.*`), `decision_holds` (`decision.hold`, `holds.*`) and questions: `decision_holds` rows of kind `question` bound to a task, raised by `decision.ask` (phase 3) or by the task's own worker when it reports `needs-decision` (phase 4), closed only by the user's verbatim answer (`decisions.answer`) or evidence (`decisions.reconcile`), recorded append-only in `decision_answers`. An open question blocks scheduling (`AwaitingDecision`) and holds its task in `Waiting`, and the answer resumes the worker. No candidate is recorded while a worker's own question is open. Listed under Needs your decision. |
 | H3 | Never merge without the user's explicit word | HAVE | Approval integrity: the approval binds kind, parameter digest, candidate commit and task, and agents cannot approve (`orchestrator-core/src/approval.rs`). |
-| H4 | Never tear down unlanded work | PARTIAL | `orchestrator_git::delivery::check_worktree_safe_to_delete` guards the CLI `cleanup`, and delivery never merges. The daemon returns a task slot on archive or merge (`slot_returned`, `api.rs`) with no check for finished-but-unlanded local work. Plan phase 5. |
+| H4 | Never tear down unlanded work | HAVE | `orchestrator_git::delivery::check_worktree_safe_to_delete` guards the CLI `cleanup`, and delivery never merges. Since DPES-1108 phase 5 `archive_tasks` (`sqlite_archive.rs`) refuses `UnlandedWork` and `release_task_slots` (`api.rs`) keeps the slot while a task has a committed candidate that is not on a local review ref, not bound to a pull request, not merged and not discarded by the user (`tasks.discard`, user-only, `task_discards`, migration 0066). Rows from before migration 0059 with no verification run are not detected. |
 | H5 | Policy for validation findings that ask the user | PARTIAL | A `candidate_ready` wake runs a turn that reads the attempt summary and changed-file count. Review findings (`review.request_changes`) are not routed to the orchestrator as decision cards. |
 | H6 | Report outcomes faithfully | HAVE | The preamble forbids claiming an action before the daemon confirms it (`api_conversation_agent.rs`); the UI shows only store state. |
 | H7 | Escalate a needed credential or login | HAVE | `sign_in_needed` wake (`wake_events.rs`, `orchestrator-agents/src/copilot_sign_in.rs`). |
-| H8 | A current user instruction outranks standing rules | HAVE | `grant_matcher.rs` approves only pending Restricted-turn proposals created after the grant; revoke is checked on every use; `project.remove`, `task.cancel`, `task.revise` are never grantable. |
+| H8 | A current user instruction outranks standing rules | HAVE | `grant_matcher.rs` approves only pending Restricted-turn proposals created after the grant; revoke is checked on every use; `project.remove`, `task.cancel`, `task.revise` are never grantable. DPES-1108 phase 5: a user-word action (`ActionKind::authority`) is never run on its own; a one-task departure from a project's default delivery is stored on that task with the user's words (`task_overrides`) and read for no other task. |
 
 ## Away and quiet modes
 
@@ -110,7 +110,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | R1 | Restart-proof state on disk | HAVE | SQLite store with migrations, idempotency records. |
 | R2 | Reconcile live work at start | HAVE | `orchestrator-runtime/src/reconcile.rs`, `api_conversation_orphans.rs`, delivery reconcile. |
 | R3 | A start digest for the user | HAVE | `daemon_start` wake at startup; start and work-check records are handled together as one catch-up turn. |
-| R4 | Stuck worker recovery playbook | HAVE | `task_failed` and `task_stalled` wakes; the orchestrator proposes `task.cancel`, `task.retry` or `task.revise`, and the user approves each. |
+| R4 | Stuck worker recovery playbook | HAVE | `task_failed` and `task_stalled` wakes. Since DPES-1108 phase 5 the wake turn runs `task.retry`, `task.message` and `decision.ask` on its own; `task.cancel` and `task.revise` stay cards the user approves. |
 | R5 | Detect missing or outdated tools | PARTIAL | `agents.catalog`, version pins, `orchestrator-diagnostics`. Installing a tool is out of scope. |
 
 ## Fleet scaling and secondmates
@@ -160,7 +160,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | --- | --- | --- |
 | Hard rule 1: never write to a project | The user's checkouts from the liaison's own edits | Chat runs outside any repository. No action kind writes project files. Only task workers in worktrees change code. |
 | Hard rule 2: never merge without the explicit word, `yolo` the only relaxation | What lands on a branch | Approval integrity binds the commit. The merge kind exists only per action or under a scoped standing approval (phase 5). Never a red merge. |
-| Hard rule 3: never tear down unlanded work | Work that exists nowhere else | No action kind discards a worktree or branch in phases 1 to 5. |
+| Hard rule 3: never tear down unlanded work | Work that exists nowhere else | No action kind discards a worktree or branch. Archive and slot return refuse unlanded committed work until the user discards it (DPES-1108 phase 5). |
 | Hard rule 4: workers never address the user | One interface | Task agents have no conversation write path. Their results reach the user through the orchestrator and daemon-confirmed records. |
 | Hard rule 5: report outcomes faithfully | Trust in the summary | The UI shows only daemon-confirmed results. The preamble forbids early claims. |
 | Self-repo boundary | Surprise pushes, issues or PRs to the tool's own upstream | Nothing is built for self-publishing (N7). Publishing to MCAO's own upstream is never grantable. |

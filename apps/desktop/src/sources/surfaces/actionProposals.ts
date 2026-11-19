@@ -8,7 +8,7 @@ import type { IdempotencyTracker } from "../../daemon/idempotency";
 import type { ActionProposalWire } from "../../daemon/types";
 import { isFixtureLikeId } from "./fixtureIds";
 import { mapPullFacts } from "./pulls";
-import type { ActionProposal, Decision, Provenance, ResolveReceipt } from "./types";
+import type { ActionProposal, Decision, Provenance, ProposalOverride, ResolveReceipt } from "./types";
 
 export const RESOLVE_METHOD = "actions.resolve" as const;
 
@@ -20,11 +20,20 @@ function approverOf(wire: ActionProposalWire["approved_by"]): ActionProposal["ap
   return wire.kind === "user" ? { kind: "user" } : null;
 }
 
+/** Keeps only well-formed overrides; an older daemon sends none. */
+function overridesOf(wire: ActionProposalWire["overrides"]): ProposalOverride[] {
+  if (!Array.isArray(wire)) return [];
+  return wire
+    .filter((o) => typeof o?.field === "string" && typeof o.project_default === "string" && typeof o.chosen === "string")
+    .map((o) => ({ field: o.field, projectDefault: o.project_default, chosen: o.chosen }));
+}
+
 /** Copies a proposal from the wire. The daemon's `params` carry `kind`; the view reads it from `kind`, so it is dropped here. */
 export function mapProposal(wire: ActionProposalWire): ActionProposal {
   const params: Record<string, unknown> = { ...wire.params };
   delete params.kind;
   const approvedBy = typeof wire.grant_id === "string" ? ({ kind: "grant", grantId: wire.grant_id } as const) : approverOf(wire.approved_by);
+  const overrides = overridesOf(wire.overrides);
   return {
     id: wire.id,
     turnId: wire.turn_id,
@@ -40,6 +49,9 @@ export function mapProposal(wire: ActionProposalWire): ActionProposal {
     denial: wire.denial ?? null,
     // Left out when nobody approved yet, so a card read from an older daemon has the shape it always had.
     ...(approvedBy !== null && { approvedBy }),
+    // Both are left out when absent or empty, so an older daemon's card keeps its shape.
+    ...(wire.autonomous === true && { autonomous: true }),
+    ...(overrides.length > 0 && { overrides }),
     target: wire.target
       ? {
           projectName: wire.target.project_name,

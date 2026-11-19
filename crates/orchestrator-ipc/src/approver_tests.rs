@@ -24,8 +24,9 @@ use tempfile::TempDir;
 /// secret, so it may appear in a failure message.
 const FIXED: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 const DIGEST: &str = "0000000000000000000000000000000000000000000000000000000000000000";
-const NEGOTIATED: [Capability; 10] = [
+const NEGOTIATED: [Capability; 11] = [
     Capability::Health,
+    Capability::Tasks,
     Capability::OrchestratorActions,
     Capability::Approvals,
     Capability::Review,
@@ -588,8 +589,10 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "decisions.answer",
             "decisions.defer",
             "decisions.reconcile",
+            "tasks.discard",
         ]
     );
+    assert_eq!(method_capability("tasks.discard"), Some(Capability::Tasks));
     for method in [
         "decisions.list",
         "decisions.answer",

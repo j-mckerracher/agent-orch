@@ -93,6 +93,9 @@ impl ApproverSecret {
 /// The four `decisions.*` methods (DPES-1108 phase 3) are the user's own decisions: only
 /// the user answers, defers or reconciles a question, and the list, which carries the
 /// questions the user is asked, is read by the user's app alone.
+///
+/// `tasks.discard` (DPES-1108 phase 5) is the user's word that a task's committed work is not
+/// wanted, which is what lets that task be archived and its slot returned.
 #[rustfmt::skip]
 pub const USER_ONLY_METHODS: &[&str] = &[
     "actions.resolve",
@@ -113,6 +116,7 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "decisions.answer",
     "decisions.defer",
     "decisions.reconcile",
+    "tasks.discard",
 ];
 
 /// The one gate. `Ok` when the method is open to every session or the session

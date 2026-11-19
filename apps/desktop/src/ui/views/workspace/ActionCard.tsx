@@ -9,9 +9,11 @@ import {
   actionPhrase,
   approvedByText,
   cardTitle,
+  doneOnItsOwnText,
   fieldsOf,
   openTaskId,
   openWorkstreamId,
+  overrideLines,
   requestErrorText,
   viewOf,
   type WorkstreamNames,
@@ -66,6 +68,7 @@ export function ActionCard({
   const taskId = view.state === "executed" ? openTaskId(proposal) : null;
   const taskLink = taskId !== null ? taskRoute(taskId) : null;
   const approvedBy = approvedByText(proposal);
+  const onItsOwn = doneOnItsOwnText(proposal);
 
   // The buttons leave the page once the state settles, so keep focus on the card instead of letting it fall to the body.
   useEffect(() => {
@@ -119,6 +122,12 @@ export function ActionCard({
         {view.message.text}
       </Notice>
       {approvedBy !== null && <p className="ws-action-approver">{approvedBy}</p>}
+      {onItsOwn !== null && <p className="ws-action-approver">{onItsOwn}</p>}
+      {overrideLines(proposal).map((line) => (
+        <p key={line} className="ws-action-approver">
+          {line}
+        </p>
+      ))}
       {notice !== null && <Notice tone="info">{notice}</Notice>}
       {error !== null && <Notice tone="bad">{requestErrorText(error, parent)}</Notice>}
       {view.state === "pending" && (

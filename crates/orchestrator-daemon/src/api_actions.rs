@@ -8,16 +8,17 @@
 
 use std::sync::MutexGuard;
 
-use orchestrator_core::orchestrator_action::{Action, ProposeTask, ReviseTask};
+use orchestrator_core::orchestrator_action::{Action, AutonomyRefusal, ProposeTask, ReviseTask};
 use orchestrator_core::task::AuditEvent;
 use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES};
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
-    ActionOutcome, ActionProposal, ArchiveError, ConversationTarget, GrantOutcome, HoldSubject,
-    LineageError, LineageRelation, ProposalState, ResolveError, TaskRecord, WaitError,
-    WorkstreamStoreError,
+    ActionOutcome, ActionProposal, ArchiveError, AuthorityError, ConversationTarget, GrantOutcome,
+    HoldSubject, LineageError, LineageRelation, ProposalState, ResolveError, TaskOverride,
+    TaskRecord, WaitError, WorkstreamStoreError,
 };
 
+use super::authority::AUTONOMOUS_ACTOR;
 use super::projects_defaults::envelope_for;
 use super::workstreams::{
     AddObjectiveParams, CreateParams, GateParams, LinkTaskParams, ReviseObjectiveParams,
@@ -131,6 +132,19 @@ struct ProposeExec {
     /// The finished scout this task promotes to a task that ships. Only the lineage link
     /// carries it: the objective is the text the proposal wrote, never the scout's report.
     promote_from: Option<String>,
+    /// The user turn a task the orchestrator starts itself cites. Written before the task is
+    /// admitted, so such a task never runs without it (DPES-1108 phase 5).
+    origin: Option<TaskOriginPlan>,
+    /// The user's departure from the project's default delivery for this one task, with the
+    /// words of the user turn. `task_id` is filled in when the task exists.
+    delivery_override: Option<TaskOverride>,
+}
+
+/// The origin [`ProposeExec`] writes for the task it makes.
+#[derive(Clone)]
+struct TaskOriginPlan {
+    turn_id: String,
+    proposal_id: String,
 }
 
 #[derive(Clone)]
@@ -404,6 +418,7 @@ impl ProposeExec {
         match find_task(api, &task_id)? {
             // A stopped run created the task and never admitted it.
             Some(task) if task.state == TaskState::Created => {
+                self.record_origin(api, &task_id)?;
                 api.store.transition(&task_id, TaskEvent::Admit)?;
             }
             Some(_) => {}
@@ -421,8 +436,20 @@ impl ProposeExec {
                 // defaults were checked on save; the executor rechecks before launching.
                 let contract =
                     api.checked_contract_without_catalog(&submit, &submit.idempotency_key)?;
-                api.admit_contract(&contract)?;
+                // Created, then its origin, then admitted: a task the orchestrator starts
+                // itself is never queued without the user turn it cites.
+                api.store.create(&contract)?;
+                self.record_origin(api, &task_id)?;
+                api.store.transition(&task_id, TaskEvent::Admit)?;
             }
+        }
+        if let Some(record) = &self.delivery_override {
+            api.store
+                .record_task_override(&TaskOverride {
+                    task_id: task_id.clone(),
+                    ..record.clone()
+                })
+                .map_err(authority_error)?;
         }
         // Written once, right after the task exists. A rerun finds the same link and
         // changes nothing.
@@ -441,6 +468,17 @@ impl ProposeExec {
         }
         api.wake_executor();
         Ok(task_id)
+    }
+
+    /// Writes the origin of a task the orchestrator starts itself. The store refuses an origin
+    /// that is not a user turn; the task then stays `Created` and never runs.
+    fn record_origin(&self, api: &DaemonApi, task_id: &str) -> Result<(), ActionError> {
+        if let Some(origin) = &self.origin {
+            api.store
+                .record_task_origin(task_id, &origin.turn_id, &origin.proposal_id)
+                .map_err(authority_error)?;
+        }
+        Ok(())
     }
 
     /// The workstream the task joins: the one the proposal named, or the default
@@ -619,6 +657,15 @@ fn hold_id(key: &str) -> String {
 
 fn question_id(key: &str) -> String {
     idempotency::stable_id("question", key)
+}
+
+/// An authority refusal (an origin that is not a user turn, a conflicting record) is a conflict.
+/// Any other store failure is internal.
+fn authority_error(error: StoreError) -> ActionError {
+    match AuthorityError::of(&error) {
+        Some(_) => RpcError::Conflict.into(),
+        None => error.into(),
+    }
 }
 
 /// A lineage refusal is a conflict, whatever its cause. Any other store failure is internal.
@@ -954,6 +1001,14 @@ impl DaemonApi {
                 .map_err(map_resolve_error)?;
             return Ok(());
         }
+        // A proposal the orchestrator approved itself is checked again here, so a restart that
+        // finishes it applies the same bounds as the live pass (DPES-1108 phase 5).
+        let autonomous = approver == AUTONOMOUS_ACTOR;
+        if autonomous {
+            if let Some(code) = self.autonomous_refusal(proposal)? {
+                return self.fail_autonomous(proposal, code);
+            }
+        }
         let parent = match &proposal.depends_on {
             Some(parent) => self
                 .store
@@ -963,7 +1018,7 @@ impl DaemonApi {
         };
         let key = idempotency::stable_id("action", &proposal.id);
         let actor = format!("action:{}", proposal.id);
-        let stored = match self.checked_execution(proposal, parent.as_ref(), &key) {
+        let stored = match self.checked_execution(proposal, parent.as_ref(), &key, autonomous) {
             Ok(execution) => self.run_once(held, &execution, &key, &actor)?,
             Err(code) => json!({"error_code": code}),
         };
@@ -1037,8 +1092,9 @@ impl DaemonApi {
         proposal: &ActionProposal,
         parent: Option<&ActionProposal>,
         key: &str,
+        autonomous: bool,
     ) -> Result<Execution, &'static str> {
-        let execution = self.build_execution(proposal, parent, key)?;
+        let execution = self.build_execution(proposal, parent, key, autonomous)?;
         match self.within_scope(proposal, &execution) {
             Ok(true) => Ok(execution),
             Ok(false) => Err(INVALID),
@@ -1153,12 +1209,14 @@ impl DaemonApi {
 
     /// Turns one proposal into the change it names. `parent` is the proposal an
     /// `objective.add` or `task.propose` by ref joins, which has executed by the time
-    /// this runs.
+    /// this runs. `autonomous` is true when the orchestrator approved it itself: a task it
+    /// makes must then cite the user turn as its origin.
     fn build_execution(
         &self,
         proposal: &ActionProposal,
         parent: Option<&ActionProposal>,
         key: &str,
+        autonomous: bool,
     ) -> Result<Execution, &'static str> {
         let action: Action = serde_json::from_str(&proposal.params_json).map_err(|_| INVALID)?;
         let key = key.to_owned();
@@ -1214,6 +1272,23 @@ impl DaemonApi {
             Action::TaskPropose(propose) => {
                 let mut exec = self.propose_execution(propose, parent, key)?;
                 exec.default_link = exec.link.is_none() && proposal.scope_workstream().is_none();
+                let words = self
+                    .user_words(&proposal.turn_id)
+                    .map_err(|()| "internal")?;
+                if autonomous {
+                    // No user words, no origin: the orchestrator may not start this task itself.
+                    if words.is_none() {
+                        return Err(AutonomyRefusal::NoUserOrigin.code());
+                    }
+                    exec.origin = Some(TaskOriginPlan {
+                        turn_id: proposal.turn_id.clone(),
+                        proposal_id: proposal.id.clone(),
+                    });
+                }
+                if let Some(words) = words {
+                    exec.delivery_override =
+                        self.delivery_override(&exec.submit.contract, &words, &proposal.turn_id);
+                }
                 Execution::Propose(Box::new(exec))
             }
             Action::TaskCancel(cancel) => Execution::Cancel(CancelParams {
@@ -1330,6 +1405,8 @@ impl DaemonApi {
                 link,
                 default_link: false,
                 promote_from: None,
+                origin: None,
+                delivery_override: None,
             },
         })
     }
@@ -1419,6 +1496,8 @@ impl DaemonApi {
             link,
             default_link: false,
             promote_from: propose.promote_from,
+            origin: None,
+            delivery_override: None,
         })
     }
 
@@ -1471,6 +1550,7 @@ impl DaemonApi {
     /// A proposal as the wire shows it. `params` is the canonical action the digest binds.
     /// `target` holds what a card needs to name the project or task, read now.
     fn proposal_wire(&self, proposal: &ActionProposal) -> Value {
+        let approved_by = self.proposal_approved_by(proposal);
         json!({
             "id": proposal.id,
             "turn_id": proposal.turn_id,
@@ -1483,7 +1563,14 @@ impl DaemonApi {
             "result_ref": proposal.result_ref,
             "error_code": proposal.error_code,
             "denial": proposal.denial,
-            "grant_id": self.proposal_grant_id(proposal),
+            "grant_id": approved_by
+                .as_deref()
+                .and_then(|actor| actor.strip_prefix("grant:"))
+                .map_or(Value::Null, |id| Value::String(id.to_owned())),
+            // The orchestrator ran it on its own, under the authority model (DPES-1108 phase 5).
+            // The card's turn is its origin.
+            "autonomous": approved_by.as_deref() == Some(AUTONOMOUS_ACTOR),
+            "overrides": self.proposal_overrides(proposal),
             "target": self.proposal_target(proposal),
             // Whether the turn that made the proposal was handed a scout report.
             "after_report": self.store.turn_read_report(&proposal.turn_id).unwrap_or(false),
@@ -1492,21 +1579,43 @@ impl DaemonApi {
         })
     }
 
-    /// The grant that approved a proposal, for a card that shows it, or null. A proposal no
-    /// one approved has none. An unreadable store shows none.
-    fn proposal_grant_id(&self, proposal: &ActionProposal) -> Value {
+    /// The one-task overrides of the task an executed `task.propose` made: each field that departs
+    /// from its project's default, with both values. The user's words are the card's own turn,
+    /// so they are not repeated. Empty for every other card, and when the store cannot be read.
+    fn proposal_overrides(&self, proposal: &ActionProposal) -> Value {
+        let task_id = match (proposal.kind, proposal.state, &proposal.result_ref) {
+            (
+                orchestrator_core::orchestrator_action::ActionKind::TaskPropose,
+                ProposalState::Executed,
+                Some(task_id),
+            ) => task_id,
+            _ => return json!([]),
+        };
+        let overrides = self.store.task_overrides(task_id).unwrap_or_default();
+        Value::Array(
+            overrides
+                .into_iter()
+                .map(|record| {
+                    json!({
+                        "field": record.field,
+                        "project_default": record.project_default,
+                        "chosen": record.chosen,
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    /// Who approved a proposal: `user`, `grant:<id>` or `agent`. `None` for one no one approved.
+    /// An unreadable store shows none.
+    fn proposal_approved_by(&self, proposal: &ActionProposal) -> Option<String> {
         if matches!(
             proposal.state,
             ProposalState::Pending | ProposalState::Superseded
         ) {
-            return Value::Null;
+            return None;
         }
-        self.store
-            .proposal_approver(&proposal.id)
-            .ok()
-            .flatten()
-            .and_then(|actor| actor.strip_prefix("grant:").map(str::to_owned))
-            .map_or(Value::Null, Value::String)
+        self.store.proposal_approver(&proposal.id).ok().flatten()
     }
 
     /// What the app needs to name a task proposal's subject, read now: the project's

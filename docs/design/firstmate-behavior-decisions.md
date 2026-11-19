@@ -100,3 +100,52 @@ Installed versions: Claude Code 2.1.311, Codex CLI 0.169.0, GitHub Copilot CLI 1
 - Daemon tests (`executor_tests.rs` status tests, `wake_events.rs`, `api_conversation_agent.rs` procedure test, the snapshot and routing pins) were compiled with `cargo check --all-targets` and clippy but not run; daemon tests hang on this laptop. CI runs them.
 - Run locally and passed: `cargo test -p orchestrator-core --lib`, `cargo test -p orchestrator-store` (including the new `worker_status` suite and the 0063-to-0064 migration test), `cargo test -p orchestrator-agents`, and the desktop vitest suite (127 files, with the main checkout's `node_modules` linked and then removed).
 - No real agent was run, so the resume flags were checked against `--help` text only.
+
+## Phase 5: authority model
+
+Branch `feat/DPES-1108_authority-model`, based on phase 4. Migrations 0065 (`autonomous_actions`, `task_origins`, `task_overrides`) and 0066 (`task_discards`).
+
+### Classification
+
+- **1. `decision.hold` is user word, not autonomous.** The brief listed it as autonomous. Plan 5.5 does not, and a hold hides the user's pending approvals and cards until a date. An orchestrator that read hostile text could bury a merge or cancel card the user has to see.
+  - Alternative: autonomous, as the brief said.
+  - Undo: move `DecisionHold` to the `Autonomous` arm of `ActionKind::authority` and its test table.
+- **2. A `workstream.update` that archives is user word.** `Archived` is terminal (`workstream.rs`), so it cannot be undone. The match over `ActionKind` stays exhaustive; `Action::authority` narrows this one case. Suspending stays autonomous because it can be undone. The grant matcher already refuses any state change.
+- **3. A pull-request task stays a card.** `autonomy_check` refuses `delivery: PullRequest`, following the grant matcher's `delivery_stays_in_the_envelope`. A pull request publishes to a remote, which `docs/security.md` keeps user-authorized. The cost: in a pull-request-mode project with `chat_pr_delivery` on, chat tasks that ask for a pull request are not started on their own. Undo: drop the `PullRequest` arm of `autonomy_check`.
+- **4. A turn with no user words may only retry, message and ask.** The brief: a wake may retry, message or raise a decision for existing work but may not create tasks. I read "existing work" strictly: such a turn's `task.propose`, `workstream.*`, `objective.*` and `workstream.link_task` stay cards (`ActionKind::acts_on_existing_work`). A relay of a scout report counts as a turn with no user words: its opening text is written by the daemon and the report in it is worker output, the highest-risk input. Undo: widen `acts_on_existing_work`, or treat `read_report` turns as user turns in `turn_authority`.
+- **4a. Two plan 5.5 items are not in this phase.** "Preference and learning writes" are phase 6's documents; no such action kind exists yet. "Cleanup of landed work" has no action kind: a merge already returns the slot on its own, and `tasks.archive` stays a method the user calls, now behind the unlanded-work guard.
+- **5. Auto user turns are autonomous too.** Both chat levels that carry actions (Restricted, Auto) get the same class. Grants are Restricted-only, but an Auto turn has a shell that can already call `tasks.submit` with the daemon token, so running its card on its own widens nothing; restricting to Restricted would leave the default chat level (Auto) proposal-only.
+
+### Mechanics
+
+- **6. The pass runs on the matcher thread, once per turn, right after the turn completes.** `Shared::complete` queues the turn with the effective proposal ids it stored and pokes the matcher thread, which runs `autonomy_tick` before its grant pass. Alternatives: run inline in the reply sink (it has no `DaemonApi`, and the sink can be called from any runtime thread), or poll pending cards (a card left pending would be picked up later, for example when the switch is turned back on). The queue is in memory: a stop before the pass leaves the cards pending, the safe direction. The queue holds at most 64 turns; a turn past that keeps its cards pending.
+- **7. The approval is recorded with the actor `agent`.** Migration 0037's CHECK allows `agent`, `user` and `grant:*`, and the comment there says the table is not to be rebuilt. The proposal row names the turn, so `action_proposal_events` plus `action_proposals.turn_id` is the audit trail "with the turn". `agent` was used only for the `pending` insert before. Undo or change: a rebuild of `action_proposal_events` to allow `turn:<id>`.
+- **8. A card the block only matched is not run.** `complete_conversation_turn` returns an earlier turn's pending card when the block matches it. The pass runs only cards whose `turn_id` is the completing turn, so a wake turn's `task.propose` is never run under a later user turn.
+- **9. The restart path checks again.** `execute_locked_at` re-checks an `agent` approval (`autonomous_refusal`): switch on, turn authority, `autonomy_check`. A task card needs user words, or it fails with `no_user_origin`. Failure codes: `autonomy_off`, `no_user_origin`, `user_word_required`, `pull_request_needs_user`.
+- **10. The origin is written before the task is admitted.** `ProposeExec::run` now creates the task, writes `task_origins`, then admits it, instead of `admit_contract`. A rerun after a stop finds the task `Created`, writes the origin, then admits. The store refuses an origin whose turn is not `trigger_kind = 'user'` with `read_report = 0`. Origins are written only for tasks the orchestrator started itself; a card the user approved has the user's approval as its authority. `origin_kind` allows `routed_request` already, for phase 7's routed requests, so that table is not rebuilt. No code writes it.
+- **11. Per-turn cap is 5.** Half of the 10 actions a block may hold. Plan open item 3 (phase 8) re-sizes wake caps; this cap is separate. Undo: `MAX_AUTONOMOUS_PER_TURN`.
+- **12. A re-check refusal leaves the card for the user.** The grant matcher denies such a card; the pass leaves it pending, and the user's approval meets the same check.
+- **13. Usage limits.** The daemon has no dispatch-time usage limit today: usage warnings carry no authority, and the wake token budget and caps bound wake turns. The pass starts no turn and skips no queue, so those, the capacity caps, the load gate and each contract's `max_retries` bound what it can do. A failing task cannot be retried more than its contract allows (chat tasks: 1), so a wake loop cannot retry forever.
+
+### One-task override
+
+- **14. Only `delivery` is recorded.** `task.propose` has no base-branch or merge-method field, so those are skipped, not invented. `agent` departs from a Settings default, not a project default, so it is not recorded. The project default is the mode's delivery when the envelope grants it, else `LocalReview`, else `ReportOnly`; a scout and an in-place project default to `ReportOnly`. The stored params are compared after the daemon's own rewrite for in-place projects.
+- **15. The user's words are the whole message of the user turn.** The proposal has no field for a quote, and the model's own quote would be less reliable. A card from a wake or relay turn records no override, because it has no user words; the approved card is the record. The read path is the card (`overrides` on an executed `task.propose`), not `tasks.get`, to keep that method's reply as it was. Limit: the daemon cannot tell that the user really asked for the departure; the stored words let a reader check.
+
+### Unlanded-work guard
+
+- **16. "Landed" means a local review ref, a bound pull request or a merge.** A `review_ref_created` or `review_ref_already_matches` delivery step counts. Without it, no task in the default local-only mode could be archived. A `reported` step does not land a commit.
+- **17. A candidate is an attempt with `changed_files > 0` or a verification run of a non-empty commit.** Rows from before migration 0059 with no verification run are not detected.
+- **18. `tasks.discard` is new, user-only, and deletes nothing.** No discard existed. It records `task_discards` for a finished task. The branch stays in the repository; the record only lets the archive and slot return go ahead. The desktop offers "Discard changes" with a confirmation on the task detail page. The workstream view's bulk archive still shows the generic conflict text.
+- **19. `release_task_slots` checks too.** Archive refuses first; the slot check is the second guard. A merge lands the work, so the merge path passes it.
+
+### Instructions
+
+- **20. The preamble stays within 4 KiB.** Phase 4 raised `MAX_INSTRUCTIONS_BYTES` to 4 KiB; the new sentence fits under it. The per-turn truth is in the snapshot ("Run at once: ..."), chosen by the daemon from the setting and the turn's origin. The wake block and procedures now say "use" or "send" instead of "propose". The wake block with the quiet offer measures 576 of the 600 bytes its test allows.
+
+### Not verified locally in phase 5
+
+- Daemon tests (`api_authority_tests.rs`, the snapshot test, `executor_tests.rs` archive tests, `tests/conversation_runtime.rs` with 30 tests now seeded with the switch off and one new default-on test) were compiled with `cargo check --all-targets` and clippy, not run; daemon tests hang on this laptop.
+- Run locally and passed: `cargo test -p orchestrator-core --lib orchestrator_action` (68), `cargo test -p orchestrator-store --test action_authority --test task_archive --test orchestrator_settings`, and the desktop vitest suite (the sub-agent ran all 128 files; I re-ran the card and settings tests after a wording change).
+- Not run: the IPC pin test for `tasks.discard`, the Tauri notifications test, the Playwright e2e tests, and any real agent turn. Whether a real model follows the "Run at once" line is not verified.
+- The security doc update has not been reviewed by a person other than its author.
