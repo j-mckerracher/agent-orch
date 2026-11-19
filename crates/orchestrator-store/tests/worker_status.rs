@@ -355,7 +355,7 @@ fn a_message_is_taken_only_by_a_waiting_task_and_only_up_to_the_queue() {
     let store = open(directory.path());
     run_task(&store, "t1");
     let refusal = store
-        .queue_task_message("t1", "The network is back.")
+        .queue_task_message("t1", "k0", "The network is back.")
         .unwrap_err();
     assert_eq!(WaitError::of(&refusal), Some(WaitError::NotWaiting));
 
@@ -366,14 +366,23 @@ fn a_message_is_taken_only_by_a_waiting_task_and_only_up_to_the_queue() {
         store.get("t1").unwrap().events.last(),
         Some(&orchestrator_core::task::AuditEvent::WorkerBlocked)
     );
-    for _ in 0..MAX_QUEUED_MESSAGES {
+    for number in 0..MAX_QUEUED_MESSAGES {
+        let key = format!("k{number}");
         store
-            .queue_task_message("t1", "The network is back.")
+            .queue_task_message("t1", &key, "The network is back.")
             .unwrap();
+        // A rerun of the same approved action queues nothing.
+        store
+            .queue_task_message("t1", &key, "The network is back.")
+            .unwrap();
+        assert!(store.task_message_queued(&key).unwrap());
     }
-    let full = store.queue_task_message("t1", "Again.").unwrap_err();
+    let full = store
+        .queue_task_message("t1", "k-full", "Again.")
+        .unwrap_err();
     assert_eq!(WaitError::of(&full), Some(WaitError::QueueFull));
-    assert!(store.queue_task_message("t1", " ").is_err());
+    assert!(store.queue_task_message("t1", "k-blank", " ").is_err());
+    assert!(!store.task_message_queued("k-full").unwrap());
     assert_eq!(
         store.tasks_ready_to_resume().unwrap(),
         ["t1".to_owned()].into()

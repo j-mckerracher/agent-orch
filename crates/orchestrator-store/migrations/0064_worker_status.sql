@@ -53,7 +53,8 @@ BEGIN SELECT RAISE(ABORT, 'status events are never deleted'); END;
 
 -- A reply for a waiting task. 'answer' and 'reconcile' copy nothing: they name the question,
 -- whose decision_answers record holds the user's words. 'message' holds a task.message text.
--- delivered_session_id is set once, by the resume that carries it.
+-- delivered_session_id is set once, by the resume that carries it. message_key is the
+-- execution key of the task.message that queued it, so a rerun queues nothing twice.
 CREATE TABLE task_messages (
     id INTEGER PRIMARY KEY,
     task_id TEXT NOT NULL REFERENCES tasks(id),
@@ -61,11 +62,13 @@ CREATE TABLE task_messages (
     kind TEXT NOT NULL CHECK (kind IN ('answer', 'reconcile', 'message')),
     question_id TEXT REFERENCES decision_holds(id),
     text TEXT CHECK (text IS NULL OR length(text) BETWEEN 1 AND 4096),
+    message_key TEXT UNIQUE CHECK (message_key IS NULL OR length(message_key) BETWEEN 1 AND 160),
     delivered_session_id TEXT CHECK (delivered_session_id IS NULL
         OR length(delivered_session_id) > 0),
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (CASE WHEN kind = 'message' THEN text IS NOT NULL AND question_id IS NULL
-        ELSE text IS NULL AND question_id IS NOT NULL END),
+    CHECK (CASE WHEN kind = 'message'
+        THEN text IS NOT NULL AND question_id IS NULL AND message_key IS NOT NULL
+        ELSE text IS NULL AND question_id IS NOT NULL AND message_key IS NULL END),
     FOREIGN KEY (task_id, attempt_id) REFERENCES attempts(task_id, id)
 );
 
@@ -79,7 +82,7 @@ WHEN OLD.delivered_session_id IS NOT NULL
     OR NEW.id IS NOT OLD.id OR NEW.task_id IS NOT OLD.task_id
     OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.kind IS NOT OLD.kind
     OR NEW.question_id IS NOT OLD.question_id OR NEW.text IS NOT OLD.text
-    OR NEW.created_at IS NOT OLD.created_at
+    OR NEW.message_key IS NOT OLD.message_key OR NEW.created_at IS NOT OLD.created_at
 BEGIN
     SELECT RAISE(ABORT, 'a task message is only marked delivered, once');
 END;

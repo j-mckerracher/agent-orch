@@ -377,14 +377,26 @@ impl SqliteStore {
         })
     }
 
-    /// Queues a `task.message` for a waiting task. The text is checked by the caller with the
+    /// Queues a `task.message` for a waiting task under `key`, the execution key of the
+    /// approved action: a second call with the same key queues nothing. The text follows the
     /// reply rules. Refused unless the task waits, or when its queue is full.
-    pub fn queue_task_message(&self, task_id: &str, text: &str) -> Result<(), StoreError> {
+    pub fn queue_task_message(
+        &self,
+        task_id: &str,
+        key: &str,
+        text: &str,
+    ) -> Result<(), StoreError> {
         validate_task_id(task_id)?;
         orchestrator_core::question::check_reply(text).map_err(|_| WaitError::BadLine)?;
-        let (task_id, text) = (task_id.to_owned(), text.to_owned());
+        if !(1..=160).contains(&key.len()) {
+            return Err(WaitError::BadLine.into());
+        }
+        let (task_id, key, text) = (task_id.to_owned(), key.to_owned(), text.to_owned());
         self.call(move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            if message_queued(&mut transaction, &key).await? {
+                return Ok(());
+            }
             let Some(attempt_id) = waiting_attempt(&mut transaction, &task_id).await? else {
                 return Err(WaitError::NotWaiting.into());
             };
@@ -399,17 +411,29 @@ impl SqliteStore {
                 return Err(WaitError::QueueFull.into());
             }
             sqlx::query(
-                "INSERT INTO task_messages (task_id, attempt_id, kind, text) \
-                 VALUES (?, ?, 'message', ?)",
+                "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key) \
+                 VALUES (?, ?, 'message', ?, ?)",
             )
             .bind(&task_id)
             .bind(&attempt_id)
             .bind(&text)
+            .bind(&key)
             .execute(&mut *transaction)
             .await?;
             bump_task_version(&mut transaction, &task_id).await?;
             transaction.commit().await?;
             Ok(())
+        })
+    }
+
+    /// Whether a `task.message` was queued under `key`.
+    pub fn task_message_queued(&self, key: &str) -> Result<bool, StoreError> {
+        let key = key.to_owned();
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin().await?;
+            let queued = message_queued(&mut transaction, &key).await?;
+            transaction.commit().await?;
+            Ok(queued)
         })
     }
 
@@ -596,6 +620,19 @@ impl SqliteStore {
             Ok(())
         })
     }
+}
+
+async fn message_queued(
+    transaction: &mut Transaction<'_, Sqlite>,
+    key: &str,
+) -> Result<bool, StoreError> {
+    Ok(
+        sqlx::query_scalar::<_, i64>("SELECT 1 FROM task_messages WHERE message_key = ?")
+            .bind(key)
+            .fetch_optional(&mut **transaction)
+            .await?
+            .is_some(),
+    )
 }
 
 /// The waiting attempt of a waiting task, or `None` when the task does not wait.
