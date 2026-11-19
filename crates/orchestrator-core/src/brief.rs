@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::contract::{DeliveryPolicy, TaskContract, TaskKind};
+use crate::contract::{TaskContract, TaskKind};
 
 /// The first line of every brief. Tests and log readers find the brief by it.
 pub const BRIEF_MARKER: &str = "# MCAO worker brief";
@@ -64,18 +64,19 @@ fn status_section(status_file: &Path) -> String {
     )
 }
 
-/// The task kind and delivery decide what finished means. The daemon commits the candidate
-/// itself (`commit_candidate`), so a worker that commits leaves nothing to commit and its
-/// Implement task fails as "no changes".
-fn definition_of_done(kind: TaskKind, delivery: DeliveryPolicy) -> &'static str {
-    match (kind, delivery) {
-        (TaskKind::Investigate, _) | (_, DeliveryPolicy::ReportOnly) => {
+/// The task kind decides what finished means. Delivery does not: it only says what MCAO does
+/// with the candidate afterwards. The daemon commits the candidate itself (`commit_candidate`),
+/// so a worker that commits leaves nothing to commit, and an Implement task that changes
+/// nothing fails as "no changes", whatever its delivery policy.
+fn definition_of_done(kind: TaskKind) -> &'static str {
+    match kind {
+        TaskKind::Investigate => {
             "## Definition of done\n\
              Your deliverable is a written report in your final message: what you found, the \
              evidence (files, commands, output), and what remains uncertain. Change no files. \
              Do not commit, push or open a pull request."
         }
-        (TaskKind::Implement, _) => {
+        TaskKind::Implement => {
             "## Definition of done\n\
              Leave your changes uncommitted in the working directory. MCAO commits them, runs \
              the project's checks and asks the user to review. Do not commit, push, open a pull \
@@ -128,7 +129,7 @@ pub fn render(contract: &TaskContract, worktree: Option<&Path>, status_file: &Pa
     brief.push_str("\n\n");
     brief.push_str(&status_section(status_file));
     brief.push_str("\n\n");
-    brief.push_str(definition_of_done(contract.kind, contract.delivery));
+    brief.push_str(definition_of_done(contract.kind));
     brief.push('\n');
     brief
 }
@@ -190,7 +191,7 @@ pub fn render_resume(replies: &[Reply]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::{AutonomyPolicy, VerificationPolicy};
+    use crate::contract::{AutonomyPolicy, DeliveryPolicy, VerificationPolicy};
     use crate::permission::PermissionLevel;
     use crate::work_item::{Criterion, SourceKind, WorkItem, WorkSource};
 
@@ -262,14 +263,32 @@ mod tests {
     }
 
     #[test]
-    fn report_work_changes_no_files() {
-        for (kind, delivery) in [
-            (TaskKind::Investigate, DeliveryPolicy::ReportOnly),
-            (TaskKind::Investigate, DeliveryPolicy::LocalReview),
-            (TaskKind::Implement, DeliveryPolicy::ReportOnly),
+    fn report_work_changes_no_files_and_implement_work_always_leaves_changes() {
+        for delivery in [DeliveryPolicy::ReportOnly, DeliveryPolicy::LocalReview] {
+            let brief = render(
+                &contract(TaskKind::Investigate, delivery),
+                None,
+                Path::new("/s"),
+            );
+            assert!(brief.contains("Change no files"), "{delivery:?}");
+        }
+        // An Implement task with ReportOnly delivery still fails if it changes nothing, so its
+        // brief must not tell the worker to change no files.
+        for delivery in [
+            DeliveryPolicy::ReportOnly,
+            DeliveryPolicy::LocalReview,
+            DeliveryPolicy::PullRequest,
         ] {
-            let brief = render(&contract(kind, delivery), None, Path::new("/s"));
-            assert!(brief.contains("Change no files"), "{kind:?} {delivery:?}");
+            let brief = render(
+                &contract(TaskKind::Implement, delivery),
+                None,
+                Path::new("/s"),
+            );
+            assert!(!brief.contains("Change no files"), "{delivery:?}");
+            assert!(
+                brief.contains("Leave your changes uncommitted"),
+                "{delivery:?}"
+            );
         }
     }
 
