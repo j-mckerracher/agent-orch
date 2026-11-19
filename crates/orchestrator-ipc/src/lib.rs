@@ -133,11 +133,11 @@ mod landing_tests;
 #[path = "lifecycle_tests.rs"]
 mod lifecycle_tests;
 #[cfg(all(test, any(unix, windows)))]
+#[path = "memory_tests.rs"]
+mod memory_tests;
+#[cfg(all(test, any(unix, windows)))]
 #[path = "monitoring_tests.rs"]
 mod monitoring_tests;
-#[cfg(all(test, any(unix, windows)))]
-#[path = "notes_tests.rs"]
-mod notes_tests;
 #[cfg(all(test, any(unix, windows)))]
 #[path = "queue_tests.rs"]
 mod queue_tests;

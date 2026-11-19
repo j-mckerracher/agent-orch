@@ -201,10 +201,16 @@ impl Client {
     pub fn pulls_refresh(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
-    pub fn notes_list(&mut self, _: Value) -> Result<Value, IpcError> {
+    pub fn memory_list(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
-    pub fn notes_set(&mut self, _: Value) -> Result<Value, IpcError> {
+    pub fn memory_set(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn memory_remove(&mut self, _: Value) -> Result<Value, IpcError> {
+        Err(IpcError::Unsupported)
+    }
+    pub fn memory_restore(&mut self, _: Value) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }
     pub fn reports_list(&mut self, _: Value) -> Result<Value, IpcError> {
