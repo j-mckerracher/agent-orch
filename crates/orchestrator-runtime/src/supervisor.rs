@@ -43,8 +43,9 @@ use tokio::sync::mpsc;
 #[cfg(windows)]
 use windows_sys::Win32::Foundation::HANDLE;
 
-/// One line of output or the child's exit. Each line captures at most 64 KiB
-/// of raw bytes; oversized lines end with `...[truncated]`.
+/// One line of output or the child's exit. A stdout line captures at most
+/// 16 MiB of raw bytes and a stderr line at most 64 KiB; oversized lines end
+/// with `...[truncated]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SupervisionEvent {
     /// A line from the child's stdout.
@@ -173,7 +174,12 @@ fn map_stdin_write_error(child_exited: &AtomicBool, source: std::io::Error) -> S
 #[cfg(unix)]
 const CANCEL_GRACE: Duration = Duration::from_millis(500);
 
-const MAX_LINE_CAPTURE_BYTES: usize = 64 * 1024;
+/// Agent stdout carries JSONL protocol records, and a truncated record cannot
+/// be parsed. Claude Code writes each tool result as one record, so a record
+/// can hold a whole file. The cap still bounds memory against runaway output.
+const MAX_STDOUT_LINE_BYTES: usize = 16 * 1024 * 1024;
+/// Stderr is diagnostic only, so a short cap loses nothing that matters.
+const MAX_STDERR_LINE_BYTES: usize = 64 * 1024;
 const LINE_TRUNCATION_MARKER: &str = "...[truncated]";
 
 /// Windows Job Object handle. The raw handle is not `Send`; the job is
@@ -297,8 +303,18 @@ impl ChildSupervisor {
         };
         let stdout = child.stdout.take().expect("stdout piped at launch");
         let stderr = child.stderr.take().expect("stderr piped at launch");
-        let mut stdout_task = spawn_line_reader(stdout, tx.clone(), SupervisionEvent::StdoutLine);
-        let mut stderr_task = spawn_line_reader(stderr, tx.clone(), SupervisionEvent::StderrLine);
+        let mut stdout_task = spawn_line_reader(
+            stdout,
+            MAX_STDOUT_LINE_BYTES,
+            tx.clone(),
+            SupervisionEvent::StdoutLine,
+        );
+        let mut stderr_task = spawn_line_reader(
+            stderr,
+            MAX_STDERR_LINE_BYTES,
+            tx.clone(),
+            SupervisionEvent::StderrLine,
+        );
 
         // Reap the child. `child.wait()` would block until both pipes EOF,
         // which a detached descendant holding a pipe open could stall
@@ -465,12 +481,13 @@ impl Drop for ChildSupervisor {
 /// reader task so the reap task can await EOF before `Exited`.
 fn spawn_line_reader<R: AsyncRead + Unpin + Send + 'static>(
     reader: R,
+    max_bytes: usize,
     tx: mpsc::Sender<SupervisionEvent>,
     map: fn(String) -> SupervisionEvent,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
         let mut reader = BufReader::new(reader);
-        while let Ok(Some(line)) = read_bounded_line(&mut reader).await {
+        while let Ok(Some(line)) = read_bounded_line(&mut reader, max_bytes).await {
             if tx.send(map(line)).await.is_err() {
                 break;
             }
@@ -480,6 +497,7 @@ fn spawn_line_reader<R: AsyncRead + Unpin + Send + 'static>(
 
 async fn read_bounded_line<R: AsyncBufRead + Unpin>(
     reader: &mut R,
+    max_bytes: usize,
 ) -> std::io::Result<Option<String>> {
     let mut captured = Vec::new();
     let mut truncated = false;
@@ -498,7 +516,7 @@ async fn read_bounded_line<R: AsyncBufRead + Unpin>(
             let content_len = buffer.iter().position(|byte| *byte == b'\n');
             let content_len = content_len.unwrap_or(buffer.len());
             let ended = content_len < buffer.len();
-            let copy_len = content_len.min(MAX_LINE_CAPTURE_BYTES - captured.len());
+            let copy_len = content_len.min(max_bytes - captured.len());
             captured.extend_from_slice(&buffer[..copy_len]);
             truncated |= copy_len < content_len;
             (content_len + usize::from(ended), ended)
@@ -562,6 +580,36 @@ mod tests {
             working_dir: std::env::current_dir().expect("current directory"),
             env_names: Vec::new(),
         }
+    }
+
+    #[tokio::test]
+    async fn stdout_cap_keeps_a_protocol_record_larger_than_the_stderr_cap() {
+        // A Claude Code tool result of a large file, as one JSONL record.
+        let record = format!(
+            r#"{{"type":"user","content":"{}"}}"#,
+            "a".repeat(500 * 1024)
+        );
+        let input = format!("{record}\nnext\n");
+        let mut reader = input.as_bytes();
+
+        let line = read_bounded_line(&mut reader, MAX_STDOUT_LINE_BYTES)
+            .await
+            .unwrap();
+        assert_eq!(line.as_deref(), Some(record.as_str()));
+        let next = read_bounded_line(&mut reader, MAX_STDOUT_LINE_BYTES)
+            .await
+            .unwrap();
+        assert_eq!(next.as_deref(), Some("next"));
+    }
+
+    #[tokio::test]
+    async fn over_cap_line_is_truncated_and_the_next_line_is_intact() {
+        let mut reader = "abcdef\nnext\n".as_bytes();
+
+        let line = read_bounded_line(&mut reader, 4).await.unwrap();
+        assert_eq!(line.as_deref(), Some("abcd...[truncated]"));
+        let next = read_bounded_line(&mut reader, 4).await.unwrap();
+        assert_eq!(next.as_deref(), Some("next"));
     }
 
     #[test]
