@@ -1,0 +1,49 @@
+# Firstmate behavior: judgment calls by phase
+
+Companion to [firstmate-behavior-plan.md](firstmate-behavior-plan.md). Each phase records the choices it made that the plan did not settle, so the user can check them. Every entry says what was chosen, the alternatives, why, and how to undo it.
+
+## Phase 3: user decisions (DPES-1108, branch `feat/DPES-1108_user-decisions`)
+
+### Schema
+
+1. **Questions are rows of `decision_holds`, so the table was rebuilt.** The plan said to extend `decision_holds`. Its 0045 CHECKs (`subject_kind IN ('approval','proposal')`, `until_date NOT NULL`, `set_by IN ('user')`) cannot be altered in SQLite. Migration 0063 rebuilds the table the way 0042 rebuilt `action_proposals`: same rowids, same rules for hold rows, and new nullable columns (`question`, `options_json`, `question_key`) used only by `question` rows.
+   - Alternative: a separate `decision_questions` table, which would avoid the rebuild. The plan rules this out.
+   - Undo: a later migration can move question rows into their own table. No code outside `sqlite_questions.rs` reads the question columns.
+2. **`set_by` on a question names who raised it (`orchestrator` or `worker`), not `user`.** A hold row must still have `set_by = 'user'` (CHECK). Who closed a question is kept in the answer record, where `recorded_by` must be `user`.
+3. **The answer record is a new table, `decision_answers`, kinds `answer`, `defer` and `reconcile`.** No row can be updated or deleted (triggers). A record can be written only while its question is open. `decision_holds_question_closes_by_record` refuses any close of a question with no `answer` or `reconcile` row. This is the database guard behind "only an answer or evidence closes it".
+4. **`action_proposals` was rebuilt as well, to add the kind `decision.ask` to its CHECK.** The 0045 insert trigger on `decision_holds` reads `action_proposals`. SQLite checks every trigger when it renames a table, so the migration drops that trigger first and creates it again with the new table. The store test `migration_0063_applies_to_a_0062_style_database_and_keeps_every_row` covers the rebuild. Two things are not verified: a real user database with many rows, and the down path. There is no down migration, which matches the earlier migrations.
+
+### Behavior
+
+5. **A deferral does not close a question and does not free its task.** Plan 5.4 lists `decision.defer` with answer and reconcile as the ways a `Waiting` state is released. Firstmate's own lifecycle says that "later" re-holds the item with a date: it leaves the live list and comes back on that date, and it stays answerable. I followed firstmate. A deferred question stays open, still blocks scheduling, and the list shows it as deferred until the end of that UTC day.
+   - Alternative: treat a deferral as a close (or as a release of the task). Then the worker would continue with no decision.
+   - Undo: in `defer_question`, also write a closing record, and add `defer` to the close trigger's list.
+6. **A task may have several open questions. A key makes asking idempotent per task.** The unique index on open holds now leaves questions out. A new index allows one open question per task and key. Asking again with the same key returns the open question, even if the wording differs. Unkeyed questions are deduplicated only by question id (from the proposal's execution key). The proposal supersede subject is `decision.ask:<task>:<key>`, or a hash of the normalized question text when there is no key.
+7. **A question can be raised on a task in any state, including a finished one.** The likely use in this phase is the orchestrator asking about a scout's report after the scout finished. Only a `Queued` task is affected by scheduling. A running task is not stopped.
+8. **Nothing but the user closes a question.** A task that succeeds, fails or is cancelled keeps its open question until the user answers or reconciles it. This follows firstmate: a wrongly closed decision drops out of review, which is worse than a stale one. The cost: a question on a cancelled task stays in Needs your decision until the user reconciles it.
+9. **The Investigate guard is on the relay, not on completion.** `mark_task_report_relayed` refuses while the task has an open question that its worker raised (`set_by = 'worker'`). `reports.relay` answers `conflict`, and the automatic relay after a report wake leaves the report unrelayed. A scout's promotion needs a relayed report, so promotion is blocked too. Questions the orchestrator raised do not block the relay. The orchestrator usually asks after reading the report, and "a question it raised" in the plan means the task's own question.
+   - **Completion is not blocked. Why:** in this phase a worker cannot see a question or wait for an answer. That needs phase 4's `Waiting` state and session resume. If the store refused the transition to `Succeeded`, a run that has already exited would stay `Running`/`Verifying` and keep its slot, with nothing to move it on. Phase 4 should add that guard when `needs-decision` moves the task to `Waiting`.
+   - Unverified: the wake path's skip was reviewed by reading `wake.rs::settle` only. The daemon wake tests were not run locally.
+
+### Interface
+
+10. **All four `decisions.*` methods are user-only, `decisions.list` included.** The brief asked for that. `holds.list` and `approvals.list` are open, and the questions are not secret (the chat snapshot already shows their titles to the orchestrator). But making the list user-only costs nothing for the desktop, which is the approver. The trade-off is that a token-only client, such as a CLI without the approver secret, cannot list questions.
+    - Undo: remove `"decisions.list"` from `USER_ONLY_METHODS` and from its pin test.
+11. **The methods share the existing `holds` capability.** A new capability would mean a protocol change and new desktop negotiation for four methods on the same table.
+12. **`decision.ask` is not grantable.** It is on the "left out" list next to `decision.hold`, until phase 5 classifies authority. In this phase it is a normal proposal: the user approves the card, then the question exists.
+13. **Text rules.** A question is up to 1,024 bytes, with up to 6 one-line options of up to 200 bytes each. A key is up to 64 characters of lowercase letters, digits and `-`. An answer or evidence is up to 4,096 bytes. Text is refused, never trimmed, when it is blank or has a control (other than tab and line breaks), bidi or invisible character. The answer is stored byte for byte as sent, including leading and trailing whitespace. Desktop note: the text box caps at 4,096 UTF-16 units, which is not the same as 4,096 bytes. The daemon refuses an over-long answer with `invalid_params`.
+14. **The preamble was trimmed by 14 bytes to fit `decision.ask`.** The action preamble's 3 KiB cap (`MAX_INSTRUCTIONS_BYTES`) was 7 bytes short once `decision.ask (task_id, question, options, key)` was added, and a test requires every kind to be named there. I removed the two-space indentation from the example JSON block and merged `task.cancel, task.retry (task_id)`. The text now measures 3,065 of 3,072 bytes. Plan 5.1 says to raise the cap (proposed 6 KiB). Phase 1 did not raise it, and I did not either, because the cap's command-line budget is phase 1's design. The next kind added will not fit without that change.
+15. **Snapshot block.** "Questions waiting for the user: N (each holds its task; only the user answers)" is followed by one line per question: its id, its task and the question cut to 80 bytes and redacted. It is cut with the scout reports when the 6 KiB snapshot is full. Answers are never shown. The deferred marker uses the daemon's wall clock (`unix_now_ms`), not the wake clock that tests inject.
+
+### Desktop (delegated to a sub-agent, reviewed by reading)
+
+16. **Placement.** "Needs your decision" is the first card in the Review & Decisions queue tab, above Proposed actions. It reads only `decisions.list`. The source is named `questions` / `useQuestions`, because `decisions` already names the approval queue in the desktop code.
+17. **Controls.** Clicking an option fills the answer box, and the user may edit it. Send answer sends the box text verbatim. Defer uses a date input with the hold range. There is no reconcile control in the UI: `decisionsReconcile` exists in `api.ts` only. When the session is not the approver, the buttons are disabled with the reason shown, as the holds controls do.
+18. **Waiting reason.** The queue's new `waiting_reason` `decision` is shown as "Waiting for your decision", in the existing `approval` display category.
+19. **Card wording.** A `decision.ask` card reads "Ask for your decision" / "Asked". The sub-agent left the grants label map unchanged. It reports that the desktop map already lists `decision.hold` as grantable, which differs from core (`GRANTABLE_KINDS` leaves it out). I did not change that pre-existing difference.
+
+### Not verified locally
+
+- Daemon unit tests (`api_decisions_tests.rs`, the snapshot test, the existing kind and preamble pins) and `tests/conversation_runtime.rs` (which calls every user-only method as a bare session and expects `Forbidden`) were compiled with `cargo check --all-targets` but not run. Daemon tests hang on this laptop. CI runs them.
+- I ran these locally: `cargo test -p orchestrator-core --lib` for the question, scheduler, kind and grant-list tests, and `cargo test -p orchestrator-store` for `decision_questions`, `lineage_holds_archive`, `action_kinds_phase4`, `action_proposals` and `task_reports`. All passed.
+- Desktop: the sub-agent reports that `QuestionList.test.tsx` (7 tests) and 8 related test files (336 tests) pass with vitest. It reports one `tsc` error, in an untouched file (`ui/views/agents/harness.tsx`), which it attributes to temporarily linked `node_modules`. I did not rerun them.

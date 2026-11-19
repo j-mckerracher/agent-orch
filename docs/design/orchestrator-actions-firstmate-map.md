@@ -76,7 +76,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | H1 | Escalate only real decisions, in outcome words | HAVE | `wake_events.rs::classify` is pure and runs in code; `needs_model` is false for `delivery_waiting`, so the user is notified without a model turn. |
-| H2 | A decision is a task held for the user | PARTIAL | Approvals (`approvals.*`), action cards (`actions.*`) and `decision_holds` (`decision.hold`, `holds.*`; hides an item until a UTC date, does not block scheduling). Missing: user-question records, verbatim answer record, worker `needs-decision`. Plan phase 3. |
+| H2 | A decision is a task held for the user | PARTIAL | Approvals (`approvals.*`), action cards (`actions.*`), `decision_holds` (`decision.hold`, `holds.*`) and, since DPES-1108 phase 3, questions: `decision_holds` rows of kind `question` bound to a task, raised by `decision.ask`, closed only by the user's verbatim answer (`decisions.answer`) or evidence (`decisions.reconcile`), recorded append-only in `decision_answers`. An open question blocks scheduling (`AwaitingDecision`) and is listed under Needs your decision. Missing: worker `needs-decision` and the `Waiting` state. Plan phase 4. |
 | H3 | Never merge without the user's explicit word | HAVE | Approval integrity: the approval binds kind, parameter digest, candidate commit and task, and agents cannot approve (`orchestrator-core/src/approval.rs`). |
 | H4 | Never tear down unlanded work | PARTIAL | `orchestrator_git::delivery::check_worktree_safe_to_delete` guards the CLI `cleanup`, and delivery never merges. The daemon returns a task slot on archive or merge (`slot_returned`, `api.rs`) with no check for finished-but-unlanded local work. Plan phase 5. |
 | H5 | Policy for validation findings that ask the user | PARTIAL | A `candidate_ready` wake runs a turn that reads the attempt summary and changed-file count. Review findings (`review.request_changes`) are not routed to the orchestrator as decision cards. |
@@ -131,7 +131,7 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | B1 | Durable work queue with dependencies | HAVE | Task states `Created` and `Queued`, `task_dependencies`, `queue.snapshot`. |
-| B2 | Holds with an until date | HAVE | `decision_holds`: `decision.hold` action, `holds.set`, `holds.release`, `holds.list`; `until` is a `YYYY-MM-DD` date. |
+| B2 | Holds with an until date | HAVE | `decision_holds`: `decision.hold` action, `holds.set`, `holds.release`, `holds.list`; `until` is a `YYYY-MM-DD` date. A question is deferred the same way (`decisions.defer`): it stays open and keeps its task held, and is marked deferred until that day ends. |
 | B3 | Re-evaluate the queue after each completion | HAVE | The scheduler admits work as dependencies and capacity clear. |
 | B4 | File work for later without dispatching | HAVE | Chat can propose `workstream.create`, `objective.add` and `objective.revise`; nothing is dispatched without a task. |
 | W1 | Order initiatives | PARTIAL | `workstreams.prioritize` and `workstreams.priority`; advisory, the scheduler does not read it. |
