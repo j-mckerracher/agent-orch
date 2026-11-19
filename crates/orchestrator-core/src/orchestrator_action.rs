@@ -47,6 +47,74 @@ pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 /// `delivery.merge` is not here: only a merge grant covers it (see `standing_grant`), and
 /// that grant may name no other kind.
 pub const NEVER_GRANTABLE: [&str; 3] = ["project.remove", "task.cancel", "task.revise"];
+/// Most actions one turn may run on its own. The rest of its block stays cards for the user.
+pub const MAX_AUTONOMOUS_PER_TURN: usize = 5;
+
+/// Who may make an action happen (DPES-1108 phase 5, plan 5.5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ActionAuthority {
+    /// The orchestrator runs it at once, inside the daemon's bounds. The audit trail records
+    /// the turn that issued it.
+    Autonomous,
+    /// Needs the user's word: a card the user approves. Only `delivery.merge` may instead be
+    /// covered by a merge grant, and [`NEVER_GRANTABLE`] is unchanged.
+    UserWord,
+}
+
+/// Why the daemon does not run an action on its own and leaves it a card for the user.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AutonomyRefusal {
+    /// The action needs the user's word ([`ActionAuthority::UserWord`]).
+    UserWord,
+    /// The turn has no user words to cite: a wake turn, or a turn that read an agent's report.
+    /// Such a turn may only retry, message or ask about existing work.
+    NoUserOrigin,
+    /// A task that would end in a pull request, which publishes to a remote.
+    PullRequest,
+    /// The turn already ran [`MAX_AUTONOMOUS_PER_TURN`] actions.
+    TurnCap,
+}
+
+impl AutonomyRefusal {
+    /// The stable code a proposal that fails this check at execution records.
+    pub const fn code(self) -> &'static str {
+        match self {
+            Self::UserWord => "user_word_required",
+            Self::NoUserOrigin => "no_user_origin",
+            Self::PullRequest => "pull_request_needs_user",
+            Self::TurnCap => "autonomy_turn_cap",
+        }
+    }
+}
+
+/// Whether the daemon may run `action` on its own as the `ran`-th action of its turn (zero
+/// first). `from_user` is true only for a turn the user's own message opened and that read no
+/// agent report: only then is there a user instruction the action can cite as its origin.
+///
+/// A turn with no user origin may still retry, message or raise a decision for existing work;
+/// anything that would create or reshape work stays a card. Pure, so the live pass and the
+/// restart path apply the same rule.
+pub fn autonomy_check(action: &Action, from_user: bool, ran: usize) -> Result<(), AutonomyRefusal> {
+    if action.authority() == ActionAuthority::UserWord {
+        return Err(AutonomyRefusal::UserWord);
+    }
+    let on_existing_work = matches!(
+        action.kind(),
+        ActionKind::TaskRetry | ActionKind::TaskMessage | ActionKind::DecisionAsk
+    );
+    if !from_user && !on_existing_work {
+        return Err(AutonomyRefusal::NoUserOrigin);
+    }
+    if let Action::TaskPropose(propose) = action {
+        if propose.delivery == DeliveryPolicy::PullRequest {
+            return Err(AutonomyRefusal::PullRequest);
+        }
+    }
+    if ran >= MAX_AUTONOMOUS_PER_TURN {
+        return Err(AutonomyRefusal::TurnCap);
+    }
+    Ok(())
+}
 
 /// Most text the filter holds: the block plus its fences and slack.
 const HELD_LIMIT: usize = MAX_ACTION_BLOCK_BYTES + 256;
@@ -112,6 +180,31 @@ impl ActionKind {
     /// Whether a grant may cover this kind: not one of [`NEVER_GRANTABLE`].
     pub fn is_grantable(self) -> bool {
         !NEVER_GRANTABLE.contains(&self.as_str())
+    }
+
+    /// Who may make an action of this kind happen. One match with no wildcard, so a new kind
+    /// does not compile until it is classified. [`Action::authority`] narrows one case further.
+    ///
+    /// User word: cancelling, revising and merging work and removing a project (plan 5.5), and
+    /// `decision.hold`, which hides the user's pending cards until a date: an orchestrator that
+    /// read hostile text must not be able to bury a card the user has to see.
+    pub const fn authority(self) -> ActionAuthority {
+        match self {
+            Self::WorkstreamCreate
+            | Self::WorkstreamUpdate
+            | Self::ObjectiveAdd
+            | Self::ObjectiveRevise
+            | Self::TaskPropose
+            | Self::TaskRetry
+            | Self::WorkstreamLinkTask
+            | Self::DecisionAsk
+            | Self::TaskMessage => ActionAuthority::Autonomous,
+            Self::TaskCancel
+            | Self::TaskRevise
+            | Self::DeliveryMerge
+            | Self::ProjectRemove
+            | Self::DecisionHold => ActionAuthority::UserWord,
+        }
     }
 
     /// Parses a wire name.
@@ -881,6 +974,19 @@ impl Action {
         }
     }
 
+    /// Who may make this action happen: its kind's [`ActionKind::authority`], except that a
+    /// `workstream.update` that archives the workstream needs the user's word. Archived is
+    /// terminal, so it cannot be undone.
+    pub fn authority(&self) -> ActionAuthority {
+        match self {
+            Self::WorkstreamUpdate(UpdateWorkstream {
+                state: Some(WorkstreamState::Archived),
+                ..
+            }) => ActionAuthority::UserWord,
+            _ => self.kind().authority(),
+        }
+    }
+
     /// Canonical JSON, digest, and supersede subject. `parent` is the effective
     /// proposal id that this action's `workstream_ref` resolves to.
     pub fn canonical(&self, parent: Option<&str>) -> Canonical {
@@ -1195,6 +1301,133 @@ mod tests {
             shown.push_str(&filter.push(chunk));
         }
         (shown, filter.finish())
+    }
+
+    fn action(text: &str) -> Action {
+        serde_json::from_str(text).unwrap()
+    }
+
+    /// Plan 5.5's table, kind by kind. A new kind fails to compile in `authority` and then
+    /// fails here until the table below names it.
+    #[test]
+    fn every_kind_has_the_authority_of_the_plan_table() {
+        use ActionAuthority::{Autonomous, UserWord};
+        for kind in ActionKind::ALL {
+            let expected = match kind.as_str() {
+                "workstream.create"
+                | "workstream.update"
+                | "objective.add"
+                | "objective.revise"
+                | "task.propose"
+                | "task.retry"
+                | "workstream.link_task"
+                | "decision.ask"
+                | "task.message" => Autonomous,
+                "task.cancel" | "task.revise" | "delivery.merge" | "project.remove"
+                | "decision.hold" => UserWord,
+                other => panic!("{other} is not classified in this test"),
+            };
+            assert_eq!(kind.authority(), expected, "{}", kind.as_str());
+        }
+    }
+
+    /// Nothing a grant may never cover, and no merge, can run on its own.
+    #[test]
+    fn never_grantable_kinds_and_merge_need_the_users_word() {
+        for kind in ActionKind::ALL {
+            if NEVER_GRANTABLE.contains(&kind.as_str()) || kind == ActionKind::DeliveryMerge {
+                assert_eq!(kind.authority(), ActionAuthority::UserWord, "{kind:?}");
+            }
+        }
+        for name in NEVER_GRANTABLE {
+            assert!(ActionKind::parse(name).is_some(), "{name}");
+        }
+    }
+
+    #[test]
+    fn archiving_a_workstream_needs_the_users_word_and_other_updates_do_not() {
+        let archive = action(
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"state":"archived"}"#,
+        );
+        assert_eq!(archive.authority(), ActionAuthority::UserWord);
+        assert_eq!(
+            autonomy_check(&archive, true, 0),
+            Err(AutonomyRefusal::UserWord)
+        );
+        for update in [
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"state":"suspended"}"#,
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"title":"New"}"#,
+        ] {
+            assert_eq!(action(update).authority(), ActionAuthority::Autonomous);
+            assert_eq!(autonomy_check(&action(update), true, 0), Ok(()));
+        }
+    }
+
+    /// A turn with no user words (a wake, or one that read a report) may act only on existing
+    /// work. It may not create a task, a workstream or an objective.
+    #[test]
+    fn a_turn_without_a_user_origin_may_only_retry_message_or_ask() {
+        let existing = [
+            RETRY,
+            r#"{"kind":"task.message","task_id":"task-1","text":"Use the main branch."}"#,
+            r#"{"kind":"decision.ask","task_id":"task-1","question":"Ship it?"}"#,
+        ];
+        for text in existing {
+            assert_eq!(autonomy_check(&action(text), false, 0), Ok(()), "{text}");
+        }
+        let new_work = [
+            PROPOSE,
+            CREATE,
+            LINK,
+            r#"{"kind":"objective.add","workstream_id":"ws-1","title":"Plan"}"#,
+            r#"{"kind":"objective.revise","objective_id":"obj-1","expected_revision":1,"title":"T"}"#,
+            r#"{"kind":"workstream.update","workstream_id":"ws-1","expected_revision":1,"title":"T"}"#,
+        ];
+        for text in new_work {
+            assert_eq!(
+                autonomy_check(&action(text), false, 0),
+                Err(AutonomyRefusal::NoUserOrigin),
+                "{text}"
+            );
+            assert_eq!(autonomy_check(&action(text), true, 0), Ok(()), "{text}");
+        }
+    }
+
+    #[test]
+    fn user_word_kinds_stay_cards_whatever_the_turn() {
+        for text in [
+            CANCEL,
+            r#"{"kind":"task.revise","task_id":"task-1","added_intent":"More."}"#,
+            r#"{"kind":"project.remove","project":"p-3fa9c1d2"}"#,
+            r#"{"kind":"decision.hold","task_id":"task-1","until":"2030-01-01"}"#,
+            r#"{"kind":"delivery.merge","task_id":"task-1","pr_number":7,"head_sha":"0123456789abcdef0123456789abcdef01234567"}"#,
+        ] {
+            for from_user in [true, false] {
+                assert_eq!(
+                    autonomy_check(&action(text), from_user, 0),
+                    Err(AutonomyRefusal::UserWord),
+                    "{text}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_pull_request_task_and_the_turn_cap_stay_cards() {
+        let pull_request = action(&propose(&[("delivery", json!("PullRequest"))]));
+        assert_eq!(
+            autonomy_check(&pull_request, true, 0),
+            Err(AutonomyRefusal::PullRequest)
+        );
+        let local = action(&propose(&[("delivery", json!("LocalReview"))]));
+        assert_eq!(
+            autonomy_check(&local, true, MAX_AUTONOMOUS_PER_TURN - 1),
+            Ok(())
+        );
+        assert_eq!(
+            autonomy_check(&local, true, MAX_AUTONOMOUS_PER_TURN),
+            Err(AutonomyRefusal::TurnCap)
+        );
     }
 
     #[test]
