@@ -33,6 +33,7 @@
 use std::fmt;
 use std::future::Future;
 
+use orchestrator_core::memory::MemoryScope;
 use orchestrator_core::permission::PermissionLevel;
 use sqlx::sqlite::SqliteRow;
 use sqlx::Row;
@@ -47,7 +48,6 @@ use crate::sqlite_history::{
     count_coordinator_entries, record_audit, require_project, set_clear_gate,
     tombstone_conversation_sends, wipe_coordinator, ClearOutcome,
 };
-use crate::sqlite_notes::delete_scope_notes;
 use crate::sqlite_wake::delete_scope_wake_records;
 use crate::{SqliteStore, StoreError};
 
@@ -81,12 +81,12 @@ impl ConversationTarget {
         }
     }
 
-    /// The `orchestrator_notes` scope of this conversation (migration 0050).
-    pub(crate) fn notes_scope(&self) -> String {
+    /// The scope of this conversation's preferences and learnings (migration 0067).
+    pub fn memory_scope(&self) -> MemoryScope {
         match self {
-            Self::Global => "global".to_owned(),
-            Self::Workstream(id) => format!("workstream:{id}"),
-            Self::Project(id) => format!("project:{id}"),
+            Self::Global => MemoryScope::Global,
+            Self::Workstream(id) => MemoryScope::Workstream(id.clone()),
+            Self::Project(id) => MemoryScope::Project(id.clone()),
         }
     }
 
@@ -836,7 +836,6 @@ impl SqliteStore {
             workstream_id.map(str::to_owned),
             project_id.map(str::to_owned),
         );
-        let notes_scope = target.notes_scope();
         let outcome = conversation_call(self, move |pool| async move {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let legacy_entries = if let Some(id) = &project_id {
@@ -869,9 +868,9 @@ impl SqliteStore {
             if let Some(turn_id) = running {
                 return Err(ConversationError::TurnRunning { turn_id });
             }
-            // The user's notes for this conversation go with its history, even when the
-            // history is already empty. Grants and their events stay.
-            delete_scope_notes(&mut transaction, &notes_scope).await?;
+            // Grants and their events stay, and so do this conversation's preferences and
+            // learnings: the user manages them in Settings, and none is ever deleted silently
+            // (DPES-1108 phase 6).
             let entries: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM conversation_entries WHERE conversation_id = ?",
             )

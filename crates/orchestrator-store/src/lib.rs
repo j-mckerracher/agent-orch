@@ -64,7 +64,7 @@ mod sqlite_grants;
 mod sqlite_history;
 mod sqlite_holds;
 mod sqlite_lineage;
-mod sqlite_notes;
+mod sqlite_memory;
 mod sqlite_ops;
 mod sqlite_project_defaults;
 mod sqlite_pull_requests;
@@ -94,6 +94,10 @@ pub use sqlite_grants::{GrantClaimError, GrantError, GrantEvent, GrantEventKind,
 pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};
 pub use sqlite_holds::{DecisionHold, HoldError, HoldState, HoldSubject};
 pub use sqlite_lineage::{LineageError, LineageRelation, TaskLineage};
+pub use sqlite_memory::{
+    ArchivedMemoryEntry, ConversationMemory, MemoryEntry, MemoryRestoreOutcome, MemoryWriteOutcome,
+    MemoryWriter, MEMORY_ARCHIVE_LISTED,
+};
 pub use sqlite_project_defaults::{ProjectDefaultsError, ProjectDefaultsPatch, ProjectDefaultsRow};
 pub use sqlite_pull_requests::{
     GrantIssue, MergeAttempt, MergeClaim, MergeState, PullRequestChange, PullRequestError,
