@@ -88,7 +88,7 @@ Installed versions: Claude Code 2.1.311, Codex CLI 0.169.0, GitHub Copilot CLI 1
 ### `task.message`
 
 - **19. Only a waiting task takes a message.** The plan also allows queueing one for a running task until its next exit. That needs the exit path to choose between verifying and resuming, so it is left out; `task.revise` remains the way to change a running task. Live steering is DPES-1133's.
-- **20. It is a normal proposal and is not grantable.** As `decision.ask` in phase 3, until phase 5 classifies authority. It is on the "left out" list of `standing_grant.rs`. Its proposal subject is `task.message:<task id>`, so a newer message replaces a pending older one. A waiting task holds at most two undelivered messages; a third is `conflict`.
+- **20. It is a normal proposal and is not grantable.** As `decision.ask` in phase 3, until phase 5 classifies authority. It is on the "left out" list of `standing_grant.rs`. Its proposal subject is `task.message:<task id>`, so a newer message replaces a pending older one. A waiting task holds at most two undelivered orchestrator messages; a third is `conflict`. The user's own messages have a count of their own (DPES-1106, below).
 - **21. The preamble cap was raised from 3 KiB to 4 KiB.** `task.message (task_id, text; a waiting task only)` did not fit in 3,072 bytes. `MAX_INSTRUCTIONS_BYTES` is now 4,096 with its compile-time asserts and the routing test updated. The prompt budget (30,000 UTF-16 units) still bounds the whole command line.
 
 ### Wakes
@@ -371,6 +371,19 @@ DPES-1108, branch `feat/DPES-1108_etiquette`, built on `feat/DPES-1108_worker-st
 - Daemon tests were compiled with `cargo check --all-targets` and clippy but not run, because daemon tests hang on this laptop. That covers the two prompt tests in `api_conversation_agent.rs` and, in `wake_tests.rs`, the renamed `wake_turns_stop_at_the_default_hourly_cap`, the away cap test, the settings defaults test, `a_work_check_past_its_share_of_the_cap_is_not_recorded_and_an_outcome_still_wakes` and `a_wake_turn_entry_carries_the_recorded_pull_request_link_of_its_task`. CI runs them.
 - Run locally and passed: `cargo test -p orchestrator-core --lib supervision` (16 tests), the whole `cargo test -p orchestrator-store` suite (including the new `tests/turn_links.rs`), and the desktop vitest suite (128 files, 2,385 tests, with the main checkout's `node_modules` linked and then removed). `tsc -b --noEmit` shows only the known `harness.tsx` error that comes from the linked `node_modules`.
 - No real agent turn was run. Whether models follow the etiquette was not measured.
+
+## DPES-1106: the user's message to a waiting task
+
+Branch `feat/DPES-1106_task-window-agent-conversation`, built on `main`. Phase 4's replies carried only the orchestrator's `task.message`; the task window needs the user to be able to answer a waiting worker in their own words.
+
+- **1. The message keeps its author.** `task_messages.author` (migration 0073) is `orchestrator` or `user`. Existing rows read `orchestrator`. The delivered-once trigger also refuses an author change. The worker is told which one wrote it: the user's words are headed `## The user's message`, and the orchestrator's stay under `## Message from MCAO's orchestrator`.
+  - Alternative: a new `kind`. That widens the `kind` CHECK and every reader of it; an author column changes one CHECK and one trigger.
+  - Undo: needs a later migration. SQLite cannot drop the column without a table rebuild.
+- **2. The cap is per author.** Each author holds at most `MAX_QUEUED_MESSAGES` (two) undelivered messages on a waiting task. A full orchestrator queue does not stop the user, and the user's messages do not use up the orchestrator's room.
+- **3. The RPC is `tasks.message`, user-only.** `tasks.message {task_id, text, idempotency_key}` is in `USER_ONLY_METHODS` and the `tasks` capability. A client key cannot start with `action-`, so it never collides with an orchestrator action's execution key. An unknown task is not found. A task that does not wait, or a full queue, is a conflict. Text the reply rules refuse (blank, over 4,096 bytes, a control character) is invalid params. The same key queues once.
+- **4. The worker resumes at once.** The handler wakes the scheduler, as `decisions.answer` does. A message sent while a question of the task is open waits until the question closes, because a waiting task resumes only with its questions closed (phase 4, decision 16).
+- **Not in this phase.** Live steering of a running worker (DPES-1133). The conversation pane does not echo a sent message. The daemon's 4,096-byte limit counts bytes, while a textarea counts characters.
+- **Not verified locally.** The daemon and store tests run in CI only. `cargo check --workspace --tests` and `cargo fmt --check` (apart from one existing diff in `orchestrator-core/tests/scheduler.rs`) were run.
 
 ## Integration
 

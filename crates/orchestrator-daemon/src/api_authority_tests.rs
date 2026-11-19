@@ -4,12 +4,16 @@
 //! does after a turn completes. No agent CLI is launched: the project roots do not exist.
 
 use orchestrator_core::orchestrator_action::{parse_block, BlockScope, MAX_AUTONOMOUS_PER_TURN};
+use orchestrator_core::question::MAX_REPLY_BYTES;
+use orchestrator_core::task::{Session, SessionState, WaitReason};
 use orchestrator_store::{
-    ConversationTarget, ProposalState, TurnBlock, TurnPermission, TurnTrigger,
+    ConversationTarget, ProposalState, ReplyKind, TurnBlock, TurnPermission, TurnTrigger,
 };
 
 use super::actions::project_code;
-use super::actions_task_tests::{proposed_task_id, register_project, submit_queued, ALPHA};
+use super::actions_task_tests::{
+    proposed_task_id, register_project, running_task, submit_queued, ALPHA,
+};
 use super::actions_tests::{call, new_api, proposal};
 use super::authority::AUTONOMOUS_ACTOR;
 use super::*;
@@ -350,6 +354,77 @@ fn tasks_discard_takes_a_finished_task_only() {
         ),
         Err(RpcError::NotFound)
     );
+}
+
+/// A task whose worker reported a wait, as the executor leaves it.
+fn waiting_task(api: &DaemonApi, key: &str) -> String {
+    let id = running_task(api, key);
+    api.store
+        .add_session(
+            &id,
+            &Session {
+                id: "session-1".into(),
+                attempt_id: "attempt-1".into(),
+                adapter: "codex".into(),
+                state: SessionState::Spawning,
+            },
+        )
+        .unwrap();
+    api.store
+        .update_session_state(&id, "session-1", SessionState::Running)
+        .unwrap();
+    api.store
+        .enter_waiting(&id, "attempt-1", "session-1", WaitReason::Blocker, &[])
+        .unwrap();
+    id
+}
+
+/// `tasks.message` queues the user's words for a waiting task only, and the same key queues
+/// once.
+#[test]
+fn tasks_message_takes_a_waiting_task_and_refuses_the_rest() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let queued = submit_queued(&api, "queued-1", "Queued work.");
+    assert_eq!(
+        call(
+            &api,
+            "tasks.message",
+            json!({"task_id": queued, "text": "Hello.", "idempotency_key": "m-1"})
+        ),
+        Err(RpcError::Conflict)
+    );
+    assert_eq!(
+        call(
+            &api,
+            "tasks.message",
+            json!({"task_id": "no-such-task", "text": "Hello.", "idempotency_key": "m-2"})
+        ),
+        Err(RpcError::NotFound)
+    );
+
+    let task = waiting_task(&api, "waiting-1");
+    let long = "x".repeat(MAX_REPLY_BYTES + 1);
+    for (key, text) in [("m-3", " \n"), ("m-4", "ok\u{7}"), ("m-5", long.as_str())] {
+        assert_eq!(
+            call(
+                &api,
+                "tasks.message",
+                json!({"task_id": task, "text": text, "idempotency_key": key})
+            ),
+            Err(RpcError::InvalidParams),
+            "{key}"
+        );
+    }
+
+    let sent = json!({"task_id": task, "text": "Use the other branch.", "idempotency_key": "m-6"});
+    let reply = call(&api, "tasks.message", sent.clone()).unwrap();
+    assert_eq!(reply, json!({"task_id": task, "queued": true}));
+    assert_eq!(call(&api, "tasks.message", sent).unwrap(), reply);
+    let replies = api.store.pending_replies(&task).unwrap();
+    assert_eq!(replies.len(), 1, "{replies:?}");
+    assert_eq!(replies[0].kind, ReplyKind::UserMessage);
+    assert_eq!(replies[0].text, "Use the other branch.");
 }
 
 /// The switch is on by default, read by `settings.get`, and turned off by `settings.set`.

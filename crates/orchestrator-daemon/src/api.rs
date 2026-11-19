@@ -34,7 +34,7 @@ use orchestrator_ipc::{CallContext, Capability, IpcEvent, RpcError, RpcHandler};
 use orchestrator_runtime::reconcile::observe_owner_process;
 use orchestrator_store::{
     ArchiveError, CancellationStatus, DeliveryOutcome as StoredDeliveryOutcome, DeliveryStepRecord,
-    MergeState, SqliteStore, Store, StoreError,
+    MergeState, MessageAuthor, SqliteStore, Store, StoreError, WaitError,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -166,6 +166,15 @@ struct CancelParams {
 #[serde(deny_unknown_fields)]
 struct TaskKeyParams {
     task_id: String,
+    idempotency_key: String,
+}
+
+/// A task, the user's words for it and an idempotency key: `tasks.message`.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct UserMessageParams {
+    task_id: String,
+    text: String,
     idempotency_key: String,
 }
 
@@ -426,6 +435,7 @@ impl RpcHandler for DaemonApi {
             "tasks.cancel" => self.cancel_task(params),
             "tasks.archive" => self.archive_tasks(params),
             "tasks.discard" => self.discard_task(params),
+            "tasks.message" => self.message_task(params),
             "tasks.retry" => self.retry_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
             "agents.catalog" => self.agents_catalog(params),
@@ -1272,6 +1282,39 @@ impl DaemonApi {
                         None => map_store_error(error),
                     })?;
                 Ok(json!({"task_id": request.task_id, "discarded": discarded}))
+            },
+        )
+    }
+
+    /// `tasks.message` (DPES-1106, user-only): the user's own words to a waiting task. They
+    /// queue as the user's, not the orchestrator's, and the scheduler resumes the worker with
+    /// them. An unknown task is `NotFound`. A task that does not wait, or a full queue of the
+    /// user's messages, is `Conflict`. Text the reply rules refuse is `InvalidParams`.
+    fn message_task(&self, params: Value) -> Result<Value, RpcError> {
+        let request: UserMessageParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.message",
+            &key,
+            &request,
+            || {
+                self.store.get(&request.task_id).map_err(map_store_error)?;
+                self.store
+                    .queue_task_message(
+                        &request.task_id,
+                        &request.idempotency_key,
+                        &request.text,
+                        MessageAuthor::User,
+                    )
+                    .map_err(|error| match WaitError::of(&error) {
+                        Some(WaitError::NotWaiting | WaitError::QueueFull) => RpcError::Conflict,
+                        Some(WaitError::BadLine) => RpcError::InvalidParams,
+                        _ => map_store_error(error),
+                    })?;
+                self.wake_resumes();
+                Ok(json!({"task_id": request.task_id, "queued": true}))
             },
         )
     }

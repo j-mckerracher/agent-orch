@@ -31,8 +31,9 @@ use crate::sqlite_ops::{
 use crate::sqlite_questions::QuestionRaiser;
 use crate::{SqliteStore, StoreError};
 
-/// Most `task.message` replies a waiting task holds undelivered. Answers are not counted: a
-/// question closes whatever the queue holds.
+/// Most `task.message` replies one author holds undelivered on a waiting task. Answers are not
+/// counted: a question closes whatever the queue holds. Each author has its own count, so the
+/// orchestrator's messages cannot fill the user's.
 pub const MAX_QUEUED_MESSAGES: i64 = 2;
 
 /// One status line as stored.
@@ -72,6 +73,8 @@ pub enum ReplyKind {
     Answer,
     Reconcile,
     Message,
+    /// A `tasks.message`: the user's own words.
+    UserMessage,
 }
 
 impl ReplyKind {
@@ -79,7 +82,23 @@ impl ReplyKind {
         match self {
             Self::Answer => "answer",
             Self::Reconcile => "reconcile",
-            Self::Message => "message",
+            Self::Message | Self::UserMessage => "message",
+        }
+    }
+}
+
+/// Who queued a `task.message`: the orchestrator's approved action, or the user.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MessageAuthor {
+    Orchestrator,
+    User,
+}
+
+impl MessageAuthor {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Orchestrator => "orchestrator",
+            Self::User => "user",
         }
     }
 }
@@ -378,13 +397,15 @@ impl SqliteStore {
     }
 
     /// Queues a `task.message` for a waiting task under `key`, the execution key of the
-    /// approved action: a second call with the same key queues nothing. The text follows the
-    /// reply rules. Refused unless the task waits, or when its queue is full.
+    /// approved action or the client's key for `tasks.message`: a second call with the same key
+    /// queues nothing. The text follows the reply rules. Refused unless the task waits, or when
+    /// the author's queue is full.
     pub fn queue_task_message(
         &self,
         task_id: &str,
         key: &str,
         text: &str,
+        author: MessageAuthor,
     ) -> Result<(), StoreError> {
         validate_task_id(task_id)?;
         orchestrator_core::question::check_reply(text).map_err(|_| WaitError::BadLine)?;
@@ -402,22 +423,24 @@ impl SqliteStore {
             };
             let queued: i64 = sqlx::query_scalar(
                 "SELECT COUNT(*) FROM task_messages WHERE task_id = ? AND kind = 'message' \
-                 AND delivered_session_id IS NULL",
+                 AND author = ? AND delivered_session_id IS NULL",
             )
             .bind(&task_id)
+            .bind(author.as_str())
             .fetch_one(&mut *transaction)
             .await?;
             if queued >= MAX_QUEUED_MESSAGES {
                 return Err(WaitError::QueueFull.into());
             }
             sqlx::query(
-                "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key) \
-                 VALUES (?, ?, 'message', ?, ?)",
+                "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key, author) \
+                 VALUES (?, ?, 'message', ?, ?, ?)",
             )
             .bind(&task_id)
             .bind(&attempt_id)
             .bind(&text)
             .bind(&key)
+            .bind(author.as_str())
             .execute(&mut *transaction)
             .await?;
             bump_task_version(&mut transaction, &task_id).await?;
@@ -462,7 +485,7 @@ impl SqliteStore {
         let task_id = task_id.to_owned();
         self.call(move |pool| async move {
             let rows = sqlx::query(
-                "SELECT m.id, m.kind, m.text AS message, q.question, \
+                "SELECT m.id, m.kind, m.author, m.text AS message, q.question, \
                         (SELECT a.text FROM decision_answers a WHERE a.hold_id = m.question_id \
                           AND a.kind = m.kind ORDER BY a.id LIMIT 1) AS closing \
                  FROM task_messages m LEFT JOIN decision_holds q ON q.id = m.question_id \
@@ -476,11 +499,19 @@ impl SqliteStore {
                     let kind = match row.try_get::<String, _>("kind")?.as_str() {
                         "answer" => ReplyKind::Answer,
                         "reconcile" => ReplyKind::Reconcile,
-                        "message" => ReplyKind::Message,
+                        "message" => match row.try_get::<String, _>("author")?.as_str() {
+                            "orchestrator" => ReplyKind::Message,
+                            "user" => ReplyKind::UserMessage,
+                            other => {
+                                return Err(corrupt(format!("unknown message author {other:?}")))
+                            }
+                        },
                         other => return Err(corrupt(format!("unknown reply kind {other:?}"))),
                     };
                     let text = match kind {
-                        ReplyKind::Message => row.try_get::<Option<String>, _>("message")?,
+                        ReplyKind::Message | ReplyKind::UserMessage => {
+                            row.try_get::<Option<String>, _>("message")?
+                        }
                         _ => row.try_get::<Option<String>, _>("closing")?,
                     }
                     .ok_or_else(|| corrupt("a reply has no text".to_owned()))?;

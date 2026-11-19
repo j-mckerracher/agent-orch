@@ -15,8 +15,8 @@ use orchestrator_core::task::{
 use orchestrator_core::worker_status::{StatusLine, StatusVerb};
 use orchestrator_core::Project;
 use orchestrator_store::{
-    QuestionError, QuestionRaiser, ReplyKind, SqliteStore, Store, StoreError, WaitError,
-    WorkerQuestion, MAX_QUEUED_MESSAGES,
+    MessageAuthor, QuestionError, QuestionRaiser, ReplyKind, SqliteStore, Store, StoreError,
+    WaitError, WorkerQuestion, MAX_QUEUED_MESSAGES,
 };
 use sqlx::migrate::Migrator;
 use sqlx::sqlite::SqliteConnectOptions;
@@ -355,7 +355,12 @@ fn a_message_is_taken_only_by_a_waiting_task_and_only_up_to_the_queue() {
     let store = open(directory.path());
     run_task(&store, "t1");
     let refusal = store
-        .queue_task_message("t1", "k0", "The network is back.")
+        .queue_task_message(
+            "t1",
+            "k0",
+            "The network is back.",
+            MessageAuthor::Orchestrator,
+        )
         .unwrap_err();
     assert_eq!(WaitError::of(&refusal), Some(WaitError::NotWaiting));
 
@@ -369,19 +374,31 @@ fn a_message_is_taken_only_by_a_waiting_task_and_only_up_to_the_queue() {
     for number in 0..MAX_QUEUED_MESSAGES {
         let key = format!("k{number}");
         store
-            .queue_task_message("t1", &key, "The network is back.")
+            .queue_task_message(
+                "t1",
+                &key,
+                "The network is back.",
+                MessageAuthor::Orchestrator,
+            )
             .unwrap();
         // A rerun of the same approved action queues nothing.
         store
-            .queue_task_message("t1", &key, "The network is back.")
+            .queue_task_message(
+                "t1",
+                &key,
+                "The network is back.",
+                MessageAuthor::Orchestrator,
+            )
             .unwrap();
         assert!(store.task_message_queued(&key).unwrap());
     }
     let full = store
-        .queue_task_message("t1", "k-full", "Again.")
+        .queue_task_message("t1", "k-full", "Again.", MessageAuthor::Orchestrator)
         .unwrap_err();
     assert_eq!(WaitError::of(&full), Some(WaitError::QueueFull));
-    assert!(store.queue_task_message("t1", "k-blank", " ").is_err());
+    assert!(store
+        .queue_task_message("t1", "k-blank", " ", MessageAuthor::Orchestrator)
+        .is_err());
     assert!(!store.task_message_queued("k-full").unwrap());
     assert_eq!(
         store.tasks_ready_to_resume().unwrap(),
@@ -391,6 +408,54 @@ fn a_message_is_taken_only_by_a_waiting_task_and_only_up_to_the_queue() {
     assert!(replies
         .iter()
         .all(|reply| reply.kind == ReplyKind::Message && reply.question.is_none()));
+}
+
+#[test]
+fn the_users_messages_are_their_own_and_queue_apart_from_the_orchestrators() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    run_task(&store, "t1");
+    store
+        .enter_waiting("t1", "t1-a1", "t1-s1", WaitReason::Blocker, &[])
+        .unwrap();
+    for number in 0..MAX_QUEUED_MESSAGES {
+        store
+            .queue_task_message(
+                "t1",
+                &format!("k{number}"),
+                "The network is back.",
+                MessageAuthor::Orchestrator,
+            )
+            .unwrap();
+    }
+    // A full orchestrator queue leaves the user room, and the user's queue fills on its own.
+    for number in 0..MAX_QUEUED_MESSAGES {
+        store
+            .queue_task_message(
+                "t1",
+                &format!("u{number}"),
+                "Use the other branch.",
+                MessageAuthor::User,
+            )
+            .unwrap();
+    }
+    let full = store
+        .queue_task_message("t1", "u-full", "Again.", MessageAuthor::User)
+        .unwrap_err();
+    assert_eq!(WaitError::of(&full), Some(WaitError::QueueFull));
+
+    let replies = store.pending_replies("t1").unwrap();
+    let kinds: Vec<ReplyKind> = replies.iter().map(|reply| reply.kind).collect();
+    assert_eq!(
+        kinds,
+        [
+            ReplyKind::Message,
+            ReplyKind::Message,
+            ReplyKind::UserMessage,
+            ReplyKind::UserMessage,
+        ]
+    );
+    assert_eq!(replies[2].text, "Use the other branch.");
 }
 
 #[test]
@@ -575,6 +640,81 @@ fn migration_0065_applies_to_a_0064_style_database_and_keeps_every_row() {
         &path,
         "INSERT INTO decision_holds (id, subject_kind, subject_id, until_date, until_ms, set_by) \
          VALUES ('h2', 'proposal', 'pr1', '2026-11-18', 1795046399999, 'user')",
+    )
+    .unwrap();
+}
+
+#[test]
+fn migration_0073_applies_to_a_0072_database_and_keeps_every_row() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let legacy_dir = directory.path().join("legacy-migrations");
+    fs::create_dir(&legacy_dir).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap().path();
+        let name = entry.file_name().unwrap().to_str().unwrap().to_owned();
+        let version: u32 = name.split('_').next().unwrap().parse().unwrap();
+        if version < 73 {
+            fs::copy(&entry, legacy_dir.join(name)).unwrap();
+        }
+    }
+    runtime().block_on(async {
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .unwrap();
+        Migrator::new(legacy_dir.as_path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        connection.close().await.unwrap();
+    });
+    for statement in [
+        "INSERT INTO projects (id, root_path, settings) VALUES ('p1', '/work/p1', '{}')",
+        "INSERT INTO tasks (id, project_id, parent_id, state, contract_json, version) \
+         VALUES ('t1', 'p1', NULL, '\"Waiting\"', '{}', 1)",
+        "INSERT INTO attempts (task_id, id, attempt_number, state) \
+         VALUES ('t1', 't1-a1', 1, '\"Waiting\"')",
+        "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key) \
+         VALUES ('t1', 't1-a1', 'message', 'The network is back.', 'k0')",
+    ] {
+        try_sql(&path, statement).unwrap();
+    }
+    let dump = "SELECT json_array(id, task_id, kind, text, message_key) FROM task_messages \
+         ORDER BY id";
+    let before = scalars(&path, dump);
+    let user = "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key, author) \
+         VALUES ('t1', 't1-a1', 'message', 'Use the other branch.', 'u0', 'user')";
+    assert!(try_sql(
+        &path,
+        "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key, author) \
+         VALUES ('t1', 't1-a1', 'message', 'x', 'k1', 'robot')"
+    )
+    .is_err());
+
+    let _store = SqliteStore::new(&path).unwrap();
+    assert_eq!(scalars(&path, dump), before);
+    assert_eq!(
+        scalars(&path, "SELECT author FROM task_messages ORDER BY id"),
+        vec!["orchestrator".to_owned()]
+    );
+    try_sql(&path, user).unwrap();
+    // The author is fixed with the row. Setting the delivery alone is what the resume does.
+    assert!(try_sql(
+        &path,
+        "UPDATE task_messages SET delivered_session_id = 't1-s2', author = 'orchestrator' \
+         WHERE id = 2"
+    )
+    .is_err());
+    try_sql(
+        &path,
+        "UPDATE task_messages SET delivered_session_id = 't1-s2' WHERE id = 2",
     )
     .unwrap();
 }

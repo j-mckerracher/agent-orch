@@ -423,7 +423,9 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "projects.set_defaults" => Some(Capability::Projects),
         // DPES-673: draft normalization shares the capability of the submit it feeds.
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry"
-        | "tasks.archive" | "tasks.discard" | "intake.normalize" => Some(Capability::Tasks),
+        | "tasks.archive" | "tasks.discard" | "tasks.message" | "intake.normalize" => {
+            Some(Capability::Tasks)
+        }
         "agents.capabilities"
         | "agents.catalog"
         | "agents.validate_selection"

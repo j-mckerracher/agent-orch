@@ -155,7 +155,8 @@ whose coordinator is active, and `coordinator.report` from a coordinator (phase 
 pending cards), a `workstream.update` that archives, a `memory.set` of a preference (shared
 or a conversation's own: preferences are the user's standing instructions that later prompts
 follow, so the orchestrator may only propose them), discarding committed work
-(`tasks.discard`, a user-only method, never an action), and every settings, grant,
+(`tasks.discard`, a user-only method, never an action), the user's own message to a waiting
+task (`tasks.message`, a user-only method, never an action), and every settings, grant,
 credential, permission-level and approval write (user-only methods, never actions).
 
 **Containment.**

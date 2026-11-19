@@ -150,6 +150,8 @@ pub enum ReplyKind {
     Reconcile,
     /// A message from MCAO's orchestrator (`task.message`).
     Message,
+    /// The user's own message to a waiting worker (`tasks.message`), in their exact words.
+    UserMessage,
 }
 
 /// One reply delivered when a waiting worker resumes.
@@ -178,6 +180,7 @@ pub fn render_resume(replies: &[Reply]) -> Option<String> {
                 "Why it no longer needs an answer",
             ),
             ReplyKind::Message => ("## Message from MCAO's orchestrator", "Message"),
+            ReplyKind::UserMessage => ("## The user's message", "Message"),
         };
         prompt.push_str(&format!("\n{heading}\n"));
         if let Some(question) = &reply.question {
@@ -323,6 +326,11 @@ mod tests {
                 question: None,
                 text: "The test database is back.".into(),
             },
+            Reply {
+                kind: ReplyKind::UserMessage,
+                question: None,
+                text: "Use the scratch database.".into(),
+            },
         ];
         let prompt = render_resume(&replies).unwrap();
         assert!(prompt.starts_with(RESUME_MARKER));
@@ -332,7 +340,10 @@ mod tests {
         let message = prompt
             .find("## Message from MCAO's orchestrator\nMessage: The test database is back.")
             .unwrap();
-        assert!(answer < message);
+        let user = prompt
+            .find("## The user's message\nMessage: Use the scratch database.\n")
+            .unwrap();
+        assert!(answer < message && message < user);
         let huge = Reply {
             kind: ReplyKind::Message,
             question: None,
