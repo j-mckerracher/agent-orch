@@ -283,3 +283,111 @@ fn the_scope_sentence_is_set_by_the_user_and_shown_in_the_coordinator_view() {
     );
     assert_eq!(unknown.unwrap_err(), RpcError::NotFound);
 }
+
+/// Stores one block of a completed coordinator wake turn (no user words), as a finished reply
+/// to a routed-request wake does. Returns the proposal ids.
+fn coordinator_wake(api: &DaemonApi, code: &str, turn: &str, actions: &str) -> Vec<String> {
+    api.store
+        .begin_conversation_turn_as(
+            &project_target(),
+            turn,
+            "Work was routed to you.",
+            "test-runtime",
+            "1.0.0",
+            orchestrator_store::TurnTrigger::Wake,
+        )
+        .unwrap();
+    api.store
+        .record_conversation_turn_permission(
+            turn,
+            TurnPermission {
+                level: PermissionLevel::Restricted,
+                profile: "test-profile",
+            },
+        )
+        .unwrap();
+    let held = format!("```mcao-actions\n{{\"mcao_actions\": 1, \"actions\": [{actions}]}}\n```");
+    let block = parse_block(&held, BlockScope::Project(code)).unwrap();
+    api.store
+        .complete_conversation_turn(turn, TurnBlock::Accepted(block))
+        .unwrap()
+        .unwrap()
+}
+
+/// With the authority model (DPES-1108 integration), Global routes work on its own from the
+/// user's turn, but only to a project whose coordinator is active. The coordinator, woken with
+/// no user words, starts the task for the open request on its own: the request is the task's
+/// origin. It reports on its own too. A task with no request stays a card.
+#[test]
+fn routed_work_runs_on_its_own_and_the_request_is_the_origin_of_the_coordinators_task() {
+    let (_directory, api) = new_api();
+    let code = with_coordinator(&api);
+    const OTHER: &str = "/repo/other";
+    api.store
+        .register_project(&orchestrator_core::records::Project {
+            id: OTHER.into(),
+            root_path: OTHER.into(),
+            settings: json!({}),
+        })
+        .unwrap();
+    let ids = propose(
+        &api,
+        &ConversationTarget::Global,
+        BlockScope::Global,
+        "g1",
+        &format!(
+            r#"{{"kind": "coordinator.route", "project": "{code}", "work": "Fix the nightly export."}}, {{"kind": "coordinator.route", "project": "{}", "work": "No coordinator here."}}"#,
+            project_code(OTHER)
+        ),
+    );
+    assert_eq!(
+        api.run_autonomous("g1", &ids, crate::executor::unix_now_ms()),
+        1
+    );
+    let routed = proposal(&api, &ids[0]);
+    assert_eq!(routed.state, ProposalState::Executed, "{routed:?}");
+    assert_eq!(
+        api.store.proposal_approver(&ids[0]).unwrap().as_deref(),
+        Some(super::authority::AUTONOMOUS_ACTOR)
+    );
+    let request = routed
+        .result_ref
+        .unwrap()
+        .strip_prefix("request:")
+        .unwrap()
+        .to_owned();
+    // The project without an active coordinator keeps its route a card for the user.
+    assert_eq!(proposal(&api, &ids[1]).state, ProposalState::Pending);
+
+    let ids = coordinator_wake(
+        &api,
+        &code,
+        "c1",
+        &format!(
+            r#"{{"kind": "task.propose", "project": "{code}", "objective": "Fix the export.", "agent": "codex", "request": "{request}"}}, {{"kind": "task.propose", "project": "{code}", "objective": "Work of my own.", "agent": "codex"}}, {{"kind": "coordinator.report", "verb": "caveat", "request": "{request}", "note": "CI is slow today."}}"#
+        ),
+    );
+    assert_eq!(
+        api.run_autonomous("c1", &ids, crate::executor::unix_now_ms()),
+        2
+    );
+    let made = proposal(&api, &ids[0]);
+    assert_eq!(made.state, ProposalState::Executed, "{made:?}");
+    let task_id = made.result_ref.unwrap();
+    assert_eq!(
+        api.store.task_coordinator(&task_id).unwrap(),
+        Some((PROJECT.to_owned(), Some(request.clone())))
+    );
+    let origin = api.store.task_origin(&task_id).unwrap().unwrap();
+    assert_eq!(origin.kind, orchestrator_store::OriginKind::RoutedRequest);
+    assert_eq!(origin.origin_ref, request);
+    assert_eq!(origin.proposal_id, ids[0]);
+    // A wake turn never starts work of its own.
+    assert_eq!(proposal(&api, &ids[1]).state, ProposalState::Pending);
+    assert_eq!(proposal(&api, &ids[2]).state, ProposalState::Executed);
+    let reports = api.store.coordinator_reports(PROJECT, 10).unwrap();
+    assert!(
+        reports.iter().any(|report| report.verb == "caveat"),
+        "{reports:?}"
+    );
+}

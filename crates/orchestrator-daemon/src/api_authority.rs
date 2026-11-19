@@ -15,7 +15,8 @@
 //!   about existing work, no pull-request task, at most `MAX_AUTONOMOUS_PER_TURN` per turn;
 //! - the turn completed at a level that may carry actions;
 //! - a task's project is registered and not removed, and a named task exists in such a project;
-//!   work is routed only to such a project whose coordinator is active;
+//!   work is routed only to such a project whose coordinator is active, and one routed request
+//!   starts at most `MAX_AUTONOMOUS_TASKS_PER_REQUEST` tasks on its own;
 //! - the approve-time re-checks a user approval makes (envelope, promotion) pass;
 //! - a task the orchestrator starts cites its user turn as its origin, or, for a coordinator's
 //!   task, the open routed request it serves; written before the task is admitted
@@ -26,7 +27,9 @@
 //!
 //! [`ActionAuthority::Autonomous`]: orchestrator_core::orchestrator_action::ActionAuthority
 
-use orchestrator_core::orchestrator_action::{autonomy_check, Action};
+use orchestrator_core::orchestrator_action::{
+    autonomy_check, Action, MAX_AUTONOMOUS_TASKS_PER_REQUEST,
+};
 use orchestrator_store::{
     ActionOutcome, ActionProposal, ProposalState, TaskOverride, TurnState, TurnTrigger,
 };
@@ -166,6 +169,17 @@ impl DaemonApi {
     fn inside_bounds(&self, action: &Action) -> Result<bool, ()> {
         let project = match action {
             Action::TaskPropose(propose) => {
+                // A routed request starts at most so many tasks on its own; the store holds the
+                // same rule when the origin is written.
+                if let Some(request) = &propose.request {
+                    let started = self
+                        .store
+                        .routed_request_origin_count(request)
+                        .map_err(|_| ())?;
+                    if started >= MAX_AUTONOMOUS_TASKS_PER_REQUEST {
+                        return Ok(false);
+                    }
+                }
                 match project_id_for_code(&self.store, &propose.project) {
                     Some(project) => project,
                     None => return Ok(false),

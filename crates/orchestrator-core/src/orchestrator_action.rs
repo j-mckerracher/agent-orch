@@ -51,6 +51,11 @@ pub const TASK_AGENTS: [&str; 2] = ["codex", "claude-code"];
 pub const NEVER_GRANTABLE: [&str; 3] = ["project.remove", "task.cancel", "task.revise"];
 /// Most actions one turn may run on its own. The rest of its block stays cards for the user.
 pub const MAX_AUTONOMOUS_PER_TURN: usize = 5;
+/// Most tasks a coordinator may start on its own for one routed request (DPES-1108
+/// integration). A request stays open until it is answered, and every coordinator wake may
+/// propose tasks for it, so without this a wake loop could keep making work. Past it, a task for
+/// the request is a card for the user.
+pub const MAX_AUTONOMOUS_TASKS_PER_REQUEST: usize = 5;
 
 /// Who may make an action happen (DPES-1108 phase 5, plan 5.5).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

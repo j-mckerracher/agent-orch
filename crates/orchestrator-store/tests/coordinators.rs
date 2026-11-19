@@ -10,6 +10,7 @@ use orchestrator_core::charter::ReportVerb;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
+use orchestrator_core::orchestrator_action::MAX_AUTONOMOUS_TASKS_PER_REQUEST;
 use orchestrator_core::task::{Attempt, AttemptState, TaskEvent};
 use orchestrator_core::Project;
 use orchestrator_store::{
@@ -444,6 +445,27 @@ fn a_routed_request_is_the_origin_only_of_a_task_that_serves_it_while_it_is_open
         Some(AuthorityError::NotOpenRequest)
     );
     assert_eq!(store.task_origin("t3").unwrap(), None);
+
+    // One request starts at most so many tasks on its own; the next one is refused.
+    route(&store, &path, "r-3", "pr-g3", 2);
+    for n in 0..=MAX_AUTONOMOUS_TASKS_PER_REQUEST {
+        let task = format!("t-cap-{n}");
+        make_task(&store, &task, "p");
+        store.set_task_coordinator(&task, "p", Some("r-3")).unwrap();
+        let recorded = store.record_task_routed_origin(&task, "r-3", &format!("pr-cap-{n}"));
+        if n < MAX_AUTONOMOUS_TASKS_PER_REQUEST {
+            recorded.unwrap();
+        } else {
+            assert_eq!(
+                AuthorityError::of(&recorded.unwrap_err()),
+                Some(AuthorityError::RequestTaskCap)
+            );
+        }
+    }
+    assert_eq!(
+        store.routed_request_origin_count("r-3").unwrap(),
+        MAX_AUTONOMOUS_TASKS_PER_REQUEST
+    );
 }
 
 #[test]

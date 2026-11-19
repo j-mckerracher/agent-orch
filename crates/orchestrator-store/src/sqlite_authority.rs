@@ -17,6 +17,7 @@
 use std::fmt;
 use std::io;
 
+use orchestrator_core::orchestrator_action::MAX_AUTONOMOUS_TASKS_PER_REQUEST;
 use orchestrator_core::task::TaskState;
 use sqlx::sqlite::SqliteRow;
 use sqlx::{Row, SqliteConnection};
@@ -93,6 +94,9 @@ pub enum AuthorityError {
     NotUserTurn,
     /// The routed request is not the one the task serves, or it is answered already.
     NotOpenRequest,
+    /// The routed request is already the origin of
+    /// [`MAX_AUTONOMOUS_TASKS_PER_REQUEST`] tasks.
+    RequestTaskCap,
     /// The task already has a different origin or override for that field.
     AlreadyRecorded,
     /// An override field, value or words outside the table's rules.
@@ -104,6 +108,7 @@ impl fmt::Display for AuthorityError {
         formatter.write_str(match self {
             Self::NotUserTurn => "only a user turn that read no agent report can be an origin",
             Self::NotOpenRequest => "only the open routed request a task serves can be its origin",
+            Self::RequestTaskCap => "the routed request already started its most tasks",
             Self::AlreadyRecorded => "the task already has a different record",
             Self::InvalidOverride => "the override is not valid",
         })
@@ -175,7 +180,8 @@ impl SqliteStore {
     /// request `request_id`, by proposal `proposal_id`. Refused with
     /// [`AuthorityError::NotOpenRequest`] unless the task's own `routed_request_id` is that
     /// request (written by `set_task_coordinator`, which checks the project) and the request has
-    /// no answer yet. The same record again returns it.
+    /// no answer yet, and with [`AuthorityError::RequestTaskCap`] once the request is the origin
+    /// of [`MAX_AUTONOMOUS_TASKS_PER_REQUEST`] other tasks. The same record again returns it.
     pub fn record_task_routed_origin(
         &self,
         task_id: &str,
@@ -202,6 +208,10 @@ impl SqliteStore {
             if open.is_none() {
                 return Err(AuthorityError::NotOpenRequest.into());
             }
+            let others = routed_origins(&mut transaction, &request_id, &task_id).await?;
+            if others >= MAX_AUTONOMOUS_TASKS_PER_REQUEST {
+                return Err(AuthorityError::RequestTaskCap.into());
+            }
             let saved = write_origin(
                 &mut transaction,
                 &task_id,
@@ -212,6 +222,15 @@ impl SqliteStore {
             .await?;
             transaction.commit().await?;
             Ok(saved)
+        })
+    }
+
+    /// How many tasks the routed request `request_id` is the origin of.
+    pub fn routed_request_origin_count(&self, request_id: &str) -> Result<usize, StoreError> {
+        let request_id = request_id.to_owned();
+        self.call(move |pool| async move {
+            let mut connection = pool.acquire().await?;
+            routed_origins(&mut connection, &request_id, "").await
         })
     }
 
@@ -369,6 +388,23 @@ fn finished(state: TaskState) -> bool {
             | TaskState::VerificationFailed
             | TaskState::Cancelled
     )
+}
+
+/// How many tasks other than `task_id` cite the routed request `request_id` as their origin.
+async fn routed_origins(
+    connection: &mut SqliteConnection,
+    request_id: &str,
+    task_id: &str,
+) -> Result<usize, StoreError> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM task_origins \
+         WHERE origin_kind = 'routed_request' AND origin_ref = ? AND task_id <> ?",
+    )
+    .bind(request_id)
+    .bind(task_id)
+    .fetch_one(connection)
+    .await?;
+    Ok(usize::try_from(count).unwrap_or(usize::MAX))
 }
 
 async fn require_task(connection: &mut SqliteConnection, task_id: &str) -> Result<(), StoreError> {
