@@ -1,6 +1,6 @@
 # Firstmate capability map (DPES-1105)
 
-Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `89bfc8b2d`.
+Companion to [orchestrator-actions.md](orchestrator-actions.md). It lists every firstmate capability found and maps each one to MCAO as of `motif-mcao/main` at `347c7ab`. Refreshed from `89bfc8b2d`; rows D16, D17, F8, W1 and I6 are new. The firstmate behavior plan is [firstmate-behavior-plan.md](firstmate-behavior-plan.md).
 
 ## Source and method
 
@@ -21,37 +21,39 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | Status | Count |
 | --- | --- |
-| HAVE | 16 |
-| PARTIAL | 20 |
-| GAP | 32 |
-| Total | 68 |
+| HAVE | 48 |
+| PARTIAL | 17 |
+| GAP | 8 |
+| Total | 73 |
 
 ## Dispatch and supervision
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| D1 | One liaison: the user talks to one agent | PARTIAL | The Global conversation target exists (`conversations.send`, `ConversationTarget::Global`). It has no app context and no actions. Phase 1 adds both. |
-| D2 | The liaison dispatches a worker per request | PARTIAL | The engine has it (`tasks.submit`, `executor.rs`). The chat cannot reach it. Phase 2 adds the `task.propose` action. |
+| D1 | One liaison: the user talks to one agent | HAVE | Global conversation has app context and actions: `api_conversation_snapshot.rs` builds a 6 KiB snapshot of projects, workstreams, open tasks and pending approvals, and a reply may end in an `mcao-actions` block that becomes a pending row in `action_proposals`. |
+| D2 | The liaison dispatches a worker per request | HAVE | `task.propose` action (`orchestrator_action.rs`, executed in `api_actions.rs`). It names the project by `p-xxxxxxxx` code; the user approves it through `actions.resolve`. |
 | D3 | An explicit contract before any work starts | HAVE | `TaskContract` is validated and immutable once admitted (`orchestrator-core/src/contract.rs`). |
-| D4 | A clean isolated worktree per task | HAVE | `orchestrator-git/src/worktree.rs`. Tasks never run in the primary checkout. |
+| D4 | A clean isolated worktree per task | HAVE | Treehouse slot pool: `orchestrator-git/src/treehouse.rs` and `worktree.rs` (`create_task_worktree`, `release_task_worktree`). Tasks never run in the primary checkout. |
 | D5 | Dispatch profiles: which agent, model and effort | HAVE | Contract `agent` and `model_selection`, `agents.validate_selection`, `agents.catalog`, assignment profile policy v1. |
-| D6 | Capacity bounds per project and host | PARTIAL | `SchedulerLimits` (worker counts only), `queue.snapshot`, `host.metrics`. Missing: a gate on machine load. Phase 2 adds it (decision N12): no new worker while CPU, memory or disk is at its threshold. |
-| D7 | Event-driven wake of the liaison when something needs the user | GAP | Phase 3: the daemon is the watcher and starts an orchestrator turn. See "Wake-up loop" in the main document. |
-| D8 | Turn-end guard: no turn ends blind while work runs | GAP | Phase 3: obligations live in the store (open proposals, pending approvals, unacknowledged wake records), not in the model's memory. The daemon re-surfaces them. A per-turn CLI cannot "forget" a record. |
-| D9 | Durable wake queue, acknowledged only after handling | GAP | Phase 3: `wake_records` table. A wake is closed by the turn that handled it, or by the user. |
-| D10 | Stuck and wedged worker detection | GAP | Phase 3: a daemon stall check once per effective supervision interval (decisions N10, N11): no session event and no worktree change since the last check, or attempt over its wall-time bound. The interval halves with each unit of work, down to a user-set minimum. Deterministic, no model call. |
-| D11 | Steer a running worker with text | GAP | Phase 4: headless `exec` and `-p` runs take no input mid-run, and contracts are immutable. Steering becomes a `task.revise` proposal: cancel plus a new contract with the added intent. Cost: in-flight progress is lost unless the worktree is reused (unverified). |
-| D12 | Interrupt, exit and relaunch a worker | HAVE | `tasks.cancel`, `tasks.retry`. Phase 2 lets the orchestrator propose them. |
+| D6 | Capacity bounds per project and host | HAVE | Machine load gate: `orchestrator-core/src/load_gate.rs` (CPU, memory and disk windows, reopen margin), fed by `api_load.rs`; the executor scheduler pass asks it for a start gate. `SchedulerLimits`, `queue.snapshot` and `host.metrics` remain. |
+| D7 | Event-driven wake of the liaison when something needs the user | HAVE | `WakeService` (`orchestrator-daemon/src/wake.rs`): a 2 s tick classifies durable events (`wake_events.rs`) into `wake_records` and starts a Restricted wake turn only when `needs_model` is set. Kinds are in `WakeKind` (`orchestrator-store/src/sqlite_wake.rs`). |
+| D8 | Turn-end guard: no turn ends blind while work runs | HAVE | Obligations live in the store, not model memory: the service arms a `work_check` per scope while work exists and re-raises `proposal_waiting` and `delivery_waiting` from `pending_wake_records`. A notice is committed before any turn starts. |
+| D9 | Durable wake queue, acknowledged only after handling | HAVE | `wake_records` states noticed, pending, running, handled, skipped, failed; a record closes only after its turn settles; `monitoring.ack` marks it seen. Dedupe and debounce: `orchestrator-core/src/supervision.rs`. |
+| D10 | Stuck and wedged worker detection | HAVE | `supervision::stalled`: over wall time (default 120 min) or no session event for `max(interval, 5 min)`. Deterministic, no model call, yields a `task_stalled` notice. There is no worktree-change signal. |
+| D11 | Steer a running worker with text | PARTIAL | `task.revise` (never grantable) cancels the task and creates a new one with the added intent (max 2 KiB), linked in `task_lineage`. Still no steering of a live process and no `task.message`. Plan: `firstmate-behavior-plan.md` phase 4. |
+| D12 | Interrupt, exit and relaunch a worker | HAVE | `tasks.cancel`, `tasks.retry` and the `task.cancel`, `task.retry` proposals. |
 | D13 | Busy state is semantic, per adapter | HAVE | Adapter parsers (`codex_parser.rs`, `copilot_parser.rs`, Claude stream JSON) feed `sessions.events`. |
 | D15 | Watch live worker output | HAVE | Agents and Sessions view over `sessions.list`, `sessions.events` with replay. |
+| D16 | Wake rate and cost limits | HAVE | `supervision.rs`: 6 per hour and 40 per day per scope, optional daily token cap, 60 s debounce, batch cap 20, user-turn precedence; `agent_failing` pause after repeated failures. |
+| D17 | Dispatch defaults and work classes | HAVE | `orchestrator_settings.dispatch_defaults`, `settings.workClasses.get` and `.set` (`api_work_classes.rs`), applied at submit time. |
 
 ## Task shapes
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | T1 | Ship task: a project change through a delivery path | HAVE | `TaskKind::Implement` with `DeliveryPolicy::LocalReview` or `PullRequest`. |
-| T2 | Scout task: an investigation report, never a PR | PARTIAL | `TaskKind::Investigate`, `DeliveryPolicy::ReportOnly`, `ActionKind::ReportPublish` exist. Missing: a report the orchestrator reads and relays as findings. Phase 4. |
-| T3 | Promote a scout to a ship | GAP | Phase 4: a `task.propose` whose card cites the report. The report is evidence, not authorization. |
+| T2 | Scout task: an investigation report, never a PR | HAVE | `task_reports`: the executor stores a redacted scout report; `reports.list`, `reports.get`, `reports.relay` (`api_reports.rs`). A `scout_report_ready` wake runs a Restricted global turn that carries the report as delimited data. |
+| T3 | Promote a scout to a ship | HAVE | `task.propose` with `promote_from`. `promotion_denial` (`api_actions.rs`) requires a Succeeded Investigate task in the same project whose report was relayed. Lineage row `promoted_from`. |
 | T4 | Decision inventory before a scout is cleaned up | GAP | Phase 4: decisions found in a report become held proposals. Cleanup waits until each is answered or held. |
 
 ## Project and mode management
@@ -59,13 +61,13 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | P1 | Add or register a project | HAVE | `projects.register`. Phase 4 adds a `project.register` proposal. |
-| P2 | Remove a project | GAP | Phase 4: `projects.remove` method and proposal. Refuses while tasks are live. |
-| P3 | Per-project standing delivery mode (no-mistakes, direct-PR, local-only) | PARTIAL | Delivery and verification are per task. Missing: a per-project default the orchestrator must use unless the user says otherwise. Phase 4. |
-| P4 | Validation rigor per mode | PARTIAL | `VerificationPolicy`, `orchestrator-git/src/verification.rs`, bounded repairs (`max_repairs`). Missing: a review-and-fix pipeline equal to no-mistakes. Phase 4 maps the modes to policies. |
-| P5 | `+yolo` merge autonomy per project | GAP | Phase 5: a standing approval for the merge kind, scoped to one project. Green checks only. |
-| P6 | Ship-branch prefix | PARTIAL | `orchestrator-git/src/branch_prefix.rs`, one prefix per machine (`moa/` default). Missing: per-project prefix. Phase 4. |
-| P7 | Base-branch override per task | GAP | Phase 4: an optional contract field. Additive, so older contracts keep their meaning. |
-| P8 | Resolve the project for each request | GAP | Phase 1: the snapshot lists projects by name. Phase 2: a task proposal names one project, and the daemon refuses an unknown id. |
+| P2 | Remove a project | HAVE | `project.remove` proposal (never grantable) soft-archives via `projects.archived_at`; `ArchiveError` refuses `ActiveTasks` and `PendingApprovals`. No standalone `projects.remove` method. |
+| P3 | Per-project standing delivery mode (no-mistakes, direct-PR, local-only) | HAVE | `project_defaults`: mode, base_branch, branch_prefix, checks, merge_method (`orchestrator-core/src/project_mode.rs`; `projects.get_defaults`, `projects.set_defaults`). A PR mode from chat also needs the `chat_pr_delivery` setting. |
+| P4 | Validation rigor per mode | PARTIAL | `ProjectDefaults::verification()` maps the mode to a `VerificationPolicy` with the project checks (`orchestrator-git/src/verification.rs`, bounded repairs). No review-and-fix pipeline equal to no-mistakes. |
+| P5 | `+yolo` merge autonomy per project | HAVE | A merge grant is a `standing_grants` row: user-created only, one project, `confirm_unattended_merge`, at most 20 uses and 24 h, head-branch prefix, covers only `delivery.merge`. `orchestrator-core/src/landing.rs` requires green required checks and a head SHA equal to the bound commit. |
+| P6 | Ship-branch prefix | HAVE | `project_defaults.branch_prefix` overrides the machine prefix in `orchestrator-git/src/branch_prefix.rs`. |
+| P7 | Base-branch override per task | PARTIAL | Per-project `project_defaults.base_branch`; `worktree.rs` cuts the slot from it. No per-task contract field. |
+| P8 | Resolve the project for each request | HAVE | The snapshot lists projects as `<folder> p-xxxxxxxx`; `resolve_project` (`api_actions.rs`) refuses unknown and ambiguous codes. |
 | P9 | Strict project boundary: the liaison never writes to a project | HAVE | Chat runs in an empty per-turn directory, never a repository (`api_conversation_agent.rs`). Actions only reach the daemon as proposals. |
 | P10 | Forge variants (Gerrit, GitLab, Forgejo) | GAP | Phase 6. Only GitHub pull requests exist (`delivery.request`). |
 
@@ -73,32 +75,32 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| H1 | Escalate only real decisions, in outcome words | GAP | Phase 1: preamble rules. Phase 3: the daemon classifies events in code and starts a model turn only when interpretation is needed. |
-| H2 | A decision is a task held for the user | PARTIAL | Delivery approvals (`approvals.list`, `approvals.resolve`, Review and Decisions view). Phase 1 and 2: action proposals. Phase 4: held decisions with an until date. |
+| H1 | Escalate only real decisions, in outcome words | HAVE | `wake_events.rs::classify` is pure and runs in code; `needs_model` is false for `delivery_waiting`, so the user is notified without a model turn. |
+| H2 | A decision is a task held for the user | PARTIAL | Approvals (`approvals.*`), action cards (`actions.*`) and `decision_holds` (`decision.hold`, `holds.*`; hides an item until a UTC date, does not block scheduling). Missing: user-question records, verbatim answer record, worker `needs-decision`. Plan phase 3. |
 | H3 | Never merge without the user's explicit word | HAVE | Approval integrity: the approval binds kind, parameter digest, candidate commit and task, and agents cannot approve (`orchestrator-core/src/approval.rs`). |
-| H4 | Never tear down unlanded work | PARTIAL | Delivery writes a review ref and never merges (`delivery.rs`). The worktree cleanup rule was not verified. Phase 4 states it as a test. |
-| H5 | Policy for validation findings that ask the user | PARTIAL | `review.request_changes`, `review.evidence`. Missing: routing a finding to the orchestrator for a decision card. Phase 4. |
-| H6 | Report outcomes faithfully | PARTIAL | The UI shows store state. Phase 1: the preamble forbids claiming an action before the daemon confirms it. |
-| H7 | Escalate a needed credential or login | PARTIAL | Copilot sign-in check, catalog states, `runtime_unavailable` codes. Phase 3 surfaces them as wake events. |
-| H8 | A current user instruction outranks standing rules | GAP | Phase 5: a standing approval never overrides a per-action reject, and revoke takes effect at once. |
+| H4 | Never tear down unlanded work | PARTIAL | `orchestrator_git::delivery::check_worktree_safe_to_delete` guards the CLI `cleanup`, and delivery never merges. The daemon returns a task slot on archive or merge (`slot_returned`, `api.rs`) with no check for finished-but-unlanded local work. Plan phase 5. |
+| H5 | Policy for validation findings that ask the user | PARTIAL | A `candidate_ready` wake runs a turn that reads the attempt summary and changed-file count. Review findings (`review.request_changes`) are not routed to the orchestrator as decision cards. |
+| H6 | Report outcomes faithfully | HAVE | The preamble forbids claiming an action before the daemon confirms it (`api_conversation_agent.rs`); the UI shows only store state. |
+| H7 | Escalate a needed credential or login | HAVE | `sign_in_needed` wake (`wake_events.rs`, `orchestrator-agents/src/copilot_sign_in.rs`). |
+| H8 | A current user instruction outranks standing rules | HAVE | `grant_matcher.rs` approves only pending Restricted-turn proposals created after the grant; revoke is checked on every use; `project.remove`, `task.cancel`, `task.revise` are never grantable. |
 
 ## Away and quiet modes
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| A1 | Away mode with a return brief | GAP | Phase 5: away is a named set of standing approvals plus quiet wakes plus a brief on return. |
-| A2 | Quiet mode while present | GAP | Phase 3: monitoring setting `quiet`. Wake turns still run, replies collapse, no notification. |
-| A3 | Away mode never widens authority | GAP | Phase 5 rule: away applies only the grants the user made. It adds none. |
-| A4 | Alarm when an escalation is stuck undelivered | GAP | Phase 5: an OS notification when a decision waits past a threshold while away. |
+| A1 | Away mode with a return brief | HAVE | `MonitoringMode::Away` (user-only `monitoring.set`); `monitoring.brief` and `monitoring.brief_ack` build a count-only return brief (`api_brief.rs`, `return_brief.rs`; UI `ReturnBrief.tsx`). |
+| A2 | Quiet mode while present | HAVE | `MonitoringMode::Quiet`: wake turns still run, `notifies()` is false (`supervision.rs`, `api_monitoring.rs`). |
+| A3 | Away mode never widens authority | HAVE | Away is quiet plus a brief window and adds no authority; results state `authority: none`. Grants are separate user-made `standing_grants`. |
+| A4 | Alarm when an escalation is stuck undelivered | PARTIAL | OS reminders for unanswered delivery approvals after 4 h, then every 4 h (`src-tauri/src/notifications.rs`, `DecisionNotifications.tsx`). Approvals only, not action proposals, and not tied to away mode. |
 
 ## Status and reporting
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| S1 | Status digest (bearings) | PARTIAL | Overview screen, `queue.snapshot`, `tasks.list`. Phase 1: the snapshot lets chat answer "what is running". |
-| S2 | Recap since last message and walk open decisions (ahoy) | GAP | Phase 3: a catch-up turn on return, ordered by impact, one decision at a time. |
+| S1 | Status digest (bearings) | HAVE | The chat snapshot answers "what is running", plus the Overview screen and `queue.snapshot`. |
+| S2 | Recap since last message and walk open decisions (ahoy) | PARTIAL | Count-only return brief (`monitoring.brief`). No model catch-up turn ordered by impact. |
 | S3 | Activity ledger and record exports | PARTIAL | `mcao.audit-envelope.v1` projects session lifecycle. Action events are not projected yet. |
-| S4 | Usage visibility and warnings | PARTIAL | `usage.summary`, daily token warnings, local tool usage. Chat turns record no usage receipts (no `usage_receipts` write outside `executor.rs`). Phase 3 prerequisite. |
+| S4 | Usage visibility and warnings | PARTIAL | Chat turns record `conversation_usage_receipts`; they feed the wake token cap and grant budgets but `usage.summary` does not show them. |
 | S5 | Capture a web page for visual review (lavish-url) | GAP | Phase 6 or later. |
 
 ## Recovery and restart
@@ -107,38 +109,41 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | --- | --- | --- | --- |
 | R1 | Restart-proof state on disk | HAVE | SQLite store with migrations, idempotency records. |
 | R2 | Reconcile live work at start | HAVE | `orchestrator-runtime/src/reconcile.rs`, `api_conversation_orphans.rs`, delivery reconcile. |
-| R3 | A start digest for the user | GAP | Phase 3: the first wake after daemon start summarizes what changed while it was down. |
-| R4 | Stuck worker recovery playbook | GAP | Phase 3 detects. Phase 4: the orchestrator proposes cancel, retry or revise. |
+| R3 | A start digest for the user | HAVE | `daemon_start` wake at startup; start and work-check records are handled together as one catch-up turn. |
+| R4 | Stuck worker recovery playbook | HAVE | `task_failed` and `task_stalled` wakes; the orchestrator proposes `task.cancel`, `task.retry` or `task.revise`, and the user approves each. |
 | R5 | Detect missing or outdated tools | PARTIAL | `agents.catalog`, version pins, `orchestrator-diagnostics`. Installing a tool is out of scope. |
 
 ## Fleet scaling and secondmates
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| F1 | Persistent secondmates with a written scope | PARTIAL | A workstream has a summary, objectives, gates and its own conversation target. Missing: it cannot act. Phase 2 gives workstream conversations the same proposals inside their scope. |
-| F2 | Route work to the secondmate whose scope fits | GAP | Phase 6: the Global orchestrator proposes a task linked to a workstream (`workstreams.link_task`). Phase 2 already allows an explicit link. |
+| F1 | Persistent secondmates with a written scope | PARTIAL | Workstream conversations carry proposals inside their own workstream (`BlockScope::Workstream`). Project coordinator conversations cannot act: their action blocks are stripped (`TurnBlock::Stripped`). Plan phase 7. |
+| F2 | Route work to the secondmate whose scope fits | HAVE | Global `task.propose` with `workstream_id` and `objective_id`, and `workstream.link_task`. Routing is the model's judgment, not a code router. |
 | F3 | A secondmate reports up through a parent channel | GAP | Phase 3: the daemon posts a summary entry to Global when a workstream gate or task changes state. |
 | F4 | Remote secondmates on an SSH host | GAP | Phase 6, design only. The IPC is a local socket with a token handshake. A remote daemon needs an authenticated network transport and a new threat model. |
 | F5 | Quota-aware dispatch across accounts and CLIs | PARTIAL | Assignment profile policy v1, `usage.localTools`, catalog sign-in states. Missing: selection that reads remaining quota. Not planned: removed from phase 6 by the user (DPES-1105). |
 | F6 | Refresh local clones after a merge (fleet sync) | GAP | Phase 4: fast-forward the registered project after a landed merge, refusing on local changes. |
-| F7 | Flat command structure, depth capped | HAVE | Global, then workstream, then task. Phase 1 rule: a workstream conversation cannot create workstreams. |
+| F7 | Flat command structure, depth capped | HAVE | Global, then workstream, then task; coordinator conversations are read-only. |
+| F8 | Per-project coordinator conversation | PARTIAL | `ConversationTarget::Project`, `coordinator.send_message`, `coordinator.propose`; opt-in. It can talk and propose a decomposition but not act, and has no wake scope reporting to the parent. |
 
 ## Backlog
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
 | B1 | Durable work queue with dependencies | HAVE | Task states `Created` and `Queued`, `task_dependencies`, `queue.snapshot`. |
-| B2 | Holds with an until date | GAP | Phase 4: a held proposal with an optional date, shown in Review and Decisions. |
+| B2 | Holds with an until date | HAVE | `decision_holds`: `decision.hold` action, `holds.set`, `holds.release`, `holds.list`; `until` is a `YYYY-MM-DD` date. |
 | B3 | Re-evaluate the queue after each completion | HAVE | The scheduler admits work as dependencies and capacity clear. |
-| B4 | File work for later without dispatching | PARTIAL | Objectives and gates (`workstreams.add_objective`). Phase 1 lets chat propose them. |
+| B4 | File work for later without dispatching | HAVE | Chat can propose `workstream.create`, `objective.add` and `objective.revise`; nothing is dispatched without a task. |
+| W1 | Order initiatives | PARTIAL | `workstreams.prioritize` and `workstreams.priority`; advisory, the scheduler does not read it. |
 
 ## Integrations
 
 | ID | Firstmate capability | Status | MCAO mechanism |
 | --- | --- | --- | --- |
-| I2 | Watch pull request checks and merge | GAP | Phase 4: a PR state poller and a merge action bound to the head commit. |
+| I2 | Watch pull request checks and merge | HAVE | `pull_requests` and `pull_request_repos`; the landing thread (`orchestrator-daemon/src/landing.rs`) polls PR state and required checks; `delivery.merge` is bound to the head commit. The user opens the PR by hand. |
 | I3 | External process-event sources | GAP | Phase 6: a daemon-owned source with a fixed adapter contract. |
 | I5 | Many harness adapters | HAVE | Codex, Claude Code, GitHub Copilot and Pi adapters (`orchestrator-agents`). |
+| I6 | Read-only tool server for a chat turn | PARTIAL | `mcp_server.rs`, off by default: three read tools over ids, Restricted non-wake turns only. Not an external event source. |
 
 ## Self-maintenance
 
@@ -146,8 +151,8 @@ Phases are the ones in the main document: 1 context and workstream proposals, 2 
 | --- | --- | --- | --- |
 | M1 | Self-update the running instance | PARTIAL | Release pipeline (`release.yml`, `docs/RELEASE.md`). Missing: an in-app "update available" prompt. Not from chat. |
 | M2 | Patch its own code and publish upstream only with consent | GAP | Decision N7: not now. The orchestrator gets no self-patching or self-publishing support. |
-| M3 | Curate durable operational memory (stow) | GAP | Phase 5: user-visible orchestrator notes the snapshot includes, editable and deletable. |
-| M4 | Unattended push to a protected branch | GAP | Phase 5: a per-project setting the user turns on, built as a merge-kind standing approval (decision N8). Off until set. Green required checks only. |
+| M3 | Curate durable operational memory (stow) | HAVE | `orchestrator_notes` (`notes.list`, `notes.set`): at most 10 notes of 200 bytes per scope, shown in the snapshot as data. UI `NotesSection.tsx`. |
+| M4 | Unattended push to a protected branch | HAVE | A merge grant (see P5) is the opt-in unattended merge; none exists until the user creates one. |
 
 ## Firstmate rules and what they protect
 
