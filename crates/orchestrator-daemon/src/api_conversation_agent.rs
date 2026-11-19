@@ -46,7 +46,9 @@ use orchestrator_agents::{
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_ipc::RpcError;
 use orchestrator_runtime::command_line::windows_command_line_units;
-use orchestrator_store::{ConversationTarget, SqliteStore, TurnPermission, WorkstreamStoreError};
+use orchestrator_store::{
+    ConversationTarget, SqliteStore, TurnPermission, WakeKind, WorkstreamStoreError,
+};
 use uuid::Uuid;
 
 use super::conversation_orphans as orphans;
@@ -1364,6 +1366,61 @@ propose actions with the action block.\n";
 const WAKE_QUIET_OFFER: &str = "If nothing changed and nothing needs the user, reply with \
 exactly MCAO_QUIET and nothing else.\n";
 
+/// One procedure the daemon hands a wake turn when a record of the matching kind is in its batch.
+/// Chat turns are one-shot runs in an empty directory, so the agent cannot load a procedure
+/// itself: the daemon picks them from the record kinds, never the model (DPES-1105).
+const MAX_PROCEDURE_BYTES: usize = 600;
+
+const PROCEDURE_FAILURE: &str = "Procedure, a failed or stalled task: say which task and why in \
+one sentence. Propose task.retry only when the cause is clear and a retry can change it. If the \
+user must act, such as signing in or freeing space, say that first.";
+
+const PROCEDURE_RESULT: &str = "Procedure, finished work: say what finished and what it found or \
+changed, then the one decision the user has, such as review or approve. Do not repeat the report \
+text; summarize it. Propose no merge: delivery.merge needs the user's word.";
+
+const PROCEDURE_DECISION: &str = "Procedure, a decision waiting: name the concrete decision and \
+what each answer leads to. Do not approve or decide for the user.";
+
+const _: () = assert!(
+    PROCEDURE_FAILURE.len() <= MAX_PROCEDURE_BYTES
+        && PROCEDURE_RESULT.len() <= MAX_PROCEDURE_BYTES
+        && PROCEDURE_DECISION.len() <= MAX_PROCEDURE_BYTES
+);
+
+/// The procedures for a batch, in a fixed order, each once.
+fn procedures(kinds: &[WakeKind]) -> Vec<&'static str> {
+    let mut chosen = Vec::new();
+    for (procedure, hit) in [
+        (
+            PROCEDURE_FAILURE,
+            kinds.iter().any(|k| {
+                matches!(
+                    k,
+                    WakeKind::TaskFailed | WakeKind::TaskStalled | WakeKind::SignInNeeded
+                )
+            }),
+        ),
+        (
+            PROCEDURE_RESULT,
+            kinds
+                .iter()
+                .any(|k| matches!(k, WakeKind::CandidateReady | WakeKind::ScoutReportReady)),
+        ),
+        (
+            PROCEDURE_DECISION,
+            kinds
+                .iter()
+                .any(|k| matches!(k, WakeKind::DeliveryWaiting | WakeKind::ProposalWaiting)),
+        ),
+    ] {
+        if hit {
+            chosen.push(procedure);
+        }
+    }
+    chosen
+}
+
 fn one_line(text: &str) -> String {
     sanitize(text).replace(['\n', '\t'], " ")
 }
@@ -1421,6 +1478,10 @@ fn prompt_content(request: &TurnRequest, history: &[HistoryTurn]) -> String {
         content.push_str(WAKE_BLOCK);
         if brief.may_be_quiet {
             content.push_str(WAKE_QUIET_OFFER);
+        }
+        for procedure in procedures(&brief.kinds) {
+            content.push_str(procedure);
+            content.push('\n');
         }
     }
     content.push('\n');
@@ -1678,6 +1739,7 @@ impl WorkstreamDirectory for StoreWorkstreams {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::conversation_runtime::WakeBrief;
     use orchestrator_store::{DispatchDefaults, SettingsPatch};
 
     fn request(text: &str, history: Vec<HistoryTurn>) -> TurnRequest {
@@ -1696,6 +1758,28 @@ mod tests {
             wake: None,
             mcp: None,
         }
+    }
+
+    #[test]
+    fn a_wake_turn_gets_only_the_procedures_its_record_kinds_select() {
+        let prompt = |kinds: Vec<WakeKind>| {
+            let mut req = request("x", vec![]);
+            req.wake = Some(WakeBrief {
+                events: vec!["notice".into()],
+                kinds,
+                may_be_quiet: false,
+            });
+            build_prompt(&req).content
+        };
+        let failed = prompt(vec![WakeKind::TaskFailed, WakeKind::TaskStalled]);
+        assert_eq!(failed.matches(PROCEDURE_FAILURE).count(), 1);
+        assert!(!failed.contains(PROCEDURE_RESULT) && !failed.contains(PROCEDURE_DECISION));
+        let mixed = prompt(vec![WakeKind::CandidateReady, WakeKind::ProposalWaiting]);
+        assert!(mixed.contains(PROCEDURE_RESULT) && mixed.contains(PROCEDURE_DECISION));
+        assert!(!mixed.contains(PROCEDURE_FAILURE));
+        let quiet = prompt(vec![WakeKind::WorkCheck, WakeKind::DaemonStart]);
+        assert!(!quiet.contains("Procedure,"));
+        assert!(!build_prompt(&request("x", vec![])).content.contains("Procedure,"));
     }
 
     fn mcp_view(dir: &Path) -> Arc<crate::mcp_server::McpView> {

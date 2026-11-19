@@ -943,6 +943,7 @@ impl WakeService {
             }
             let brief = WakeBrief {
                 events: claimed.iter().map(|record| record.notice.clone()).collect(),
+                kinds: claimed.iter().map(|record| record.kind).collect(),
                 may_be_quiet: claimed.iter().all(|record| {
                     matches!(record.kind, WakeKind::WorkCheck | WakeKind::DaemonStart)
                 }),

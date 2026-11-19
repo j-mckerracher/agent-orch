@@ -30,7 +30,7 @@ use orchestrator_core::permission::{PermissionLevel, PERMISSION_LEVEL_UNSUPPORTE
 use orchestrator_ipc::RpcError;
 use orchestrator_store::{
     BegunTurn, ConversationError, ConversationTarget, ConversationTurn, ConversationUsageReceipt,
-    SqliteStore, TurnBlock, TurnOutcome, TurnPermission, TurnState, TurnTrigger,
+    SqliteStore, TurnBlock, TurnOutcome, TurnPermission, TurnState, TurnTrigger, WakeKind,
     MAX_REPLY_CHUNK_BYTES,
 };
 
@@ -82,6 +82,8 @@ pub(crate) struct HistoryTurn {
 #[derive(Clone)]
 pub(crate) struct WakeBrief {
     pub events: Vec<String>,
+    /// The kinds of the claimed records. They select which procedures the turn is handed.
+    pub kinds: Vec<WakeKind>,
     /// Every claimed record is a heartbeat (a work check or a daemon start), so the model is
     /// offered the quiet token. A batch with an outcome is always answered in words.
     pub may_be_quiet: bool,
