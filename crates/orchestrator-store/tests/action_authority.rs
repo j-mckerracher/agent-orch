@@ -1,4 +1,4 @@
-//! Authority records (DPES-1108 phase 5, migrations 0065 and 0066): the autonomy switch, task
+//! Authority records (DPES-1108 phase 5, migrations 0066 and 0067): the autonomy switch, task
 //! origins, one-task overrides, the user's discard and the unlanded-work archive guard.
 
 use std::path::{Path, PathBuf};

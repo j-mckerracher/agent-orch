@@ -87,7 +87,7 @@ impl ConversationTarget {
         }
     }
 
-    /// The scope of this conversation's preferences and learnings (migration 0067).
+    /// The scope of this conversation's preferences and learnings (migration 0068).
     pub fn memory_scope(&self) -> MemoryScope {
         match self {
             Self::Global => MemoryScope::Global,
@@ -954,7 +954,7 @@ impl SqliteStore {
                     });
                 }
                 // A coordinator that owns unfinished work or an unanswered routed request stays
-                // (DPES-1108 phase 7). Migration 0070 holds the same rule as a trigger.
+                // (DPES-1108 phase 7). Migration 0071 holds the same rule as a trigger.
                 if remove
                     && crate::sqlite_coordinators::coordinator_has_open_work(&mut transaction, id)
                         .await?

@@ -1,4 +1,4 @@
-//! Worker status, waits and replies (DPES-1108 phase 4, migration 0064).
+//! Worker status, waits and replies (DPES-1108 phase 4, migration 0065).
 //!
 //! The store's public API does the writes. A raw second connection tries the writes the
 //! database itself must refuse, as another process would.
@@ -484,7 +484,7 @@ fn a_waiting_task_is_neither_running_work_nor_a_stall_and_its_note_reaches_the_w
 }
 
 #[test]
-fn migration_0064_applies_to_a_0063_style_database_and_keeps_every_row() {
+fn migration_0065_applies_to_a_0064_style_database_and_keeps_every_row() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("store.sqlite");
     let legacy_dir = directory.path().join("legacy-migrations");
@@ -494,7 +494,7 @@ fn migration_0064_applies_to_a_0063_style_database_and_keeps_every_row() {
         let entry = entry.unwrap().path();
         let name = entry.file_name().unwrap().to_str().unwrap().to_owned();
         let version: u32 = name.split('_').next().unwrap().parse().unwrap();
-        if version < 64 {
+        if version < 65 {
             fs::copy(&entry, legacy_dir.join(name)).unwrap();
         }
     }

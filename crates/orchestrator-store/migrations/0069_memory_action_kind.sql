@@ -1,16 +1,16 @@
 -- DPES-1108 phase 6: action_proposals gains the kind memory.set.
 --
--- SQLite cannot alter a CHECK, so the table is rebuilt exactly as 0064 left it: same columns,
+-- SQLite cannot alter a CHECK, so the table is rebuilt exactly as 0065 left it: same columns,
 -- indexes and triggers, every row keeps its rowid, and nothing has a foreign key to it. The
--- 0063 insert trigger on decision_holds reads action_proposals, and SQLite checks every trigger
+-- 0064 insert trigger on decision_holds reads action_proposals, and SQLite checks every trigger
 -- when a table is renamed, so it is dropped first and created again unchanged.
 --
--- Note for merges: other DPES-1108 phases may rebuild this table from the same 0064 shape. The
+-- Note for merges: other DPES-1108 phases may rebuild this table from the same 0065 shape. The
 -- later migration must carry the union of every kind and column.
 
 DROP TRIGGER decision_holds_open_decision;
 
--- action_proposals: the rules of 0064, with memory.set.
+-- action_proposals: the rules of 0065, with memory.set.
 CREATE TABLE action_proposals_new (
     id TEXT PRIMARY KEY CHECK (length(id) > 0),
     scope TEXT NOT NULL REFERENCES conversations(id),
@@ -87,7 +87,7 @@ BEGIN
     SELECT RAISE(ABORT, 'illegal action proposal state transition');
 END;
 
--- The 0063 trigger, unchanged.
+-- The 0064 trigger, unchanged.
 CREATE TRIGGER decision_holds_open_decision BEFORE INSERT ON decision_holds
 WHEN (NEW.subject_kind = 'approval' AND NOT EXISTS (
         SELECT 1 FROM approvals WHERE task_id = NEW.subject_id AND status = 'requested'))

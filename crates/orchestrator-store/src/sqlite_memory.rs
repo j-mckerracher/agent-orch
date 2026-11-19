@@ -1,4 +1,4 @@
-//! Preferences and learnings (DPES-1108 phase 6, migration 0067).
+//! Preferences and learnings (DPES-1108 phase 6, migration 0068).
 //!
 //! A document is the entries of one (kind, scope); [`orchestrator_core::memory`] holds the
 //! rules. Every write runs in one `BEGIN IMMEDIATE` transaction that reads the document, checks

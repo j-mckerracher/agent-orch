@@ -1,4 +1,4 @@
-//! User decisions (DPES-1108 phase 3, migration 0063): questions held for the user.
+//! User decisions (DPES-1108 phase 3, migration 0064): questions held for the user.
 //!
 //! The store's public API does the writes. A second raw connection tries the writes the
 //! database itself must refuse, as another process would. Time is injected; no test sleeps.
@@ -351,7 +351,7 @@ fn a_scout_report_is_not_relayed_while_its_worker_question_is_open() {
 }
 
 #[test]
-fn migration_0063_applies_to_a_0062_style_database_and_keeps_every_row() {
+fn migration_0064_applies_to_a_0063_style_database_and_keeps_every_row() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("store.sqlite");
     let legacy_dir = directory.path().join("legacy-migrations");
@@ -361,7 +361,7 @@ fn migration_0063_applies_to_a_0062_style_database_and_keeps_every_row() {
         let entry = entry.unwrap().path();
         let name = entry.file_name().unwrap().to_str().unwrap().to_owned();
         let version: u32 = name.split('_').next().unwrap().parse().unwrap();
-        if version < 63 {
+        if version < 64 {
             fs::copy(&entry, legacy_dir.join(name)).unwrap();
         }
     }

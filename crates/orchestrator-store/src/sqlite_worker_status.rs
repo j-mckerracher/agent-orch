@@ -1,4 +1,4 @@
-//! Worker status, waits and replies (DPES-1108 phase 4, migration 0064).
+//! Worker status, waits and replies (DPES-1108 phase 4, migration 0065).
 //!
 //! A task worker reports on a status file; each accepted line is a `task_status_events` row,
 //! keyed by its line in the attempt's file so a second read adds nothing. A worker that reports

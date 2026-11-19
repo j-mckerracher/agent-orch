@@ -964,7 +964,7 @@ revokes a grant.
 
 ## Preferences and learnings (DPES-1108, phase 6)
 
-The orchestrator notes are replaced by three kinds of document (migration 0067). The plan is
+The orchestrator notes are replaced by three kinds of document (migration 0068). The plan is
 `docs/design/firstmate-behavior-plan.md`, section 5.6. A document is the keyed entries of one
 kind and scope. The scope is the conversation's own: `global`, `workstream:<id>` or
 `project:<id>`.
@@ -1013,7 +1013,7 @@ kind and scope. The scope is the conversation's own: `global`, `workstream:<id>`
 ## User decisions (DPES-1108, phase 3)
 
 A user decision is a question held for the user and bound to one task. It is a
-`decision_holds` row of subject kind `question` (migration 0063). The plan is
+`decision_holds` row of subject kind `question` (migration 0064). The plan is
 `docs/design/firstmate-behavior-plan.md`, section 5.4.
 
 - **Raising.** The orchestrator proposes `decision.ask` (`task_id`, `question`, optional

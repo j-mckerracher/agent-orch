@@ -1,7 +1,7 @@
 //! The schema after every migration takes every kind the code knows (DPES-1108 integration).
 //!
-//! Phases 5 to 8 were built in parallel, and SQLite cannot alter a CHECK, so 0068 and 0069 each
-//! rebuild `action_proposals` (and 0069 `wake_records`) with a kind list. A rebuild that started
+//! Phases 5 to 8 were built in parallel, and SQLite cannot alter a CHECK, so 0069 and 0070 each
+//! rebuild `action_proposals` (and 0070 `wake_records`) with a kind list. A rebuild that started
 //! from an older definition would drop a kind another phase added, and the store would then
 //! refuse that kind's proposals or wake records at run time. This test applies every migration
 //! to an empty database and writes one row of each kind through a raw connection, so the
@@ -102,10 +102,10 @@ fn every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind
     takes_every_kind_and_keeps_every_column(&path);
 }
 
-/// A development database of phase 8 alone ran 0071 before 0065 to 0070 existed. The runner
+/// A development database of phase 8 alone ran 0072 before 0066 to 0071 existed. The runner
 /// applies the missing lower versions when the store opens, and the result is the same schema.
 #[test]
-fn a_database_that_ran_0071_first_gets_0065_to_0070_and_the_same_schema() {
+fn a_database_that_ran_0072_first_gets_0066_to_0071_and_the_same_schema() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("store.sqlite");
     runtime().block_on(async {
@@ -120,7 +120,7 @@ fn a_database_that_ran_0071_first_gets_0065_to_0070_and_the_same_schema() {
             migrations: Cow::Owned(
                 MIGRATIONS
                     .iter()
-                    .filter(|m| m.version <= 64 || m.version == 71)
+                    .filter(|m| m.version <= 65 || m.version == 72)
                     .cloned()
                     .collect(),
             ),

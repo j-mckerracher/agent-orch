@@ -1,4 +1,4 @@
-//! Authority records (DPES-1108 phase 5, migrations 0065 and 0066).
+//! Authority records (DPES-1108 phase 5, migrations 0066 and 0067).
 //!
 //! - A task the orchestrator started on its own cites its origin: the user turn whose message
 //!   asked for it, or the open routed request a coordinator's task serves (DPES-1108

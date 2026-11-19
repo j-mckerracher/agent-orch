@@ -1,98 +1,25 @@
--- DPES-1108 phase 4: worker status, waits and steering by resume.
+-- DPES-1108 phase 7: the action and wake kinds of project coordinators.
 --
--- A task worker reports on a status file the daemon tails; each accepted line is one row of
--- task_status_events. A worker that reports needs-decision or blocked ends its turn and its
--- task waits (the task state "Waiting", no CHECK on tasks.state). A reply for a waiting task
--- (the user's answer, a reconcile, or a task.message) is a task_messages row, delivered once,
--- by resuming the same agent session: sessions.agent_session_id names it.
+-- action_proposals gains coordinator.route (the global orchestrator routes work to a project's
+-- coordinator) and coordinator.report (a coordinator reports to the global orchestrator).
+-- wake_records gains routed_request (wakes a coordinator for work routed to it) and
+-- coordinator_report (wakes the global orchestrator for a coordinator's report). SQLite cannot
+-- alter a CHECK, so both tables are rebuilt exactly as their newest definitions (0069 for
+-- action_proposals, 0065 for wake_records): every row keeps its rowid, every rule comes back
+-- unchanged, and only the two kind lists grow. Nothing has a foreign
+-- key to either table. The 0064 insert trigger on decision_holds reads action_proposals, and
+-- SQLite checks every trigger when a table is renamed, so it is dropped first and created again
+-- unchanged.
 --
--- action_proposals gains the kind task.message and wake_records the kinds
--- worker_needs_decision and worker_blocked. SQLite cannot alter a CHECK, so both are rebuilt
--- as 0063 and 0060 did: every row keeps its rowid, and nothing has a foreign key to either. The
--- 0063 insert trigger on decision_holds reads action_proposals, and SQLite checks every
--- trigger when a table is renamed, so it is dropped first and created again unchanged.
-
--- The id the agent CLI gave the session (Codex reports it) or was given (Claude and Copilot
--- take one). Written once.
-ALTER TABLE sessions ADD COLUMN agent_session_id TEXT
-    CHECK (agent_session_id IS NULL OR (length(agent_session_id) BETWEEN 1 AND 128
-        AND agent_session_id NOT GLOB '*[^0-9A-Za-z-]*'));
-
-CREATE TRIGGER sessions_agent_session_id_once
-BEFORE UPDATE OF agent_session_id ON sessions
-WHEN OLD.agent_session_id IS NOT NULL AND NEW.agent_session_id IS NOT OLD.agent_session_id
-BEGIN
-    SELECT RAISE(ABORT, 'an agent session id is written once');
-END;
-
--- One accepted status line. line_no is its 1-based line in the attempt's status file, so a
--- second read of the same file adds nothing. The note is worker text, redacted before it is
--- stored, and never an instruction.
-CREATE TABLE task_status_events (
-    id INTEGER PRIMARY KEY,
-    task_id TEXT NOT NULL REFERENCES tasks(id),
-    attempt_id TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    line_no INTEGER NOT NULL CHECK (line_no BETWEEN 1 AND 200),
-    verb TEXT NOT NULL CHECK (verb IN
-        ('working', 'needs-decision', 'blocked', 'done', 'failed')),
-    status_key TEXT CHECK (status_key IS NULL OR (length(status_key) BETWEEN 1 AND 64
-        AND status_key NOT GLOB '*[^a-z0-9-]*')),
-    note TEXT CHECK (note IS NULL OR length(note) BETWEEN 1 AND 1024),
-    recorded_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (task_id, attempt_id, line_no),
-    CHECK (verb <> 'needs-decision' OR note IS NOT NULL),
-    FOREIGN KEY (task_id, attempt_id) REFERENCES attempts(task_id, id)
-);
-
-CREATE TRIGGER task_status_events_append_only BEFORE UPDATE ON task_status_events
-BEGIN SELECT RAISE(ABORT, 'a status event never changes'); END;
-
-CREATE TRIGGER task_status_events_no_delete BEFORE DELETE ON task_status_events
-BEGIN SELECT RAISE(ABORT, 'status events are never deleted'); END;
-
--- A reply for a waiting task. 'answer' and 'reconcile' copy nothing: they name the question,
--- whose decision_answers record holds the user's words. 'message' holds a task.message text.
--- delivered_session_id is set once, by the resume that carries it. message_key is the
--- execution key of the task.message that queued it, so a rerun queues nothing twice.
-CREATE TABLE task_messages (
-    id INTEGER PRIMARY KEY,
-    task_id TEXT NOT NULL REFERENCES tasks(id),
-    attempt_id TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('answer', 'reconcile', 'message')),
-    question_id TEXT REFERENCES decision_holds(id),
-    text TEXT CHECK (text IS NULL OR length(text) BETWEEN 1 AND 4096),
-    message_key TEXT UNIQUE CHECK (message_key IS NULL OR length(message_key) BETWEEN 1 AND 160),
-    delivered_session_id TEXT CHECK (delivered_session_id IS NULL
-        OR length(delivered_session_id) > 0),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CHECK (CASE WHEN kind = 'message'
-        THEN text IS NOT NULL AND question_id IS NULL AND message_key IS NOT NULL
-        ELSE text IS NULL AND question_id IS NOT NULL AND message_key IS NULL END),
-    FOREIGN KEY (task_id, attempt_id) REFERENCES attempts(task_id, id)
-);
-
-CREATE INDEX task_messages_undelivered
-    ON task_messages(task_id) WHERE delivered_session_id IS NULL;
-
-CREATE TRIGGER task_messages_delivered_once
-BEFORE UPDATE ON task_messages
-WHEN OLD.delivered_session_id IS NOT NULL
-    OR NEW.delivered_session_id IS NULL
-    OR NEW.id IS NOT OLD.id OR NEW.task_id IS NOT OLD.task_id
-    OR NEW.attempt_id IS NOT OLD.attempt_id OR NEW.kind IS NOT OLD.kind
-    OR NEW.question_id IS NOT OLD.question_id OR NEW.text IS NOT OLD.text
-    OR NEW.message_key IS NOT OLD.message_key OR NEW.created_at IS NOT OLD.created_at
-BEGIN
-    SELECT RAISE(ABORT, 'a task message is only marked delivered, once');
-END;
-
-CREATE TRIGGER task_messages_no_delete BEFORE DELETE ON task_messages
-BEGIN SELECT RAISE(ABORT, 'task messages are never deleted'); END;
+-- Merged with phases 5 and 6 of DPES-1108 (migrations 0066 to 0069): 0069 rebuilt
+-- action_proposals to add memory.set, so that kind is kept here; 0066 to 0069 add no column to
+-- either table and never rebuild wake_records. 0072 (phase 8) adds a column to
+-- conversation_turns, which no rebuild here touches. Any later rebuild must start from this
+-- file's definitions.
 
 DROP TRIGGER decision_holds_open_decision;
 
--- action_proposals: the rules of 0063, with task.message.
+-- action_proposals: the rules of 0069 (0065 plus memory.set), with the two coordinator kinds.
 CREATE TABLE action_proposals_new (
     id TEXT PRIMARY KEY CHECK (length(id) > 0),
     scope TEXT NOT NULL REFERENCES conversations(id),
@@ -102,7 +29,8 @@ CREATE TABLE action_proposals_new (
         ('workstream.create', 'workstream.update', 'objective.add', 'objective.revise',
          'task.propose', 'task.cancel', 'task.retry', 'workstream.link_task',
          'task.revise', 'delivery.request', 'delivery.merge', 'project.register',
-         'project.remove', 'decision.hold', 'decision.ask', 'task.message')),
+         'project.remove', 'decision.hold', 'decision.ask', 'task.message', 'memory.set',
+         'coordinator.route', 'coordinator.report')),
     params_json TEXT NOT NULL CHECK (json_valid(params_json) AND length(params_json) <= 20480),
     digest TEXT NOT NULL CHECK (length(digest) = 64 AND digest NOT GLOB '*[^0-9a-f]*'),
     subject TEXT NOT NULL CHECK (length(subject) BETWEEN 1 AND 512),
@@ -169,7 +97,7 @@ BEGIN
     SELECT RAISE(ABORT, 'illegal action proposal state transition');
 END;
 
--- The 0063 trigger, unchanged.
+-- The 0064 trigger, unchanged.
 CREATE TRIGGER decision_holds_open_decision BEFORE INSERT ON decision_holds
 WHEN (NEW.subject_kind = 'approval' AND NOT EXISTS (
         SELECT 1 FROM approvals WHERE task_id = NEW.subject_id AND status = 'requested'))
@@ -179,14 +107,15 @@ WHEN (NEW.subject_kind = 'approval' AND NOT EXISTS (
         SELECT 1 FROM tasks WHERE id = NEW.subject_id))
 BEGIN SELECT RAISE(ABORT, 'a hold needs an open decision'); END;
 
--- wake_records: the rules of 0060, with the two worker wait kinds.
+-- wake_records: the rules of 0065, with the two coordinator kinds.
 CREATE TABLE wake_records_new (
     id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
     scope TEXT NOT NULL CHECK (length(scope) > 0),
     event_kind TEXT NOT NULL CHECK (event_kind IN
         ('task_failed', 'task_stalled', 'delivery_waiting', 'proposal_waiting',
          'sign_in_needed', 'daemon_start', 'work_check', 'scout_report_ready', 'agent_failing',
-         'candidate_ready', 'worker_needs_decision', 'worker_blocked')),
+         'candidate_ready', 'worker_needs_decision', 'worker_blocked', 'routed_request',
+         'coordinator_report')),
     subject TEXT NOT NULL CHECK (length(subject) BETWEEN 1 AND 128),
     dedupe_key TEXT NOT NULL CHECK (length(dedupe_key) BETWEEN 1 AND 160),
     notice TEXT NOT NULL CHECK (length(notice) BETWEEN 1 AND 512),

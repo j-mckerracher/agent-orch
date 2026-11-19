@@ -1,4 +1,4 @@
-//! User decisions (DPES-1108 phase 3, migration 0063).
+//! User decisions (DPES-1108 phase 3, migration 0064).
 //!
 //! A question for the user is a `decision_holds` row of subject kind `question`, bound to a
 //! task. The orchestrator raises one through an approved `decision.ask`; a later phase raises
@@ -22,7 +22,7 @@ use crate::sqlite_conversations::corrupt;
 use crate::sqlite_holds::end_of_day_ms;
 use crate::{SqliteStore, StoreError};
 
-/// 2100-01-01 in milliseconds; migration 0063 bounds `until_ms` by the same number.
+/// 2100-01-01 in milliseconds; migration 0064 bounds `until_ms` by the same number.
 const MAX_UNTIL_MS: i64 = 4_102_444_800_000;
 const COLUMNS: &str =
     "id, subject_id, set_by, state, created_at, question, options_json, question_key";

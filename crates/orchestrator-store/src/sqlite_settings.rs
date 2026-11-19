@@ -39,7 +39,7 @@ pub struct OrchestratorSettings {
     /// belongs to. The daemon validates the path before it is stored. `None` means none is set.
     pub home_directory: Option<String>,
     pub dispatch_defaults: DispatchDefaults,
-    /// Migration 0065 (DPES-1108 phase 5): the orchestrator runs autonomous-class actions on its
+    /// Migration 0066 (DPES-1108 phase 5): the orchestrator runs autonomous-class actions on its
     /// own. On by default; off makes every action a card for the user again.
     pub autonomous_actions: bool,
 }

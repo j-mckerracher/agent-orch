@@ -4,7 +4,7 @@
 //! with `decision.ask`; a later phase lets a worker raise one. Only the user closes it, with
 //! their own words (an answer) or with evidence that it no longer matters (a reconcile). Every
 //! rule here refuses rather than strips: an answer is stored exactly as the user wrote it.
-//! Migration 0063 enforces the same limits.
+//! Migration 0064 enforces the same limits.
 
 use crate::orchestrator_action::is_disallowed_objective_char;
 

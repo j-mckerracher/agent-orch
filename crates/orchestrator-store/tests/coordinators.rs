@@ -1,4 +1,4 @@
-//! Project coordinators as domain orchestrators (DPES-1108 phase 7, migrations 0069 and 0070).
+//! Project coordinators as domain orchestrators (DPES-1108 phase 7, migrations 0070 and 0071).
 //!
 //! The store's public API does the writes. A raw second connection tries the writes the
 //! database itself must refuse, as another process would.
@@ -593,7 +593,7 @@ fn a_coordinator_with_open_work_cannot_be_removed() {
 }
 
 #[test]
-fn migrations_0069_and_0070_apply_to_a_0068_style_database_and_keep_every_row() {
+fn migrations_0070_and_0071_apply_to_a_0069_style_database_and_keep_every_row() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("store.sqlite");
     let legacy_dir = directory.path().join("legacy-migrations");
@@ -603,7 +603,7 @@ fn migrations_0069_and_0070_apply_to_a_0068_style_database_and_keep_every_row() 
         let entry = entry.unwrap().path();
         let name = entry.file_name().unwrap().to_str().unwrap().to_owned();
         let version: u32 = name.split('_').next().unwrap().parse().unwrap();
-        if version < 69 {
+        if version < 70 {
             fs::copy(&entry, legacy_dir.join(name)).unwrap();
         }
     }

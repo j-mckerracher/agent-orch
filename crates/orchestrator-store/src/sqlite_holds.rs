@@ -9,7 +9,7 @@
 //!
 //! A hold is never deleted. A new date is a release plus a new hold, in one transaction.
 //!
-//! Rows of the subject kind `question` (migration 0063) share the table but are not holds:
+//! Rows of the subject kind `question` (migration 0064) share the table but are not holds:
 //! every read here leaves them out, and `sqlite_questions.rs` owns them.
 
 use std::fmt;

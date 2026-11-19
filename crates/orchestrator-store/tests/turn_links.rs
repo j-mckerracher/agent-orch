@@ -1,4 +1,4 @@
-//! Migration 0071 (DPES-1108 phase 8): wake caps re-sized for autonomous supervision, and the
+//! Migration 0072 (DPES-1108 phase 8): wake caps re-sized for autonomous supervision, and the
 //! pull request links a completed turn keeps.
 
 use std::borrow::Cow;
@@ -22,7 +22,7 @@ static MIGRATIONS: Migrator = sqlx::migrate!("./migrations");
 const NOW: u64 = 1_794_901_798_000;
 
 #[test]
-fn migration_0071_moves_the_old_default_wake_caps_and_keeps_chosen_ones() {
+fn migration_0072_moves_the_old_default_wake_caps_and_keeps_chosen_ones() {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -44,7 +44,7 @@ fn migration_0071_moves_the_old_default_wake_caps_and_keeps_chosen_ones() {
                 migrations: Cow::Owned(
                     MIGRATIONS
                         .iter()
-                        .filter(|m| m.version < 71)
+                        .filter(|m| m.version < 72)
                         .cloned()
                         .collect(),
                 ),

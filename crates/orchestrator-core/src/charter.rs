@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::orchestrator_action::is_disallowed_objective_char;
 
-/// Longest scope sentence, in bytes. Migration 0070 holds the same limit in characters.
+/// Longest scope sentence, in bytes. Migration 0071 holds the same limit in characters.
 pub const MAX_SCOPE_SENTENCE_BYTES: usize = 300;
 /// Longest work text of a routed request, in bytes.
 pub const MAX_ROUTED_WORK_BYTES: usize = 4096;

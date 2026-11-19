@@ -1,4 +1,4 @@
-//! Project coordinators as domain orchestrators (DPES-1108 phase 7, migration 0070).
+//! Project coordinators as domain orchestrators (DPES-1108 phase 7, migration 0071).
 //!
 //! A coordinator owns the tasks made in its conversation and answers to the global orchestrator
 //! only through `coordinator_reports`. Work reaches it as a routed request whose id is the
@@ -247,7 +247,7 @@ async fn require_active(
 }
 
 /// Whether the coordinator of `project_id` owns unfinished tasks or an unanswered request. The
-/// same test as the 0070 retirement trigger.
+/// same test as the 0071 retirement trigger.
 pub(crate) async fn coordinator_has_open_work(
     connection: &mut SqliteConnection,
     project_id: &str,

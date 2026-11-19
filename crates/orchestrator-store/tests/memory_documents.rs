@@ -1,4 +1,4 @@
-//! Preferences and learnings (DPES-1108 phase 6, migrations 0067 and 0068).
+//! Preferences and learnings (DPES-1108 phase 6, migrations 0068 and 0069).
 //!
 //! The store's public API does the reads and writes; a second raw connection tries the writes
 //! the database itself must refuse.
@@ -312,7 +312,7 @@ fn a_history_clear_keeps_the_conversations_preferences_and_learnings() {
 }
 
 #[test]
-fn migration_0067_moves_every_note_into_the_preferences_of_its_scope() {
+fn migration_0068_moves_every_note_into_the_preferences_of_its_scope() {
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("store.sqlite");
     let legacy_dir = directory.path().join("legacy-migrations");
@@ -322,7 +322,7 @@ fn migration_0067_moves_every_note_into_the_preferences_of_its_scope() {
         let entry = entry.unwrap().path();
         let name = entry.file_name().unwrap().to_str().unwrap().to_owned();
         let version: u32 = name.split('_').next().unwrap().parse().unwrap();
-        if version < 67 {
+        if version < 68 {
             fs::copy(&entry, legacy_dir.join(name)).unwrap();
         }
     }
@@ -428,7 +428,7 @@ fn migration_0067_moves_every_note_into_the_preferences_of_its_scope() {
         ["21"]
     );
 
-    // 0068: every proposal kept, and memory.set now allowed.
+    // 0069: every proposal kept, and memory.set now allowed.
     assert_eq!(scalars(&path, proposals), before);
     try_sql(&path, new_kind).unwrap();
     assert!(try_sql(&path, "DELETE FROM action_proposals WHERE id = 'pr1'").is_err());
