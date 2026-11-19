@@ -5,6 +5,14 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.18](https://github.com/mc-innersource/motif-mcao/compare/v0.1.17...v0.1.18) (2026-11-19)
+
+
+### Bug Fixes
+
+* **runtime:** DPES-1044 - Keep whole agent stdout records up to 16 MiB ([585c1e5](https://github.com/mc-innersource/motif-mcao/commit/585c1e50cb07f2d7bae55043c42c4732c5c75ded))
+* **runtime:** DPES-1044 - Keep whole agent stdout records up to 16 MiB ([f672a5d](https://github.com/mc-innersource/motif-mcao/commit/f672a5da31a8d30d0f7d828b82603b3e659b00df))
+
 ## [0.1.17](https://github.com/mc-innersource/motif-mcao/compare/v0.1.16...v0.1.17) (2026-11-18)
 
 
