@@ -588,8 +588,10 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "decisions.answer",
             "decisions.defer",
             "decisions.reconcile",
+            "tasks.discard",
         ]
     );
+    assert_eq!(method_capability("tasks.discard"), Some(Capability::Tasks));
     for method in [
         "decisions.list",
         "decisions.answer",

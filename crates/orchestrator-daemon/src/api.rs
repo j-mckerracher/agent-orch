@@ -161,6 +161,14 @@ struct CancelParams {
     idempotency_key: String,
 }
 
+/// A task and an idempotency key: `tasks.discard`.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct TaskKeyParams {
+    task_id: String,
+    idempotency_key: String,
+}
+
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct ArchiveParams {
@@ -416,6 +424,7 @@ impl RpcHandler for DaemonApi {
             "tasks.get" => self.get_task(params),
             "tasks.cancel" => self.cancel_task(params),
             "tasks.archive" => self.archive_tasks(params),
+            "tasks.discard" => self.discard_task(params),
             "tasks.retry" => self.retry_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
             "agents.catalog" => self.agents_catalog(params),
@@ -1235,14 +1244,62 @@ impl DaemonApi {
         Ok(reply)
     }
 
+    /// `tasks.discard` (DPES-1108 phase 5, user-only): the user's word that a finished task's
+    /// committed work is not wanted. It only records that word, which lets the task be archived
+    /// and its slot returned; the task's branch stays in the repository. A task that is not
+    /// finished is `Conflict`, an unknown one `NotFound`. Replies with whether this call
+    /// recorded it.
+    fn discard_task(&self, params: Value) -> Result<Value, RpcError> {
+        let request: TaskKeyParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.discard",
+            &key,
+            &request,
+            || {
+                let discarded = self
+                    .store
+                    .discard_task_candidate(&request.task_id)
+                    .map_err(|error| match ArchiveError::of(&error) {
+                        Some(_) => RpcError::Conflict,
+                        None => map_store_error(error),
+                    })?;
+                Ok(json!({"task_id": request.task_id, "discarded": discarded}))
+            },
+        )
+    }
+
     /// Returns the treehouse slots of finished tasks to the pool. Called after the
     /// write, outside the gate, since each return runs treehouse. A failure is logged
-    /// and never fails the RPC that finished the task.
+    /// and never fails the RPC that finished the task. A task whose committed work is not
+    /// landed or discarded keeps its slot (DPES-1108 phase 5): archive refuses such a task
+    /// first, so this is the second guard.
     fn release_task_slots(&self, task_ids: &[String]) {
         let Some(executor) = &self.executor else {
             return;
         };
         for task_id in task_ids {
+            match self.store.has_unlanded_candidate(task_id) {
+                Ok(false) => {}
+                Ok(true) => {
+                    self.config.diagnostics.warn(
+                        "api",
+                        "worktree_kept_unlanded",
+                        &[("task_id", task_id)],
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    self.config.diagnostics.error(
+                        "api",
+                        "unlanded_check_failed",
+                        &[("task_id", task_id), ("error", &error.to_string())],
+                    );
+                    continue;
+                }
+            }
             match self.store.workspaces_for_task(task_id) {
                 Ok(workspaces) => executor.release_workspaces(&workspaces),
                 Err(error) => self.config.diagnostics.error(
@@ -2024,6 +2081,8 @@ mod actions;
 use actions::project_code;
 #[path = "admission.rs"]
 pub(crate) mod admission;
+#[path = "api_authority.rs"]
+mod authority;
 #[path = "api_brief.rs"]
 mod brief;
 #[path = "api_conversation_agent.rs"]
@@ -2119,6 +2178,9 @@ mod actions_task_tests;
 #[cfg(test)]
 #[path = "api_actions_tests.rs"]
 mod actions_tests;
+#[cfg(test)]
+#[path = "api_authority_tests.rs"]
+mod authority_tests;
 #[cfg(test)]
 #[path = "api_decisions_tests.rs"]
 mod decisions_tests;

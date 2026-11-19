@@ -98,11 +98,7 @@ pub fn autonomy_check(action: &Action, from_user: bool, ran: usize) -> Result<()
     if action.authority() == ActionAuthority::UserWord {
         return Err(AutonomyRefusal::UserWord);
     }
-    let on_existing_work = matches!(
-        action.kind(),
-        ActionKind::TaskRetry | ActionKind::TaskMessage | ActionKind::DecisionAsk
-    );
-    if !from_user && !on_existing_work {
+    if !from_user && !action.kind().acts_on_existing_work() {
         return Err(AutonomyRefusal::NoUserOrigin);
     }
     if let Action::TaskPropose(propose) = action {
@@ -180,6 +176,16 @@ impl ActionKind {
     /// Whether a grant may cover this kind: not one of [`NEVER_GRANTABLE`].
     pub fn is_grantable(self) -> bool {
         !NEVER_GRANTABLE.contains(&self.as_str())
+    }
+
+    /// Whether the kind only acts on work that already exists: a retry, a message to a waiting
+    /// worker, or a question for the user. Only these may run on their own from a turn with no
+    /// user words to cite (a wake, or a turn that read an agent's report).
+    pub const fn acts_on_existing_work(self) -> bool {
+        matches!(
+            self,
+            Self::TaskRetry | Self::TaskMessage | Self::DecisionAsk
+        )
     }
 
     /// Who may make an action of this kind happen. One match with no wildcard, so a new kind

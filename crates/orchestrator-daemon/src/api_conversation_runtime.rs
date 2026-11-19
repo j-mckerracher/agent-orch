@@ -19,7 +19,7 @@
 //! receives a message.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 
 use orchestrator_agents::{SelectionReason, UsageReport};
@@ -291,6 +291,22 @@ struct Shared {
     /// Read for the snapshot's machine load line. A closed gate never holds a turn.
     load: Arc<LoadHandle>,
     controls: Mutex<HashMap<String, Box<dyn TurnControl>>>,
+    /// Turns that stored proposals since the daemon's autonomy pass last ran (DPES-1108 phase
+    /// 5). In memory only: a stop before the pass leaves their cards pending for the user.
+    completed: Mutex<Vec<CompletedTurn>>,
+    /// Called after a turn is queued in `completed`, so the pass runs at once. Set once.
+    on_completed: OnceLock<Box<dyn Fn() + Send + Sync>>,
+}
+
+/// Most turns the autonomy queue holds. A turn past it is not queued and its cards stay pending.
+const MAX_COMPLETED_TURNS: usize = 64;
+
+/// A completed turn and the effective ids of the proposals its block stored, in block order.
+/// An id may name an earlier turn's card that the block matched; the pass skips those.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct CompletedTurn {
+    pub turn_id: String,
+    pub proposals: Vec<String>,
 }
 
 impl Shared {
@@ -318,6 +334,26 @@ impl Shared {
         }
     }
 
+    /// Queues a turn for the autonomy pass and pokes it.
+    fn queue_completed(&self, turn_id: &str, proposals: Vec<String>) {
+        {
+            let mut completed = self
+                .completed
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
+            if completed.len() >= MAX_COMPLETED_TURNS {
+                return;
+            }
+            completed.push(CompletedTurn {
+                turn_id: turn_id.to_owned(),
+                proposals,
+            });
+        }
+        if let Some(notify) = self.on_completed.get() {
+            notify();
+        }
+    }
+
     /// Complete a running turn and record its action block in the same store
     /// transaction. A store error rolls that back, so the block is retried as
     /// rejected; if that also fails the turn fails, and is never left running.
@@ -329,8 +365,11 @@ impl Shared {
             stored => stored,
         };
         match stored {
-            Ok(Some(_)) => {
+            Ok(Some(proposals)) => {
                 self.controls().remove(turn_id);
+                if !proposals.is_empty() {
+                    self.queue_completed(turn_id, proposals);
+                }
             }
             Ok(None) => {}
             Err(_) => {
@@ -611,6 +650,8 @@ impl ConversationService {
                 store,
                 load,
                 controls: Mutex::new(HashMap::new()),
+                completed: Mutex::new(Vec::new()),
+                on_completed: OnceLock::new(),
             }),
             runtime,
             workstreams,
@@ -628,6 +669,23 @@ impl ConversationService {
             .interrupt_open_conversation_turns()
             .map(|_| ())
             .map_err(|_| "cannot recover conversations".to_owned())
+    }
+
+    /// Takes the turns queued for the autonomy pass, oldest first (DPES-1108 phase 5).
+    pub(crate) fn take_completed_turns(&self) -> Vec<CompletedTurn> {
+        std::mem::take(
+            &mut *self
+                .shared
+                .completed
+                .lock()
+                .unwrap_or_else(|error| error.into_inner()),
+        )
+    }
+
+    /// Sets what a completed turn with proposals calls, once. A second call is ignored. Every
+    /// clone of the service shares it, the wake service's included.
+    pub(crate) fn on_turn_completed(&self, notify: Box<dyn Fn() + Send + Sync>) {
+        let _ = self.shared.on_completed.set(notify);
     }
 
     /// See [`ConversationRuntime::prepare`].
@@ -889,6 +947,8 @@ impl ConversationService {
                     actions,
                     &self.shared.load.read(Instant::now()),
                     wake.is_none(),
+                    // A turn with no user words: a wake, or a relay of an agent's report.
+                    wake.is_none() && relay.is_none(),
                 );
                 // A turn nobody asked for sees no path or token a task title may hold.
                 let snapshot = if wake.is_some() {
