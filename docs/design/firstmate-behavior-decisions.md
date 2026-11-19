@@ -142,7 +142,7 @@ Branch `feat/DPES-1108_authority-model`, based on phase 4. Migrations 0065 (`aut
 
 - **20. The preamble stays within 4 KiB.** Phase 4 raised `MAX_INSTRUCTIONS_BYTES` to 4 KiB; the new sentence fits under it. The per-turn truth is in the snapshot ("Run at once: ..."), chosen by the daemon from the setting and the turn's origin. The wake block and procedures now say "use" or "send" instead of "propose". The wake block with the quiet offer measures 576 of the 600 bytes its test allows.
 
-### Not verified locally
+### Not verified locally in phase 5
 
 - Daemon tests (`api_authority_tests.rs`, the snapshot test, `executor_tests.rs` archive tests, `tests/conversation_runtime.rs` with 30 tests now seeded with the switch off and one new default-on test) were compiled with `cargo check --all-targets` and clippy, not run; daemon tests hang on this laptop.
 - Run locally and passed: `cargo test -p orchestrator-core --lib orchestrator_action` (68), `cargo test -p orchestrator-store --test action_authority --test task_archive --test orchestrator_settings`, and the desktop vitest suite (the sub-agent ran all 128 files; I re-ran the card and settings tests after a wording change).
