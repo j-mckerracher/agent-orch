@@ -42,7 +42,10 @@ use sha2::{Digest, Sha256};
 
 use orchestrator_core::permission::PermissionLevel;
 
-use crate::executor::{agent_command, Executor, ExecutorConfig, COPILOT_RUNS_DIR};
+use crate::executor::{
+    agent_command, placeholder_status_dir, submit_channel, Executor, ExecutorConfig,
+    COPILOT_RUNS_DIR,
+};
 use crate::idempotency;
 use orchestrator_diagnostics::Level;
 
@@ -712,6 +715,7 @@ impl DaemonApi {
         let permission = submission.permission.unwrap_or_default();
         // An agent without a daemon launcher has no CLI to check, so it is accepted before its
         // executable is looked up or read.
+        let status_dir = placeholder_status_dir(&self.config);
         if agent_command(
             &self.config,
             &submission.agent,
@@ -719,6 +723,7 @@ impl DaemonApi {
             submission.model_selection.as_ref(),
             permission,
             None,
+            submit_channel(&status_dir),
         )
         .is_none()
         {
@@ -754,6 +759,7 @@ impl DaemonApi {
                         submission.model_selection.as_ref(),
                         permission,
                         workflow_agent.as_ref(),
+                        submit_channel(&status_dir),
                     ) else {
                         return Ok(());
                     };
@@ -1107,6 +1113,7 @@ impl DaemonApi {
     /// diagnostics log and the caller sees `InvalidParams`.
     fn check_agent_command_line(&self, contract: &TaskContract) -> Result<(), RpcError> {
         let workflow_agent = (self.config.locate_workflow_agent)();
+        let status_dir = placeholder_status_dir(&self.config);
         let Some((program, args)) = agent_command(
             &self.config,
             &contract.agent,
@@ -1114,6 +1121,7 @@ impl DaemonApi {
             contract.model_selection.as_ref(),
             contract.permission,
             workflow_agent.as_ref(),
+            submit_channel(&status_dir),
         ) else {
             return Ok(());
         };
@@ -1256,7 +1264,8 @@ impl DaemonApi {
 
     /// The cancel write, shared with action execution. The caller holds the idempotency gate.
     /// A running task only has its cancellation requested; the owner confirms later. A
-    /// verifying task is cancelled at once, and its verification run is interrupted.
+    /// verifying task is cancelled at once, and its verification run is interrupted. A waiting
+    /// task is cancelled at once; its worktree stays as any cancelled task's does.
     pub(super) fn cancel_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
         self.cancel_task_record(task_id)?;
         serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
@@ -1306,6 +1315,13 @@ impl DaemonApi {
                     executor.cancel_verification(task_id);
                 }
                 return Ok(());
+            }
+            // A waiting worker has no process, so the cancel needs no owner (DPES-1108 phase 4).
+            TaskState::Waiting => {
+                return self
+                    .store
+                    .cancel_waiting_task(task_id)
+                    .map_err(map_store_error);
             }
             _ => return Err(RpcError::Conflict),
         };
@@ -2017,12 +2033,12 @@ mod conversation_snapshot;
 mod conversations;
 #[path = "api_coordinator.rs"]
 mod coordinator;
+#[path = "api_decisions.rs"]
+mod decisions;
 #[path = "grant_matcher.rs"]
 mod grant_matcher;
 #[path = "api_grants.rs"]
 mod grants;
-#[path = "api_decisions.rs"]
-mod decisions;
 #[path = "api_holds.rs"]
 mod holds;
 #[path = "api_home_directory.rs"]
@@ -2093,14 +2109,14 @@ mod review_tests;
 #[path = "api_actions_phase4_tests.rs"]
 mod actions_phase4_tests;
 #[cfg(test)]
-#[path = "api_decisions_tests.rs"]
-mod decisions_tests;
-#[cfg(test)]
 #[path = "api_actions_task_tests.rs"]
 mod actions_task_tests;
 #[cfg(test)]
 #[path = "api_actions_tests.rs"]
 mod actions_tests;
+#[cfg(test)]
+#[path = "api_decisions_tests.rs"]
+mod decisions_tests;
 #[cfg(test)]
 #[path = "grant_matcher_tests.rs"]
 mod grant_matcher_tests;

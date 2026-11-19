@@ -39,15 +39,20 @@ use orchestrator_agents::cli_compat::{
 };
 use orchestrator_agents::workflow_agent::{self, WorkflowAgent};
 use orchestrator_agents::{
-    locate_program, pi_catalog, AgentAdapter, AgentCatalog, AgentEvent, AgentExit, AgentHandle,
-    AgentLaunchRequest, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
-    COPILOT_AGENT,
+    locate_program, pi_catalog, resume_refusal, task_session, AgentAdapter, AgentCatalog,
+    AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest, ClaudeCodeAdapter, CodexAdapter,
+    CopilotAdapter, CopilotRun, CopilotSignIn, TaskSession, COPILOT_AGENT,
 };
 use orchestrator_core::contract::{ModelSelection, TaskKind};
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::records::Workspace;
 use orchestrator_core::scheduler::{Scheduler, SchedulerLimits, SchedulerSnapshot, TaskSnapshot};
-use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
+use orchestrator_core::task::{
+    Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState, WaitReason,
+};
+use orchestrator_core::worker_status::{
+    self as status_rules, Settlement, StatusVerb, MAX_QUESTIONS_PER_WAIT,
+};
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::verify::{pending_verifications, verify_attempt, Verified};
@@ -58,9 +63,10 @@ use orchestrator_git::{
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
     CancellationOwner, CancellationStatus, SqliteStore, Store, StoreError, TaskRecord,
-    UsageReceipt, UsageSource,
+    UsageReceipt, UsageSource, WorkerQuestion,
 };
 use output_ring::{EndOnDrop, OutputStore, Stream};
+use worker_status::StatusTail;
 
 use crate::api::load::LoadHandle;
 
@@ -824,8 +830,13 @@ impl Inner {
                 return;
             }
         };
-        // A task with a question open for the user does not start (DPES-1108 phase 3).
-        let open_questions = match self.store.tasks_with_open_questions() {
+        // A task with a question open for the user does not start (DPES-1108 phase 3), and a
+        // waiting task resumes only with a reply to deliver (phase 4).
+        let open_questions = match self
+            .store
+            .tasks_with_open_questions()
+            .and_then(|open| Ok((open, self.store.tasks_ready_to_resume()?)))
+        {
             Ok(open_questions) => open_questions,
             Err(error) => {
                 diag.error(
@@ -872,9 +883,11 @@ impl Inner {
         // submission; a task may start only while its project is registered.
         let authorization = |project_id: &str, _task_id: &str| registered.contains(project_id);
         // A closed load gate leaves every task Queued; running tasks are not touched.
+        let (open_questions, resumable) = open_questions;
         let scheduler = scheduler
             .with_start_gate(self.config.load.start_gate(Instant::now()))
-            .with_open_questions(&open_questions);
+            .with_open_questions(&open_questions)
+            .with_resumable(&resumable);
         let plan = scheduler.schedule(Some(&authorization));
         let mut running = snapshots
             .iter()
@@ -896,7 +909,11 @@ impl Inner {
             last_decision = Some(decision);
             running += 1;
             launched_project = Some(task.contract.project_id.clone());
-            self.launch(task);
+            if task.state == TaskState::Waiting {
+                self.resume(task);
+            } else {
+                self.launch(task);
+            }
         }
         if deferred.is_empty() {
             *last_started_project = plan.last_started_project;
@@ -935,6 +952,8 @@ impl Inner {
             permission: task.contract.permission,
             worktree: PathBuf::new(),
             in_place: false,
+            status_dir: worker_status::status_dir(&self.config.data_dir, &task_id, number),
+            session: JobSession::New(uuid::Uuid::new_v4().hyphenated().to_string()),
             diag: self.config.diagnostics.clone(),
             output: self.output.clone(),
         };
@@ -1030,9 +1049,29 @@ impl Inner {
                 },
             )
             .map_err(|error| format!("cannot record attempt: {error}"))?;
-        let checkout = match checkout {
-            Ok(checkout) => checkout,
-            Err(error) => {
+        // The status file is the worker's only channel back (DPES-1108 phase 4).
+        let prepared = checkout
+            .map_err(|error| {
+                let reason = if in_place {
+                    HOME_DIRECTORY_MISSING
+                } else {
+                    worktree_failure_reason(&error)
+                };
+                (reason, format!("cannot create worktree: {error}"))
+            })
+            .and_then(|checkout| {
+                worker_status::prepare(&job.status_dir)
+                    .map(|file| (checkout, file))
+                    .map_err(|error| {
+                        (
+                            STATUS_FILE_FAILED,
+                            format!("cannot prepare the status file: {error}"),
+                        )
+                    })
+            });
+        let (checkout, status_file) = match prepared {
+            Ok(prepared) => prepared,
+            Err((reason, detail)) => {
                 // No process exists yet: take the attempt through Running so
                 // it can end Failed, and fail the task so it can be retried.
                 store
@@ -1042,20 +1081,12 @@ impl Inner {
                     .update_attempt_state(&task_id, &job.attempt_id, AttemptState::Running)
                     .map_err(|e| format!("cannot start attempt: {e}"))?;
                 store
-                    .record_attempt_failure(
-                        &task_id,
-                        &job.attempt_id,
-                        if in_place {
-                            HOME_DIRECTORY_MISSING
-                        } else {
-                            worktree_failure_reason(&error)
-                        },
-                    )
+                    .record_attempt_failure(&task_id, &job.attempt_id, reason)
                     .map_err(|e| format!("cannot fail attempt: {e}"))?;
                 store
                     .transition(&task_id, TaskEvent::ExecutionFailed)
                     .map_err(|e| format!("cannot fail task: {e}"))?;
-                return Err(format!("cannot create worktree: {error}"));
+                return Err(detail);
             }
         };
         job.worktree = checkout.path.clone();
@@ -1063,6 +1094,7 @@ impl Inner {
         job.objective = orchestrator_core::brief::render(
             &task.contract,
             (!in_place).then_some(checkout.path.as_path()),
+            &status_file,
         );
         let path = checkout.path.display().to_string();
         let workspace = if in_place {
@@ -1096,18 +1128,28 @@ impl Inner {
                 },
             )
             .map_err(|error| format!("cannot record session: {error}"))?;
+        // Claude and Copilot take the id the daemon chose; Codex reports its own when it starts.
+        if let (JobSession::New(id), true) = (&job.session, job.agent != CODEX_AGENT) {
+            store
+                .record_agent_session_id(&task_id, &job.session_id, id)
+                .map_err(|error| format!("cannot record the agent session id: {error}"))?;
+        }
+        self.start_supervisor(job)
+    }
 
+    /// Hands a recorded session to its own supervisor thread.
+    fn start_supervisor(self: &Arc<Self>, job: Job) -> Result<(), String> {
         let inner = self.clone();
         let supervisor_job = job.clone();
         let spawned = thread::Builder::new()
-            .name(format!("agent-{task_id}"))
+            .name(format!("agent-{}", job.task_id))
             .spawn(move || {
                 supervise(&inner, supervisor_job);
                 inner.request_pass();
             });
         if let Err(error) = spawned {
             fail_before_agent_exit(
-                store,
+                &self.store,
                 &job,
                 Some(
                     "The daemon could not start the agent supervisor. Check the daemon log for details.",
@@ -1116,6 +1158,109 @@ impl Inner {
             return Err(format!("cannot start supervisor thread: {error}"));
         }
         Ok(())
+    }
+
+    /// Resumes a waiting task the scheduler planned: the same agent session, in the same
+    /// worktree, at the same permission level, with its replies as the next prompt
+    /// (DPES-1108 phase 4). A task that cannot resume so fails with a reason the user reads.
+    fn resume(self: &Arc<Self>, task: &TaskRecord) {
+        let task_id = &task.contract.id;
+        if let Err(error) = self.prepare_resume(task) {
+            self.config.diagnostics.error(
+                LOG,
+                "resume_failed",
+                &[("task_id", task_id), ("error", &error)],
+            );
+        }
+    }
+
+    fn prepare_resume(self: &Arc<Self>, task: &TaskRecord) -> Result<(), String> {
+        let store = &*self.store;
+        let contract = &task.contract;
+        let task_id = contract.id.clone();
+        let fail = |why: &str| {
+            let reason = format!(
+                "MCAO could not resume the waiting agent: {why}. It did not resume it any other \
+                 way. Retry the task; the answers stay in its decisions."
+            );
+            store
+                .fail_waiting_task(&task_id, &reason)
+                .map_err(|error| format!("cannot fail the waiting task: {error}"))
+        };
+        let target = store
+            .resume_target(&task_id)
+            .map_err(|error| format!("cannot read the waiting attempt: {error}"))?
+            .ok_or("the task has no waiting attempt")?;
+        if let Some(refusal) = resume_refusal(&contract.agent, contract.permission) {
+            return fail(refusal);
+        }
+        let Some(agent_session_id) = target.agent_session_id else {
+            return fail("the agent never reported its session id");
+        };
+        let replies = store
+            .pending_replies(&task_id)
+            .map_err(|error| format!("cannot read the replies: {error}"))?;
+        let rendered: Vec<_> = replies.iter().map(reply_for_worker).collect();
+        let Some(prompt) = orchestrator_core::brief::render_resume(&rendered) else {
+            return fail("the replies are too long to send in one turn");
+        };
+        let workspace = store
+            .list_workspaces()
+            .map_err(|error| format!("cannot read the worktree: {error}"))?
+            .into_iter()
+            .rev()
+            .find(|workspace| workspace.task_id == task_id)
+            .ok_or("the waiting task has no worktree")?;
+        let number = target.attempt_number;
+        let job = Job {
+            task_id: task_id.clone(),
+            attempt_id: target.attempt_id.clone(),
+            session_id: format!("{task_id}-session-{number}-{}", target.sessions + 1),
+            agent: contract.agent.clone(),
+            objective: prompt,
+            model_selection: contract.model_selection.clone(),
+            permission: contract.permission,
+            worktree: PathBuf::from(&workspace.path),
+            in_place: workspace.is_in_place(),
+            status_dir: worker_status::status_dir(&self.config.data_dir, &task_id, number),
+            session: JobSession::Resume(agent_session_id.clone()),
+            diag: self.config.diagnostics.clone(),
+            output: self.output.clone(),
+        };
+        let reply_ids: Vec<i64> = replies.iter().map(|reply| reply.id).collect();
+        store
+            .begin_resume(
+                &task_id,
+                &Session {
+                    id: job.session_id.clone(),
+                    attempt_id: job.attempt_id.clone(),
+                    adapter: job.agent.clone(),
+                    state: SessionState::Spawning,
+                },
+                &agent_session_id,
+                &reply_ids,
+            )
+            .map_err(|error| format!("cannot start the resume: {error}"))?;
+        job.diag.info(
+            LOG,
+            "worker_resumed",
+            &job.event_fields(&[("replies", &reply_ids.len().to_string())]),
+        );
+        self.start_supervisor(job)
+    }
+}
+
+/// A stored reply as the worker reads it.
+fn reply_for_worker(reply: &orchestrator_store::PendingReply) -> orchestrator_core::brief::Reply {
+    use orchestrator_core::brief::{Reply, ReplyKind};
+    Reply {
+        kind: match reply.kind {
+            orchestrator_store::ReplyKind::Answer => ReplyKind::Answer,
+            orchestrator_store::ReplyKind::Reconcile => ReplyKind::Reconcile,
+            orchestrator_store::ReplyKind::Message => ReplyKind::Message,
+        },
+        question: reply.question.clone(),
+        text: reply.text.clone(),
     }
 }
 
@@ -1142,6 +1287,23 @@ fn in_place_checkout(root: &str) -> Result<Checkout, GitError> {
     })
 }
 
+/// The agent CLI session a run starts or continues. A new id is the daemon's choice for Claude
+/// and Copilot; Codex ignores it and reports its own.
+#[derive(Clone)]
+enum JobSession {
+    New(String),
+    Resume(String),
+}
+
+impl JobSession {
+    fn as_task_session(&self) -> TaskSession<'_> {
+        match self {
+            Self::New(id) => TaskSession::New(id),
+            Self::Resume(id) => TaskSession::Resume(id),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Job {
     task_id: String,
@@ -1154,6 +1316,9 @@ struct Job {
     worktree: PathBuf,
     /// The task runs in its project's directory, not a worktree: nothing to commit.
     in_place: bool,
+    /// The attempt's status directory, the one path outside the worktree the agent may write.
+    status_dir: PathBuf,
+    session: JobSession,
     diag: Diagnostics,
     output: Arc<OutputStore>,
 }
@@ -1195,6 +1360,9 @@ fn preserved_work(job: &Job) -> (String, String) {
 /// Attempt failure reason when the directory of an in-place project is gone.
 const HOME_DIRECTORY_MISSING: &str =
     "The project directory no longer exists. Check the home directory in Settings, then retry.";
+/// Attempt failure reason when the attempt's status file cannot be made.
+const STATUS_FILE_FAILED: &str =
+    "The daemon could not prepare the task's status file. Check the daemon log for details, then retry.";
 /// Attempt failure reason when the bundled treehouse cannot be run.
 pub(crate) const WORKTREE_MANAGER_MISSING: &str =
     "The worktree manager is missing or could not be started. Reinstall the app, then retry.";
@@ -1288,10 +1456,38 @@ fn supervise_inner(inner: &Inner, job: &Job) {
     }
 }
 
+/// A new session id of the same length class, for the submit-time checks.
+pub(crate) const SESSION_PLACEHOLDER: &str = "00000000-0000-4000-8000-000000000000";
+
+/// The status directory the submit-time checks measure, of the same length class as a run's.
+pub(crate) fn placeholder_status_dir(config: &ExecutorConfig) -> PathBuf {
+    worker_status::status_dir(&config.data_dir, "task-0000000000000000", 1)
+}
+
+/// The channel the submit-time checks measure: a new session and the placeholder directory.
+pub(crate) fn submit_channel(status_dir: &Path) -> RunChannel<'_> {
+    RunChannel {
+        status_dir,
+        session: TaskSession::New(SESSION_PLACEHOLDER),
+        in_place: false,
+    }
+}
+
+/// What a task run passes beyond its prompt: its status directory, its session, and whether it
+/// runs in place (Codex then needs `--skip-git-repo-check`).
+#[derive(Clone, Copy)]
+pub(crate) struct RunChannel<'a> {
+    pub(crate) status_dir: &'a Path,
+    pub(crate) session: TaskSession<'a>,
+    pub(crate) in_place: bool,
+}
+
 /// The program and argument vector the daemon launches for `agent`, or `None`
-/// when the agent has no daemon launcher. Shared by the launch and by the
-/// submit-time command-line check so the two cannot disagree; the selected
-/// model, effort and workflow agent are part of the vector, so the check measures them too.
+/// when the agent has no daemon launcher, or cannot run `channel`'s session at `permission`
+/// (a Codex resume below Full other than Restricted). Shared by the launch and by the
+/// submit-time command-line check so the two cannot disagree; the selected model, effort,
+/// workflow agent, status directory and session are part of the vector, so the check
+/// measures them too.
 pub(crate) fn agent_command(
     config: &ExecutorConfig,
     agent: &str,
@@ -1299,42 +1495,103 @@ pub(crate) fn agent_command(
     selection: Option<&ModelSelection>,
     permission: PermissionLevel,
     workflow_agent: Option<&WorkflowAgent>,
+    channel: RunChannel<'_>,
 ) -> Option<(PathBuf, Vec<String>)> {
     let model = selection.and_then(|s| s.model.as_deref());
     let effort = selection.and_then(|s| s.effort.as_deref());
     match agent {
-        CODEX_AGENT => Some((
-            config
+        CODEX_AGENT => {
+            let program = config
                 .codex_program
                 .clone()
-                .unwrap_or_else(|| PathBuf::from("codex")),
-            CodexAdapter::args_for_task(permission, objective, model, effort, workflow_agent)?,
-        )),
-        CLAUDE_AGENT => Some((
-            config
-                .claude_program
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("claude")),
-            ClaudeCodeAdapter::args_for_task(permission, objective, model, effort, workflow_agent),
-        )),
+                .unwrap_or_else(|| PathBuf::from("codex"));
+            let args = match channel.session {
+                TaskSession::Resume(id) => CodexAdapter::args_for_resume(
+                    permission,
+                    id,
+                    objective,
+                    model,
+                    effort,
+                    workflow_agent,
+                    channel.status_dir,
+                    channel.in_place,
+                )?,
+                TaskSession::New(_) => {
+                    let mut args = CodexAdapter::args_for_task(
+                        permission,
+                        objective,
+                        model,
+                        effort,
+                        workflow_agent,
+                    )?;
+                    // `codex exec` refuses a directory that is not a Git repository unless told
+                    // otherwise.
+                    let mut extra = task_session::codex_launch_args(channel.status_dir).to_vec();
+                    if channel.in_place {
+                        extra.push("--skip-git-repo-check".to_owned());
+                    }
+                    args.splice(1..1, extra);
+                    args
+                }
+            };
+            Some((program, args))
+        }
+        CLAUDE_AGENT => {
+            let mut args = ClaudeCodeAdapter::args_for_task(
+                permission,
+                objective,
+                model,
+                effort,
+                workflow_agent,
+            );
+            args.extend(task_session::claude_args(
+                channel.status_dir,
+                channel.session,
+            ));
+            Some((
+                config
+                    .claude_program
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("claude")),
+                args,
+            ))
+        }
         // Submit-time length check only. The launch builds the real vector in
         // `spawn_copilot`, where the run directory and worktree are known; these
         // placeholders are the same length class.
-        COPILOT_AGENT => Some((
-            config
-                .copilot_program
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("copilot")),
-            CopilotAdapter::task_args(
+        COPILOT_AGENT => {
+            let mut args = CopilotAdapter::task_args(
                 objective,
                 Path::new("<copilot-usage-file>"),
                 Path::new("<task-worktree>"),
                 permission,
                 config.copilot_credit_cap,
                 workflow_agent,
-            ),
-        )),
+            );
+            args.extend(task_session::copilot_args(
+                channel.status_dir,
+                permission,
+                channel.session,
+            ));
+            Some((
+                config
+                    .copilot_program
+                    .clone()
+                    .unwrap_or_else(|| PathBuf::from("copilot")),
+                args,
+            ))
+        }
         _ => None,
+    }
+}
+
+impl Job {
+    fn channel(&self) -> RunChannel<'_> {
+        RunChannel {
+            status_dir: &self.status_dir,
+            session: self.session.as_task_session(),
+            in_place: self.in_place,
+        }
     }
 }
 
@@ -1368,7 +1625,7 @@ async fn spawn_copilot(
     }
     let run = CopilotRun::create(&inner.config.data_dir.join(COPILOT_RUNS_DIR))
         .map_err(|error| format!("cannot create the Copilot run directory: {error}"))?;
-    let args = CopilotAdapter::task_args(
+    let mut args = CopilotAdapter::task_args(
         &job.objective,
         &run.usage_file(),
         &job.worktree,
@@ -1376,6 +1633,11 @@ async fn spawn_copilot(
         inner.config.copilot_credit_cap,
         workflow_agent.as_ref(),
     );
+    args.extend(task_session::copilot_args(
+        &job.status_dir,
+        job.permission,
+        job.session.as_task_session(),
+    ));
     inner
         .config
         .check_launch(&job.agent, &program, &executable, &args)
@@ -1464,20 +1726,22 @@ async fn spawn_agent(
     if let Some(flag) = missing {
         warn_unsupported_workflow_agent(job, flag);
     }
-    let Some((_, mut args)) = agent_command(
+    let Some((_, args)) = agent_command(
         &inner.config,
         &job.agent,
         &job.objective,
         selection,
         job.permission,
         workflow_agent.as_ref(),
+        job.channel(),
     ) else {
-        return Err(format!("agent {:?} has no daemon launcher", job.agent).into());
+        return Err(format!(
+            "agent {:?} has no daemon launcher for this run at {} permission",
+            job.agent,
+            job.permission.as_str()
+        )
+        .into());
     };
-    // `codex exec` refuses a directory that is not a Git repository unless told otherwise.
-    if job.in_place && job.agent == CODEX_AGENT {
-        args.insert(1, "--skip-git-repo-check".to_owned());
-    }
     if let Some(selection) = selection {
         // The catalog may have changed since submission (signed out, CLI
         // replaced), so the selection is checked again against a fresh read.
@@ -1637,9 +1901,24 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         return Err(format!("cannot register cancellation owner: {error}"));
     }
 
+    // A new session reads the attempt's status file after the lines earlier sessions left.
+    let after = store
+        .last_status_line(&job.task_id, &job.attempt_id)
+        .unwrap_or(0);
+    let known_session = match &job.session {
+        JobSession::New(_) if job.agent == CODEX_AGENT => None,
+        JobSession::New(id) | JobSession::Resume(id) => Some(id.clone()),
+    };
+    let mut tail = StatusTail::new(
+        job.status_dir
+            .join(orchestrator_core::worker_status::STATUS_FILE_NAME),
+        after,
+        known_session,
+    );
     let pulse = Some(inner.pulse.as_ref());
-    let monitored = monitor_agent_with(handle, store, &owner, job, pulse).await;
+    let monitored = monitor_agent_with(handle, store, &owner, job, pulse, Some(&mut tail)).await;
     inner.pulse.forget(&job.session_id);
+    tail.drain(store, job);
     if let (COPILOT_AGENT, Ok(outcome)) = (job.agent.as_str(), &monitored) {
         inner.config.copilot_sign_in.record_run(&outcome.exit);
     }
@@ -1652,7 +1931,7 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let monitored = monitored.map_err(|reason| {
         format!("supervision failed, task stays Running for restart reconciliation: {reason}")
     })?;
-    finish(store, job, &owner, monitored)
+    finish(store, job, &owner, monitored, &tail)
 }
 
 /// Cancels and reaps a handle that cannot be supervised further.
@@ -1750,16 +2029,18 @@ async fn monitor_agent(
     owner: &CancellationOwner,
     job: &Job,
 ) -> Result<MonitorOutcome, String> {
-    monitor_agent_with(handle, store, owner, job, None).await
+    monitor_agent_with(handle, store, owner, job, None, None).await
 }
 
-/// `pulse`, when given, is touched at the start and on every agent event.
+/// `pulse`, when given, is touched at the start and on every agent event. `tail`, when given,
+/// reads the worker's status file about once a second and learns the agent's session id.
 async fn monitor_agent_with(
     mut handle: Box<dyn AgentHandle>,
     store: &SqliteStore,
     owner: &CancellationOwner,
     job: &Job,
     pulse: Option<&SessionPulse>,
+    mut tail: Option<&mut StatusTail>,
 ) -> Result<MonitorOutcome, String> {
     let requested_model = requested_codex_model(job);
     let requested_model = requested_model.as_deref();
@@ -1834,6 +2115,12 @@ async fn monitor_agent_with(
             result = handle.next_event() => Some(result),
             _ = tokio::time::sleep(Duration::from_millis(100)) => None,
         };
+        if let Some(tail) = tail.as_deref_mut() {
+            if let Some(Ok(Some(AgentEvent::SessionStarted { session_id }))) = &event {
+                note_agent_session(store, job, tail, &session_id.to_string());
+            }
+            tail.poll(store, job);
+        }
         match event {
             None => continue,
             Some(Ok(Some(AgentEvent::SessionExited { .. }))) => {
@@ -1903,6 +2190,28 @@ async fn monitor_agent_with(
     })
 }
 
+/// Records the session id the agent reported. Codex names its own session this way. Claude was
+/// given its id, so a different one is logged and the given id kept.
+fn note_agent_session(store: &SqliteStore, job: &Job, tail: &mut StatusTail, reported: &str) {
+    match &tail.agent_session_id {
+        Some(known) if known == reported => {}
+        Some(_) => job
+            .diag
+            .warn(LOG, "agent_session_id_mismatch", &job.event_fields(&[])),
+        None => {
+            if store
+                .record_agent_session_id(&job.task_id, &job.session_id, reported)
+                .is_ok()
+            {
+                tail.agent_session_id = Some(reported.to_owned());
+            } else {
+                job.diag
+                    .error(LOG, "agent_session_id_not_recorded", &job.event_fields(&[]));
+            }
+        }
+    }
+}
+
 /// Copies the text of an event the executor already read into the session's
 /// bounded ring. Infallible and non-blocking for the run: it neither reads the
 /// agent's pipes nor changes the event.
@@ -1936,6 +2245,7 @@ fn finish(
     job: &Job,
     owner: &CancellationOwner,
     monitored: MonitorOutcome,
+    tail: &StatusTail,
 ) -> Result<(), String> {
     let (outcome, code, reason) = describe_exit(&monitored.exit);
     let final_message = last_message_of(&monitored.exit);
@@ -2006,6 +2316,15 @@ fn finish(
         return close(resolution);
     }
     match monitored.exit {
+        // A clean exit is settled by what the worker reported first: a wait parks the run and
+        // a `failed` line fails it. A pending cancel wins over both. A `done` line is only a
+        // claim, so the candidate path below decides as before (DPES-1108 phase 4).
+        AgentExit::Completed { code: Some(0), .. }
+            if !monitored.cancellation_requested
+                && settled_by_report(store, job, tail, final_message) =>
+        {
+            close(resolution)
+        }
         AgentExit::Completed {
             code: Some(0),
             ref last_message,
@@ -2079,6 +2398,112 @@ fn finish(
                 final_message,
             );
             close(resolution)
+        }
+    }
+}
+
+/// Settles a clean exit from the worker's status lines when they decide it, and says whether
+/// they did. A wait parks the run (or fails it when it could not resume at the same level); a
+/// `failed` line fails it. Anything else is left to the candidate path.
+fn settled_by_report(
+    store: &SqliteStore,
+    job: &Job,
+    tail: &StatusTail,
+    final_message: Option<&str>,
+) -> bool {
+    let lines: Vec<_> = tail.lines.iter().map(|(_, line)| line.clone()).collect();
+    match status_rules::settle(&lines) {
+        Settlement::Ordinary => false,
+        Settlement::ReportedFailure(note) => {
+            let reason = match note.map(|note| one_line(&bounded_text(&note, EXCERPT_BYTES))) {
+                Some(note) if !note.is_empty() => {
+                    format!(
+                        "The agent reported that it failed: {}.",
+                        note.trim_end_matches('.')
+                    )
+                }
+                _ => "The agent reported that it failed.".to_owned(),
+            };
+            fail_after_agent_exit(store, job, &reason, final_message);
+            true
+        }
+        Settlement::Wait(reason) => {
+            park(store, job, tail, reason, final_message);
+            true
+        }
+    }
+}
+
+/// Parks a run whose worker reported a wait: the session ends, the attempt and the task wait,
+/// and up to [`MAX_QUESTIONS_PER_WAIT`] of its questions are raised for the user, all in one
+/// store transaction. The worktree stays leased. A run that could not be resumed at the same
+/// permission level, or whose session id is unknown, fails instead: it is never left waiting
+/// for a resume that cannot happen.
+fn park(
+    store: &SqliteStore,
+    job: &Job,
+    tail: &StatusTail,
+    reason: WaitReason,
+    final_message: Option<&str>,
+) {
+    let waits_for = match reason {
+        WaitReason::Decision => "a decision",
+        WaitReason::Blocker => "help",
+    };
+    let refusal = resume_refusal(&job.agent, job.permission).or_else(|| {
+        tail.agent_session_id
+            .is_none()
+            .then_some("the agent never reported its session id")
+    });
+    if let Some(why) = refusal {
+        let reason = format!(
+            "The agent stopped to wait for {waits_for}, but MCAO cannot resume it: {why}. It \
+             was not resumed any other way. Retry the task with the missing answer added."
+        );
+        fail_after_agent_exit(store, job, &reason, final_message);
+        return;
+    }
+    record_summary(store, job, final_message, None);
+    let questions: Vec<WorkerQuestion> = tail
+        .lines
+        .iter()
+        .filter(|(_, line)| line.verb == StatusVerb::NeedsDecision)
+        .filter_map(|(number, line)| {
+            Some(WorkerQuestion {
+                id: status_rules::question_id(&job.attempt_id, *number),
+                question: line.note.clone()?,
+                key: line.key.clone(),
+            })
+        })
+        .take(MAX_QUESTIONS_PER_WAIT)
+        .collect();
+    match store.enter_waiting(
+        &job.task_id,
+        &job.attempt_id,
+        &job.session_id,
+        reason,
+        &questions,
+    ) {
+        Ok(()) => job.diag.info(
+            LOG,
+            "worker_waiting",
+            &job.event_fields(&[
+                ("waits_for", waits_for),
+                ("questions", &questions.len().to_string()),
+            ]),
+        ),
+        Err(error) => {
+            job.diag.error(
+                LOG,
+                "wait_not_recorded",
+                &job.event_fields(&[("error", &error.to_string())]),
+            );
+            fail_after_agent_exit(
+                store,
+                job,
+                "The agent stopped to wait, but the daemon could not record the wait. Check the daemon log for details, then retry.",
+                final_message,
+            );
         }
     }
 }
@@ -2470,6 +2895,9 @@ mod running_listing_tests {
 
 #[path = "output_ring.rs"]
 pub(crate) mod output_ring;
+
+#[path = "worker_status.rs"]
+pub(crate) mod worker_status;
 
 #[cfg(all(test, unix))]
 #[path = "executor_tests.rs"]

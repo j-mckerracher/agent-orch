@@ -408,7 +408,8 @@ impl DaemonApi {
             | Action::TaskRevise(_)
             | Action::ProjectRemove(_)
             | Action::DecisionHold(_)
-            | Action::DecisionAsk(_) => return Ok(None),
+            | Action::DecisionAsk(_)
+            | Action::TaskMessage(_) => return Ok(None),
         }
         Ok(Some(found))
     }

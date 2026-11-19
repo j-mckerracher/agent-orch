@@ -301,6 +301,7 @@ mod tests {
             changed_files: None,
             summary: None,
             report_only: false,
+            wait_note: None,
         }
     }
 

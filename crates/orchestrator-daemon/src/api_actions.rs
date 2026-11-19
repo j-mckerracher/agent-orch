@@ -14,7 +14,8 @@ use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_T
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
     ActionOutcome, ActionProposal, ArchiveError, ConversationTarget, GrantOutcome, HoldSubject,
-    LineageError, LineageRelation, ProposalState, ResolveError, TaskRecord, WorkstreamStoreError,
+    LineageError, LineageRelation, ProposalState, ResolveError, TaskRecord, WaitError,
+    WorkstreamStoreError,
 };
 
 use super::projects_defaults::envelope_for;
@@ -115,6 +116,7 @@ enum Execution {
     RemoveProject(RemoveParams),
     HoldDecision(HoldParams),
     AskDecision(AskParams),
+    MessageTask(MessageParams),
 }
 
 /// A `task.propose`: the `tasks.submit` request it stands for, and the workstream
@@ -170,6 +172,15 @@ struct AskParams {
     idempotency_key: String,
 }
 
+/// A `task.message` (DPES-1108 phase 4). The key names the queued message, so a rerun queues
+/// nothing twice.
+#[derive(Serialize)]
+struct MessageParams {
+    task_id: String,
+    text: String,
+    idempotency_key: String,
+}
+
 impl Execution {
     /// The method the execution key is claimed under.
     fn method(&self) -> &'static str {
@@ -186,6 +197,7 @@ impl Execution {
             Self::RemoveProject(_) => "projects.remove",
             Self::HoldDecision(_) => "holds.set",
             Self::AskDecision(_) => "decisions.ask",
+            Self::MessageTask(_) => "tasks.message",
         }
     }
 
@@ -211,6 +223,7 @@ impl Execution {
             Self::RemoveProject(request) => serde_json::to_value(request),
             Self::HoldDecision(request) => serde_json::to_value(request),
             Self::AskDecision(request) => serde_json::to_value(request),
+            Self::MessageTask(request) => serde_json::to_value(request),
         };
         value.map_err(|_| RpcError::Internal)
     }
@@ -277,6 +290,23 @@ impl Execution {
                 )
                 .map(|question| format!("question:{}", question.id))
                 .map_err(ActionError::from),
+            Self::MessageTask(request) => {
+                match api.store.queue_task_message(
+                    &request.task_id,
+                    &request.idempotency_key,
+                    &request.text,
+                ) {
+                    Ok(()) => {
+                        api.wake_resumes();
+                        Ok(format!("message:{}", request.task_id))
+                    }
+                    // Only a waiting task takes a message, and only a few at a time.
+                    Err(error) => Err(match WaitError::of(&error) {
+                        Some(_) => RpcError::Conflict.into(),
+                        None => error.into(),
+                    }),
+                }
+            }
         }
     }
 
@@ -344,6 +374,12 @@ impl Execution {
                     .decision_question(&id)?
                     .map(|question| format!("question:{}", question.id)));
             }
+            Self::MessageTask(request) => {
+                return Ok(api
+                    .store
+                    .task_message_queued(&request.idempotency_key)?
+                    .then(|| format!("message:{}", request.task_id)));
+            }
         };
         match found {
             Ok(id) => Ok(Some(id)),
@@ -383,7 +419,8 @@ impl ProposeExec {
                 };
                 // Actions run under the mutation gate: do not probe a CLI here. These
                 // defaults were checked on save; the executor rechecks before launching.
-                let contract = api.checked_contract_without_catalog(&submit, &submit.idempotency_key)?;
+                let contract =
+                    api.checked_contract_without_catalog(&submit, &submit.idempotency_key)?;
                 api.admit_contract(&contract)?;
             }
         }
@@ -492,12 +529,13 @@ impl ReviseTaskExec {
     }
 
     /// Refuses a revise that could not stop the old task, before anything is made. Only a
-    /// queued or verifying task, or a running one whose owner is alive, can be asked to stop.
+    /// queued, waiting or verifying task, or a running one whose owner is alive, can be asked
+    /// to stop.
     /// A finished task is not revised: `task.retry` and `task.propose` start new work.
     fn preflight(&self, api: &DaemonApi) -> Result<(), ActionError> {
         let old = find_task(api, &self.old_task_id)?.ok_or(RpcError::NotFound)?;
         match old.state {
-            TaskState::Queued | TaskState::Verifying => {}
+            TaskState::Queued | TaskState::Verifying | TaskState::Waiting => {}
             TaskState::Running => {
                 api.require_live_cancellation_owner(&self.old_task_id)?;
                 // No owner at all passes the check above and leaves nothing to take the request.
@@ -1043,6 +1081,9 @@ impl DaemonApi {
             Execution::AskDecision(request) => {
                 self.task_in_workstream(&request.task_id, workstream)?
             }
+            Execution::MessageTask(request) => {
+                self.task_in_workstream(&request.task_id, workstream)?
+            }
             // Removing a project reaches outside any one workstream.
             Execution::RemoveProject(_) => false,
         })
@@ -1207,6 +1248,11 @@ impl DaemonApi {
                 question: ask.question,
                 options: ask.options,
                 key: ask.key,
+                idempotency_key: key,
+            }),
+            Action::TaskMessage(message) => Execution::MessageTask(MessageParams {
+                task_id: message.task_id,
+                text: message.text,
                 idempotency_key: key,
             }),
         })
@@ -1508,6 +1554,7 @@ impl DaemonApi {
             Action::TaskRevise(revise) => &revise.task_id,
             Action::DecisionHold(hold) => &hold.task_id,
             Action::DecisionAsk(ask) => &ask.task_id,
+            Action::TaskMessage(message) => &message.task_id,
             Action::WorkstreamLinkTask(link) => &link.task_id,
             _ => return Value::Null,
         };

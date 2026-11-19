@@ -8,8 +8,10 @@
 //! question until that day ends; it stays open and keeps its task held. A reconcile closes it
 //! with evidence that it no longer matters. The store refuses every other close.
 //!
-//! A worker's own question (a later phase) is raised with `SqliteStore::raise_question` and
-//! `QuestionRaiser::Worker`; it needs nothing from this module.
+//! A worker's own question is raised by the executor when the worker reports `needs-decision`
+//! and its task waits (DPES-1108 phase 4). Closing a question of a waiting task queues the
+//! user's words for the worker, in the same store transaction, and the answer or reconcile here
+//! wakes the scheduler so the worker resumes with them.
 
 use orchestrator_store::{ClosingKind, DecisionQuestion, QuestionError, QuestionRaiser};
 
@@ -69,6 +71,7 @@ impl DaemonApi {
                     .store
                     .answer_question(&request.question_id, &request.answer)
                     .map_err(map_question_error)?;
+                self.wake_resumes();
                 Ok(json!({"question": self.question_wire(&question, self.holds_now_ms())}))
             },
         )
@@ -111,9 +114,18 @@ impl DaemonApi {
                     .store
                     .reconcile_question(&request.question_id, &request.evidence)
                     .map_err(map_question_error)?;
+                self.wake_resumes();
                 Ok(json!({"question": self.question_wire(&question, self.holds_now_ms())}))
             },
         )
+    }
+
+    /// Asks the scheduler for a pass, so a waiting worker whose question just closed resumes
+    /// with the reply the close queued (DPES-1108 phase 4).
+    pub(super) fn wake_resumes(&self) {
+        if let Some(executor) = &self.executor {
+            executor.wake();
+        }
     }
 
     /// The question write an approved `decision.ask` runs. The caller holds the idempotency

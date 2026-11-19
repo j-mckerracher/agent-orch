@@ -2704,6 +2704,8 @@ mod usage_paths {
             permission: Default::default(),
             worktree: PathBuf::new(),
             in_place: false,
+            status_dir: PathBuf::new(),
+            session: JobSession::New(String::new()),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
             output: Default::default(),
         };
@@ -2889,6 +2891,8 @@ mod usage_paths {
             permission: PermissionLevel::Restricted,
             worktree: PathBuf::from("."),
             in_place: false,
+            status_dir: PathBuf::new(),
+            session: JobSession::New(String::new()),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
             output: Default::default(),
         };
