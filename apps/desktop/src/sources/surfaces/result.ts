@@ -8,6 +8,7 @@ export const TASK_STATE_ORDER: readonly TaskState[] = [
   "Created",
   "Queued",
   "Running",
+  "Waiting",
   "Verifying",
   "Succeeded",
   "VerificationFailed",

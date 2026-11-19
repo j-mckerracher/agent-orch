@@ -1218,6 +1218,7 @@ fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_characte
     let (_directory, api) = new_api();
     let objective = "z".repeat(65_000);
     for agent in ["codex", "claude-code"] {
+        let status_dir = crate::executor::placeholder_status_dir(&api.config);
         let (program, args) = agent_command(
             &api.config,
             agent,
@@ -1225,6 +1226,7 @@ fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_characte
             None,
             Default::default(),
             None,
+            crate::executor::submit_channel(&status_dir, crate::executor::ChannelSupport::ALL),
         )
         .unwrap();
         assert!(
@@ -1235,13 +1237,15 @@ fn agent_commands_carry_the_whole_objective_and_windows_refuses_a_65000_characte
             .expect_err("65,000 characters plus flags exceed the 32,767 limit");
         assert_eq!(error.limit, 32_767);
     }
+    let status_dir = crate::executor::placeholder_status_dir(&api.config);
     assert!(agent_command(
         &api.config,
         "pi",
         &objective,
         None,
         Default::default(),
-        None
+        None,
+        crate::executor::submit_channel(&status_dir, crate::executor::ChannelSupport::ALL),
     )
     .is_none());
 }

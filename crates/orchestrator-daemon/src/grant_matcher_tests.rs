@@ -231,6 +231,8 @@ fn a_grant_never_covers_a_never_grantable_kind() {
         r#"{"kind": "task.revise", "task_id": "task-1", "added_intent": "More."}"#.to_owned(),
         format!(r#"{{"kind": "project.remove", "project": "{code}"}}"#),
         r#"{"kind": "decision.hold", "task_id": "task-1", "until": "2026-12-01"}"#.to_owned(),
+        r#"{"kind": "decision.ask", "task_id": "task-1", "question": "Which?"}"#.to_owned(),
+        r#"{"kind": "task.message", "task_id": "task-1", "text": "Go on."}"#.to_owned(),
         format!(
             r#"{{"kind": "delivery.merge", "task_id": "task-1", "pr_number": 42, "head_sha": "{}"}}"#,
             "a".repeat(40)

@@ -105,7 +105,7 @@ impl DaemonApi {
     }
 
     /// The daemon clock in Unix milliseconds: the wake scheduler's, so a test moves it by hand.
-    fn holds_now_ms(&self) -> i64 {
+    pub(super) fn holds_now_ms(&self) -> i64 {
         let now = self
             .wake
             .as_ref()
@@ -135,7 +135,7 @@ fn map_hold_error(error: StoreError) -> RpcError {
 
 /// The last millisecond of `until` (`YYYY-MM-DD`, a real calendar day) in UTC, when that day is
 /// today or at most 60 days after it. `None` for any other text or day.
-fn hold_end_ms(until: &str, now_ms: i64) -> Option<i64> {
+pub(super) fn hold_end_ms(until: &str, now_ms: i64) -> Option<i64> {
     let shaped = until.len() == 10
         && until.bytes().enumerate().all(|(index, byte)| match index {
             4 | 7 => byte == b'-',

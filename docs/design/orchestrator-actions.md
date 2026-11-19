@@ -220,7 +220,7 @@ The snapshot is built by the conversation service, which already builds workstre
 
 ### Permission levels
 
-The chat level decides what the CLI may touch in its run directory. It does not widen action authority, and actions exist at Restricted and Auto: a Full or Extended turn gets no action block format, a block it emits is stripped, and `actions.resolve` refuses a proposal that came from any other turn. Phase 1 allowed only Restricted, because Auto has a shell. The user then widened it to Auto, the default chat level, so the Global orchestrator can propose from a fresh chat. Merge cards and standing approvals stay Restricted-only. Limit, stated honestly: at Auto and Full the agent has a shell and runs as the user, so it could read the daemon's token and call the daemon directly. The approver credential (see `m7-08-conversation-service.md`, "Approver credential") refuses `actions.resolve` and `approvals.resolve` to any session that does not hold the secret the desktop host gives the daemon, so the token alone is not enough. That closes the protocol path, not the machine: a shell can still edit the store or replace the daemon. Restricted removes the shell. Auto depends on the CLI's sandbox or classifier blocking access to the socket and token (unverified). Full is outside the guarantee.
+The chat level decides what the CLI may touch in its run directory. It does not widen action authority (the autonomous class of DPES-1108 phase 5 is the same at Restricted and Auto), and actions exist at Restricted and Auto: a Full or Extended turn gets no action block format, a block it emits is stripped, and `actions.resolve` refuses a proposal that came from any other turn. Phase 1 allowed only Restricted, because Auto has a shell. The user then widened it to Auto, the default chat level, so the Global orchestrator can propose from a fresh chat. Merge cards and standing approvals stay Restricted-only. Limit, stated honestly: at Auto and Full the agent has a shell and runs as the user, so it could read the daemon's token and call the daemon directly. The approver credential (see `m7-08-conversation-service.md`, "Approver credential") refuses `actions.resolve` and `approvals.resolve` to any session that does not hold the secret the desktop host gives the daemon, so the token alone is not enough. That closes the protocol path, not the machine: a shell can still edit the store or replace the daemon. Restricted removes the shell. Auto depends on the CLI's sandbox or classifier blocking access to the socket and token (unverified). Full is outside the guarantee.
 
 ## Standing approvals
 
@@ -281,12 +281,39 @@ approval rules above, with these differences:
 Migrations `0051_pull_requests.sql` and `0052_merge_grants.sql` hold the pull request state and the
 grant columns.
 
+## Authority model (DPES-1108 phase 5)
+
+Plan: [firstmate-behavior-plan.md](firstmate-behavior-plan.md) 5.5. Decisions: [firstmate-behavior-decisions.md](firstmate-behavior-decisions.md), "Phase 5". Threat and containment: `docs/security.md` section 6.
+
+Every action has an `ActionAuthority`, from one exhaustive `match` over `ActionKind` next to `NEVER_GRANTABLE` (`orchestrator_action.rs`), so a new kind cannot compile unclassified.
+
+| Class | Kinds | What happens |
+| --- | --- | --- |
+| Autonomous | `workstream.create`, `workstream.update` (not to `archived`), `objective.add`, `objective.revise`, `task.propose`, `task.retry`, `workstream.link_task`, `decision.ask`, `task.message`, `memory.set` with `document: learnings`, `coordinator.route` (global only, to an active coordinator), `coordinator.report` (a coordinator only) | The card is stored as before, then the daemon approves it as `agent` and runs it through the same execute path as a user approval. The card shows "Done on its own". |
+| User word | `task.cancel`, `task.revise`, `delivery.merge`, `project.remove`, `decision.hold`, `workstream.update` to `archived`, `memory.set` with `document: shared` or `local` | A card the user approves. Only `delivery.merge` may be covered by a merge grant; the never-grantable list is unchanged. |
+
+Bounds, all checked by the daemon (`api_authority.rs`, `autonomy_check` in core):
+
+- The `autonomous_actions` setting is on (default on; Settings, "Acting on its own"). Off makes every action a card, which a standing approval the user made may still cover.
+- A turn with no user words to cite (a wake turn, or a relay of a scout report) may run only `task.retry`, `task.message`, `decision.ask` and `coordinator.report` on its own, plus a coordinator's `task.propose` that names an open routed request (`request`). Its other `task.propose`, workstream, objective, route and learning cards wait for the user.
+- A task the orchestrator starts records its origin in `task_origins` before it is admitted: the routed request a coordinator's task serves, else the user turn. The store refuses a user-turn origin that is not a user turn that read no report, and a routed-request origin that is not the task's own open request (`tasks.routed_request_id`, no answer yet). One routed request is the origin of at most 5 such tasks (`MAX_AUTONOMOUS_TASKS_PER_REQUEST`); past that a task for it is a card.
+- At most 5 actions a turn run on their own; the rest stay cards. A pull-request task always stays a card.
+- The project must be registered and not removed; a task an action names must exist in such a project. A route needs the project's coordinator to be active. The approve-time envelope and promotion re-checks apply.
+- The pass looks at a turn's own new cards once, right after the turn completes, and before the grant matcher. A card it leaves is never picked up later, so turning the switch on does not run old cards.
+- Caps, the load gate, attempt limits, the wake budget (per scope, so each coordinator has its own) and token budget are unchanged.
+
+The snapshot tells each turn which kinds run at once ("Run at once: ..."); the preamble says the rest wait for the user's approval.
+
+One-task override: when a task's delivery departs from the project's default, the daemon stores the departure with the words of the user turn in `task_overrides`, for that task only. The card lists it ("For this task only: ..."). Only `delivery` is recorded: `task.propose` has no base-branch or merge field, and `agent` is a global Settings default, not a project default.
+
+Unlanded work: `tasks.archive` refuses, and the slot is not returned, while a task has a committed candidate that is not on a local review ref, not bound to a pull request, not merged and not discarded. `tasks.discard` (user-only) records the user's discard; it deletes nothing.
+
 ## Human control and safety
 
 - **Idempotency.** `conversations.send` is idempotent per key, so a resend does not start a second turn. Proposal ids are stable per turn and index. Approve and reject go through `actions.resolve` with the shared idempotency executor, so a double click executes once. Execution uses `stable_id("action", proposal_id)` as its key, so a crash between approve and execute completes once on retry. A new message that yields the same kind and digest as a pending proposal in the same conversation returns the existing card instead of a second one. The snapshot lists existing workstreams, so the agent sees what already exists.
 - **Daemon-confirmed results only.** The card shows store state. "Created" appears only after the execution event exists, with a link to the record.
 - **Who can approve.** Approval needs the approver credential. The desktop host creates it and gives it to the daemon it starts. No wire path lets a process that holds only the daemon token approve or decide for the user. The token alone still opens direct task and workstream calls, so the approval gate covers proposals from Restricted chat turns, not every change the daemon can make. The credential does not stop a same-user process from editing the store or replacing the daemon. See `m7-08-conversation-service.md`, "Approver credential".
-- **Prompt injection.** Promised: no action proposed in an agent's reply runs without a per-action approval or a matching standing grant, whatever the agent read. Not promised: that the agent never proposes something harmful, or that a user never approves a misleading card. Mitigations: the card shows the canonical parameters, not the agent's prose; a proposal made after reading a report is labeled with the source; destructive kinds are never grantable; proposals are rate-capped per turn.
+- **Prompt injection.** Promised: no user-word action (see "Authority model") runs without a per-action approval or, for `delivery.merge` only, a matching merge grant, whatever the agent read; an autonomous action runs only inside the bounds of that section, and a turn with no user words (a wake, or a relay of a report) cannot start new work on its own. Not promised: that the agent never proposes something harmful, or that a user never approves a misleading card. Mitigations: the card shows the canonical parameters, not the agent's prose; a proposal made after reading a report is labeled with the source; destructive kinds are never grantable; proposals are rate-capped per turn.
 - **Level does not widen authority.** See "Permission levels".
 - **Audit.** `action_proposal_events` records proposed, approved or rejected (with actor), executed (with result) and failed (with code). Clearing a conversation scrubs proposal parameters and keeps events with digests only, matching migration `0034_idempotency_scrub`. Projecting action events into `mcao.audit-envelope.v1` needs a change to the released AEC contract, whose `data` object is closed. That is a separate item.
 

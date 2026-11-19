@@ -42,7 +42,7 @@ const rows = (card: ActionProposal) => Object.fromEntries(fieldsOf(card, new Map
 describe("delivery.merge card", () => {
   it("landing_card_rows_show_title_number_short_commit_method_summary_and_the_warning", () => {
     const r = rows(merge());
-    expect(cardTitle("delivery.merge")).toBe("Proposed: Merge pull request");
+    expect(cardTitle("delivery.merge", {})).toBe("Proposed: Merge pull request");
     expect(r["Task title"]).toBe("Retry the sync call");
     expect(r["Pull request"]).toBe("42");
     expect(r["Commit"]).toBe("abc123def456");

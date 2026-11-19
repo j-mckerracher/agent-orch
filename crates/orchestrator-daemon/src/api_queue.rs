@@ -11,12 +11,15 @@
 //!   max_workers_per_project}, dispatch_blocked, running[{task_id, project_id,
 //!   agent}], queued[{task_id, project_id, position|null, waiting_reason,
 //!   waiting_on|null, waiting_detail|null, load?}] }`.
-//! * `waiting_reason` is `dependency`, `global_cap`, `project_cap`, `approval`,
-//!   `load` or `other`. `load` means the machine load gate is closed; the entry
+//! * `waiting_reason` is `dependency`, `decision`, `global_cap`, `project_cap`,
+//!   `approval`, `load` or `other`. `decision` means the task has a question open for the
+//!   user (`waiting_detail` `open_question`). `load` means the machine load gate is closed; the entry
 //!   then also carries `load: {meter, mean_percent, limit_percent,
 //!   reopen_percent}` (whole percents, no path). It comes from a real scheduler pass over the same task
 //!   records and the daemon's real limits, so it matches what the executor
-//!   decides. Only `Queued` tasks appear; `Created` tasks are not admitted.
+//!   decides. Only `Queued` tasks appear; `Created` tasks are not admitted. A `Waiting` task
+//!   (its worker ended its turn to wait for a reply) is in neither list; one with a reply to
+//!   deliver resumes under the same caps, so it can take a slot a queued task would get.
 //! * `position` is the 1-based "up next" order: tasks the scheduler starts on
 //!   the next pass come first, then capacity-blocked tasks in the fair
 //!   (round-robin over projects, continuing from the executor's fairness
@@ -105,6 +108,10 @@ pub(super) struct Reading {
     pub(super) tasks: Vec<TaskRecord>,
     pub(super) workspaces: Vec<Workspace>,
     projects: Vec<Project>,
+    /// Tasks with a question open for the user; the scheduler holds them back.
+    pub(super) open_questions: BTreeSet<String>,
+    /// Waiting tasks with a reply to deliver: a pass resumes them under the same caps.
+    pub(super) resumable: BTreeSet<String>,
 }
 
 impl DaemonApi {
@@ -144,6 +151,14 @@ impl DaemonApi {
                     tasks: self.store.list().map_err(map_store_error)?,
                     workspaces: self.store.list_workspaces().map_err(map_store_error)?,
                     projects: self.store.list_projects().map_err(map_store_error)?,
+                    open_questions: self
+                        .store
+                        .tasks_with_open_questions()
+                        .map_err(map_store_error)?,
+                    resumable: self
+                        .store
+                        .tasks_ready_to_resume()
+                        .map_err(map_store_error)?,
                 })
             },
         )
@@ -203,6 +218,8 @@ pub(super) fn build_snapshot(
         .map(|scheduler| {
             scheduler
                 .with_start_gate(gate)
+                .with_open_questions(&reading.open_questions)
+                .with_resumable(&reading.resumable)
                 .schedule(Some(&authorization))
         })
         .map_err(|_| RpcError::Internal)
@@ -301,6 +318,7 @@ fn explain(reason: &RejectionReason) -> Explained {
             (category, Some(dependency_id.clone()), None, None)
         }
         RejectionReason::Unauthorized => (category, None, Some("project_not_registered"), None),
+        RejectionReason::AwaitingDecision => (category, None, Some("open_question"), None),
         RejectionReason::WorktreeOwned { owner_task_id, .. } => (
             category,
             Some(owner_task_id.clone()),

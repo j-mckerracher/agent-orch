@@ -1,0 +1,131 @@
+/** Open questions for the user in the Review view, and the two user-only changes: answer and defer (DPES-1108). */
+import { useCallback, useState } from "react";
+import { APPROVER_REQUIRED_NOTICE, asDaemonError, type DaemonError } from "../../../daemon/errors";
+import { FIXTURE_HOLD_NOTICE } from "../../../sources/surfaces/holds";
+import { notOk, observation } from "../../../sources/surfaces/result";
+import type { QuestionItem, QuestionReceipt } from "../../../sources/surfaces/types";
+import { useGate, useServices, useSurface } from "../../services";
+import { useRetained } from "../workspace/useRetained";
+import { formatHoldDay, holdErrorText } from "./holdDates";
+import { HOLDS_POLL_MS } from "./useHolds";
+
+/** The longest answer the daemon accepts. */
+export const MAX_ANSWER_CHARS = 4096;
+
+const NO_QUESTIONS: QuestionItem[] = [];
+
+export interface QuestionsModel {
+  /** False for a live daemon without the `holds` capability: no list, no controls, no error. */
+  supported: boolean;
+  loading: boolean;
+  /** Why the list could not be read; null while it can. */
+  unavailable: string | null;
+  items: QuestionItem[];
+  fixture: boolean;
+  /** The visible reason the controls are off; null when they work. */
+  blocked: string | null;
+  /** The question being changed now; null when idle. */
+  busy: string | null;
+  /** The last result, or why it failed. Empty before the first change. */
+  announcement: string;
+  /** Sends `text` exactly as given. Resolves true when the daemon confirmed it. */
+  answer: (question: QuestionItem, text: string) => Promise<boolean>;
+  defer: (question: QuestionItem, until: string) => Promise<boolean>;
+}
+
+/** Plain words for a refused answer or deferral. Each says nothing was changed, except when the outcome is unknown. */
+function questionErrorText(error: DaemonError, operation: "answer" | "defer"): string {
+  switch (error.kind) {
+    case "invalid-params":
+      return operation === "answer"
+        ? `The daemon did not accept that answer. It must have text and at most ${MAX_ANSWER_CHARS} characters. Nothing was changed.`
+        : holdErrorText(error, "hold");
+    case "not-found":
+      return "That question is no longer known. Nothing was changed.";
+    case "conflict":
+      return "That question is already closed. Nothing was changed.";
+    default:
+      return holdErrorText(error, "hold");
+  }
+}
+
+export function useQuestions(): QuestionsModel {
+  const { surfaces } = useServices();
+  const gate = useGate();
+  const source = surfaces.questions;
+  const live = source.provenance.kind === "daemon";
+  const supported = !live || gate.connection.capabilities.includes("holds");
+  const [nonce, setNonce] = useState(0);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+
+  const loaded = useSurface(
+    () =>
+      supported
+        ? source.list()
+        : Promise.resolve(notOk<QuestionItem[]>(source.provenance, "unsupported", "This daemon has no questions.", observation(Date.now()))),
+    `questions#${nonce}`,
+    source.provenance,
+    supported ? { pollMs: HOLDS_POLL_MS, onFocus: true } : undefined,
+  );
+  const result = useRetained(loaded, "questions");
+
+  const blocked = !live
+    ? null
+    : !gate.connected
+      ? "Reconnect to the daemon to answer or defer a question."
+      : !gate.connection.approver
+        ? APPROVER_REQUIRED_NOTICE
+        : null;
+
+  const change = useCallback(
+    async (id: string, operation: "answer" | "defer", send: () => Promise<QuestionReceipt>, done: string): Promise<boolean> => {
+      if (busy !== null) return false;
+      setBusy(id);
+      try {
+        const receipt = await send();
+        setAnnouncement(receipt.simulated ? `${done} ${FIXTURE_HOLD_NOTICE}` : done);
+        setNonce((value) => value + 1);
+        return true;
+      } catch (error) {
+        setAnnouncement(questionErrorText(asDaemonError(error), operation));
+        return false;
+      } finally {
+        setBusy(null);
+      }
+    },
+    [busy],
+  );
+
+  const answer = useCallback(
+    (question: QuestionItem, text: string) =>
+      text.trim() === ""
+        ? Promise.resolve(false)
+        : change(question.id, "answer", () => source.answer(question.id, text), `Answered: ${question.taskTitle || question.taskId}.`),
+    [change, source],
+  );
+
+  const defer = useCallback(
+    (question: QuestionItem, until: string) =>
+      change(
+        question.id,
+        "defer",
+        () => source.defer(question.id, until),
+        `Deferred: ${question.taskTitle || question.taskId} until ${formatHoldDay(until, true)}.`,
+      ),
+    [change, source],
+  );
+
+  return {
+    supported,
+    loading: supported && result.status === "loading",
+    unavailable: supported && (result.status === "unavailable" || result.status === "unknown") ? result.reason : null,
+    items: supported && result.status === "ok" ? result.data : NO_QUESTIONS,
+    fixture: !live,
+    blocked,
+    busy,
+    announcement,
+    answer,
+    defer,
+  };
+}

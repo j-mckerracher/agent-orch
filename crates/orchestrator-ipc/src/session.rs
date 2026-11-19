@@ -423,7 +423,7 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "projects.set_defaults" => Some(Capability::Projects),
         // DPES-673: draft normalization shares the capability of the submit it feeds.
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry"
-        | "tasks.archive" | "intake.normalize" => Some(Capability::Tasks),
+        | "tasks.archive" | "tasks.discard" | "intake.normalize" => Some(Capability::Tasks),
         "agents.capabilities"
         | "agents.catalog"
         | "agents.validate_selection"
@@ -452,13 +452,21 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         "settings.get" | "settings.set" => Some(Capability::Settings),
         "monitoring.get" | "monitoring.set" | "monitoring.ack" => Some(Capability::Monitoring),
         "holds.set" | "holds.release" | "holds.list" => Some(Capability::Holds),
+        // DPES-1108 phase 3: questions held for the user share the holds capability. All four
+        // are user-only.
+        "decisions.list" | "decisions.answer" | "decisions.defer" | "decisions.reconcile" => {
+            Some(Capability::Holds)
+        }
         "grants.create" | "grants.revoke" | "grants.list" => Some(Capability::StandingApprovals),
         // DPES-1105 phase 5b: the return brief shares the grants capability. Both are open: the
         // brief reads, and the ack only clears the window the user has seen.
         "monitoring.brief" | "monitoring.brief_ack" => Some(Capability::StandingApprovals),
-        // DPES-1105 phase 5b: the user's notes share the grants capability. `notes.list` is
-        // open; `notes.set` is user-only because a note is persistent text the next prompt carries.
-        "notes.list" | "notes.set" => Some(Capability::StandingApprovals),
+        // DPES-1108 phase 6: preferences and learnings share the grants capability, as the notes
+        // they replace did. `memory.list` is open; the writes are user-only because an entry is
+        // persistent text every later prompt carries.
+        "memory.list" | "memory.set" | "memory.remove" | "memory.restore" => {
+            Some(Capability::StandingApprovals)
+        }
         // DPES-1105: watched pull requests. Both only read (a refresh asks the daemon for one
         // fresh view, which it rate limits), so neither is user-only.
         "pulls.list" | "pulls.refresh" => Some(Capability::Landing),
@@ -492,7 +500,9 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         "conversations.clear"
         | "coordinator.clear"
         | "coordinator.remove"
-        | "coordinator.restore" => Some(Capability::ConversationHistory),
+        | "coordinator.restore"
+        // DPES-1108 phase 7: the scope sentence of a coordinator's charter. User-only.
+        | "coordinator.set_scope" => Some(Capability::ConversationHistory),
         // DPES-1105: approving or rejecting a proposed action, and reading the pending
         // ones. Only a session that negotiated `orchestrator_actions` can do either.
         // `actions.pending` only reads, so it is not a user-only method.

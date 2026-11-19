@@ -29,12 +29,13 @@ import {
   readingText,
 } from "./settingsModel";
 import { SaveButton, useSaveGuard } from "./SaveBar";
+import { AutonomousActionsSection } from "./AutonomousActionsSection";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
 import { McpToolsSection } from "./McpToolsSection";
 import { DispatchDefaultsSection } from "./DispatchDefaultsSection";
 import { GrantsSection } from "./GrantsSection";
-import { NotesSection } from "./NotesSection";
+import { PreferencesSection } from "./PreferencesSection";
 import { RepositoriesSection } from "./RepositoriesSection";
 import { SupervisionSections } from "./SupervisionSection";
 import { useSettings, type SettingsModel } from "./useSettings";
@@ -205,12 +206,13 @@ export function SettingsView() {
         <MachineLoad model={model} />
       </section>
       <SupervisionSections model={model} />
+      <AutonomousActionsSection model={model} />
       <ChatPullRequestSection model={model} />
       <McpToolsSection model={model} />
       <RepositoriesSection />
       <HomeDirectorySection model={model} />
       <GrantsSection />
-      <NotesSection />
+      <PreferencesSection />
     </div>
   );
 }

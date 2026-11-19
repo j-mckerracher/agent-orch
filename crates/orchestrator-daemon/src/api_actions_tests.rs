@@ -558,6 +558,7 @@ fn a_turn_above_auto_never_gets_the_block_format() {
             actions,
             wake: None,
             mcp: None,
+            charter: None,
         };
         let prompt = build_prompt(&request);
         assert!(!prompt.instructions.contains("mcao-actions"), "{level:?}");

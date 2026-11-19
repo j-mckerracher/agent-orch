@@ -12,6 +12,7 @@ export const TASK_STATES: readonly TaskState[] = [
   "Created",
   "Queued",
   "Running",
+  "Waiting",
   "Verifying",
   "Succeeded",
   "VerificationFailed",
@@ -20,7 +21,11 @@ export const TASK_STATES: readonly TaskState[] = [
 ];
 
 /** Display text for a daemon state. The wire value stays `Cancelled`; only the label is US-spelled. */
-const STATE_LABELS: Readonly<Record<string, string>> = { Cancelled: "Canceled", cancelled: "Canceled" };
+const STATE_LABELS: Readonly<Record<string, string>> = {
+  Cancelled: "Canceled",
+  cancelled: "Canceled",
+  Waiting: "Waiting for a reply",
+};
 
 export function stateLabel(state: string): string {
   return STATE_LABELS[state] ?? state;
@@ -33,13 +38,19 @@ export const TERMINAL_STATES: ReadonlySet<TaskState> = new Set([
   "Cancelled",
 ]);
 
-/** Tasks still active or waiting (Created, Queued, Running, Verifying): the top-bar task count. */
+/** Tasks still active or waiting (Created, Queued, Running, Waiting, Verifying): the top-bar task count. */
 export function openTaskCount(tasks: readonly TaskRecord[]): number {
   return tasks.filter((task) => !TERMINAL_STATES.has(task.state)).length;
 }
 
 /** States the daemon accepts `tasks.cancel` from; any other state is refused. */
-export const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set(["Created", "Queued", "Running", "Verifying"]);
+export const CANCELLABLE_STATES: ReadonlySet<TaskState> = new Set([
+  "Created",
+  "Queued",
+  "Running",
+  "Waiting",
+  "Verifying",
+]);
 
 export function canCancel(state: TaskState): boolean {
   return CANCELLABLE_STATES.has(state);

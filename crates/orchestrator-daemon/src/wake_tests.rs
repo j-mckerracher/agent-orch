@@ -10,7 +10,7 @@ use orchestrator_core::contract::{
 };
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_core::records::Project;
-use orchestrator_core::supervision::{ManualClock, DEBOUNCE_MS};
+use orchestrator_core::supervision::{ManualClock, DEBOUNCE_MS, DEFAULT_WAKE_HOURLY_CAP};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent};
 use orchestrator_core::workstream::{Workstream, WorkstreamState};
 use orchestrator_diagnostics::Diagnostics;
@@ -1472,37 +1472,130 @@ fn a_workstream_event_also_notices_global() {
 // ---- limits ------------------------------------------------------------------------------
 
 #[test]
-fn six_wake_turns_an_hour_then_paused() {
+fn wake_turns_stop_at_the_default_hourly_cap() {
     let f = fixture();
     f.probe.replying(Some("ok"));
-    for index in 0..6 {
+    let cap = DEFAULT_WAKE_HOURLY_CAP as usize;
+    for index in 0..cap {
         fail_task(&f, &format!("t-{index}"), "Fix it");
         tick(&f);
         assert_eq!(start_batch(&f).started, 1, "turn {index}");
     }
-    assert_eq!(f.probe.started(), 6);
+    assert_eq!(f.probe.started(), cap);
 
-    fail_task(&f, "t-6", "Fix it");
+    let over = format!("t-{cap}");
+    fail_task(&f, &over, "Fix it");
     tick(&f);
     let report = start_batch(&f);
 
     assert_eq!(report.started, 0);
-    assert_eq!(f.probe.started(), 6, "nothing spent past the cap");
+    assert_eq!(f.probe.started(), cap, "nothing spent past the cap");
     let seventh = records_of(&f, WakeKind::TaskFailed)
         .into_iter()
-        .find(|record| record.subject == "t-6")
+        .find(|record| record.subject == over)
         .unwrap();
     assert_eq!(seventh.state, WakeState::Skipped);
     assert_eq!(seventh.skip_reason, Some(SkipReason::LimitHourly));
     // The notice still reads in the transcript.
     let page = get(&f);
     let notices: Vec<&Value> = page["wake_records"].as_array().unwrap().iter().collect();
-    assert!(notices.iter().any(|record| record["subject"] == "t-6"));
-    assert_eq!(ledger_rows(&f), 6);
+    assert!(notices
+        .iter()
+        .any(|record| record["subject"] == over.as_str()));
+    assert_eq!(ledger_rows(&f), DEFAULT_WAKE_HOURLY_CAP);
     let paused = &monitoring(&f)["paused"][0];
     assert_eq!(paused["reason"], "hourly");
     let until = paused["until"].as_str().unwrap();
     assert!(until.ends_with('Z') && until.len() == 20, "{until}");
+}
+
+/// Work checks get half of each cap. One past that share is not recorded, so it leaves no
+/// skipped line, and an outcome event still wakes with the rest of the cap (DPES-1108 phase 8).
+#[test]
+fn a_work_check_past_its_share_of_the_cap_is_not_recorded_and_an_outcome_still_wakes() {
+    let f = fixture();
+    set_settings(&f, "cap", json!({"wake_limits": {"hourly_cap": 2}})).unwrap();
+    f.probe.replying(Some("ok"));
+    work_check(&f);
+    assert_eq!(start_batch(&f).started, 1);
+    tick(&f);
+
+    // The next check is due ten minutes later; the first one spent the heartbeat share.
+    advance(&f, 10 * MINUTE + SLACK);
+    f.pulse.touch_at("t-1-s1", f.clock.now_ms());
+    tick(&f);
+    assert_eq!(records_of(&f, WakeKind::WorkCheck).len(), 1);
+    assert!(records_of(&f, WakeKind::WorkCheck)
+        .iter()
+        .all(|record| record.state != WakeState::Skipped));
+
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+    assert_eq!(
+        start_batch(&f).started,
+        1,
+        "an outcome uses the rest of the cap"
+    );
+}
+
+/// A completed wake turn's entry carries the recorded pull request of the task it reported,
+/// built by the daemon from the pull request row and its bound repository (DPES-1108 phase 8).
+#[test]
+fn a_wake_turn_entry_carries_the_recorded_pull_request_link_of_its_task() {
+    use orchestrator_core::landing::{CheckState, PrState};
+    use orchestrator_store::{PullRequestSeen, StoredCheck};
+
+    let f = fixture();
+    f.probe.replying(Some("Fix it failed."));
+    fail_task(&f, "t-1", "Fix it");
+    f.api
+        .store
+        .observe_pull_request(
+            &PullRequestSeen {
+                task_id: "t-1".to_owned(),
+                project_id: "p".to_owned(),
+                number: 12,
+                branch: "moa/t-1".to_owned(),
+                base_branch: "main".to_owned(),
+                state: PrState::Open,
+                head_sha: "a".repeat(40),
+                mergeable: Some(true),
+                checks: vec![StoredCheck {
+                    name: "build".to_owned(),
+                    state: CheckState::Failed,
+                }],
+                title: "Fix it".to_owned(),
+            },
+            1,
+        )
+        .unwrap();
+    f.api
+        .store
+        .bind_pull_request_repo("t-1", "octo", "demo")
+        .unwrap();
+    tick(&f);
+    assert_eq!(start_batch(&f).started, 1);
+    tick(&f);
+
+    let page = get(&f);
+    let completed: Vec<&Value> = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["kind"] == "turn_completed")
+        .collect();
+    assert_eq!(completed.len(), 1, "{page}");
+    assert_eq!(
+        completed[0]["pull_requests"],
+        json!([{"task_id": "t-1", "number": 12, "url": "https://github.com/octo/demo/pull/12"}])
+    );
+    // An entry of a turn with no recorded pull request has no field at all.
+    assert!(page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|entry| entry["kind"] != "turn_completed")
+        .all(|entry| entry.get("pull_requests").is_none()));
 }
 
 #[test]
@@ -2091,7 +2184,7 @@ fn settings_get_carries_the_supervision_and_wake_limit_groups() {
     );
     assert_eq!(
         body["wake_limits"],
-        json!({"hourly_cap": 6, "daily_cap": 40, "daily_token_budget": null})
+        json!({"hourly_cap": 20, "daily_cap": 160, "daily_token_budget": null})
     );
     assert!(body.get("mode").is_none(), "the mode is monitoring.get's");
 }
@@ -2378,20 +2471,22 @@ fn an_away_wake_turn_still_stops_at_the_hourly_cap() {
     let f = fixture();
     set_mode(&f, "away").unwrap();
     f.probe.replying(Some("ok"));
-    for index in 0..6 {
+    let cap = DEFAULT_WAKE_HOURLY_CAP as usize;
+    for index in 0..cap {
         fail_task(&f, &format!("t-{index}"), "Fix it");
         tick(&f);
         assert_eq!(start_batch(&f).started, 1, "turn {index}");
     }
-    fail_task(&f, "t-6", "Fix it");
+    let over = format!("t-{cap}");
+    fail_task(&f, &over, "Fix it");
     tick(&f);
     let report = start_batch(&f);
 
     assert_eq!(report.started, 0);
-    assert_eq!(f.probe.started(), 6, "away spends no turn past the cap");
+    assert_eq!(f.probe.started(), cap, "away spends no turn past the cap");
     let seventh = records_of(&f, WakeKind::TaskFailed)
         .into_iter()
-        .find(|record| record.subject == "t-6")
+        .find(|record| record.subject == over)
         .unwrap();
     assert_eq!(seventh.skip_reason, Some(SkipReason::LimitHourly));
     assert_eq!(monitoring(&f)["paused"][0]["reason"], "hourly");
@@ -2576,4 +2671,142 @@ fn the_pause_lifts_thirty_minutes_after_the_newest_failure() {
         "resumes once the cooldown has passed"
     );
     assert_eq!(f.probe.started(), 4);
+}
+
+// ---- project coordinators (DPES-1108 phase 7) ---------------------------------------------
+
+const COORDINATOR_SCOPE: &str = "conversation:project:p";
+
+fn coordinator_records(f: &Fixture) -> Vec<WakeRecord> {
+    f.api
+        .store
+        .wake_records_page(COORDINATOR_SCOPE, 50)
+        .unwrap()
+        .0
+}
+
+/// Adds project `p`'s coordinator and makes it the owner of `task_id`.
+fn own(f: &Fixture, task_id: &str) {
+    f.api.store.restore_coordinator("p").unwrap();
+    f.api
+        .store
+        .set_task_coordinator(task_id, "p", None)
+        .unwrap();
+}
+
+#[test]
+fn a_coordinator_task_wakes_its_coordinator_and_reaches_global_only_as_a_report() {
+    let f = fixture();
+    f.probe.replying(Some("The export task failed."));
+    queue_task(&f, "t-c", "Fix the export");
+    own(&f, "t-c");
+    // The rest of a run, from the queued task the owner was written on.
+    let store = &f.api.store;
+    store
+        .add_attempt(
+            "t-c",
+            &Attempt {
+                id: "t-c-a1".into(),
+                task_id: "t-c".into(),
+                attempt_number: 1,
+                state: AttemptState::Pending,
+                failure_reason: None,
+                summary: None,
+                changed_files: None,
+            },
+        )
+        .unwrap();
+    store
+        .update_attempt_state("t-c", "t-c-a1", AttemptState::Running)
+        .unwrap();
+    store
+        .transition("t-c", TaskEvent::ExecutionStarted)
+        .unwrap();
+    store
+        .record_attempt_failure("t-c", "t-c-a1", "boom")
+        .unwrap();
+    store.transition("t-c", TaskEvent::ExecutionFailed).unwrap();
+    tick(&f);
+
+    let own_records = coordinator_records(&f);
+    assert_eq!(own_records.len(), 1, "{own_records:?}");
+    assert_eq!(own_records[0].kind, WakeKind::TaskFailed);
+    assert!(own_records[0].needs_model);
+    // Global gets no copy of the task's record, only the parent channel's report.
+    assert!(records_of(&f, WakeKind::TaskFailed).is_empty());
+    let reports = records_of(&f, WakeKind::CoordinatorReport);
+    assert_eq!(reports.len(), 1, "{:?}", global_records(&f));
+    assert!(reports[0].needs_model);
+    assert!(
+        reports[0].notice.contains("task t-c failed"),
+        "{}",
+        reports[0].notice
+    );
+    let stored = store.coordinator_reports("p", 10).unwrap();
+    assert_eq!(stored.len(), 1);
+    assert_eq!(stored[0].verb, "task_failed");
+    assert_eq!(stored[0].author, "daemon");
+
+    // A replay of the same events writes nothing twice.
+    tick(&f);
+    assert_eq!(store.coordinator_reports("p", 10).unwrap().len(), 1);
+    assert_eq!(records_of(&f, WakeKind::CoordinatorReport).len(), 1);
+
+    // Both conversations get their own turn: the coordinator with its charter, Global with the
+    // report procedure and never the coordinator's conversation.
+    assert_eq!(start_batch(&f).started, 2);
+    let seen = f.probe.seen.lock().unwrap().clone();
+    let coordinator = seen
+        .iter()
+        .find(|turn| {
+            turn.prompt
+                .contains(orchestrator_core::charter::CHARTER_BEGIN)
+        })
+        .expect("a coordinator turn");
+    assert!(coordinator.actions && coordinator.wake);
+    assert!(coordinator
+        .prompt
+        .contains("Procedure, a failed or stalled task"));
+    let global = seen
+        .iter()
+        .find(|turn| {
+            !turn
+                .prompt
+                .contains(orchestrator_core::charter::CHARTER_BEGIN)
+        })
+        .expect("a global turn");
+    assert!(global.prompt.contains("Procedure, a coordinator report"));
+    assert!(
+        global.context.contains("Coordinator reports"),
+        "{}",
+        global.context
+    );
+}
+
+#[test]
+fn an_idle_coordinator_gets_no_work_check_and_a_busy_one_gets_its_own() {
+    let f = fixture();
+    f.probe.replying(Some(QUIET_TOKEN));
+    // Owned but queued work runs nothing: no scope holds work.
+    queue_task(&f, "t-q", "Waiting for capacity");
+    own(&f, "t-q");
+    tick(&f);
+    advance(&f, 11 * MINUTE);
+    tick(&f);
+    assert!(coordinator_records(&f).is_empty());
+    assert!(records_of(&f, WakeKind::WorkCheck).is_empty());
+
+    // A running owned task is the coordinator's work, not Global's.
+    run_task(&f, "t-r", "Working");
+    f.api.store.set_task_coordinator("t-r", "p", None).unwrap();
+    tick(&f);
+    advance(&f, 600 * 1_000 + SLACK);
+    f.pulse.touch_at("t-r-s1", f.clock.now_ms());
+    tick(&f);
+    let checks: Vec<WakeRecord> = coordinator_records(&f)
+        .into_iter()
+        .filter(|record| record.kind == WakeKind::WorkCheck)
+        .collect();
+    assert_eq!(checks.len(), 1, "{:?}", coordinator_records(&f));
+    assert!(records_of(&f, WakeKind::WorkCheck).is_empty());
 }

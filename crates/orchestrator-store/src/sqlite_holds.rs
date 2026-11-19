@@ -8,6 +8,9 @@
 //! when a date passes. The store reads no clock for logic.
 //!
 //! A hold is never deleted. A new date is a release plus a new hold, in one transaction.
+//!
+//! Rows of the subject kind `question` (migration 0064) share the table but are not holds:
+//! every read here leaves them out, and `sqlite_questions.rs` owns them.
 
 use std::fmt;
 use std::io;
@@ -275,7 +278,8 @@ impl SqliteStore {
         self.call(|pool| async move {
             let rows = sqlx::query(sqlx::AssertSqlSafe(format!(
                 // Safe assert: `COLUMNS` is a fixed list of column names; nothing is bound in.
-                "SELECT {COLUMNS} FROM decision_holds WHERE state = 'active' ORDER BY rowid"
+                "SELECT {COLUMNS} FROM decision_holds WHERE state = 'active' \
+                 AND subject_kind <> 'question' ORDER BY rowid"
             )))
             .fetch_all(&pool)
             .await?;
@@ -379,7 +383,7 @@ async fn read_hold(
 ) -> Result<Option<DecisionHold>, StoreError> {
     let row = sqlx::query(sqlx::AssertSqlSafe(format!(
         // Safe assert: `COLUMNS` is a fixed list of column names; the id is bound.
-        "SELECT {COLUMNS} FROM decision_holds WHERE id = ?"
+        "SELECT {COLUMNS} FROM decision_holds WHERE id = ? AND subject_kind <> 'question'"
     )))
     .bind(hold_id)
     .fetch_optional(connection)
@@ -405,7 +409,7 @@ fn hold_from_row(row: &SqliteRow) -> Result<DecisionHold, StoreError> {
 }
 
 /// The last millisecond of `date` (`YYYY-MM-DD`, a real calendar day) in UTC, or `None`.
-fn end_of_day_ms(date: &str) -> Option<i64> {
+pub(crate) fn end_of_day_ms(date: &str) -> Option<i64> {
     let shaped = date.len() == 10
         && date.bytes().enumerate().all(|(index, byte)| {
             if index == 4 || index == 7 {

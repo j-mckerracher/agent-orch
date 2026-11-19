@@ -26,6 +26,10 @@ A task the global orchestrator proposes joins the "Global tasks" workstream, whi
 
 A task moves through Created, Queued, Running, and Verifying. It ends as Succeeded, Failed, VerificationFailed, or Canceled. Verifying runs the checks on the candidate and settles to Succeeded or VerificationFailed. Canceling a Verifying task ends it as Canceled at once.
 
+A running task can also go to Waiting (shown as "Waiting for a reply"). Its agent stopped to ask for a decision only you can make, or reported that it is blocked. No agent runs while a task waits, so it uses no tokens and takes no worker slot, but its worktree stays reserved. A decision appears under Needs your decision in Review & Decisions. When you answer it, or when the orchestrator sends the task a message that you approve, the agent continues in the same session, in the same worktree, at the same permission level. Canceling a Waiting task ends it as Canceled at once. A Waiting task cannot be archived.
+
+The agent reports these events by adding lines to a status file that MCAO keeps outside the worktree. A line that says the work is done is only a claim: MCAO still commits the changes and runs the checks. A line that says the agent failed ends the attempt as Failed. A Codex task at the Auto level cannot be continued at the same level, so when it asks for a decision it ends as Failed with that reason instead of waiting. Retry it with the answer added.
+
 ## Machine load
 
 New tasks wait while the machine is busy, and running tasks are never stopped. At most two tasks run at once, and at most two per project. Change the load limits in [Settings](settings.md#machine-load-limits).

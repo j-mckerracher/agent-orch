@@ -8,15 +8,20 @@
 
 use std::sync::MutexGuard;
 
-use orchestrator_core::orchestrator_action::{Action, ProposeTask, ReviseTask};
+use orchestrator_core::charter::ReportVerb;
+use orchestrator_core::memory::{self, MemoryKind, MemoryScope};
+use orchestrator_core::orchestrator_action::{Action, AutonomyRefusal, ProposeTask, ReviseTask};
 use orchestrator_core::task::AuditEvent;
 use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES};
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
-    ActionOutcome, ActionProposal, ArchiveError, ConversationTarget, GrantOutcome, HoldSubject,
-    LineageError, LineageRelation, ProposalState, ResolveError, TaskRecord, WorkstreamStoreError,
+    ActionOutcome, ActionProposal, ArchiveError, AuthorityError, ConversationTarget,
+    CoordinatorError, GrantOutcome, HoldSubject, LineageError, LineageRelation, MemoryWriteOutcome,
+    MemoryWriter, ProposalState, ResolveError, TaskOverride, TaskRecord, WaitError,
+    WorkstreamStoreError,
 };
 
+use super::authority::AUTONOMOUS_ACTOR;
 use super::projects_defaults::envelope_for;
 use super::workstreams::{
     AddObjectiveParams, CreateParams, GateParams, LinkTaskParams, ReviseObjectiveParams,
@@ -33,6 +38,8 @@ const PROPOSAL_BYTES: usize = 256 * 1024;
 const TARGET_TITLE_BYTES: usize = 80;
 /// Failure code for a proposal the daemon will not run as stored.
 const INVALID: &str = "invalid";
+/// A `memory.set` that would grow its document past the budget (DPES-1108 phase 6).
+const OVER_BUDGET: &str = "over_budget";
 /// Failure codes of a proposal a grant approved but that did not start: the grant was revoked,
 /// or had expired, by then.
 pub(super) const GRANT_REVOKED: &str = "grant_revoked";
@@ -69,6 +76,8 @@ pub(super) enum ActionError {
     Rpc(RpcError),
     /// A write failed that the next start can repeat. The proposal stays `approved`.
     Retry,
+    /// A refusal with its own stable code, such as `over_budget`.
+    Code(&'static str),
 }
 
 impl ActionError {
@@ -78,6 +87,7 @@ impl ActionError {
             Self::Store(error) => error_code(error),
             Self::Rpc(error) => rpc_error_code(error),
             Self::Retry => "internal",
+            Self::Code(code) => code,
         }
     }
 }
@@ -114,6 +124,11 @@ enum Execution {
     ReviseTask(Box<ReviseTaskExec>),
     RemoveProject(RemoveParams),
     HoldDecision(HoldParams),
+    AskDecision(AskParams),
+    MessageTask(MessageParams),
+    SetMemory(MemoryParams),
+    Route(RouteParams),
+    Report(ReportParams),
 }
 
 /// A `task.propose`: the `tasks.submit` request it stands for, and the workstream
@@ -128,6 +143,36 @@ struct ProposeExec {
     /// The finished scout this task promotes to a task that ships. Only the lineage link
     /// carries it: the objective is the text the proposal wrote, never the scout's report.
     promote_from: Option<String>,
+    /// What a task the orchestrator starts itself cites as its origin. Written before the task
+    /// is admitted, so such a task never runs without it (DPES-1108 phase 5).
+    origin: Option<TaskOriginPlan>,
+    /// The user's departure from the project's default delivery for this one task, with the
+    /// words of the user turn. `task_id` is filled in when the task exists.
+    delivery_override: Option<TaskOverride>,
+    /// The coordinator that owns the task (DPES-1108 phase 7): set for a task a coordinator
+    /// proposes, and for a revise of a task one owns.
+    owner: Option<Owner>,
+}
+
+/// The origin [`ProposeExec`] writes for the task it makes: the user turn, or the open routed
+/// request a coordinator's task serves (DPES-1108 integration).
+#[derive(Clone)]
+enum TaskOriginPlan {
+    UserTurn {
+        turn_id: String,
+        proposal_id: String,
+    },
+    RoutedRequest {
+        request_id: String,
+        proposal_id: String,
+    },
+}
+
+/// A task's owning coordinator (its project) and the routed request the task serves.
+#[derive(Clone)]
+struct Owner {
+    project_id: String,
+    request_id: Option<String>,
 }
 
 #[derive(Clone)]
@@ -159,6 +204,61 @@ struct HoldParams {
     idempotency_key: String,
 }
 
+/// A `decision.ask`. The key seeds the question id, so a rerun finds the question it raised.
+#[derive(Serialize)]
+struct AskParams {
+    task_id: String,
+    question: String,
+    options: Vec<String>,
+    key: Option<String>,
+    idempotency_key: String,
+}
+
+/// A `task.message` (DPES-1108 phase 4). The key names the queued message, so a rerun queues
+/// nothing twice.
+#[derive(Serialize)]
+struct MessageParams {
+    task_id: String,
+    text: String,
+    idempotency_key: String,
+}
+
+/// A `memory.set` (DPES-1108 phase 6): the document the proposal's conversation reaches, and
+/// the entry. The document is resolved from the proposal's scope when it runs, so the
+/// read-only rule for the shared preferences holds at execution too.
+#[derive(Serialize)]
+struct MemoryParams {
+    kind: &'static str,
+    scope: String,
+    key: String,
+    text: String,
+    #[serde(skip)]
+    document: (MemoryKind, MemoryScope),
+    idempotency_key: String,
+}
+
+/// A `coordinator.route` (DPES-1108 phase 7). The request id, which is the correlation id,
+/// derives from the execution key, so a rerun finds the request it made.
+#[derive(Serialize)]
+struct RouteParams {
+    project_id: String,
+    work: String,
+    request_id: String,
+    origin_proposal_id: String,
+}
+
+/// A `coordinator.report`. The project is the proposal's own conversation, never a field.
+#[derive(Serialize)]
+struct ReportParams {
+    project_id: String,
+    verb: ReportVerb,
+    request_id: Option<String>,
+    key: Option<String>,
+    note: String,
+    report_id: String,
+    origin_proposal_id: String,
+}
+
 impl Execution {
     /// The method the execution key is claimed under.
     fn method(&self) -> &'static str {
@@ -174,6 +274,11 @@ impl Execution {
             Self::ReviseTask(_) => "tasks.revise",
             Self::RemoveProject(_) => "projects.remove",
             Self::HoldDecision(_) => "holds.set",
+            Self::AskDecision(_) => "decisions.ask",
+            Self::MessageTask(_) => "tasks.message",
+            Self::SetMemory(_) => "memory.set",
+            Self::Route(_) => "coordinator.route",
+            Self::Report(_) => "coordinator.report",
         }
     }
 
@@ -198,6 +303,11 @@ impl Execution {
             }
             Self::RemoveProject(request) => serde_json::to_value(request),
             Self::HoldDecision(request) => serde_json::to_value(request),
+            Self::AskDecision(request) => serde_json::to_value(request),
+            Self::MessageTask(request) => serde_json::to_value(request),
+            Self::SetMemory(request) => serde_json::to_value(request),
+            Self::Route(request) => serde_json::to_value(request),
+            Self::Report(request) => serde_json::to_value(request),
         };
         value.map_err(|_| RpcError::Internal)
     }
@@ -254,6 +364,70 @@ impl Execution {
                 )
                 .map(|hold| format!("hold:{}", hold.id))
                 .map_err(ActionError::from),
+            Self::AskDecision(request) => api
+                .ask_inner(
+                    &question_id(&request.idempotency_key),
+                    &request.task_id,
+                    &request.question,
+                    &request.options,
+                    request.key.as_deref(),
+                )
+                .map(|question| format!("question:{}", question.id))
+                .map_err(ActionError::from),
+            Self::MessageTask(request) => {
+                match api.store.queue_task_message(
+                    &request.task_id,
+                    &request.idempotency_key,
+                    &request.text,
+                ) {
+                    Ok(()) => {
+                        api.wake_resumes();
+                        Ok(format!("message:{}", request.task_id))
+                    }
+                    // Only a waiting task takes a message, and only a few at a time.
+                    Err(error) => Err(match WaitError::of(&error) {
+                        Some(_) => RpcError::Conflict.into(),
+                        None => error.into(),
+                    }),
+                }
+            }
+            Self::SetMemory(request) => {
+                let (kind, scope) = &request.document;
+                match api.store.set_memory_entry(
+                    *kind,
+                    scope,
+                    &request.key,
+                    &request.text,
+                    MemoryWriter::Orchestrator,
+                    crate::executor::unix_now_ms(),
+                )? {
+                    MemoryWriteOutcome::OverBudget(_) => Err(ActionError::Code(OVER_BUDGET)),
+                    _ => Ok(memory_result(*kind, &request.key)),
+                }
+            }
+            Self::Route(request) => api
+                .store
+                .create_routed_request(
+                    &request.request_id,
+                    &request.project_id,
+                    &request.work,
+                    &request.origin_proposal_id,
+                )
+                .map(|routed| format!("request:{}", routed.id))
+                .map_err(coordinator_error),
+            Self::Report(request) => api
+                .store
+                .record_coordinator_report(
+                    &request.report_id,
+                    &request.project_id,
+                    request.verb,
+                    request.request_id.as_deref(),
+                    request.key.as_deref(),
+                    &request.note,
+                    &request.origin_proposal_id,
+                )
+                .map(|report| format!("report:{}", report.id))
+                .map_err(coordinator_error),
         }
     }
 
@@ -314,6 +488,40 @@ impl Execution {
                     .decision_hold(&id)?
                     .map(|hold| format!("hold:{}", hold.id)));
             }
+            Self::AskDecision(request) => {
+                let id = question_id(&request.idempotency_key);
+                return Ok(api
+                    .store
+                    .decision_question(&id)?
+                    .map(|question| format!("question:{}", question.id)));
+            }
+            Self::MessageTask(request) => {
+                return Ok(api
+                    .store
+                    .task_message_queued(&request.idempotency_key)?
+                    .then(|| format!("message:{}", request.task_id)));
+            }
+            // The write is done when the entry holds this text.
+            Self::SetMemory(request) => {
+                let (kind, scope) = &request.document;
+                let entries = api.store.memory_entries(*kind, scope)?;
+                return Ok(entries
+                    .iter()
+                    .any(|entry| entry.key == request.key && entry.text == request.text)
+                    .then(|| memory_result(*kind, &request.key)));
+            }
+            Self::Route(request) => {
+                return Ok(api
+                    .store
+                    .routed_request(&request.request_id)?
+                    .map(|routed| format!("request:{}", routed.id)));
+            }
+            Self::Report(request) => {
+                return Ok(api
+                    .store
+                    .coordinator_report(&request.report_id)?
+                    .map(|report| format!("report:{}", report.id)));
+            }
         };
         match found {
             Ok(id) => Ok(Some(id)),
@@ -335,14 +543,12 @@ impl ProposeExec {
     fn run(&self, api: &DaemonApi) -> Result<String, ActionError> {
         let task_id = self.task_id();
         let link = self.link_target(api)?;
-        match find_task(api, &task_id)? {
-            // A stopped run created the task and never admitted it.
-            Some(task) if task.state == TaskState::Created => {
-                api.store.transition(&task_id, TaskEvent::Admit)?;
-            }
-            Some(_) => {}
+        // A stopped run may have created the task and never admitted it.
+        let created = match find_task(api, &task_id)? {
+            Some(task) => task.state == TaskState::Created,
             None => {
                 Self::preflight(api, link.as_ref())?;
+                self.preflight_owner(api)?;
                 let submit = TaskSubmitParams {
                     idempotency_key: self.submit.idempotency_key.clone(),
                     contract: if self.apply_dispatch_defaults {
@@ -353,9 +559,33 @@ impl ProposeExec {
                 };
                 // Actions run under the mutation gate: do not probe a CLI here. These
                 // defaults were checked on save; the executor rechecks before launching.
-                let contract = api.checked_contract_without_catalog(&submit, &submit.idempotency_key)?;
-                api.admit_contract(&contract)?;
+                let contract =
+                    api.checked_contract_without_catalog(&submit, &submit.idempotency_key)?;
+                api.store.create(&contract)?;
+                true
             }
+        };
+        // The owner is written before the task is admitted, so no event of a coordinator's task
+        // is ever read as the global orchestrator's (DPES-1108 phase 7).
+        if let Some(owner) = &self.owner {
+            api.store
+                .set_task_coordinator(&task_id, &owner.project_id, owner.request_id.as_deref())
+                .map_err(coordinator_error)?;
+        }
+        // Then its origin, then admitted: a task the orchestrator starts itself is never queued
+        // without the user turn or routed request it cites (DPES-1108 phase 5). A routed origin
+        // is checked against the owner just written.
+        if created {
+            self.record_origin(api, &task_id)?;
+            api.store.transition(&task_id, TaskEvent::Admit)?;
+        }
+        if let Some(record) = &self.delivery_override {
+            api.store
+                .record_task_override(&TaskOverride {
+                    task_id: task_id.clone(),
+                    ..record.clone()
+                })
+                .map_err(authority_error)?;
         }
         // Written once, right after the task exists. A rerun finds the same link and
         // changes nothing.
@@ -374,6 +604,47 @@ impl ProposeExec {
         }
         api.wake_executor();
         Ok(task_id)
+    }
+
+    /// Writes the origin of a task the orchestrator starts itself. The store refuses an origin
+    /// that is not a user turn, or a routed request the task does not serve or that is answered;
+    /// the task then stays `Created` and never runs.
+    fn record_origin(&self, api: &DaemonApi, task_id: &str) -> Result<(), ActionError> {
+        let recorded = match &self.origin {
+            None => return Ok(()),
+            Some(TaskOriginPlan::UserTurn {
+                turn_id,
+                proposal_id,
+            }) => api.store.record_task_origin(task_id, turn_id, proposal_id),
+            Some(TaskOriginPlan::RoutedRequest {
+                request_id,
+                proposal_id,
+            }) => api
+                .store
+                .record_task_routed_origin(task_id, request_id, proposal_id),
+        };
+        recorded.map(|_| ()).map_err(authority_error)
+    }
+
+    /// Refuses, before the task exists, a request the task could not serve: unknown, of
+    /// another project, or already answered. No task is made that cannot be owned.
+    fn preflight_owner(&self, api: &DaemonApi) -> Result<(), ActionError> {
+        let Some(Owner {
+            project_id,
+            request_id: Some(request_id),
+        }) = &self.owner
+        else {
+            return Ok(());
+        };
+        let open = api
+            .store
+            .routed_request(request_id)?
+            .is_some_and(|request| request.project_id == *project_id && !request.answered);
+        if open {
+            Ok(())
+        } else {
+            Err(RpcError::Conflict.into())
+        }
     }
 
     /// The workstream the task joins: the one the proposal named, or the default
@@ -462,12 +733,13 @@ impl ReviseTaskExec {
     }
 
     /// Refuses a revise that could not stop the old task, before anything is made. Only a
-    /// queued or verifying task, or a running one whose owner is alive, can be asked to stop.
+    /// queued, waiting or verifying task, or a running one whose owner is alive, can be asked
+    /// to stop.
     /// A finished task is not revised: `task.retry` and `task.propose` start new work.
     fn preflight(&self, api: &DaemonApi) -> Result<(), ActionError> {
         let old = find_task(api, &self.old_task_id)?.ok_or(RpcError::NotFound)?;
         match old.state {
-            TaskState::Queued | TaskState::Verifying => {}
+            TaskState::Queued | TaskState::Verifying | TaskState::Waiting => {}
             TaskState::Running => {
                 api.require_live_cancellation_owner(&self.old_task_id)?;
                 // No owner at all passes the check above and leaves nothing to take the request.
@@ -545,8 +817,55 @@ fn promotable_scout(store: &SqliteStore, task_id: &str) -> Result<Option<String>
 }
 
 /// The id of the hold an execution under `key` makes.
+/// The result a `memory.set` names: the kind and key it wrote.
+fn memory_result(kind: MemoryKind, key: &str) -> String {
+    format!("{}:{key}", kind.as_str())
+}
+
+/// The document scope of the conversation a proposal came from: `conversation:global`,
+/// `conversation:workstream:<id>` or `conversation:project:<id>`.
+pub(super) fn proposal_memory_scope(
+    proposal: &ActionProposal,
+) -> Result<MemoryScope, &'static str> {
+    proposal
+        .scope
+        .strip_prefix("conversation:")
+        .and_then(MemoryScope::parse)
+        .ok_or(INVALID)
+}
+
 fn hold_id(key: &str) -> String {
     idempotency::stable_id("hold", key)
+}
+
+fn question_id(key: &str) -> String {
+    idempotency::stable_id("question", key)
+}
+
+/// An authority refusal (an origin that is not a user turn, a conflicting record) is a conflict.
+/// Any other store failure is internal.
+fn authority_error(error: StoreError) -> ActionError {
+    match AuthorityError::of(&error) {
+        Some(_) => RpcError::Conflict.into(),
+        None => error.into(),
+    }
+}
+
+/// The id of the routed request an execution under `key` makes: `r-` and 16 hex digits, the
+/// correlation id the coordinator and its reports name.
+fn request_id(key: &str) -> String {
+    let full = idempotency::stable_id("r", key);
+    full.chars().take(18).collect()
+}
+
+/// A coordinator refusal is a conflict, or not found for a coordinator that is not active. Any
+/// other store failure is internal.
+fn coordinator_error(error: StoreError) -> ActionError {
+    match CoordinatorError::of(&error) {
+        Some(CoordinatorError::NotActive) => RpcError::NotFound.into(),
+        Some(_) => RpcError::Conflict.into(),
+        None => error.into(),
+    }
 }
 
 /// A lineage refusal is a conflict, whatever its cause. Any other store failure is internal.
@@ -882,6 +1201,14 @@ impl DaemonApi {
                 .map_err(map_resolve_error)?;
             return Ok(());
         }
+        // A proposal the orchestrator approved itself is checked again here, so a restart that
+        // finishes it applies the same bounds as the live pass (DPES-1108 phase 5).
+        let autonomous = approver == AUTONOMOUS_ACTOR;
+        if autonomous {
+            if let Some(code) = self.autonomous_refusal(proposal)? {
+                return self.fail_autonomous(proposal, code);
+            }
+        }
         let parent = match &proposal.depends_on {
             Some(parent) => self
                 .store
@@ -891,7 +1218,7 @@ impl DaemonApi {
         };
         let key = idempotency::stable_id("action", &proposal.id);
         let actor = format!("action:{}", proposal.id);
-        let stored = match self.checked_execution(proposal, parent.as_ref(), &key) {
+        let stored = match self.checked_execution(proposal, parent.as_ref(), &key, autonomous) {
             Ok(execution) => self.run_once(held, &execution, &key, &actor)?,
             Err(code) => json!({"error_code": code}),
         };
@@ -965,8 +1292,9 @@ impl DaemonApi {
         proposal: &ActionProposal,
         parent: Option<&ActionProposal>,
         key: &str,
+        autonomous: bool,
     ) -> Result<Execution, &'static str> {
-        let execution = self.build_execution(proposal, parent, key)?;
+        let execution = self.build_execution(proposal, parent, key, autonomous)?;
         match self.within_scope(proposal, &execution) {
             Ok(true) => Ok(execution),
             Ok(false) => Err(INVALID),
@@ -979,8 +1307,12 @@ impl DaemonApi {
         proposal: &ActionProposal,
         execution: &Execution,
     ) -> Result<bool, ActionError> {
+        if let Some(project) = proposal.scope_project() {
+            return self.within_project(project, execution);
+        }
         let Some(workstream) = proposal.scope_workstream() else {
-            return Ok(true);
+            // The global conversation routes; only a coordinator reports.
+            return Ok(!matches!(execution, Execution::Report(_)));
         };
         Ok(match execution {
             Execution::Create(_) => false,
@@ -1006,9 +1338,62 @@ impl DaemonApi {
             Execution::HoldDecision(request) => {
                 self.task_in_workstream(&request.task_id, workstream)?
             }
-            // Removing a project reaches outside any one workstream.
-            Execution::RemoveProject(_) => false,
+            Execution::AskDecision(request) => {
+                self.task_in_workstream(&request.task_id, workstream)?
+            }
+            Execution::MessageTask(request) => {
+                self.task_in_workstream(&request.task_id, workstream)?
+            }
+            // A workstream conversation writes only its own documents; the shared ones were
+            // refused when the execution was built.
+            Execution::SetMemory(request) => {
+                request.document.1 == MemoryScope::Workstream(workstream.to_owned())
+            }
+            // Removing a project reaches outside any one workstream, and a workstream neither
+            // routes nor reports.
+            Execution::RemoveProject(_) | Execution::Route(_) | Execution::Report(_) => false,
         })
+    }
+
+    /// A coordinator's proposal (DPES-1108 phase 7) runs only inside its own project: its tasks,
+    /// owned by it and linked to no workstream, the tasks of the project, and its own reports. It
+    /// never routes, so depth stays two.
+    fn within_project(&self, project: &str, execution: &Execution) -> Result<bool, ActionError> {
+        Ok(match execution {
+            Execution::Propose(exec) => {
+                exec.submit.contract.project_id == project
+                    && exec.link.is_none()
+                    && !exec.default_link
+                    && exec
+                        .owner
+                        .as_ref()
+                        .is_some_and(|owner| owner.project_id == project)
+            }
+            Execution::ReviseTask(exec) => self.task_in_project(&exec.old_task_id, project)?,
+            Execution::Cancel(request) => self.task_in_project(&request.task_id, project)?,
+            Execution::Retry(request) => self.task_in_project(&request.task_id, project)?,
+            Execution::HoldDecision(request) => self.task_in_project(&request.task_id, project)?,
+            Execution::AskDecision(request) => self.task_in_project(&request.task_id, project)?,
+            Execution::MessageTask(request) => self.task_in_project(&request.task_id, project)?,
+            Execution::Report(request) => request.project_id == project,
+            // A coordinator writes only its own project's documents; the shared ones were
+            // refused when the execution was built (DPES-1108 integration).
+            Execution::SetMemory(request) => {
+                request.document.1 == MemoryScope::Project(project.to_owned())
+            }
+            Execution::Create(_)
+            | Execution::Update(_)
+            | Execution::AddObjective(_)
+            | Execution::Revise(_)
+            | Execution::Link(_)
+            | Execution::RemoveProject(_)
+            | Execution::Route(_) => false,
+        })
+    }
+
+    /// Whether the task belongs to the project. An unknown task does not.
+    fn task_in_project(&self, task_id: &str, project: &str) -> Result<bool, ActionError> {
+        Ok(find_task(self, task_id)?.is_some_and(|task| task.contract.project_id == project))
     }
 
     /// Whether the task is linked to the workstream. An unlinked task is not.
@@ -1075,12 +1460,14 @@ impl DaemonApi {
 
     /// Turns one proposal into the change it names. `parent` is the proposal an
     /// `objective.add` or `task.propose` by ref joins, which has executed by the time
-    /// this runs.
+    /// this runs. `autonomous` is true when the orchestrator approved it itself: a task it
+    /// makes must then cite the user turn as its origin.
     fn build_execution(
         &self,
         proposal: &ActionProposal,
         parent: Option<&ActionProposal>,
         key: &str,
+        autonomous: bool,
     ) -> Result<Execution, &'static str> {
         let action: Action = serde_json::from_str(&proposal.params_json).map_err(|_| INVALID)?;
         let key = key.to_owned();
@@ -1134,8 +1521,43 @@ impl DaemonApi {
                 })
             }
             Action::TaskPropose(propose) => {
+                let request_id = propose.request.clone();
+                let coordinator = proposal.scope_project();
+                // Only a coordinator's task serves a routed request.
+                if request_id.is_some() && coordinator.is_none() {
+                    return Err(INVALID);
+                }
                 let mut exec = self.propose_execution(propose, parent, key)?;
-                exec.default_link = exec.link.is_none() && proposal.scope_workstream().is_none();
+                // A coordinator's task is its own, never a member of "Global tasks".
+                exec.default_link = exec.link.is_none()
+                    && proposal.scope_workstream().is_none()
+                    && coordinator.is_none();
+                let words = self
+                    .user_words(&proposal.turn_id)
+                    .map_err(|()| "internal")?;
+                if autonomous {
+                    // The origin a task the orchestrator starts itself cites: the open routed
+                    // request a coordinator's task serves, else the user turn. No origin, no task.
+                    exec.origin = Some(match (&request_id, &words) {
+                        (Some(request_id), _) => TaskOriginPlan::RoutedRequest {
+                            request_id: request_id.clone(),
+                            proposal_id: proposal.id.clone(),
+                        },
+                        (None, Some(_)) => TaskOriginPlan::UserTurn {
+                            turn_id: proposal.turn_id.clone(),
+                            proposal_id: proposal.id.clone(),
+                        },
+                        (None, None) => return Err(AutonomyRefusal::NoUserOrigin.code()),
+                    });
+                }
+                if let Some(words) = words {
+                    exec.delivery_override =
+                        self.delivery_override(&exec.submit.contract, &words, &proposal.turn_id);
+                }
+                exec.owner = coordinator.map(|project_id| Owner {
+                    project_id: project_id.to_owned(),
+                    request_id,
+                });
                 Execution::Propose(Box::new(exec))
             }
             Action::TaskCancel(cancel) => Execution::Cancel(CancelParams {
@@ -1164,6 +1586,46 @@ impl DaemonApi {
                 task_id: hold.task_id,
                 until: hold.until,
                 idempotency_key: key,
+            }),
+            Action::DecisionAsk(ask) => Execution::AskDecision(AskParams {
+                task_id: ask.task_id,
+                question: ask.question,
+                options: ask.options,
+                key: ask.key,
+                idempotency_key: key,
+            }),
+            Action::TaskMessage(message) => Execution::MessageTask(MessageParams {
+                task_id: message.task_id,
+                text: message.text,
+                idempotency_key: key,
+            }),
+            Action::MemorySet(set) => {
+                let (kind, scope) =
+                    memory::resolve(set.document, &proposal_memory_scope(proposal)?)
+                        .map_err(|denial| denial.as_str())?;
+                Execution::SetMemory(MemoryParams {
+                    kind: kind.as_str(),
+                    scope: scope.as_string(),
+                    key: set.key,
+                    text: set.text,
+                    document: (kind, scope),
+                    idempotency_key: key,
+                })
+            }
+            Action::CoordinatorRoute(route) => Execution::Route(RouteParams {
+                project_id: self.resolve_project(&route.project)?,
+                work: route.work,
+                request_id: request_id(&key),
+                origin_proposal_id: proposal.id.clone(),
+            }),
+            Action::CoordinatorReport(report) => Execution::Report(ReportParams {
+                project_id: proposal.scope_project().ok_or(INVALID)?.to_owned(),
+                verb: report.verb,
+                request_id: report.request,
+                key: report.key,
+                note: report.note,
+                report_id: idempotency::stable_id("coordinator-report", &key),
+                origin_proposal_id: proposal.id.clone(),
             }),
         })
     }
@@ -1212,6 +1674,12 @@ impl DaemonApi {
                 workstream_id: link.workstream_id,
                 objective_id: link.objective_id,
             });
+        // The new task stays with the coordinator that owns the old one, and keeps serving its
+        // request while that request is open.
+        let owner = self.revised_owner(&revise.task_id).map_err(|error| {
+            internal("actions", &error);
+            "internal"
+        })?;
         Ok(ReviseTaskExec {
             old_task_id: revise.task_id,
             added_intent: revise.added_intent,
@@ -1240,8 +1708,31 @@ impl DaemonApi {
                 link,
                 default_link: false,
                 promote_from: None,
+                origin: None,
+                delivery_override: None,
+                owner,
             },
         })
+    }
+
+    /// The owner a revise of `task_id` inherits: its coordinator, with its request while that
+    /// request has no answer.
+    fn revised_owner(&self, task_id: &str) -> Result<Option<Owner>, StoreError> {
+        let Some((project_id, request_id)) = self.store.task_coordinator(task_id)? else {
+            return Ok(None);
+        };
+        let request_id = match request_id {
+            Some(id) => self
+                .store
+                .routed_request(&id)?
+                .filter(|request| !request.answered)
+                .map(|request| request.id),
+            None => None,
+        };
+        Ok(Some(Owner {
+            project_id,
+            request_id,
+        }))
     }
 
     /// The `tasks.submit` request a `task.propose` stands for. Autonomy and verification
@@ -1329,6 +1820,9 @@ impl DaemonApi {
             link,
             default_link: false,
             promote_from: propose.promote_from,
+            origin: None,
+            delivery_override: None,
+            owner: None,
         })
     }
 
@@ -1361,6 +1855,22 @@ impl DaemonApi {
         })
     }
 
+    /// What a `coordinator.route` card shows: the project's folder name and whether it has an
+    /// active coordinator now (the route fails closed without one).
+    fn route_target(&self, code: &str) -> Value {
+        let Ok(project_id) = self.resolve_project(code) else {
+            return Value::Null;
+        };
+        let active = self
+            .store
+            .coordinator_scope(&project_id)
+            .is_ok_and(|scope| !scope.removed);
+        json!({
+            "project_name": project_name(&project_id),
+            "coordinator_active": active,
+        })
+    }
+
     /// The registered project whose code is `token`. `Err("not_found")` for none,
     /// `Err("conflict")` for two, and `Err("internal")` when the projects cannot be read.
     fn resolve_project(&self, token: &str) -> Result<String, &'static str> {
@@ -1381,6 +1891,7 @@ impl DaemonApi {
     /// A proposal as the wire shows it. `params` is the canonical action the digest binds.
     /// `target` holds what a card needs to name the project or task, read now.
     fn proposal_wire(&self, proposal: &ActionProposal) -> Value {
+        let approved_by = self.proposal_approved_by(proposal);
         json!({
             "id": proposal.id,
             "turn_id": proposal.turn_id,
@@ -1393,7 +1904,14 @@ impl DaemonApi {
             "result_ref": proposal.result_ref,
             "error_code": proposal.error_code,
             "denial": proposal.denial,
-            "grant_id": self.proposal_grant_id(proposal),
+            "grant_id": approved_by
+                .as_deref()
+                .and_then(|actor| actor.strip_prefix("grant:"))
+                .map_or(Value::Null, |id| Value::String(id.to_owned())),
+            // The orchestrator ran it on its own, under the authority model (DPES-1108 phase 5).
+            // The card's turn is its origin.
+            "autonomous": approved_by.as_deref() == Some(AUTONOMOUS_ACTOR),
+            "overrides": self.proposal_overrides(proposal),
             "target": self.proposal_target(proposal),
             // Whether the turn that made the proposal was handed a scout report.
             "after_report": self.store.turn_read_report(&proposal.turn_id).unwrap_or(false),
@@ -1402,21 +1920,43 @@ impl DaemonApi {
         })
     }
 
-    /// The grant that approved a proposal, for a card that shows it, or null. A proposal no
-    /// one approved has none. An unreadable store shows none.
-    fn proposal_grant_id(&self, proposal: &ActionProposal) -> Value {
+    /// The one-task overrides of the task an executed `task.propose` made: each field that departs
+    /// from its project's default, with both values. The user's words are the card's own turn,
+    /// so they are not repeated. Empty for every other card, and when the store cannot be read.
+    fn proposal_overrides(&self, proposal: &ActionProposal) -> Value {
+        let task_id = match (proposal.kind, proposal.state, &proposal.result_ref) {
+            (
+                orchestrator_core::orchestrator_action::ActionKind::TaskPropose,
+                ProposalState::Executed,
+                Some(task_id),
+            ) => task_id,
+            _ => return json!([]),
+        };
+        let overrides = self.store.task_overrides(task_id).unwrap_or_default();
+        Value::Array(
+            overrides
+                .into_iter()
+                .map(|record| {
+                    json!({
+                        "field": record.field,
+                        "project_default": record.project_default,
+                        "chosen": record.chosen,
+                    })
+                })
+                .collect(),
+        )
+    }
+
+    /// Who approved a proposal: `user`, `grant:<id>` or `agent`. `None` for one no one approved.
+    /// An unreadable store shows none.
+    fn proposal_approved_by(&self, proposal: &ActionProposal) -> Option<String> {
         if matches!(
             proposal.state,
             ProposalState::Pending | ProposalState::Superseded
         ) {
-            return Value::Null;
+            return None;
         }
-        self.store
-            .proposal_approver(&proposal.id)
-            .ok()
-            .flatten()
-            .and_then(|actor| actor.strip_prefix("grant:").map(str::to_owned))
-            .map_or(Value::Null, Value::String)
+        self.store.proposal_approver(&proposal.id).ok().flatten()
     }
 
     /// What the app needs to name a task proposal's subject, read now: the project's
@@ -1458,11 +1998,26 @@ impl DaemonApi {
                 return target;
             }
             Action::ProjectRemove(remove) => return self.remove_target(&remove.project),
+            Action::CoordinatorRoute(route) => return self.route_target(&route.project),
+            Action::CoordinatorReport(report) => {
+                return report
+                    .request
+                    .as_deref()
+                    .and_then(|id| self.store.routed_request(id).ok().flatten())
+                    .map_or(Value::Null, |request| {
+                        json!({
+                            "request_work": cut_at_char(&request.work, TARGET_TITLE_BYTES),
+                            "request_answered": request.answered,
+                        })
+                    });
+            }
             Action::DeliveryMerge(merge) => return self.merge_target(merge),
             Action::TaskCancel(cancel) => &cancel.task_id,
             Action::TaskRetry(retry) => &retry.task_id,
             Action::TaskRevise(revise) => &revise.task_id,
             Action::DecisionHold(hold) => &hold.task_id,
+            Action::DecisionAsk(ask) => &ask.task_id,
+            Action::TaskMessage(message) => &message.task_id,
             Action::WorkstreamLinkTask(link) => &link.task_id,
             _ => return Value::Null,
         };
@@ -1505,6 +2060,9 @@ pub(super) fn cut_at_char(text: &str, limit: usize) -> &str {
 
 /// The conversation a pending proposal belongs to, as `actions.pending` lists it.
 fn scope_wire(proposal: &ActionProposal) -> Value {
+    if let Some(project_id) = proposal.scope_project() {
+        return json!({"kind": "project", "project_id": project_id});
+    }
     match proposal.scope_workstream() {
         Some(workstream_id) => json!({"kind": "workstream", "workstream_id": workstream_id}),
         None => json!({"kind": "global"}),

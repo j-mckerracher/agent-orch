@@ -244,6 +244,24 @@ describe("mapProposal", () => {
     expect(mapProposal(proposal({ grant_id: null })).approvedBy).toBeUndefined();
   });
 
+  it("authority_reads_autonomous_and_overrides_and_treats_an_older_daemon_as_neither", () => {
+    const older = mapProposal(proposal());
+    expect(older.autonomous).toBeUndefined();
+    expect(older.overrides).toBeUndefined();
+    expect(mapProposal(proposal({ autonomous: false, overrides: [] }))).toEqual(older);
+    const mapped = mapProposal(
+      proposal({
+        autonomous: true,
+        overrides: [
+          { field: "delivery", project_default: "LocalReview", chosen: "ReportOnly" },
+          { field: "delivery", chosen: "ReportOnly" } as never,
+        ],
+      }),
+    );
+    expect(mapped.autonomous).toBe(true);
+    expect(mapped.overrides).toEqual([{ field: "delivery", projectDefault: "LocalReview", chosen: "ReportOnly" }]);
+  });
+
   it("copies every field and leaves an unknown kind or state as it arrived", () => {
     const mapped = mapProposal(proposal({ kind: "future.kind", state: "paused", depends_on: "proposal-0", result_ref: "ref-1", error_code: "x" }));
     expect(mapped).toEqual({

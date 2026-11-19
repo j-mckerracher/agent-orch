@@ -30,9 +30,10 @@ import { notOk, observation, okResult } from "./result";
 import { createSearchSource } from "./search";
 import { createLiveMonitoring, MONITORING_METHODS } from "./monitoringLive";
 import { createLiveGrants, GRANTS_METHODS } from "./grants";
-import { createLiveNotes, NOTES_METHODS } from "./notes";
+import { createLiveMemory, MEMORY_METHODS } from "./memory";
 import { createLivePulls, PULLS_METHODS } from "./pulls";
 import { createLiveHolds, HOLDS_METHODS } from "./holds";
+import { createLiveQuestions, QUESTIONS_METHODS } from "./questions";
 import { createLiveProjectDefaults, PROJECT_DEFAULTS_METHODS } from "./projectDefaults";
 import { createLiveSettings, SETTINGS_METHODS } from "./settingsLive";
 import { createLiveLocalToolsSource } from "./localToolsLive";
@@ -43,6 +44,7 @@ import type {
   ConversationSource,
   ConversationTarget,
   CoordinatorChangeReceipt,
+  ScopeReceipt,
   DecisionItem,
   DecisionQueueSource,
   ModelCatalogSource,
@@ -94,7 +96,12 @@ function projectOf(tasks: readonly TaskRecord[]): Map<string, string> {
 function proposalItemOf(wire: ActionsPendingWire["proposals"][number]): ProposalItem {
   return {
     proposal: mapProposal(wire),
-    scope: wire.scope.kind === "global" ? { kind: "global" } : { kind: "workstream", workstreamId: wire.scope.workstream_id },
+    scope:
+      wire.scope.kind === "global"
+        ? { kind: "global" }
+        : wire.scope.kind === "project"
+          ? { kind: "project", projectId: wire.scope.project_id }
+          : { kind: "workstream", workstreamId: wire.scope.workstream_id },
   };
 }
 
@@ -113,6 +120,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     "coordinator.clear",
     "coordinator.remove",
     "coordinator.restore",
+    "coordinator.set_scope",
   ]);
   const liveConversation = createLiveConversation(connection, prov("D10", LIVE_METHODS), keys, now);
   const conversation: ConversationSource = {
@@ -204,7 +212,28 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     },
     removeCoordinator: (projectId: string) => changeCoordinator(projectId, "remove"),
     restoreCoordinator: (projectId: string) => changeCoordinator(projectId, "restore"),
+    setCoordinatorScope,
   };
+
+  /** Sets or clears a coordinator's scope sentence (DPES-1108). A retry of the same sentence reuses its key. */
+  async function setCoordinatorScope(projectId: string, scopeSentence: string | null): Promise<ScopeReceipt> {
+    if (isFixtureLikeId(projectId)) throw new DaemonError("invalid-params", "Fixture ids are never sent to the daemon.");
+    const scope = `set_scope:${projectId}`;
+    const key = keys.keyFor(scope, JSON.stringify(scopeSentence));
+    try {
+      const result = await connection.api().coordinatorSetScope(projectId, scopeSentence, key);
+      keys.settle(scope, null);
+      return {
+        simulated: false,
+        provenance: projectProvenance,
+        scopeSentence: result.scope_sentence,
+        notice: result.scope_sentence === null ? "Scope cleared." : "Scope saved. The coordinator works from it from its next turn.",
+      };
+    } catch (error) {
+      keys.settle(scope, asDaemonError(error));
+      throw error;
+    }
+  }
 
   /** Removes or restores a project coordinator (DPES-1105). The project itself is never changed. */
   async function changeCoordinator(projectId: string, action: "remove" | "restore"): Promise<CoordinatorChangeReceipt> {
@@ -287,10 +316,11 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
   const monitoring = createLiveMonitoring(connection, prov("D10", MONITORING_METHODS), keys, now);
   // Holds hide decisions, so they carry the decision queue's id (D16).
   const holds = createLiveHolds(connection, prov("D16", HOLDS_METHODS), keys, now);
+  const questions = createLiveQuestions(connection, prov("D16", QUESTIONS_METHODS), keys, now);
   const pulls = createLivePulls(connection, prov("D16", PULLS_METHODS), now);
   const projectDefaults = createLiveProjectDefaults(connection, prov("D17", PROJECT_DEFAULTS_METHODS), keys, now);
   const grants = createLiveGrants(connection, prov("D17", GRANTS_METHODS), keys, now);
-  const notes = createLiveNotes(connection, prov("D17", NOTES_METHODS), keys, now);
+  const memory = createLiveMemory(connection, prov("D17", MEMORY_METHODS), keys, now);
 
   return {
     workstreams,
@@ -305,9 +335,10 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
     settings,
     monitoring,
     holds,
+    questions,
     pulls,
     projectDefaults,
     grants,
-    notes,
+    memory,
   };
 }

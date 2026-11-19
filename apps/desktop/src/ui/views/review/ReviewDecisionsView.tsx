@@ -5,7 +5,8 @@
 // its own <main> because the app shell already provides one. The queue lists every pending
 // approval from approvals.list across projects. Priority and latest response time come from the
 // D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon. Proposed
-// actions (actions.pending) are listed above the queue and link to their card in the conversation.
+// actions (actions.pending) are listed above the queue and link to their card in the conversation. Open questions for
+// the user (decisions.list) are listed above those, and are answered or deferred here.
 import { useMemo, useState } from "react";
 import type { ReviewClient } from "../../../review/client";
 import { createReviewClient } from "../../../review/client";
@@ -28,6 +29,7 @@ import { DecisionBehavior } from "./DecisionBehavior";
 import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
 import { DecisionTabs } from "./DecisionTabs";
 import { ProposedActions } from "./ProposedActions";
+import { QuestionList } from "./QuestionList";
 import type { AttemptsLoader } from "./Attempts";
 import { SixFactsRecord } from "./ReviewRecord";
 import { DecisionNotifications } from "./DecisionNotifications";
@@ -159,6 +161,7 @@ export function ReviewDecisionsView({
       ),
       queue: (state: ReviewState) => (
         <>
+          <QuestionList />
           <ProposedActions decisions={decisions} held={holds.held} />
           <DecisionQueue
             state={state}

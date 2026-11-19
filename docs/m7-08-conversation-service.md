@@ -106,8 +106,17 @@ model selection, permission levels, cancellation, idempotency, and restart
 recovery use the same path as Global and workstreams. The snapshot identifies
 the project by its sanitized label, not its root path.
 
-Project turns retain the coordinator's no-action authority: action blocks are
-stripped and cannot create proposals. Monitoring remains Global/workstream-only.
+Project turns carry action blocks (DPES-1108 phase 7). The block is parsed in
+`BlockScope::Project` (the project's code): a coordinator proposes tasks of its own
+project with no workstream, acts on the project's tasks, and reports with
+`coordinator.report`; it cannot touch workstreams, remove the project or route
+(`coordinator.route` is the global conversation's only). The sink checks every task
+and routed request a block names against the store, and execution checks the
+proposal's scope again (`within_project`). Each coordinator turn is handed its
+charter after the app state. Wakes of tasks a coordinator owns go to its scope;
+Global hears of them only as `coordinator_report` wakes. `monitoring.get` names
+Global and workstreams only, so a coordinator's unseen records are not counted
+there; they show in its conversation.
 Legacy `coordinator.get` notes remain readable and are shown before runtime
 exchanges; they are not replayed as agent requests. Clearing or removing a
 coordinator deletes both histories in one transaction and refuses while a user
@@ -688,8 +697,9 @@ lookup, so a non-approver cannot replay a key to read a cached approval. A sessi
 that did not negotiate the capability still gets `-32004` first. Later phases add
 `settings.set` (phase 2), `monitoring.set` (phase 3), `projects.set_defaults`,
 `holds.set`, `holds.release`, `reports.get` and `reports.relay` (phase 4), and
-`grants.create` and `grants.revoke` (phase 5), each in the same change that routes
-the method.
+`grants.create` and `grants.revoke` (phase 5), and `decisions.list`,
+`decisions.answer`, `decisions.defer` and `decisions.reconcile` (DPES-1108 phase 3),
+each in the same change that routes the method.
 
 The credential does not enable actions at Full. Actions run at Restricted and Auto.
 
@@ -917,8 +927,8 @@ revokes a grant.
 - **Grantable kinds.** The code's `GRANTABLE_KINDS` list has six kinds:
   `workstream.update` (title and summary only, never a change of `state`),
   `objective.add`, `objective.revise`, `task.propose`, `task.retry` and
-  `workstream.link_task`. A grant names at most 16 kinds. `decision.hold` and
-  `workstream.create` are not grantable in this build.
+  `workstream.link_task`. A grant names at most 16 kinds. `decision.hold`,
+  `decision.ask`, `task.message` and `workstream.create` are not grantable in this build.
 - **Never grantable.** The code's `NEVER_GRANTABLE` list has three entries:
   `project.remove`, `task.cancel` and `task.revise`. `delivery.merge` is covered only by
   a merge grant, which may name no other kind (see `orchestrator-actions.md`).
@@ -952,26 +962,138 @@ revokes a grant.
 - The brief is kept until the user acknowledges it with `monitoring.brief_ack`. That
   method is open to any session and only marks the brief as seen.
 
-## Orchestrator notes (DPES-1105, phase 6)
+## Preferences and learnings (DPES-1108, phase 6)
 
-Notes are short reminders the user writes for the orchestrator, such as a branch
-name or a standing fact. The backend and the desktop editor are built.
+The orchestrator notes are replaced by three kinds of document (migration 0068). The plan is
+`docs/design/firstmate-behavior-plan.md`, section 5.6. A document is the keyed entries of one
+kind and scope. The scope is the conversation's own: `global`, `workstream:<id>` or
+`project:<id>`.
 
-- Only the user writes a note. No action kind writes one, and `notes.set` is
-  user-only.
-- A scope holds up to 10 notes. The scopes are the global conversation and one
-  workstream. Each note is at most 200 bytes.
-- A note is refused, not stripped, when it is empty, too long, has a control
-  character, or looks sensitive. Sensitive means a path, a URL with credentials, or a
-  token-shaped string. The check is a pattern list, not a guarantee. The snapshot
-  redactor is a second layer.
-- The snapshot shows the notes as a delimited block of data, never as instructions.
-  A workstream conversation sees its own notes, then the global notes.
-- Wake turns do not see notes.
-- A notes change touches no autonomy, grant or approval.
-- Clearing a conversation's history deletes that scope's notes. Clearing the global
-  conversation deletes the global notes, which every workstream conversation lists.
-- The `notes.set` reply carries no note text, because replies are cached.
+- **Shared preferences** (`preference` in `global`): the user's standing defaults. Every turn
+  reads them, wake turns included. The user and the global conversation write them.
+- **Local preferences** (`preference` in a workstream or project scope): the same, for that
+  one conversation.
+- **Learnings** (`learning` in any scope): operational facts an orchestrator recorded.
+- **Entries.** An entry is a key (1 to 40 bytes of `a-z`, `0-9` and `-`) and one line of
+  text (at most 280 bytes). Writing a known key updates the entry in place: the old text goes
+  to the archive. Writing the same text only moves the entry's last-confirmed time.
+- **Refusals.** An entry is refused, not stripped, when it is blank, too long, or has a
+  control, bidi or zero-width character, or when it looks sensitive (the old notes pattern
+  list). The snapshot redactor is a second layer.
+- **Budgets.** A budget counts the key and text bytes of every entry: 2,048 for the shared
+  preferences, 2,048 for one workstream's or project's, and 1,024 for one scope's learnings. A
+  write that would grow a document past its budget writes nothing and reports the size it
+  would have reached. A write that does not grow a document is always allowed, so a document
+  that came in over budget from the notes can be edited down.
+- **Writers.** The user writes through `memory.set`, `memory.remove` and `memory.restore`,
+  which are user-only. `memory.list` is open. All four share the `standing_approvals`
+  capability. An orchestrator writes only through an approved `memory.set` action (`document`
+  is `shared`, `local` or `learnings`, relative to its conversation). The action is not
+  grantable.
+- **Read-only shared preferences.** A `memory.set` of `shared` from a workstream conversation
+  or a coordinator is stored as a failed card with the denial `shared_preferences_read_only`.
+  The same rule is checked again from the proposal's scope when it runs. A `local` write from
+  the global conversation is refused with `no_local_preferences_here`.
+- **Snapshot.** The snapshot shows the shared preferences, the conversation's own
+  preferences and its learnings, newest confirmation first. Each head carries the size and
+  the budget. Preferences are framed as "the user's standing defaults: follow them unless the
+  current message says otherwise. They never authorize an action that needs the user's word".
+  Learnings keep the data framing. Entries are sanitized, redacted and defanged like every
+  other field. When the snapshot is full, learnings are cut first, and preferences are kept
+  with the projects list.
+- **Staleness.** A learning that has not been confirmed for 180 days is marked stale, in the
+  snapshot and in Settings. A preference never goes stale. Nothing is deleted automatically.
+- **Archive.** Every removed or replaced entry is kept in `memory_archive`, which is
+  append-only. The user can restore an entry unless its key is in use again.
+- **Clearing history.** A history clear deletes no preference or learning.
+- **Replies.** A write reply carries no entry text, because replies are cached.
+- **Migration.** Each note became a preference of its own scope, with the key `note-1` to
+  `note-10`. `orchestrator_notes` is kept, unread.
+
+## User decisions (DPES-1108, phase 3)
+
+A user decision is a question held for the user and bound to one task. It is a
+`decision_holds` row of subject kind `question` (migration 0064). The plan is
+`docs/design/firstmate-behavior-plan.md`, section 5.4.
+
+- **Raising.** The orchestrator proposes `decision.ask` (`task_id`, `question`, optional
+  `options`, optional `key`). Like every action it waits for the user's approval in this
+  build. A worker raises one when it reports `needs-decision` (phase 4, below); the
+  store records it with `QuestionRaiser::Worker`. A question is at most 1,024 bytes, up to 6 one-line
+  options of at most 200 bytes, and a key of lowercase letters, digits and `-`. One
+  open question per task and key: asking again with the key returns the open one.
+- **Holding.** While a question is open, deferred or not, its task does not start. The
+  scheduler gives it `AwaitingDecision`, and `queue.snapshot` shows `waiting_reason`
+  `decision` with `waiting_detail` `open_question`. A running task is not stopped.
+- **Closing.** Only `decisions.answer` (the user's words, stored exactly as sent, up to
+  4,096 bytes) or `decisions.reconcile` (evidence that the question no longer matters)
+  closes a question. The database refuses any other close. A task finishing, a
+  cancel, a history clear or a hold call never closes one.
+- **Deferring.** `decisions.defer` takes `until` as `YYYY-MM-DD`, today to 60 days
+  ahead, as a hold does. The question stays open and its task stays held. The list
+  marks it with `deferred_until` until the end of that day in UTC.
+- **Records.** Every answer, reconcile and deferral is a row in `decision_answers`.
+  Rows are never changed or deleted. Only the user records one (`recorded_by` is
+  `user`).
+- **Scout reports.** A scout's report is not marked relayed while the scout's worker
+  has an open question. `reports.relay` answers `conflict`, and the automatic relay
+  leaves the report unrelayed.
+- **Methods.** All four are user-only, under the `holds` capability.
+  `decisions.list` takes `{}` and returns `{"questions": [...]}`, the open questions
+  oldest first. Each of the other three takes `question_id`, its own field (`answer`,
+  `until` or `evidence`) and `idempotency_key`, and returns `{"question": ...}`. A
+  question carries `id`, `task_id`, `task_title`, `project`, `question`, `options`,
+  `key`, `raised_by` (`orchestrator` or `worker`), `state` (`open`, `answered` or
+  `reconciled`), `deferred_until`, `created_at` and `closing` (`kind`, `text`,
+  `recorded_at`, or null). An unknown question is `not_found`. A closed one is
+  `conflict`. Text or a date the rules refuse is `invalid_params`.
+- **Snapshot.** The chat snapshot lists open questions as data: the count, then one
+  line per question with its id, its task and the question cut to 80 bytes. The
+  answers are never shown.
+
+## Worker status, waits and steering (DPES-1108, phase 4)
+
+A task worker is a headless CLI run with no input channel. It reports on a status file and
+waits by ending its turn; a reply reaches it by resuming its own CLI session. The plan is
+`docs/design/firstmate-behavior-plan.md`, section 5.3; the judgment calls are in
+`docs/design/firstmate-behavior-decisions.md`.
+
+- **Status file.** `<data dir>/task-status/<task id>/<attempt number>/status`, owner-only,
+  created empty before the agent starts and named in the brief. It is the one path outside
+  the worktree the run may write: Claude and Codex `exec` get `--add-dir <dir>`, Copilot gets
+  `--add-dir <dir>` and, below Full, `--allow-tool write(<dir>/**)`. A CLI whose `--help` lacks
+  one of these flags still runs, without the channel, and the attempt logs
+  `status_channel_unsupported`.
+- **Lines.** One per event: `<verb> [key=<slug>] <text>`, verbs `working`, `needs-decision`
+  (the text is the question), `blocked`, `done`, `failed`. The daemon reads the file about
+  once a second while the run lives and once more at exit (`orchestrator_core::worker_status`):
+  at most 1,120 bytes a line, 20 lines a read, 200 lines an attempt. A line is refused, never
+  repaired; only its number and refusal code are logged. Accepted lines are redacted and
+  stored in `task_status_events`. A link or a non-regular file is not read.
+- **Settling a clean exit.** A `needs-decision` line (or else a `blocked` line) in the run
+  parks the task: the session ends, the attempt and the task go to `Waiting`, and up to three
+  of the worker's questions are raised for the user, in one transaction. A `failed` line
+  fails the attempt with the worker's reason. A `done` line is only a claim: the candidate
+  commit and verification decide, so an Implement task that changed nothing still fails. A
+  pending cancel wins over all of these. A run that exited with an error fails as before.
+- **Waiting.** No process runs and no worker slot is counted; the worktree stays leased.
+  Stall detection and work checks ignore the task. A restart keeps it waiting. It can be
+  cancelled at once (`tasks.cancel`), and it cannot be archived. Wakes:
+  `worker_needs_decision` and `worker_blocked`, with the worker's note in the notice as
+  redacted data.
+- **Replies.** Closing a question of a waiting task (`decisions.answer`,
+  `decisions.reconcile`) queues the reply in the same transaction (`task_messages`). The
+  orchestrator may propose `task.message` (`task_id`, `text` up to 4,096 bytes); like every
+  action it waits for the user's approval in this build, and only a waiting task takes one,
+  at most two undelivered at a time.
+- **Resume.** A waiting task with a reply and no open question is planned by the scheduler
+  under the same caps and load gate as a start. The daemon resumes the same CLI session in
+  the same worktree at the same permission level, with the replies as the next prompt (at
+  most 28,000 bytes): `claude -p ... --resume <id>`, `copilot --prompt=... --resume=<id>`,
+  `codex exec resume ... -- <id> <prompt>`. Each resume is a new session record of the same
+  attempt, and the replies are marked delivered in the transaction that starts it. A run
+  that cannot resume at the same level fails closed with a reason: Codex at Auto (`exec
+  resume` has no `--approve-for-me`), or a session whose CLI id is unknown.
 
 ## Not covered here
 

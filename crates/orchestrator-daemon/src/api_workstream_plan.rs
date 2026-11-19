@@ -291,7 +291,10 @@ impl DaemonApi {
                 let (task, _) = self.linked_task(&request.workstream_id, &request.task_id)?;
                 self.refuse_gate_evidence(&request.workstream_id, &[&request.task_id])?;
                 let cancel = match task.state {
-                    TaskState::Created | TaskState::Queued | TaskState::Verifying => true,
+                    TaskState::Created
+                    | TaskState::Queued
+                    | TaskState::Waiting
+                    | TaskState::Verifying => true,
                     TaskState::Succeeded
                     | TaskState::Failed
                     | TaskState::VerificationFailed

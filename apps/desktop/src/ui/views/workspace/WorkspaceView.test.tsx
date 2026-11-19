@@ -8,7 +8,7 @@ import { createServices } from "../../createServices";
 import { ALPHA, BETA, WORKSTREAM_STATE, populate } from "../../../sources/surfaces/testkit";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
-import { FakeDaemon } from "../../../test/fakeDaemon";
+import { FakeDaemon, StubRpcError } from "../../../test/fakeDaemon";
 import {
   CLAUDE_CATALOG,
   CODEX_CATALOG,
@@ -23,6 +23,7 @@ import { ServicesProvider, type Services } from "../../services";
 import { CHOICE_PREFERENCE_KEY } from "./modelChoice";
 import { RESTRICTED_PREFERENCE_KEY } from "./permissionLevel";
 import { workspaceRegistration } from "./register";
+import { COORDINATOR_HEADING, REMOVE_OPEN_WORK_TEXT } from "./coordinatorModel";
 import { formatAt } from "./time";
 import { GLOBAL_TASKS_WORKSTREAM_ID, WorkspaceView } from "./WorkspaceView";
 
@@ -1424,6 +1425,71 @@ describe("workspace view, history actions", () => {
     expect(fake.callsTo("coordinator.restore")[0].params).toMatchObject({ project_id: ALPHA });
     expect(await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 })).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("removing_a_coordinator_that_owns_open_work_says_so_in_plain_words", async () => {
+    const fake = liveDaemon();
+    fake.stub("coordinator.remove", () => {
+      throw new StubRpcError(-32011, "conflict");
+    });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 });
+
+    await user.click(screen.getByRole("button", { name: "Conversation actions for alpha coordinator" }));
+    await user.click(screen.getByRole("menuitem", { name: "Remove coordinator…" }));
+    await user.click(screen.getByRole("button", { name: "Remove coordinator permanently" }));
+
+    await waitFor(() => expect(screen.getAllByRole("alert").some((item) => item.textContent?.includes(REMOVE_OPEN_WORK_TEXT))).toBe(true));
+    expect(screen.queryByText(/Removing the coordinator failed/)).toBeNull();
+    expect(screen.getByRole("heading", { name: "Talking to: alpha coordinator", level: 2 })).toBeInTheDocument();
+  });
+
+  it("coordinator_panel_shows_the_daemon_state_and_saves_the_scope_through_the_daemon", async () => {
+    const fake = populate(new FakeDaemon());
+    const conversation = stubConversation(fake, "completed");
+    conversation.coordinator = {
+      scope_sentence: null,
+      open_tasks: 1,
+      open_requests: 1,
+      routed_requests: [{ id: "r-0123456789abcdef", work: "Write the troubleshooting page.", answered: false, created_at: "2026-11-16T21:04:11Z" }],
+      reports: [],
+    };
+    fake.stub("coordinator.set_scope", (params: Record<string, unknown>) => {
+      conversation.coordinator = { ...conversation.coordinator!, scope_sentence: params.scope_sentence as string | null };
+      return { project_id: params.project_id, scope_sentence: params.scope_sentence };
+    });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    const region = await screen.findByRole("region", { name: COORDINATOR_HEADING });
+    expect(region.textContent).toContain("Scope: No scope set");
+    expect(region.textContent).toContain("r-0123456789abcdef: Write the troubleshooting page.");
+
+    await user.type(within(region).getByRole("textbox", { name: "Scope sentence" }), "Owns the user documentation.");
+    await user.click(within(region).getByRole("button", { name: "Save scope" }));
+    await waitFor(() => expect(fake.callsTo("coordinator.set_scope")).toHaveLength(1));
+    expect(fake.callsTo("coordinator.set_scope")[0]!.params).toMatchObject({
+      project_id: ALPHA,
+      scope_sentence: "Owns the user documentation.",
+      idempotency_key: expect.any(String),
+    });
+    await waitFor(() => expect(region.textContent).toContain("Scope: Owns the user documentation."));
+  });
+
+  it("coordinator_panel_scope_editor_is_off_for_a_session_that_is_not_the_approver", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.approver = false;
+    const conversation = stubConversation(fake, "completed");
+    conversation.coordinator = { scope_sentence: "Owns docs.", open_tasks: 0, open_requests: 0, routed_requests: [], reports: [] };
+    const services = track(build({ fake }));
+    await mountView(services, false);
+    await waitLive(services);
+    const region = await screen.findByRole("region", { name: COORDINATOR_HEADING });
+    expect(within(region).getByRole("textbox", { name: "Scope sentence" })).toBeDisabled();
+    expect(within(region).getByRole("button", { name: "Save scope" })).toBeDisabled();
+    expect(within(region).getByText(APPROVER_REQUIRED_NOTICE)).toBeInTheDocument();
   });
 
   it("clearing a coordinator's history asks first, empties the transcript and keeps the unsent draft", async () => {

@@ -218,6 +218,11 @@ impl ActionProposal {
     pub fn scope_workstream(&self) -> Option<&str> {
         self.scope.strip_prefix("conversation:workstream:")
     }
+
+    /// The project id of a proposal a project coordinator made (DPES-1108 phase 7).
+    pub fn scope_project(&self) -> Option<&str> {
+        self.scope.strip_prefix("conversation:project:")
+    }
 }
 
 impl SqliteStore {

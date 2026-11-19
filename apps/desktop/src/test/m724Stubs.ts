@@ -2,6 +2,7 @@ import type {
   ActionProposalWire,
   ActionsResolveWire,
   AgentCatalogEntry,
+  ConversationCoordinatorWire,
   ConversationWireEntry,
   ConversationWireTarget,
   ConversationWireTurn,
@@ -25,6 +26,8 @@ export interface ConversationStub {
   outcome: Outcome;
   /** Set by a test to send `proposals` on `conversations.get`; left out by default, like an older daemon. */
   proposals?: ActionProposalWire[];
+  /** Set by a test to send a project coordinator's state on `conversations.get` (DPES-1108); left out by default. */
+  coordinator?: ConversationCoordinatorWire;
   finishRunning(code?: string | null, reply?: string): void;
   /** Records one thinking chunk on the running turn. */
   think(body: string): void;
@@ -105,6 +108,7 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
       turn: state.turn,
       epoch: "epoch-1",
       ...(state.proposals ? { proposals: state.proposals } : {}),
+      ...(state.coordinator ? { coordinator: state.coordinator } : {}),
     };
   });
   fake.stub("conversations.cancel",(params: Record<string, unknown>) => {

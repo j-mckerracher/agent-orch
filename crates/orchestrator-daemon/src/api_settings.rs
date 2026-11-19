@@ -27,6 +27,8 @@
 //!   orchestrator chat. `enabled` is a JSON boolean; an `mcp` group with no field is
 //!   `InvalidParams`. No new method: `settings.set` stays user-only, so a token-only session
 //!   cannot turn it on.
+//! - DPES-1108 phase 5 adds `autonomous_actions`, a boolean in both answers (on by default) and
+//!   an optional field of `settings.set`: off makes every orchestrator action a card again.
 //! - `home_directory` is a string or `null` in both answers (`null` while none is set) and an
 //!   optional field of `settings.set`: the directory a task runs in when it is not clear which
 //!   project it belongs to. A string is a path (`~` is the user's home) that must name an
@@ -88,6 +90,10 @@ struct SetParams {
     home_directory: Option<Option<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     dispatch_defaults: Option<DispatchDefaults>,
+    /// The orchestrator runs autonomous-class actions on its own (DPES-1108 phase 5). On by
+    /// default; off makes every action a card. User-only, like every field of this method.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    autonomous_actions: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -282,6 +288,7 @@ impl DaemonApi {
             && request.mcp.is_none()
             && request.home_directory.is_none()
             && request.dispatch_defaults.is_none()
+            && request.autonomous_actions.is_none()
         {
             return Err(RpcError::InvalidParams);
         }
@@ -371,6 +378,7 @@ impl DaemonApi {
                         .unwrap_or_default(),
                     home_directory: home_directory.clone(),
                     dispatch_defaults: request.dispatch_defaults.clone(),
+                    autonomous_actions: request.autonomous_actions,
                 };
                 let mut fields = Vec::new();
                 fields.extend(request.load.iter().flat_map(LoadParams::fields));
@@ -388,6 +396,9 @@ impl DaemonApi {
                 );
                 if let Some(value) = request.chat_pr_delivery {
                     fields.push(("chat_pr_delivery", value.to_string()));
+                }
+                if let Some(value) = request.autonomous_actions {
+                    fields.push(("autonomous_actions", value.to_string()));
                 }
                 if let Some(value) = request.mcp.as_ref().and_then(|mcp| mcp.enabled) {
                     fields.push(("mcp_enabled", value.to_string()));
@@ -484,6 +495,7 @@ impl DaemonApi {
             "mcp": { "enabled": settings.mcp.enabled },
             "home_directory": settings.home_directory,
             "dispatch_defaults": settings.dispatch_defaults,
+            "autonomous_actions": settings.autonomous_actions,
         }))
     }
 }

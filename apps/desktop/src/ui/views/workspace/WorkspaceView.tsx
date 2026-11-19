@@ -17,6 +17,7 @@ import { useGate, useServices, useStore, useSurface, type SurfaceState } from ".
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Badge, Bubble, Button, CopyButton, EmptyState, Markdown } from "../../theme";
+import { PullRequestLinks } from "./PullRequestLinks";
 import { ErrorNotice, Notice } from "../../widgets";
 import { useWorkstreamsVersion } from "../workstreams/model";
 import { ActionCard } from "./ActionCard";
@@ -28,6 +29,8 @@ import { NEW_UPDATE_TEXT, WAKE_RUNNING_TEXT, notifyingCount, placeWake, quietTur
 import { PermissionLevelNotes } from "./PermissionLevelPicker";
 import { ReturnBrief } from "./ReturnBrief";
 import { RoutedInStrip } from "./RoutedInStrip";
+import { CoordinatorStrip } from "./CoordinatorStrip";
+import { REMOVE_OPEN_WORK_TEXT, scopeLockReason } from "./coordinatorModel";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
@@ -79,7 +82,13 @@ export function WorkspaceView() {
   const [fixtureRemoved, setFixtureRemoved] = useState<readonly string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [addBusy, setAddBusy] = useState<string | null>(null);
-  const [actionNote, setActionNote] = useState<{ notice: string | null; error: DaemonError | null; action: string } | null>(
+  const [actionNote, setActionNote] = useState<{
+    notice: string | null;
+    error: DaemonError | null;
+    action: string;
+    /** A refusal said in plain words instead of the generic failure. */
+    refusal?: string;
+  } | null>(
     null,
   );
   const removedIds = useMemo(
@@ -132,7 +141,10 @@ export function WorkspaceView() {
       drafts.setWorkspaceTarget("global");
       setActionNote({ notice: receipt.notice, error: null, action: "" });
     } catch (thrown) {
-      setActionNote({ notice: null, error: asDaemonError(thrown), action: "Removing the coordinator" });
+      const failed = asDaemonError(thrown);
+      // DPES-1108: the daemon keeps a coordinator that still owns unfinished tasks or an unanswered routed request.
+      if (failed.kind === "conflict") setActionNote({ notice: null, error: null, action: "", refusal: REMOVE_OPEN_WORK_TEXT });
+      else setActionNote({ notice: null, error: failed, action: "Removing the coordinator" });
     }
   };
 
@@ -191,6 +203,11 @@ export function WorkspaceView() {
         </p>
       )}
       {actionNote?.error && <ErrorNotice error={actionNote.error} action={actionNote.action} />}
+      {actionNote?.refusal && (
+        <Notice tone="bad" role="alert">
+          {actionNote.refusal}
+        </Notice>
+      )}
       {actionNote?.notice && <p role="status">{actionNote.notice}</p>}
       <Conversation
         option={option}
@@ -737,6 +754,25 @@ function Conversation({
         workstream={target.kind === "workstream"}
       />
 
+      {target.kind === "project" && (
+        <CoordinatorStrip
+          key={option.key}
+          snapshot={transcript.status === "ok" ? transcript.data : null}
+          lockReason={scopeLockReason({
+            live,
+            connected: gate.connected,
+            supported: gate.can("conversation_history"),
+            approver: gate.connection.approver,
+          })}
+          onSaveScope={
+            surfaces.conversation.setCoordinatorScope
+              ? (sentence) => surfaces.conversation.setCoordinatorScope!(target.projectId, sentence)
+              : undefined
+          }
+          onSaved={() => setNonce((value) => value + 1)}
+        />
+      )}
+
       <form className="ws-composer" onSubmit={onSubmit} aria-label={`Message ${option.label}`}>
         <textarea
           id={`${ids}-draft`}
@@ -941,12 +977,15 @@ function EntryBubble({
   // A daemon turn outcome is a system line, never a reply from the orchestrator. It is daemon text, so it stays plain.
   if (entry.kind === "status") {
     return (
-      <div className="ws-state ws-turn-status">
-        <p role="status" className="ws-turn-status-text">
-          {entry.text}
-        </p>
-        <CopyButton text={entry.text} label="Copy status" />
-      </div>
+      <>
+        <div className="ws-state ws-turn-status">
+          <p role="status" className="ws-turn-status-text">
+            {entry.text}
+          </p>
+          <CopyButton text={entry.text} label="Copy status" />
+        </div>
+        <PullRequestLinks links={entry.pullRequests} />
+      </>
     );
   }
   const bubble = (
@@ -973,6 +1012,7 @@ function EntryBubble({
       actions={<CopyButton text={entry.text} />}
     >
       <Markdown text={entry.text} />
+      <PullRequestLinks links={entry.pullRequests} />
     </Bubble>
   );
   // A reply to an automatic turn says it is an update, so it is never read as an answer to the user's last message.

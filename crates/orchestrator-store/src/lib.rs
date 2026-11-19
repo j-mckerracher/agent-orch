@@ -56,31 +56,37 @@ mod sqlite_actions;
 mod sqlite_approvals;
 mod sqlite_archive;
 mod sqlite_attempts;
+mod sqlite_authority;
 mod sqlite_brief;
 mod sqlite_conversation_usage;
 mod sqlite_conversations;
+mod sqlite_coordinators;
 mod sqlite_delivery;
 mod sqlite_grants;
 mod sqlite_history;
 mod sqlite_holds;
 mod sqlite_lineage;
-mod sqlite_notes;
+mod sqlite_memory;
 mod sqlite_ops;
 mod sqlite_project_defaults;
 mod sqlite_pull_requests;
+mod sqlite_questions;
 mod sqlite_reports;
 mod sqlite_review;
 mod sqlite_settings;
 mod sqlite_supervision;
 mod sqlite_thinking;
+mod sqlite_turn_links;
 mod sqlite_verification;
 mod sqlite_wake;
+mod sqlite_worker_status;
 mod sqlite_workstreams;
 pub use sqlite_actions::{
     ActionBlockOutcome, ActionOutcome, ActionProposal, ProposalEvent, ProposalState, ResolveError,
     RoutedTask, TurnBlock, DEPENDENCY_NOT_EXECUTED,
 };
 pub use sqlite_archive::ArchiveError;
+pub use sqlite_authority::{AuthorityError, OriginKind, TaskOrigin, TaskOverride};
 pub use sqlite_conversation_usage::{ConversationUsageReceipt, TurnTrigger};
 pub use sqlite_conversations::{
     BegunTurn, ConversationEntry, ConversationError, ConversationPage, ConversationTarget,
@@ -88,15 +94,26 @@ pub use sqlite_conversations::{
     MAX_CONVERSATION_MESSAGE_BYTES, MAX_REPLY_BYTES_PER_TURN, MAX_REPLY_CHUNK_BYTES,
     MAX_THINKING_BYTES_PER_TURN, MAX_WORKSTREAM_ID_BYTES,
 };
+pub use sqlite_coordinators::{
+    CoordinatorError, CoordinatorFact, CoordinatorReport, CoordinatorSummary, NewCoordinatorFact,
+    RoutedRequest,
+};
 pub use sqlite_delivery::{DeliveryOutcome, DeliveryStepRecord};
 pub use sqlite_grants::{GrantClaimError, GrantError, GrantEvent, GrantEventKind, GrantOutcome};
 pub use sqlite_history::{AuditRecord, ClearOutcome, CoordinatorChange, CoordinatorScope};
 pub use sqlite_holds::{DecisionHold, HoldError, HoldState, HoldSubject};
 pub use sqlite_lineage::{LineageError, LineageRelation, TaskLineage};
+pub use sqlite_memory::{
+    ArchivedMemoryEntry, ConversationMemory, MemoryEntry, MemoryRestoreOutcome, MemoryWriteOutcome,
+    MemoryWriter, MEMORY_ARCHIVE_LISTED,
+};
 pub use sqlite_project_defaults::{ProjectDefaultsError, ProjectDefaultsPatch, ProjectDefaultsRow};
 pub use sqlite_pull_requests::{
     GrantIssue, MergeAttempt, MergeClaim, MergeState, PullRequestChange, PullRequestError,
     PullRequestRow, PullRequestSeen, StoredCheck, MAX_STORED_CHECKS,
+};
+pub use sqlite_questions::{
+    ClosingKind, DecisionQuestion, QuestionClosing, QuestionError, QuestionRaiser,
 };
 pub use sqlite_reports::{
     ReportScope, TaskReport, TaskReportError, TaskReportSummary, MAX_REPORT_BYTES,
@@ -107,9 +124,14 @@ pub use sqlite_settings::{
     SettingsPatch, SupervisionPatch, SupervisionSettings, WakeLimitsPatch,
 };
 pub use sqlite_supervision::{RunningAttempt, ScopeLoad, TaskWakeFacts};
+pub use sqlite_turn_links::{PullRequestLink, MAX_TURN_LINKS};
 pub use sqlite_wake::{
     NewWakeRecord, Settle, SkipReason, StaleProposal, WakeFailure, WakeKind, WakeOutcome,
     WakeRecord, WakeState, WAKE_PAGE_SIZE,
+};
+pub use sqlite_worker_status::{
+    PendingReply, ReplyKind, ResumeTarget, StatusEvent, WaitError, WorkerQuestion,
+    MAX_QUEUED_MESSAGES,
 };
 pub use sqlite_workstreams::{
     WorkstreamRevision, WorkstreamStoreError, WorkstreamTask, WorkstreamTasks,

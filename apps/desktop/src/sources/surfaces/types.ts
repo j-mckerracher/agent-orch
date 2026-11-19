@@ -216,6 +216,15 @@ export interface ConversationEntry {
   origin?: "wake";
   /** The daemon's transcript sequence (a reply: its last chunk). A wake record is placed by it. Live targets only. */
   sequence?: number;
+  /** The recorded pull requests of the tasks this turn acted on or reported (DPES-1108), on its reply or status. */
+  pullRequests?: PullRequestLink[];
+}
+
+/** A pull request the daemon recorded for a task. The URL is the daemon's, checked again before it is shown. */
+export interface PullRequestLink {
+  taskId: string;
+  number: number;
+  url: string;
 }
 /** The permission level a chat message runs at (DPES-1105). The daemon sets the level it ran with on each turn. */
 export type PermissionLevel = "restricted" | "extended" | "auto" | "full";
@@ -248,9 +257,20 @@ export interface ActionProposal {
   denial: string | null;
   /** Who approved it: a user, or a standing approval by id. Absent from older daemons and null until approved. */
   approvedBy?: { kind: "user" } | { kind: "grant"; grantId: string } | null;
+  /** Set only when the orchestrator approved and ran it itself after the user's message. Absent reads as false. */
+  autonomous?: boolean;
+  /** Set only when the task departs from its project's default for this one task. Absent reads as none. */
+  overrides?: ProposalOverride[];
   /** Display facts the daemon read live; null for kinds that need none. No paths. */
   target: ProposalTarget | null;
   updatedAt: string;
+}
+
+/** One field a task sets differently from its project's default, for that task only. */
+export interface ProposalOverride {
+  field: string;
+  projectDefault: string;
+  chosen: string;
 }
 
 /** What the daemon read when it listed a task proposal: the project's folder name, or the task's title and state now. */
@@ -267,12 +287,17 @@ export interface ProposalTarget {
   runningTasks?: number;
   /** Only on a `delivery.merge` card: the pull request as the daemon last read it. */
   pull?: PullFacts;
+  /** Only on a `coordinator.route` card (DPES-1108): whether the project has an active coordinator. */
+  coordinatorActive?: boolean;
+  /** Only on a `coordinator.report` card that names a routed request: its work and whether it is answered. */
+  requestWork?: string;
+  requestAnswered?: boolean;
 }
 
 /** A pending proposal and the conversation that holds its card (DPES-1105). */
 export interface ProposalItem {
   proposal: ActionProposal;
-  scope: { kind: "global" } | { kind: "workstream"; workstreamId: string };
+  scope: { kind: "global" } | { kind: "workstream"; workstreamId: string } | { kind: "project"; projectId: string };
 }
 
 /** Outcome of approve or reject. `simulated` receipts changed nothing; `proposal` is what the daemon confirmed. */
@@ -323,6 +348,42 @@ export interface ConversationTranscript {
   wakeMore?: boolean;
   /** Workstream targets only: tasks the global conversation routed here, newest first (DPES-1105). Absent when none. */
   routedIn?: RoutedIn[];
+  /** Project targets only: the coordinator's scope, open work and parent channel (DPES-1108). Absent from older daemons. */
+  coordinator?: CoordinatorState;
+}
+/** A project coordinator's state (DPES-1108). Lists are newest first. Ids, verbs and counts only, plus agent notes. */
+export interface CoordinatorState {
+  scopeSentence: string | null;
+  openTasks: number;
+  openRequests: number;
+  routedRequests: RoutedRequest[];
+  reports: CoordinatorReport[];
+}
+/** Work the global orchestrator routed to a coordinator. `id` is the correlation id (`r-…`). */
+export interface RoutedRequest {
+  id: string;
+  work: string;
+  answered: boolean;
+  createdAt: string;
+}
+/** One parent-channel entry. A `daemon` row is an app fact; a `coordinator` note is agent text, shown as plain text. */
+export interface CoordinatorReport {
+  id: string;
+  author: string;
+  verb: string;
+  requestId: string | null;
+  taskId: string | null;
+  key: string | null;
+  note: string | null;
+  createdAt: string;
+}
+/** Outcome of a scope change. `simulated` receipts changed nothing. */
+export interface ScopeReceipt {
+  simulated: boolean;
+  provenance: Provenance;
+  /** The sentence the daemon stored; null when cleared or simulated. */
+  scopeSentence: string | null;
+  notice: string;
 }
 /** A task routed to a workstream by the global conversation (DPES-1105). Titles only: no path, token or output. */
 export interface RoutedIn {
@@ -374,6 +435,8 @@ export interface ConversationSource {
   removeCoordinator?(projectId: string): Promise<CoordinatorChangeReceipt>;
   /** DPES-1105. Restores a removed coordinator; it starts empty. */
   restoreCoordinator?(projectId: string): Promise<CoordinatorChangeReceipt>;
+  /** DPES-1108. Sets or clears (null) a coordinator's scope sentence. User-only. Fixture: simulated. */
+  setCoordinatorScope?(projectId: string, scopeSentence: string | null): Promise<ScopeReceipt>;
 }
 
 /** Outcome of a history clear. `simulated` receipts deleted nothing. */
@@ -742,6 +805,8 @@ export interface GroupsPatch {
   wakeLimits?: Partial<WakeLimitSettings>;
   /** Whether chat may propose tasks that end in a pull request. */
   chatPrDelivery?: boolean;
+  /** Whether the orchestrator may run some actions itself after the user's messages. */
+  autonomousActions?: boolean;
   /** Whether the orchestrator chat gets the read-only task tools. */
   mcpEnabled?: boolean;
   /** The folder a task runs in when no project is clear. `null` clears it; a key left out leaves it alone. */
@@ -758,6 +823,8 @@ export interface SettingsSnapshot {
   wakeLimits?: WakeLimitSettings;
   /** Absent from a daemon that cannot change it. */
   chatPrDelivery?: boolean;
+  /** Absent from a daemon that cannot change it. */
+  autonomousActions?: boolean;
   /** Absent from a daemon that cannot change it. */
   mcpEnabled?: boolean;
   /** The folder a task runs in when no project is clear; `null` while none is set. Absent from a daemon that cannot change it. */
@@ -791,10 +858,11 @@ export interface WakeRecord {
   id: string;
   /**
    * The daemon's event word: `task_failed`, `task_stalled`, `delivery_waiting`, `sign_in_needed`, `proposal_waiting`,
-   * `scout_report_ready`, `candidate_ready`, `work_check` or `daemon_start`. An unknown word is kept.
+   * `scout_report_ready`, `candidate_ready`, `worker_needs_decision`, `worker_blocked`, `work_check`, `daemon_start`,
+   * `routed_request` or `coordinator_report` (DPES-1108). An unknown word is kept.
    */
   event: string;
-  /** The task id for a task event. */
+  /** The task id for a task event; the request or report id for `routed_request` and `coordinator_report`. */
   subject: string;
   notice: string;
   /** `noticed`, `pending`, `running`, `handled`, `skipped` or `failed`; kept as the daemon's string. */
@@ -983,6 +1051,36 @@ export interface HoldsSource {
   release(holdId: string): Promise<HoldReceipt>;
 }
 
+// Questions for the user (DPES-1108). Derived: decisions.list / decisions.answer / decisions.defer (capability `holds`).
+/** One open question bound to a task. Only the user answers it. */
+export interface QuestionItem {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  question: string;
+  options: string[];
+  /** `YYYY-MM-DD` while a deferral is in the future, else null. A deferred question stays open. */
+  deferredUntil: string | null;
+  state: string;
+}
+
+export interface QuestionReceipt {
+  /** True for fixture data: nothing was sent and nothing was saved. */
+  simulated: boolean;
+  provenance: Provenance;
+  question: QuestionItem;
+}
+
+export interface QuestionsSource {
+  readonly provenance: Provenance;
+  /** Every open question, oldest first. Derived: `decisions.list`. Fixture: one question. */
+  list(): Promise<SurfaceResult<QuestionItem[]>>;
+  /** Derived: `decisions.answer`, user-only; the answer is sent exactly as given. It rejects on failure. */
+  answer(questionId: string, answer: string): Promise<QuestionReceipt>;
+  /** Derived: `decisions.defer`, user-only (`until` is `YYYY-MM-DD`). It rejects on failure. */
+  defer(questionId: string, until: string): Promise<QuestionReceipt>;
+}
+
 // Project defaults (DPES-1105 Phase 4). Derived: projects.get_defaults / projects.set_defaults (capability `projects`).
 /** A project's delivery defaults. The mode and merge method stay the daemon's strings; the form offers the known ones. */
 export interface ProjectDefaults {
@@ -1092,31 +1190,77 @@ export interface GrantsSource {
   revoke(grantId: string): Promise<GrantReceipt>;
 }
 
-// Orchestrator notes (DPES-1105 5b). Derived: notes.list / notes.set (capability `standing_approvals`).
-/** One scope's notes in order and the limits the editor must respect. `scope` is `global` or `workstream:` plus an id. */
-export interface NotesSnapshot {
+// Preferences and learnings (DPES-1108 phase 6). Derived: memory.list / set / remove / restore (capability `standing_approvals`).
+export type MemoryKind = "preference" | "learning";
+export type MemoryAuthor = "user" | "orchestrator";
+
+export interface MemoryEntry {
+  key: string;
+  text: string;
+  writtenBy: MemoryAuthor;
+  createdAtMs: number;
+  confirmedAtMs: number;
+  /** The daemon's: not confirmed for longer than `staleAfterDays`. */
+  stale: boolean;
+}
+
+export interface MemoryArchived {
+  id: number;
+  key: string;
+  text: string;
+  writtenBy: MemoryAuthor;
+  archivedAtMs: number;
+  reason: "removed" | "replaced";
+  restored: boolean;
+}
+
+/** One document: a kind at a scope (`global`, `workstream:` plus an id, or `project:` plus a project id). */
+export interface MemorySnapshot {
+  kind: MemoryKind;
   scope: string;
-  notes: string[];
-  maxNotes: number;
-  maxBytes: number;
+  /** Most recently confirmed first. */
+  entries: MemoryEntry[];
+  bytes: number;
+  budget: number;
+  /** Newest first, at most 50. */
+  archived: MemoryArchived[];
+  maxKeyBytes: number;
+  maxTextBytes: number;
+  staleAfterDays: number | null;
 }
 
-export interface NotesReceipt {
-  /** True for fixture data: nothing was sent and nothing was saved. */
-  simulated: boolean;
-  provenance: Provenance;
-  /** "Fixture data: nothing was saved." for a simulated receipt; null from the daemon. */
-  notice: string | null;
-  /** The list as the daemon holds it now. Fixture: the list as sent, which was not saved. */
-  snapshot: NotesSnapshot;
+export interface MemorySetResult {
+  /** `over_budget` wrote nothing: `bytes` is what the document would have been. */
+  outcome: "created" | "updated" | "confirmed" | "over_budget";
+  bytes: number;
+  budget: number;
 }
 
-export interface NotesSource {
+export interface MemoryRemoveResult {
+  removed: boolean;
+}
+
+export interface MemoryRestoreResult {
+  outcome: "restored" | "over_budget";
+  bytes: number | null;
+  budget: number | null;
+}
+
+/** A change's answer. A fixture receipt sent nothing and saved nothing, and says so. */
+export type MemoryReceipt<T> =
+  | { simulated: true; provenance: Provenance; notice: string }
+  | { simulated: false; provenance: Provenance; notice: null; result: T };
+
+export interface MemorySource {
   readonly provenance: Provenance;
-  /** Derived: `notes.list`. Fixture: two sample notes, or none for the `empty` scenario. */
-  list(scope: string): Promise<SurfaceResult<NotesSnapshot>>;
-  /** Derived: `notes.set`, a user-only method that replaces the whole list; it rejects on failure. Fixture: saves nothing. */
-  set(scope: string, notes: string[]): Promise<NotesReceipt>;
+  /** Derived: `memory.list`. Fixture: sample entries, or none for the `empty` scenario. */
+  list(kind: MemoryKind, scope: string): Promise<SurfaceResult<MemorySnapshot>>;
+  /** Derived: `memory.set`, user-only; it rejects on failure. Fixture: saves nothing. */
+  set(kind: MemoryKind, scope: string, key: string, text: string): Promise<MemoryReceipt<MemorySetResult>>;
+  /** Derived: `memory.remove`, user-only. The entry moves to the archive. Fixture: saves nothing. */
+  remove(kind: MemoryKind, scope: string, key: string): Promise<MemoryReceipt<MemoryRemoveResult>>;
+  /** Derived: `memory.restore`, user-only. Fixture: saves nothing. */
+  restore(archiveId: number): Promise<MemoryReceipt<MemoryRestoreResult>>;
 }
 
 export interface SurfaceSources {
@@ -1132,8 +1276,9 @@ export interface SurfaceSources {
   settings: SettingsSource;
   monitoring: MonitoringSource;
   holds: HoldsSource;
+  questions: QuestionsSource;
   pulls: PullsSource;
   projectDefaults: ProjectDefaultsSource;
   grants: GrantsSource;
-  notes: NotesSource;
+  memory: MemorySource;
 }

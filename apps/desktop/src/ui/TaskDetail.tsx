@@ -1,7 +1,7 @@
 /** S4: real task detail, plus D2/D3/D4 source-status panels shared with the fixture-only view. */
 import { useEffect, useState } from "react";
 import { timelineKey } from "../daemon/appData";
-import { asDaemonError, type DaemonError } from "../daemon/errors";
+import { APPROVER_REQUIRED_NOTICE, asDaemonError, type DaemonError } from "../daemon/errors";
 import type { SimulatedReceipt, TaskRef } from "../sources/types";
 import { Crumbs } from "./ConnectionStrip";
 import { basename, canArchive, canCancel, pendingApprovals, stateLabel } from "./format";
@@ -132,6 +132,10 @@ export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; pr
   );
 }
 
+export const UNDELIVERED_TEXT = "This task has changes that were not delivered. Deliver them, or discard them first.";
+export const DISCARD_CONFIRM_TEXT =
+  "Discard this task's changes? The branch stays in the repository, but the app will no longer keep the task's workspace for it.";
+
 export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: string }) {
   const { data, router } = useServices();
   const { taskDetails, taskSessions, sessionDetails, timelines, tasks, approvals, archiveUnsupported } = useStore(data);
@@ -143,6 +147,10 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
   const [archiveError, setArchiveError] = useState<DaemonError | null>(null);
   const [archived, setArchived] = useState(false);
   const [archiving, setArchiving] = useState(false);
+  const [discardAsked, setDiscardAsked] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [discarded, setDiscarded] = useState(false);
+  const [discardError, setDiscardError] = useState<DaemonError | null>(null);
 
   useEffect(() => {
     void data.watchTask(taskId);
@@ -172,6 +180,22 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
     setArchiving(false);
     if (result.ok) setArchived(true);
     else setArchiveError(result.error);
+  };
+
+  // `tasks.discard` is user-only, like the settings.
+  const discardLocked = !(gate.connected && gate.connection.approver);
+  const discard = async () => {
+    setDiscardError(null);
+    setDiscarding(true);
+    const result = await data.discardTask(taskId);
+    setDiscarding(false);
+    if (result.ok) {
+      setDiscarded(true);
+      setDiscardAsked(false);
+      setArchiveError(null);
+    } else {
+      setDiscardError(result.error);
+    }
   };
 
   const cancel = async () => {
@@ -396,7 +420,31 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                   <span className="muted"> Only finished tasks can be archived; this task is {stateLabel(record.state)}.</span>
                 )}
                 {archived && <p role="status">Archived. The task leaves the task lists; its history is kept.</p>}
-                {archiveError && <ErrorNotice error={archiveError} action="Archiving the task" />}
+                {archiveError?.kind === "conflict" && canArchive(record.state) ? (
+                  <div>
+                    <p role="alert">{UNDELIVERED_TEXT}</p>
+                    {discardAsked ? (
+                      <div>
+                        <p>{DISCARD_CONFIRM_TEXT}</p>
+                        <Button variant="danger" disabled={discardLocked || discarding} onClick={() => void discard()}>
+                          Confirm discard
+                        </Button>{" "}
+                        <Button disabled={discarding} onClick={() => setDiscardAsked(false)}>
+                          Keep changes
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button variant="danger" disabled={discardLocked} onClick={() => setDiscardAsked(true)}>
+                        Discard changes
+                      </Button>
+                    )}
+                    {discardLocked && <span className="muted"> {APPROVER_REQUIRED_NOTICE}</span>}
+                  </div>
+                ) : (
+                  archiveError && <ErrorNotice error={archiveError} action="Archiving the task" />
+                )}
+                {discarded && !archived && <p role="status">Changes discarded. You can archive the task now.</p>}
+                {discardError && <ErrorNotice error={discardError} action="Discarding the changes" />}
               </section>
             )}
             <PlaceholderPanels taskRef={{ origin: "real", taskId, state: record.state }} />

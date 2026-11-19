@@ -936,6 +936,64 @@ impl CodexAdapter {
         args.extend(["--".to_owned(), objective.to_owned()]);
         Some(args)
     }
+
+    /// Arguments that continue task session `session_id` with `prompt` at `level`, or `None`
+    /// when Codex cannot resume at that level (DPES-1108 phase 4). `codex exec resume` offers
+    /// none of `--sandbox`, `--add-dir`, `-C` and `--approve-for-me`, so:
+    ///
+    /// - Restricted pins the same `workspace-write` sandbox through `-c sandbox_mode` and
+    ///   grants the status directory, when given, through
+    ///   `-c sandbox_workspace_write.writable_roots`, under `--ignore-user-config` as at launch. Whether `exec resume` applies these over the
+    ///   sandbox the session was started with is not shown by `--help`. Either way the run is
+    ///   never wider than workspace-write; at worst the status file is not writable.
+    /// - Full adds no sandbox flag, as at launch, so the user's config decides. The status
+    ///   directory is not granted: a `-c` root list would replace the user's own.
+    /// - Auto has no way to route approvals to automatic review, and Extended has no Codex
+    ///   mapping: both return `None`, and the daemon fails the task instead of resuming.
+    ///
+    /// The process must run in the task's worktree: `exec resume` has no `-C`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn args_for_resume(
+        level: PermissionLevel,
+        session_id: &str,
+        prompt: &str,
+        model: Option<&str>,
+        effort: Option<&str>,
+        agent: Option<&WorkflowAgent>,
+        status_dir: Option<&Path>,
+        in_place: bool,
+    ) -> Option<Vec<String>> {
+        let mut args: Vec<String> = ["exec", "resume", "--json"].map(str::to_owned).into();
+        match level {
+            PermissionLevel::Restricted => {
+                args.extend([
+                    "--ignore-user-config".to_owned(),
+                    "-c".to_owned(),
+                    "sandbox_mode=\"workspace-write\"".to_owned(),
+                ]);
+                if let Some(dir) = status_dir {
+                    let root = toml_basic_string(&dir.to_string_lossy());
+                    args.extend([
+                        "-c".to_owned(),
+                        format!("sandbox_workspace_write.writable_roots=[{root}]"),
+                    ]);
+                }
+            }
+            PermissionLevel::Full => {}
+            PermissionLevel::Auto | PermissionLevel::Extended => return None,
+        }
+        if in_place {
+            args.push("--skip-git-repo-check".to_owned());
+        }
+        if let Some(agent) = agent {
+            args.extend(codex_developer_instructions_arg(agent));
+        }
+        args.extend(Self::selection_args(model, effort));
+        // A resumed turn shows its thinking like the first one (DPES-1106 on main).
+        args.extend(Self::REASONING_ARGS.map(str::to_owned));
+        args.extend(["--".to_owned(), session_id.to_owned(), prompt.to_owned()]);
+        Some(args)
+    }
 }
 
 /// The `-c developer_instructions=...` pair that gives Codex the workflow
@@ -1567,6 +1625,87 @@ mod tests {
                 .reason,
             SelectionReason::ModelsUnknown
         );
+    }
+
+    #[test]
+    fn codex_resume_repeats_the_level_through_config_and_refuses_what_it_cannot_repeat() {
+        let dir = Path::new("/data/tasks/t-1/1");
+        let restricted = CodexAdapter::args_for_resume(
+            PermissionLevel::Restricted,
+            "01a1b721-1f91-7393-ae1d-6aace8e4646a",
+            "--answer",
+            Some("m"),
+            None,
+            None,
+            Some(dir),
+            true,
+        )
+        .unwrap();
+        assert_eq!(
+            restricted,
+            [
+                "exec",
+                "resume",
+                "--json",
+                "--ignore-user-config",
+                "-c",
+                "sandbox_mode=\"workspace-write\"",
+                "-c",
+                "sandbox_workspace_write.writable_roots=[\"/data/tasks/t-1/1\"]",
+                "--skip-git-repo-check",
+                "-m",
+                "m",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
+                "--",
+                "01a1b721-1f91-7393-ae1d-6aace8e4646a",
+                "--answer",
+            ]
+        );
+        // `exec resume` offers none of these; Full adds nothing, as at launch.
+        let full = CodexAdapter::args_for_resume(
+            PermissionLevel::Full,
+            "id",
+            "p",
+            None,
+            None,
+            None,
+            Some(dir),
+            false,
+        )
+        .unwrap();
+        assert_eq!(
+            full,
+            [
+                "exec",
+                "resume",
+                "--json",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
+                "--",
+                "id",
+                "p"
+            ]
+        );
+        for flag in [
+            "--sandbox",
+            "--add-dir",
+            "-C",
+            "--approve-for-me",
+            "--ephemeral",
+        ] {
+            assert!(!restricted.iter().any(|arg| arg == flag), "{flag}");
+        }
+        for level in [PermissionLevel::Auto, PermissionLevel::Extended] {
+            assert_eq!(
+                CodexAdapter::args_for_resume(level, "id", "p", None, None, None, Some(dir), false),
+                None
+            );
+        }
     }
 
     #[test]

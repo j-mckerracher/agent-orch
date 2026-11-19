@@ -42,7 +42,10 @@ use sha2::{Digest, Sha256};
 
 use orchestrator_core::permission::PermissionLevel;
 
-use crate::executor::{agent_command, Executor, ExecutorConfig, COPILOT_RUNS_DIR};
+use crate::executor::{
+    agent_command, placeholder_status_dir, submit_channel, ChannelSupport, Executor,
+    ExecutorConfig, COPILOT_RUNS_DIR,
+};
 use crate::idempotency;
 use orchestrator_diagnostics::Level;
 
@@ -154,6 +157,14 @@ struct TaskIdParams {
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct CancelParams {
+    task_id: String,
+    idempotency_key: String,
+}
+
+/// A task and an idempotency key: `tasks.discard`.
+#[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct TaskKeyParams {
     task_id: String,
     idempotency_key: String,
 }
@@ -414,6 +425,7 @@ impl RpcHandler for DaemonApi {
             "tasks.get" => self.get_task(params),
             "tasks.cancel" => self.cancel_task(params),
             "tasks.archive" => self.archive_tasks(params),
+            "tasks.discard" => self.discard_task(params),
             "tasks.retry" => self.retry_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
             "agents.catalog" => self.agents_catalog(params),
@@ -434,6 +446,7 @@ impl RpcHandler for DaemonApi {
             "coordinator.clear" => self.coordinator_clear(params),
             "coordinator.remove" => self.coordinator_remove(params),
             "coordinator.restore" => self.coordinator_restore(params),
+            "coordinator.set_scope" => self.coordinator_set_scope(params),
             "conversations.send" => {
                 self.conversations_send(params, context.negotiated(Capability::OrchestratorActions))
             }
@@ -481,11 +494,17 @@ impl RpcHandler for DaemonApi {
             "holds.set" => self.holds_set(params),
             "holds.release" => self.holds_release(params),
             "holds.list" => self.holds_list(params),
+            "decisions.list" => self.decisions_list(params),
+            "decisions.answer" => self.decisions_answer(params),
+            "decisions.defer" => self.decisions_defer(params),
+            "decisions.reconcile" => self.decisions_reconcile(params),
             "grants.create" => self.grants_create(params),
             "grants.revoke" => self.grants_revoke(params),
             "grants.list" => self.grants_list(params),
-            "notes.list" => self.notes_list(params),
-            "notes.set" => self.notes_set(params),
+            "memory.list" => self.memory_list(params),
+            "memory.set" => self.memory_set(params),
+            "memory.remove" => self.memory_remove(params),
+            "memory.restore" => self.memory_restore(params),
             "reports.list" => self.reports_list(params),
             "reports.get" => self.reports_get(params),
             "reports.relay" => {
@@ -710,6 +729,7 @@ impl DaemonApi {
         let permission = submission.permission.unwrap_or_default();
         // An agent without a daemon launcher has no CLI to check, so it is accepted before its
         // executable is looked up or read.
+        let status_dir = placeholder_status_dir(&self.config);
         if agent_command(
             &self.config,
             &submission.agent,
@@ -717,6 +737,7 @@ impl DaemonApi {
             submission.model_selection.as_ref(),
             permission,
             None,
+            submit_channel(&status_dir, ChannelSupport::ALL),
         )
         .is_none()
         {
@@ -745,6 +766,11 @@ impl DaemonApi {
                             (self.config.locate_workflow_agent)(),
                         )
                         .await;
+                    // The channel flags the CLI lacks are left out, as the launch leaves them.
+                    let support = self
+                        .config
+                        .offered_channel(&submission.agent, &program, &executable)
+                        .await;
                     let Some((_, args)) = agent_command(
                         &self.config,
                         &submission.agent,
@@ -752,6 +778,7 @@ impl DaemonApi {
                         submission.model_selection.as_ref(),
                         permission,
                         workflow_agent.as_ref(),
+                        submit_channel(&status_dir, support),
                     ) else {
                         return Ok(());
                     };
@@ -1105,6 +1132,7 @@ impl DaemonApi {
     /// diagnostics log and the caller sees `InvalidParams`.
     fn check_agent_command_line(&self, contract: &TaskContract) -> Result<(), RpcError> {
         let workflow_agent = (self.config.locate_workflow_agent)();
+        let status_dir = placeholder_status_dir(&self.config);
         let Some((program, args)) = agent_command(
             &self.config,
             &contract.agent,
@@ -1112,6 +1140,7 @@ impl DaemonApi {
             contract.model_selection.as_ref(),
             contract.permission,
             workflow_agent.as_ref(),
+            submit_channel(&status_dir, ChannelSupport::ALL),
         ) else {
             return Ok(());
         };
@@ -1220,14 +1249,62 @@ impl DaemonApi {
         Ok(reply)
     }
 
+    /// `tasks.discard` (DPES-1108 phase 5, user-only): the user's word that a finished task's
+    /// committed work is not wanted. It only records that word, which lets the task be archived
+    /// and its slot returned; the task's branch stays in the repository. A task that is not
+    /// finished is `Conflict`, an unknown one `NotFound`. Replies with whether this call
+    /// recorded it.
+    fn discard_task(&self, params: Value) -> Result<Value, RpcError> {
+        let request: TaskKeyParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.discard",
+            &key,
+            &request,
+            || {
+                let discarded = self
+                    .store
+                    .discard_task_candidate(&request.task_id)
+                    .map_err(|error| match ArchiveError::of(&error) {
+                        Some(_) => RpcError::Conflict,
+                        None => map_store_error(error),
+                    })?;
+                Ok(json!({"task_id": request.task_id, "discarded": discarded}))
+            },
+        )
+    }
+
     /// Returns the treehouse slots of finished tasks to the pool. Called after the
     /// write, outside the gate, since each return runs treehouse. A failure is logged
-    /// and never fails the RPC that finished the task.
+    /// and never fails the RPC that finished the task. A task whose committed work is not
+    /// landed or discarded keeps its slot (DPES-1108 phase 5): archive refuses such a task
+    /// first, so this is the second guard.
     fn release_task_slots(&self, task_ids: &[String]) {
         let Some(executor) = &self.executor else {
             return;
         };
         for task_id in task_ids {
+            match self.store.has_unlanded_candidate(task_id) {
+                Ok(false) => {}
+                Ok(true) => {
+                    self.config.diagnostics.warn(
+                        "api",
+                        "worktree_kept_unlanded",
+                        &[("task_id", task_id)],
+                    );
+                    continue;
+                }
+                Err(error) => {
+                    self.config.diagnostics.error(
+                        "api",
+                        "unlanded_check_failed",
+                        &[("task_id", task_id), ("error", &error.to_string())],
+                    );
+                    continue;
+                }
+            }
             match self.store.workspaces_for_task(task_id) {
                 Ok(workspaces) => executor.release_workspaces(&workspaces),
                 Err(error) => self.config.diagnostics.error(
@@ -1254,7 +1331,8 @@ impl DaemonApi {
 
     /// The cancel write, shared with action execution. The caller holds the idempotency gate.
     /// A running task only has its cancellation requested; the owner confirms later. A
-    /// verifying task is cancelled at once, and its verification run is interrupted.
+    /// verifying task is cancelled at once, and its verification run is interrupted. A waiting
+    /// task is cancelled at once; its worktree stays as any cancelled task's does.
     pub(super) fn cancel_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
         self.cancel_task_record(task_id)?;
         serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
@@ -1304,6 +1382,13 @@ impl DaemonApi {
                     executor.cancel_verification(task_id);
                 }
                 return Ok(());
+            }
+            // A waiting worker has no process, so the cancel needs no owner (DPES-1108 phase 4).
+            TaskState::Waiting => {
+                return self
+                    .store
+                    .cancel_waiting_task(task_id)
+                    .map_err(map_store_error);
             }
             _ => return Err(RpcError::Conflict),
         };
@@ -2001,6 +2086,8 @@ mod actions;
 use actions::project_code;
 #[path = "admission.rs"]
 pub(crate) mod admission;
+#[path = "api_authority.rs"]
+mod authority;
 #[path = "api_brief.rs"]
 mod brief;
 #[path = "api_conversation_agent.rs"]
@@ -2015,6 +2102,8 @@ mod conversation_snapshot;
 mod conversations;
 #[path = "api_coordinator.rs"]
 mod coordinator;
+#[path = "api_decisions.rs"]
+mod decisions;
 #[path = "grant_matcher.rs"]
 mod grant_matcher;
 #[path = "api_grants.rs"]
@@ -2033,12 +2122,12 @@ mod landing;
 mod landing_api;
 #[path = "api_load.rs"]
 pub(crate) mod load;
+#[path = "api_memory.rs"]
+mod memory;
 #[path = "api_models.rs"]
 mod models;
 #[path = "api_monitoring.rs"]
 mod monitoring;
-#[path = "api_notes.rs"]
-mod notes;
 #[path = "api_output.rs"]
 mod output;
 #[path = "api_projects_defaults.rs"]
@@ -2097,6 +2186,15 @@ mod actions_task_tests;
 #[path = "api_actions_tests.rs"]
 mod actions_tests;
 #[cfg(test)]
+#[path = "api_authority_tests.rs"]
+mod authority_tests;
+#[cfg(test)]
+#[path = "api_coordinator_tests.rs"]
+mod coordinator_tests;
+#[cfg(test)]
+#[path = "api_decisions_tests.rs"]
+mod decisions_tests;
+#[cfg(test)]
 #[path = "grant_matcher_tests.rs"]
 mod grant_matcher_tests;
 #[cfg(test)]
@@ -2112,8 +2210,8 @@ mod landing_merge_tests;
 #[path = "api_landing_tests.rs"]
 mod landing_tests;
 #[cfg(test)]
-#[path = "api_notes_tests.rs"]
-mod notes_tests;
+#[path = "api_memory_tests.rs"]
+mod memory_tests;
 #[cfg(test)]
 #[path = "api_projects_defaults_tests.rs"]
 mod projects_defaults_tests;

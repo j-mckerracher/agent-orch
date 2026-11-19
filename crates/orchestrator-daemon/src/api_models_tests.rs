@@ -42,7 +42,7 @@ fn agents(fixture: &Fixture) -> Agents {
              login) if [ -f '{signed_out}' ]; then echo 'Not logged in'; exit 1; fi; echo 'Logged in using ChatGPT'; exit 0;;\n\
              debug) cat '{models}'; exit 0;;\n\
              esac\n\
-             printf '%s\\n' \"$@\" > '{argv}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}.tmp' && mv '{argv}.tmp' '{argv}'\n\
              echo produced > agent-output.txt\n\
              {THREAD_STARTED}{TURN_COMPLETED}",
             signed_out = signed_out.display(),
@@ -57,7 +57,7 @@ fn agents(fixture: &Fixture) -> Agents {
              auth) echo '{{\"loggedIn\":true}}'; exit 0;;\n\
              --help) cat '{help}'; exit 0;;\n\
              esac\n\
-             printf '%s\\n' \"$@\" > '{argv}'\n\
+             for a in \"$@\"; do printf '%s\\n' \"$a\" | sed -n 1p; done > '{argv}.tmp' && mv '{argv}.tmp' '{argv}'\n\
              echo '{{}}'\n",
             help = help.display(),
             argv = claude_argv.display(),
@@ -747,6 +747,9 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
     wait_state(&api, &task_id, "Succeeded");
 
     let argv = fs::read_to_string(&agents.codex_argv).unwrap();
+    // The status directory (DPES-1108 phase 4) goes after the selection, before the separator.
+    let status = super::worker_status::status_dir(&fixture.data(), &task_id, 1);
+    let status = status.display().to_string();
     assert_eq!(
         argv.lines().collect::<Vec<_>>(),
         [
@@ -765,8 +768,10 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
             "show_raw_agent_reasoning=true",
             "-c",
             "model_reasoning_summary=\"detailed\"",
+            "--add-dir",
+            status.as_str(),
             "--",
-            "objective of sel-1",
+            "# MCAO worker brief",
         ]
     );
     let session_id = task(&api, &task_id)["sessions"][0]["id"]
@@ -809,6 +814,8 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
     wait_state(&api, &task_id, "Succeeded");
 
     let argv = fs::read_to_string(&agents.codex_argv).unwrap();
+    let status = super::worker_status::status_dir(&fixture.data(), &task_id, 1);
+    let status = status.display().to_string();
     assert_eq!(
         argv.lines().collect::<Vec<_>>(),
         [
@@ -823,8 +830,10 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
             "show_raw_agent_reasoning=true",
             "-c",
             "model_reasoning_summary=\"detailed\"",
+            "--add-dir",
+            status.as_str(),
             "--",
-            "objective of plain-1"
+            "# MCAO worker brief"
         ]
     );
     let session_id = task(&api, &task_id)["sessions"][0]["id"]
