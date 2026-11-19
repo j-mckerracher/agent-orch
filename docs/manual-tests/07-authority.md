@@ -226,6 +226,6 @@ Purpose: finished work is never thrown away by archiving.
 - Step 4: "Changes discarded. You can archive the task now."
 - Step 5: "Archived. The task leaves the task lists; its history is kept." The task branch still exists in the project repository (`git -C "$HOME/agent-orch-manual-test/projects/manual-test-project" branch --list 'moa/*'`).
 
-**Model-dependent:** the report-only brief tells the worker to change no files. If the worker obeys the brief and the task ends `Failed` with no change, count a miss.
+**Model-dependent:** until pull request 237 is merged, the report-only brief tells an Implement worker to change no files. If the worker changes no file and the task ends `Failed`, count a miss.
 
 **Known limitations:** the bulk archive in the Workstreams view shows the generic conflict text, not this one. Discard is the user's own control; no action block can discard.

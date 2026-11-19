@@ -58,7 +58,7 @@ Purpose: a scout's brief asks for a report and no changes.
 - Step 2: the task is `Succeeded`, with no file changed.
 - Step 3: `## Definition of done` reads "Your deliverable is a written report in your final message: what you found, the evidence (files, commands, output), and what remains uncertain. Change no files. Do not commit, push or open a pull request."
 
-**Known limitations:** an Implement task with delivery `ReportOnly` gets the same report-only definition of done ("Change no files"), but the daemon fails an Implement task that changes no files. A worker that obeys that brief therefore always ends `Failed`. The NO-CHANGE objective (setup section 8b) relies on this. Report it as a docs and code disagreement.
+**Known limitations:** an Implement task with delivery `ReportOnly` gets the same report-only definition of done ("Change no files"), but the daemon fails an Implement task that changes no files. A worker that obeys that brief therefore always ends `Failed`. Pull request 237 fixes the brief; until it is merged, report this as a docs and code disagreement if you see it.
 
 ## TC-B-03 A worker that needs a decision waits without running
 
