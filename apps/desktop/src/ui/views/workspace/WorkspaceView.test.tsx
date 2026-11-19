@@ -1373,7 +1373,7 @@ describe("registration", () => {
 
 // DPES-1105: clearing history and removing or adding project coordinators, as the user sees them.
 describe("workspace view, history actions", () => {
-  it("removing a coordinator deletes its notes, drops it from the picker, switches to Global and discards its draft", async () => {
+  it("removing a coordinator deletes its conversation, drops it from the picker, switches to Global and discards its draft", async () => {
     const fake = liveDaemon();
     fake.projects = [
       { id: ALPHA, coordinator_active: true },

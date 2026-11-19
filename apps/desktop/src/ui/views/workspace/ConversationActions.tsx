@@ -194,10 +194,12 @@ export function ConversationActions({
           }
         >
           <p>
-            This permanently deletes its notes. It cannot be undone. The coordinator leaves the conversation targets.
+            This permanently deletes every message and reply in its conversation. It cannot be undone. The coordinator
+            leaves the conversation targets.
           </p>
           <p>
-            The project and its tasks are not changed. You can add the coordinator back later; it starts with no notes.
+            The project, its tasks, the coordinator&apos;s scope sentence and the project&apos;s preferences and learnings are
+            kept. You can add the coordinator back later; it starts with an empty conversation.
           </p>
           {fixtureNote}
         </Dialog>
@@ -215,7 +217,7 @@ export interface AddCoordinatorDialogProps {
   onClose: () => void;
 }
 
-/** Lists projects without a coordinator, with an "Add" action each (DPES-1105). An added coordinator starts empty. */
+/** Lists projects without a coordinator, with an "Add" action each (DPES-1105). An added coordinator starts with an empty conversation. */
 export function AddCoordinatorDialog({ projects, busyId, onAdd, onClose }: AddCoordinatorDialogProps) {
   return (
     <Dialog
@@ -246,7 +248,10 @@ export function AddCoordinatorDialog({ projects, busyId, onAdd, onClose }: AddCo
           ))}
         </ul>
       )}
-      <p>An added coordinator starts with no notes. The project and its tasks are not changed.</p>
+      <p>
+        An added coordinator starts with an empty conversation. One you add back keeps its scope sentence and the
+        project&apos;s preferences and learnings. The project and its tasks are not changed.
+      </p>
     </Dialog>
   );
 }

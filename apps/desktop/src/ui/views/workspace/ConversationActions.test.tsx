@@ -225,15 +225,18 @@ describe("clear history confirmation", () => {
 });
 
 describe("remove coordinator confirmation", () => {
-  it("states the notes are deleted, the project stays, and the coordinator can be added back", async () => {
+  it("states the conversation is deleted, the project, scope and preferences stay, and the coordinator can be added back", async () => {
     const u = user();
     const props = actions();
     await openMenu(u);
     await u.click(screen.getByRole("menuitem", { name: "Remove coordinator…" }));
     const dialog = screen.getByRole("dialog", { name: "Remove auth coordinator?" });
-    expect(within(dialog).getByText(/permanently deletes its notes/)).toBeVisible();
-    expect(within(dialog).getByText(/project and its tasks are not changed/)).toBeVisible();
-    expect(within(dialog).getByText(/starts with no notes/)).toBeVisible();
+    expect(within(dialog).getByText(/permanently deletes every message and reply in its conversation/)).toBeVisible();
+    expect(
+      within(dialog).getByText(/its tasks, the coordinator's scope sentence and the project's preferences and learnings are kept/),
+    ).toBeVisible();
+    expect(within(dialog).getByText(/starts with an empty conversation/)).toBeVisible();
+    expect(dialog).not.toHaveTextContent(/notes/);
     await u.click(screen.getByRole("button", { name: "Remove coordinator permanently" }));
     expect(props.onRemove).toHaveBeenCalledTimes(1);
     expect(props.onClear).not.toHaveBeenCalled();
@@ -252,6 +255,8 @@ describe("add coordinator dialog", () => {
         onClose={vi.fn()}
       />,
     );
+    expect(screen.getByText(/keeps its scope sentence and the project's preferences and learnings/)).toBeVisible();
+    expect(screen.queryByText(/notes/)).toBeNull();
     const list = screen.getByRole("list", { name: "Projects without a coordinator" });
     await u.click(within(list).getByRole("button", { name: "Add auth coordinator" }));
     expect(onAdd).toHaveBeenCalledWith("auth");

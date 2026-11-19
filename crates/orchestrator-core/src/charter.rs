@@ -61,8 +61,9 @@ const DONE: &str = "Definition of done: you are persistent and have no final sta
 done when each open request has its tasks proposed or its answer reported, and the user's \
 message is answered.";
 
-const NO_SCOPE: &str = "not set yet. The user sets it in the project view. Until then, take \
-only what the user or a routed request names.";
+const NO_SCOPE: &str = "not set yet. The user sets it in the Orchestrator Workspace, in the \
+Coordinator scope and work panel of this conversation. Until then, take only what the user or a \
+routed request names.";
 
 const FIXED_BYTES: usize = CHARTER_BEGIN.len()
     + IDENTITY.len()
@@ -221,6 +222,10 @@ mod tests {
         let charter = render("a\nb", None);
         assert!(charter.contains("Project: a b\n"));
         assert!(charter.contains("Scope: not set yet."));
+        // The scope is set where the desktop shows it, not in a project view.
+        assert!(charter
+            .contains("in the Orchestrator Workspace, in the Coordinator scope and work panel"));
+        assert!(!charter.contains("project view"));
         let label = "x".repeat(MAX_LABEL_BYTES * 2);
         let charter = render(&label, Some(&"y".repeat(MAX_SCOPE_SENTENCE_BYTES)));
         assert!(charter.contains(&format!("Project: {}\n", "x".repeat(MAX_LABEL_BYTES))));

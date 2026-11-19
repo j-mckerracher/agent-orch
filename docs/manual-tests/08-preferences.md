@@ -180,4 +180,4 @@ Purpose: preferences are managed in Settings, not by history.
 
 **Expected:** `tone` is still listed.
 
-**Known limitations:** the "Remove coordinator" dialog still says it "permanently deletes its notes", and the "Add a coordinator" dialog says a coordinator "starts with no notes". Since this change, removing a coordinator keeps its project's preferences (Phase 6 item 7). Expect the project's preferences to survive a remove and add; report the dialog wording as a finding.
+**Known limitations:** this test checks only a clear. Removing a coordinator also keeps its project's preferences (Phase 6 item 7), as the "Remove coordinator" and "Add a coordinator" dialogs say. Expect the project's preferences to survive a remove and add.
