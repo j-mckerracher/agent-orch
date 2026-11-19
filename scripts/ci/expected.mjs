@@ -163,8 +163,9 @@ export const MACOS = {
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
   // 2323 passed and 2 ignored for the whole workspace (CI run 44550404415); minus daemon 836+1, store 388+1 and ipc 121 that is
-  // 978 passed and none ignored.
-  workspace: { passed: 978, ignored: 0 },
+  // 978 passed and none ignored. The CLI help probe test of PR #229 (orchestrator-agents) makes 979, as the macOS
+  // workspace-tests gate measured on this branch (CI run 44565723305).
+  workspace: { passed: 979, ignored: 0 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 42, sequence: [42, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },

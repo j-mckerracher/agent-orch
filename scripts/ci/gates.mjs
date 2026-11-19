@@ -51,8 +51,9 @@ export function gatesFor(platform) {
       args: ["--test", "scripts/**/*.test.mjs"], passed: NODE_SELF_TESTS.passed,
     },
     {
+      // The examples too: the desktop e2e runs `examples/seed_review` and `examples/fake_agent` next to the daemon binary.
       name: "daemon-build", mode: "build", cwd: ".", exe: "cargo",
-      args: ["build", "--locked", "-p", "orchestrator-daemon"],
+      args: ["build", "--locked", "-p", "orchestrator-daemon", "--bins", "--examples"],
       crates: ["orchestrator-ipc", "orchestrator-store", "orchestrator-engine", "orchestrator-daemon"],
       artifacts: [{ target: `debug/orchestrator-daemon${exe}`, record: "daemon-binary.txt" }],
     },

@@ -43,7 +43,7 @@ The Windows list is the published runbook
 | Gate | Command | Where |
 | --- | --- | --- |
 | `node-self-tests` | `node --test "scripts/**/*.test.mjs"` (112 tests on both; the exit code is in `node-self-tests.result.json`) | both |
-| `daemon-build` | `cargo build --locked -p orchestrator-daemon` | both |
+| `daemon-build` | `cargo build --locked -p orchestrator-daemon --bins --examples` | both |
 | `ipc-tests` | `cargo test --locked -p orchestrator-ipc` (55 tests) | both |
 | `windows-transport-tests` | `cargo test --locked -p orchestrator-ipc windows_transport` (13 tests) | Windows |
 | `cli-build` | `cargo build --locked -p orchestrator-cli` (shape: a `Finished` line and the binary; cached output is fine) | Windows |
