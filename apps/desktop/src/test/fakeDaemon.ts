@@ -133,6 +133,8 @@ export class FakeDaemon implements DaemonConnector {
   undelivered = new Set<string>();
   /** Ids `tasks.discard` recorded. */
   discarded = new Set<string>();
+  /** Messages `tasks.message` queued, in arrival order. */
+  messages: { task_id: string; text: string }[] = [];
   events: DaemonEvent[] = [];
   approvals: Approval[] = [];
   /** Scheduler limits and restart gate reported by `queue.snapshot`. */
@@ -318,6 +320,13 @@ export class FakeDaemon implements DaemonConnector {
         if (!ARCHIVABLE_STATES.has(task.state)) return fail(-32011, "task is not finished; it cannot be discarded");
         this.discarded.add(task.contract.id);
         return reply({ task_id: task.contract.id, discarded: true });
+      }
+      case "tasks.message": {
+        const task = this.tasks.find((t) => t.contract.id === params.task_id);
+        if (!task) return fail(-32010, "task not found");
+        if (task.state !== "Waiting") return fail(-32011, `task is ${task.state}; it is not waiting for a message`);
+        this.messages.push({ task_id: task.contract.id, text: String(params.text) });
+        return reply({ task_id: task.contract.id, queued: true });
       }
       case "sessions.list": {
         const entries: SessionEntry[] = this.tasks

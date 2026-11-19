@@ -1,6 +1,7 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { DaemonError } from "../daemon/errors";
+import { ALL_CAPABILITIES } from "../daemon/types";
 import { createFixtureSources } from "../sources/fixtures";
 import { FakeDaemon, mkApproval, mkEvent, mkSession, mkTask } from "../test/fakeDaemon";
 import { REPO, mount } from "../test/render";
@@ -9,6 +10,20 @@ import { fakeQueueSnapshot } from "../test/queueSnapshot";
 const tasksRoute = (filter: "all" | "queued" | "running" | "blocked" | "review" | "terminal" = "all") =>
   ({ name: "tasks", projectId: REPO, filter }) as const;
 const taskRoute = (taskId: string) => ({ name: "task", projectId: REPO, taskId }) as const;
+// Kept out of seeded(): the task list counts (S3) would change.
+const waitingTask = () => mkTask("t-w", REPO, { state: "Waiting" });
+const openQuestion = {
+  id: "q1",
+  task_id: "t-w",
+  task_title: "Fix the login bug",
+  project: "",
+  question: "Migrate sessions now?",
+  options: ["Migrate them now", "Let them expire"],
+  key: null,
+  raised_by: "worker",
+  state: "open",
+  deferred_until: null,
+};
 
 function seeded() {
   const fake = new FakeDaemon();
@@ -574,6 +589,177 @@ describe("S4 task and session detail", () => {
     expect(await screen.findByTestId("task-state")).toHaveTextContent("Queued");
     const section = await screen.findByRole("region", { name: "Execution outcome (placeholder)" });
     expect(await within(section).findByText(/Unavailable:/)).toBeInTheDocument();
+  });
+
+  it("shows the agent's recent output and thinking for a running task", async () => {
+    const fake = seeded();
+    fake.outputs.set("s1", { lines: [{ sequence: 1, stream: "stdout", text: "reading the spec", line_truncated: false }] });
+    await mount(fake, { route: taskRoute("t-r") });
+    const conversation = await screen.findByRole("region", { name: "Agent conversation" });
+    expect(await within(conversation).findByText("reading the spec")).toBeInTheDocument();
+    expect(within(conversation).getByRole("region", { name: "Recent output" })).toBeInTheDocument();
+    expect(within(conversation).getByText("Thinking")).toBeInTheDocument();
+  });
+
+  it("says there is no conversation and shows no output panel when no session is recorded", async () => {
+    const fake = seeded();
+    await mount(fake, { route: taskRoute("t-q") });
+    const conversation = await screen.findByRole("region", { name: "Agent conversation" });
+    expect(within(conversation).getByText("No recorded session, so there is no conversation to show.")).toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Recent output" })).not.toBeInTheDocument();
+    expect(fake.callsTo("sessions.output_tail")).toHaveLength(0);
+  });
+
+  it("reads the output of the session the session selector shows", async () => {
+    const fake = seeded();
+    fake.tasks.push(
+      mkTask("t-m", REPO, { state: "Failed", sessions: [mkSession("s1", { state: "Exited" }), mkSession("s2", { state: "Exited" })] }),
+    );
+    const { user } = await mount(fake, { route: taskRoute("t-m") });
+    await screen.findByTestId("task-state");
+    await waitFor(() =>
+      expect(fake.callsTo("sessions.output_tail")).toContainEqual(expect.objectContaining({ params: expect.objectContaining({ session_id: "s2" }) })),
+    );
+    await user.selectOptions(within(screen.getByRole("region", { name: "Sessions" })).getByRole("combobox"), "s1");
+    await waitFor(() =>
+      expect(fake.callsTo("sessions.output_tail")).toContainEqual(expect.objectContaining({ params: expect.objectContaining({ session_id: "s1" }) })),
+    );
+  });
+
+  it("sends a free-form message to a waiting task when no question is open", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.stub("decisions.list", { questions: [] });
+    const { user } = await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    const box = await screen.findByLabelText("Message to the agent");
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, "Use the staging database");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText("Sent. The agent resumes shortly.")).toBeInTheDocument();
+    expect(box).toHaveValue("");
+    expect(fake.callsTo("tasks.message")).toHaveLength(1);
+    expect(fake.callsTo("tasks.message")[0]!.params).toEqual({
+      task_id: "t-w",
+      text: "Use the staging database",
+      idempotency_key: expect.any(String),
+    });
+    expect(fake.callsTo("decisions.answer")).toHaveLength(0);
+  });
+
+  it("answers an open question with decisions.answer, and an option only fills the answer box", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.stub("decisions.list", { questions: [openQuestion] });
+    fake.stub("decisions.answer", { question: { ...openQuestion, state: "answered" } });
+    const { user } = await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    expect(await screen.findByText("Migrate sessions now?")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Migrate them now" }));
+    expect(screen.getByLabelText("Your answer")).toHaveValue("Migrate them now");
+    expect(fake.callsTo("decisions.answer")).toHaveLength(0);
+    expect(fake.callsTo("tasks.message")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: "Send answer" }));
+    expect(await screen.findByText("Answered: Fix the login bug.")).toBeInTheDocument();
+    expect(fake.callsTo("decisions.answer")[0]!.params).toEqual({
+      question_id: "q1",
+      answer: "Migrate them now",
+      idempotency_key: expect.any(String),
+    });
+    expect(fake.callsTo("tasks.message")).toHaveLength(0);
+  });
+
+  it.each([
+    ["t-r", /Live steering is not available yet/],
+    ["t-d", /This task is finished\. The agent cannot be messaged\./],
+  ])("disables the reply box for %s and says why", async (taskId, reason) => {
+    const fake = seeded();
+    await mount(fake, { route: taskRoute(taskId) });
+    const box = await screen.findByLabelText("Message to the agent");
+    expect(box).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    expect(screen.getByText(reason)).toBeInTheDocument();
+    expect(box).toHaveAccessibleDescription(reason);
+    expect(fake.callsTo("tasks.message")).toHaveLength(0);
+  });
+
+  it("disables the reply box for a non-approver without reading the question list", async () => {
+    const fake = seeded();
+    fake.approver = false;
+    fake.tasks.push(waitingTask());
+    fake.stub("decisions.list", { questions: [] });
+    await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    expect(await screen.findByLabelText("Message to the agent")).toBeDisabled();
+    expect(screen.getByText(/This app did not start the orchestrator service/)).toBeInTheDocument();
+    expect(fake.callsTo("decisions.list")).toHaveLength(0);
+    expect(fake.callsTo("tasks.message")).toHaveLength(0);
+  });
+
+  it("disables the reply box when the connection is lost", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.stub("decisions.list", { questions: [] });
+    await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    await screen.findByTestId("task-state");
+    fake.openError = new DaemonError("disconnected", "down");
+    fake.drop();
+    await waitFor(() => expect(screen.getByLabelText("Message to the agent")).toBeDisabled());
+    expect(screen.getByText(/Reconnect to the daemon to reply to the agent/)).toBeInTheDocument();
+  });
+
+  it("keeps the typed message and says why the daemon refused it", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.stub("decisions.list", { questions: [] });
+    fake.failNext("tasks.message", { code: -32011, message: "task already holds queued messages" });
+    const { user } = await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    const box = await screen.findByLabelText("Message to the agent");
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, "One more thing");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(
+      await screen.findByText("The task is no longer waiting, or already has the most messages it can hold. Nothing was changed."),
+    ).toBeInTheDocument();
+    expect(box).toHaveValue("One more thing");
+  });
+
+  it("reuses the request key while the outcome is unknown, and mints a new one after a success", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.stub("decisions.list", { questions: [] });
+    fake.failNext("tasks.message", { code: -32603, message: "store error" });
+    const { user } = await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    const box = await screen.findByLabelText("Message to the agent");
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, "Use the staging database");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText("The outcome is unknown. Sending again reuses the same request key.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText("Sent. The agent resumes shortly.")).toBeInTheDocument();
+    const keys = () => fake.callsTo("tasks.message").map((call) => (call.params as { idempotency_key: string }).idempotency_key);
+    expect(keys()).toHaveLength(2);
+    expect(keys()[1]).toBe(keys()[0]);
+    await user.type(box, "Use the staging database");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(keys()).toHaveLength(3));
+    expect(keys()[2]).not.toBe(keys()[1]);
+  });
+
+  it("disables the reply box on a waiting task when the open questions cannot be read", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.failNext("decisions.list", { code: -32603, message: "boom" }, 5);
+    await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    await waitFor(() => expect(screen.getByLabelText("Message to the agent")).toBeDisabled());
+    expect(fake.callsTo("tasks.message")).toHaveLength(0);
+  });
+
+  it("disables the reply box on a waiting task when the daemon does not report holds", async () => {
+    const fake = seeded();
+    fake.tasks.push(waitingTask());
+    fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "holds");
+    await mount(fake, { route: taskRoute("t-w"), daemonSources: true });
+    expect(await screen.findByText(/does not report open questions/)).toBeInTheDocument();
+    expect(screen.getByLabelText("Message to the agent")).toBeDisabled();
+    expect(fake.callsTo("decisions.list")).toHaveLength(0);
   });
 });
 

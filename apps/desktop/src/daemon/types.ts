@@ -166,6 +166,12 @@ export interface TaskRecord {
   version: number;
 }
 
+/** `tasks.message` result: the message is queued for the worker's next resume (DPES-1106). */
+export interface TaskMessageWire {
+  task_id: string;
+  queued: boolean;
+}
+
 /** `projects.list` row. The id is the canonical repository root. */
 export interface ProjectRow {
   id: string;
