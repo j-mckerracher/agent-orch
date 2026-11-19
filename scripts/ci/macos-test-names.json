@@ -1001,7 +1001,8 @@
    "api::conversation_agent::tests::the_etiquette_block_is_bounded_and_uses_no_title_for_the_user",
    "api::wake::tests::a_wake_turn_entry_carries_the_recorded_pull_request_link_of_its_task",
    "api::wake::tests::a_work_check_past_its_share_of_the_cap_is_not_recorded_and_an_outcome_still_wakes",
-   "api::wake::tests::wake_turns_stop_at_the_default_hourly_cap"
+   "api::wake::tests::wake_turns_stop_at_the_default_hourly_cap",
+   "api::coordinator_tests::routed_work_runs_on_its_own_and_the_request_is_the_origin_of_the_coordinators_task"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1612,7 +1613,11 @@
    "a_new_store_reads_the_new_default_wake_caps",
    "a_turn_keeps_the_recorded_pull_requests_of_the_tasks_its_block_names",
    "a_wake_turn_links_the_pull_requests_of_the_tasks_it_reports_and_keeps_at_most_five",
-   "migration_0071_moves_the_old_default_wake_caps_and_keeps_chosen_ones"
+   "migration_0071_moves_the_old_default_wake_caps_and_keeps_chosen_ones",
+   "a_routed_request_is_the_origin_only_of_a_task_that_serves_it_while_it_is_open",
+   "every_migration_applied_to_an_empty_database_takes_every_action_and_wake_kind",
+   "a_database_that_ran_0071_first_gets_0065_to_0070_and_the_same_schema",
+   "a_coordinator_report_links_the_pull_requests_of_the_tasks_serving_its_request"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",
