@@ -1,5 +1,6 @@
-import { useId } from "react";
+import { useEffect, useId, useState } from "react";
 import type { LocalToolsProvider, LocalToolsSnapshot, LocalToolsSource, LocalToolsWindow } from "../../sources/surfaces/types";
+import { CLEAR_MS } from "../action";
 import { Badge, Button } from "../theme";
 import {
   CHIP_TITLE,
@@ -15,6 +16,11 @@ import {
 import type { LocalToolsState } from "./useLocalTools";
 
 const TITLE = "Other AI tools on this machine";
+const DONE_TEXT = {
+  enabled: "Other AI tools are on. Their figures are estimates.",
+  disabled: "Other AI tools are off. Their figures are hidden.",
+  refreshed: "Updated just now.",
+} as const;
 
 /** The secondary chip in the pill. It opens the popover, where the figures are explained. */
 export function LocalToolsChip({ text, onOpen }: { text: string; onOpen: () => void }) {
@@ -74,6 +80,14 @@ interface SectionProps {
  */
 export function LocalToolsSection({ source, tools }: SectionProps) {
   const statementId = useId();
+  // What a finished change or refresh says, for a few seconds; a new answer replaces it.
+  const [saved, setSaved] = useState<string | null>(null);
+  useEffect(() => {
+    if (tools.done === null) return;
+    setSaved(DONE_TEXT[tools.done.kind]);
+    const timer = setTimeout(() => setSaved(null), CLEAR_MS);
+    return () => clearTimeout(timer);
+  }, [tools.done]);
   const heading = (
     <>
       <strong>{TITLE}</strong>
@@ -107,24 +121,29 @@ export function LocalToolsSection({ source, tools }: SectionProps) {
   return (
     <section aria-label={TITLE} className="top-usage-tools" data-testid="top-usage-tools">
       {heading}
+      {/* Not disabled while saving, which would drop focus: a flip during a save is ignored, and "Saving the setting." says why. */}
       <label className="top-usage-tools-opt-in">
         <input
           type="checkbox"
           checked={enabled}
-          disabled={tools.pending !== null}
+          aria-disabled={tools.pending !== null || undefined}
           aria-describedby={statementId}
-          onChange={(event) => tools.setEnabled(event.currentTarget.checked)}
+          onChange={(event) => {
+            if (tools.pending === null) tools.setEnabled(event.currentTarget.checked);
+          }}
         />
         <span>{OPT_IN_LABEL}</span>
       </label>
       <p id={statementId}>{OPT_IN_STATEMENT}</p>
-      {tools.pending !== null && <p>Saving the setting.</p>}
       {tools.note !== null && <p role="alert">{tools.note}</p>}
+      <div role="status" aria-live="polite" className="top-usage-tools-status">
+        {tools.pending !== null ? "Saving the setting." : tools.refreshing ? "Refreshing…" : saved}
+      </div>
       {enabled && sourceLine !== null && <p data-testid="top-usage-tools-source">{sourceLine}</p>}
       {enabled && <Figures snapshot={snapshot} />}
       {enabled && (
-        <Button className="top-usage-tools-refresh" onClick={tools.refresh} disabled={tools.refreshing}>
-          {tools.refreshing ? "Refreshing…" : "Refresh now"}
+        <Button className="top-usage-tools-refresh" pending={tools.refreshing} onClick={tools.refresh}>
+          Refresh now
         </Button>
       )}
     </section>

@@ -181,8 +181,17 @@ describe("standing approvals section", () => {
     const { fake, user } = await section({ configure: (daemon) => daemon.failNext("grants.create", { code: -32025, message: "grant invalid" }) });
     await fill(user);
     await user.click(await create());
-    const region = screen.getByRole("status", { name: "Standing approvals result" });
-    await waitFor(() => expect(region).toHaveTextContent("The daemon refused these terms. Check the kinds and the limits."));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The daemon refused these terms. Check the kinds and the limits.");
+    expect(fake.callsTo("grants.create")).toHaveLength(1);
+  });
+
+  it("grants_section_create_shows_pending_and_then_says_the_approval_was_created", async () => {
+    const { fake, user } = await section({ configure: (daemon) => daemon.delayNext("grants.create", 200) });
+    await fill(user);
+    await user.click(await create());
+    expect(await create()).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Creating…")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("status", { name: "Standing approvals result" })).toHaveTextContent(/Standing approval created\./));
     expect(fake.callsTo("grants.create")).toHaveLength(1);
   });
 
@@ -209,6 +218,21 @@ describe("standing approvals section", () => {
     const region = screen.getByRole("status", { name: "Standing approvals result" });
     await waitFor(() => expect(region).toHaveTextContent("Standing approval revoked. 2 pending actions stopped."));
     expect(region).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("grants_section_revoke_shows_pending_on_its_button_and_keeps_the_result", async () => {
+    const { fake, user } = await section({ configure: (daemon) => daemon.delayNext("grants.revoke", 200) });
+    await user.click(await screen.findByRole("button", { name: /Revoke standing approval: Project repo/ }));
+    expect(screen.getByRole("button", { name: /Revoke standing approval: Project repo/ })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Revoking…")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("status", { name: "Standing approvals result" })).toHaveTextContent("Standing approval revoked. 2 pending actions stopped."));
+    expect(fake.callsTo("grants.revoke")).toHaveLength(1);
+  });
+
+  it("grants_section_revoke_failure_is_an_alert_that_says_what_to_check", async () => {
+    const { user } = await section({ configure: (daemon) => daemon.failNext("grants.revoke", "hang") });
+    await user.click(await screen.findByRole("button", { name: /Revoke standing approval: Project repo/ }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The daemon did not answer. The standing approval may still be on. Check the list.");
   });
 
   it("grants_section_in_fixture_mode_says_nothing_was_saved", async () => {
@@ -377,8 +401,23 @@ describe("unattended merge grant form", () => {
     await fillMerge(user);
     await user.click(screen.getByRole("checkbox", { name: MERGE_CONFIRM_TEXT }));
     await user.click(await saveMerge());
-    const region = screen.getByRole("status", { name: "Standing approvals result" });
-    await waitFor(() => expect(region).toHaveTextContent("The daemon refused this unattended merge approval."));
+    expect(await screen.findByRole("alert")).toHaveTextContent("The daemon refused this unattended merge approval.");
     expect(fake.callsTo("grants.create")).toHaveLength(1);
+  });
+
+  it("mergegrant_save_shows_saving_and_then_says_the_approval_was_created", async () => {
+    const { user } = await section({
+      configure: (daemon) => {
+        withMerge(daemon);
+        daemon.delayNext("grants.create", 200);
+      },
+    });
+    await mergeForm();
+    await fillMerge(user);
+    await user.click(screen.getByRole("checkbox", { name: MERGE_CONFIRM_TEXT }));
+    await user.click(await saveMerge());
+    expect(await saveMerge()).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("status", { name: "Standing approvals result" })).toHaveTextContent(/Standing approval created\./));
   });
 });

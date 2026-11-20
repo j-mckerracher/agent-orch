@@ -14,6 +14,8 @@ export interface LocalToolsState {
   pending: boolean | null;
   /** Why the last change or refresh did not take effect; null when it did. */
   note: string | null;
+  /** The last change or refresh the daemon accepted; a new object each time, so the same answer twice still shows. */
+  done: { kind: "enabled" | "disabled" | "refreshed" } | null;
   refreshing: boolean;
   setEnabled: (enabled: boolean) => void;
   refresh: () => void;
@@ -30,6 +32,7 @@ export function useLocalTools(source: LocalToolsSource): LocalToolsState {
   const [result, setResult] = useState<SurfaceResult<LocalToolsSnapshot> | null>(null);
   const [pending, setPending] = useState<boolean | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [done, setDone] = useState<LocalToolsState["done"]>(null);
   const [refreshCalls, setRefreshCalls] = useState(0);
   const requests = useRef({ started: 0, shown: 0 });
 
@@ -57,19 +60,20 @@ export function useLocalTools(source: LocalToolsSource): LocalToolsState {
     };
   }, [source, generation, status, settle, pollMs]);
 
-  /** A failed change or refresh is reported in words, and the figures shown are the daemon's current answer. */
+  /** A failed change or refresh is reported in words, and the figures shown are the daemon's current answer. Resolves true when it took effect. */
   const exchange = useCallback(
-    async (call: () => Promise<SurfaceResult<LocalToolsSnapshot>>, failure: string) => {
+    async (call: () => Promise<SurfaceResult<LocalToolsSnapshot>>, failure: string): Promise<boolean> => {
       const seq = ++requests.current.started;
       const value = await call();
       if (value.status === "ok") {
         setNote(null);
         settle(seq, value);
-        return;
+        return true;
       }
       setNote(`${failure}: ${value.reason.replace(/[.\s]+$/, "")}.`);
       const reread = ++requests.current.started;
       settle(reread, await source.local());
+      return false;
     },
     [source, settle],
   );
@@ -79,7 +83,9 @@ export function useLocalTools(source: LocalToolsSource): LocalToolsState {
       setPending(enabled);
       setNote(null);
       const failure = enabled ? "The setting did not turn on" : "The setting did not turn off";
-      void exchange(() => source.setEnabled(enabled), failure).finally(() => setPending(null));
+      void exchange(() => source.setEnabled(enabled), failure)
+        .then((ok) => ok && setDone({ kind: enabled ? "enabled" : "disabled" }))
+        .finally(() => setPending(null));
     },
     [source, exchange],
   );
@@ -87,13 +93,16 @@ export function useLocalTools(source: LocalToolsSource): LocalToolsState {
   const refresh = useCallback(() => {
     setRefreshCalls((calls) => calls + 1);
     setNote(null);
-    void exchange(() => source.refresh(), "Refresh did not start").finally(() => setRefreshCalls((calls) => calls - 1));
+    void exchange(() => source.refresh(), "Refresh did not start")
+      .then((ok) => ok && setDone({ kind: "refreshed" }))
+      .finally(() => setRefreshCalls((calls) => calls - 1));
   }, [source, exchange]);
 
   return {
     result,
     pending,
     note,
+    done,
     refreshing: refreshCalls > 0 || (result?.status === "ok" && result.data.refreshing),
     setEnabled,
     refresh,

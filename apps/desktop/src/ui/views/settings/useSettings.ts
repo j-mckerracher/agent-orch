@@ -24,7 +24,8 @@ export interface SettingsModel {
   load: SettingsLoad;
   /** The sentence for the polite live region; empty until the gate changes state after the first read. */
   gateAnnouncement: string;
-  reload: () => void;
+  /** Reads again; resolves once the answer is on screen, so a Retry can show pending until then. */
+  reload: () => Promise<void>;
   /** Resolves with what happened; `saved` means the daemon accepted the change, so the caller can drop the typed text. */
   save: (patch: Partial<LoadLimits>) => Promise<SaveResult>;
 }
@@ -52,7 +53,7 @@ export function useSettings(): SettingsModel {
     const apply = (next: SurfaceResult<SettingsSnapshot>) => {
       if (seq === latest.current) setLoad((previous) => settle(previous, next));
     };
-    source
+    return source
       .get()
       .then(apply, (error: unknown) =>
         apply(notOk(source.provenance, "unavailable", error instanceof Error ? error.message : "settings read failed")),

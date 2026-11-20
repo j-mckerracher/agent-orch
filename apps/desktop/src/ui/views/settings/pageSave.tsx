@@ -115,7 +115,7 @@ export function SettingsPage({ children }: { children: ReactNode }) {
         {children}
         {hasBar && (
           <div className="settings-savebar" data-testid="settings-savebar">
-            <Button variant="primary" className="ui-btn-save" aria-busy={saving} aria-describedby={reason === null ? undefined : reasonId} onClick={() => void save()}>
+            <Button variant="primary" className="ui-btn-save" pending={saving} aria-describedby={reason === null ? undefined : reasonId} onClick={() => void save()}>
               Save changes
             </Button>
             {reason !== null && (
@@ -124,6 +124,7 @@ export function SettingsPage({ children }: { children: ReactNode }) {
               </p>
             )}
             <div role="status" aria-live="polite" aria-label="Save result" className="settings-result">
+              {saving && <p className="ui-action-pending">Saving…</p>}
               {shown.map((outcome) =>
                 outcome.kind === "failed" ? (
                   <Notice key={outcome.text} tone="bad" role="alert">

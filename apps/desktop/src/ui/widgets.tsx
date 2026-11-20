@@ -1,4 +1,4 @@
-import type { HTMLAttributes, ReactNode } from "react";
+import { useEffect, useState, type HTMLAttributes, type ReactNode } from "react";
 import { presentError } from "../daemon/errors";
 import type { DaemonError } from "../daemon/errors";
 import type { Loadable } from "../daemon/appData";
@@ -76,8 +76,19 @@ export function LoadableRegion<T>({
   children: (data: T) => ReactNode;
 }) {
   const { data, status, error } = loadable;
+  // Retry starts a read. While it runs, the error notice is out of the way, so a line says the read is in flight.
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    if (status !== "loading") setAsked(false);
+  }, [status]);
   const retry = (
-    <Button onClick={onRetry} disabled={!connected}>
+    <Button
+      onClick={() => {
+        setAsked(true);
+        onRetry();
+      }}
+      disabled={!connected}
+    >
       Retry
     </Button>
   );
@@ -110,6 +121,7 @@ export function LoadableRegion<T>({
           <ErrorNotice error={error} action={`Refreshing ${what}`} /> {retry}
         </div>
       )}
+      {status === "loading" && asked && <p role="status">Refreshing {what}…</p>}
       {isEmpty(data) ? <EmptyState title={emptyText} /> : children(data)}
     </div>
   );
