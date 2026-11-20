@@ -20,7 +20,7 @@ export const WINDOWS = {
   // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on Windows): 3 call-context tests, so 59 becomes 62.
   // DPES-1105 action resolve (PR #116, CI run 43998558420, measured on Windows): the ipc lib has 64 tests.
   // DPES-1105 approver credential and task actions (CI run 44023050296, measured on Windows): the ipc lib has 83 tests.
-  ipc: { passed: 122, sequence: [122, 0] },
+  ipc: { passed: 126, sequence: [126, 0] },
   // Derived from cfg gates: the library loses executor::tests,
   // conversation_orphans, conversation_agent::launch and 4 other unix-only tests and gains one
   // cfg(windows) test; conversation_runtime loses 2 unix tests (11 passed + 1 #[ignore]);
@@ -69,15 +69,15 @@ export const WINDOWS = {
   // With main merged (DPES-1106): one real-daemon test and the agent_thinking store binary (5) plus one store lib test; re-synced from CI.
   // DPES-1106 adds one portable daemon test (tasks.message, api_authority_tests): 738 becomes 739, unit binary 633 becomes 634.
   // The wake brief keeps a worker's note (line cap 512) and adds one portable daemon test: 739 becomes 740, unit binary 634 becomes 635.
-  daemon: { passed: 740, ignored: 1, sequence: [635, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 748, ignored: 1, sequence: [643, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
   // CI run 43998558420: the Windows ipc lib has 64 tests, so 50 are filtered out.
   // CI run 44023050296: the Windows ipc lib has 83 tests, so 69 are filtered out.
-  windowsTransport: { passed: 14, sequence: [14], filteredOut: 108 },
+  windowsTransport: { passed: 14, sequence: [14], filteredOut: 112 },
   // DPES-1105 approver credential (CI run 44023050296, measured on Windows): four host tests (launch and the real-daemon bridge), 18 passed.
-  tauri: { passed: 40, sequence: [40, 0, 0] },
+  tauri: { passed: 67, sequence: [67, 0, 0] },
   // Derived from the sources' cfg gates and checked against the Priority 12r2 Windows run, which
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
   // cfg(windows) one) and cleanup_safety at 3 (two of its five tests are cfg(unix)).
@@ -86,7 +86,7 @@ export const WINDOWS = {
   cliCleanupSafety: { passed: 3, sequence: [3] },
   // 4 portable tests + 7 in the cfg(windows) module (the DACL tests; the inherited-ACE regression for
   // `.orchestrator.lock` is one of them).
-  privateFs: { passed: 11, sequence: [11, 0] },
+  privateFs: { passed: 31, ignored: 1, sequence: [20, 9, 3, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
   // One portable test and one cfg(windows) test.
   cliCommandLine: { passed: 2, sequence: [2] },
@@ -120,10 +120,10 @@ export const WINDOWS = {
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 413.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 418.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 428 becomes 430, worker_status 11 becomes 13.
-  store: { passed: 430, ignored: 1, sequence: [115, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 9, 8, 11, 3, 7, 14, 3, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+  store: { passed: 410, ignored: 0, sequence: [106, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 114 },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 19 },
   // No cfg gate in the crate: the same 28 as the Priority 12r3 Windows run (6 + 7 + 15).
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
 };
@@ -137,7 +137,7 @@ export const MACOS = {
   // DPES-1105 action proposals (PR #113, CI run 43981399384, measured on macOS): 3 call-context tests, so 58 becomes 61.
   // DPES-1105 action resolve (PR #116, CI run 43994386560, measured on macOS): the ipc lib has 63 tests.
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): the ipc lib has 82 tests.
-  ipc: { passed: 121, sequence: [121, 0] },
+  ipc: { passed: 125, sequence: [125, 0] },
   // The new fast-exit executor test is Unix-only; Windows counts remain unchanged.
   // Measured on the DPES-1105 branch: the unit binary gains the 8 history tests (176 becomes 184), then the
   // Claude Code model alias argv test (184 becomes 185). The AI usage module (api::usage_local, three tests) landed on
@@ -180,7 +180,7 @@ export const MACOS = {
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
   // DPES-1106 adds one portable daemon test and one unix-only executor test: 882 becomes 884, unit binary 750 becomes 752.
   // The wake brief adds one portable daemon test: 884 becomes 885, unit binary 752 becomes 753.
-  daemon: { passed: 885, ignored: 1, sequence: [753, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  daemon: { passed: 895, ignored: 1, sequence: [763, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
@@ -188,12 +188,12 @@ export const MACOS = {
   // 978 passed and none ignored. The CLI help probe test of PR #229 (orchestrator-agents) makes 979, as the macOS
   // workspace-tests gate measured on this branch (CI run 44565723305). After PR #224 (DPES-1108), main's whole-workspace
   // pin is 2467 passed and 2 ignored; minus daemon 882+1, store 432+1 and ipc 121 that is 1032 passed and none ignored.
-  workspace: { passed: 1032, ignored: 0 },
+  workspace: { passed: 1054, ignored: 1 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
-  tauri: { passed: 42, sequence: [42, 0, 0] },
+  tauri: { passed: 71, sequence: [71, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
-  privateFs: { passed: 8, sequence: [8, 0] },
+  privateFs: { passed: 30, ignored: 1, sequence: [18, 9, 4, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
   cliCommandLine: { passed: 1, sequence: [1] },
   // Measured on the DPES-1106 branch (macOS `cargo test -p orchestrator-store`): the lib has 67 tests and data_lock.rs 9 (8 passed, 1 ignored).
@@ -216,10 +216,10 @@ export const MACOS = {
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 417.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 422.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 432 becomes 434, worker_status 11 becomes 13.
-  store: { passed: 434, ignored: 1, sequence: [117, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 9, 8, 11, 3, 7, 14, 4, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+  store: { passed: 412, ignored: 0, sequence: [107, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
-  lockTakeover: { passed: 1, sequence: [1], filteredOut: 116 },
+  lockTakeover: { passed: 1, sequence: [1], filteredOut: 17 },
   diagnostics: { passed: 28, sequence: [0, 6, 7, 15, 0] },
   // DPES-1105 usage controls (PR #97) adds two real-daemon e2e files (3 and 1 tests): 8 files and 46 tests become 10 and 50,
   // as the macOS desktop-e2e gate measured them in CI run 43945842537.
