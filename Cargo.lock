@@ -954,6 +954,7 @@ dependencies = [
  "orchestrator-diagnostics",
  "orchestrator-engine",
  "orchestrator-git",
+ "orchestrator-private-fs",
  "orchestrator-runtime",
  "orchestrator-store",
  "serde",
@@ -986,6 +987,7 @@ dependencies = [
  "orchestrator-host-metrics",
  "orchestrator-ipc",
  "orchestrator-local-usage",
+ "orchestrator-private-fs",
  "orchestrator-runtime",
  "orchestrator-store",
  "serde",
@@ -1069,6 +1071,7 @@ name = "orchestrator-private-fs"
 version = "0.1.30"
 dependencies = [
  "tempfile",
+ "thiserror",
  "windows-sys",
 ]
 
@@ -1098,7 +1101,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "windows-sys",
 ]
 
 [[package]]

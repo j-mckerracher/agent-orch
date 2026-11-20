@@ -21,7 +21,7 @@ use api::DaemonApi;
 use executor::ExecutorConfig;
 use orchestrator_diagnostics::{install_panic_hook, Diagnostics};
 use orchestrator_ipc::{ApproverSecret, Server, ServerConfig};
-use orchestrator_store::DataDirectoryLock;
+use orchestrator_private_fs::DataDirectoryLock;
 use std::ffi::OsString;
 use std::io::Read;
 use std::path::PathBuf;
@@ -139,7 +139,7 @@ fn default_data_dir() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::{acquire_lock, parse_args, read_approver, APPROVER_REJECTED, USAGE};
-    use orchestrator_store::{DataDirectoryLock, DataDirectoryLockError};
+    use orchestrator_private_fs::{DataDirectoryLock, DataDirectoryLockError};
     use std::ffi::OsString;
     use std::path::PathBuf;
 

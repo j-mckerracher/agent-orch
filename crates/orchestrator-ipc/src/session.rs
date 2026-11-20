@@ -94,6 +94,33 @@ impl State {
             && activity.in_flight == 0
             && activity.last_request.elapsed() >= self.idle_timeout
     }
+
+    /// Closes admission when nothing is in flight and the handler agrees. The
+    /// check and `stopping` are one step under the activity lock, as is
+    /// `InFlight::new`, so no call can start between them. `timed_out` also
+    /// requires the idle period and no live subscriptions, and lets a server
+    /// without a handler exit; an explicit request needs a handler.
+    pub(crate) fn try_begin_idle_stop(&self, timed_out: bool) -> bool {
+        let activity = self.lock_activity();
+        if self.stopping.load(Ordering::Acquire) {
+            return true;
+        }
+        if activity.in_flight != 0
+            || (timed_out
+                && (activity.live_subscriptions != 0
+                    || activity.last_request.elapsed() < self.idle_timeout))
+        {
+            return false;
+        }
+        let accepted = match &self.handler {
+            Some(handler) => handler.try_begin_idle_shutdown(),
+            None => timed_out,
+        };
+        if accepted {
+            self.stopping.store(true, Ordering::Release);
+        }
+        accepted
+    }
 }
 
 /// Idle bookkeeping for [`State`]; see `State::activity`.
@@ -132,9 +159,15 @@ impl Drop for LiveSubscription {
 struct InFlight<'a>(&'a State);
 
 impl<'a> InFlight<'a> {
-    fn new(state: &'a State) -> Self {
-        state.change_activity(|activity| activity.in_flight += 1);
-        Self(state)
+    /// `None` once admission has closed for shutdown.
+    fn new(state: &'a State) -> Option<Self> {
+        let mut activity = state.lock_activity();
+        if state.stopping.load(Ordering::Acquire) {
+            return None;
+        }
+        activity.in_flight += 1;
+        activity.last_request = Instant::now();
+        Some(Self(state))
     }
 }
 
@@ -243,6 +276,9 @@ pub(crate) fn serve(mut stream: Box<dyn IpcStream>, state: Arc<State>) {
             Ok(None) if subscription.is_none() => break,
             Ok(None) => None,
         };
+        if state.stopping.load(Ordering::Acquire) {
+            break;
+        }
         if let Some(request) = request {
             state.touch();
             if !handle_request(
@@ -297,8 +333,10 @@ fn handle_request(
     subscription: &mut Option<Subscription>,
 ) -> bool {
     let method = request.method.as_str();
-    if matches!(method, "capabilities" | "health" | "shutdown")
-        && !empty_control_params(&request.params)
+    if matches!(
+        method,
+        "capabilities" | "health" | "shutdown" | "shutdown_if_idle"
+    ) && !empty_control_params(&request.params)
     {
         return write_rpc_error(stream, request.id, RpcError::InvalidParams);
     }
@@ -324,6 +362,19 @@ fn handle_request(
         state.stopping.store(true, Ordering::Release);
         let _ = write_result(stream, request.id, json!({"stopping": true}));
         return false;
+    }
+    if method == "shutdown_if_idle" {
+        if !capabilities.contains(&Capability::Health) {
+            return write_error(stream, request.id, -32004, "capability not negotiated").is_ok();
+        }
+        if state.handler.is_none() {
+            return write_error(stream, request.id, -32601, "method unavailable").is_ok();
+        }
+        if state.try_begin_idle_stop(false) {
+            let _ = write_result(stream, request.id, json!({"stopping": true}));
+            return false;
+        }
+        return write_result(stream, request.id, json!({"stopping": false})).is_ok();
     }
     if method == "events.subscribe" {
         if !capabilities.contains(&Capability::Events) {
@@ -389,7 +440,9 @@ fn handle_request(
     let Some(handler) = &state.handler else {
         return write_error(stream, request.id, -32601, "method unavailable").is_ok();
     };
-    let _in_flight = InFlight::new(state);
+    let Some(_in_flight) = InFlight::new(state) else {
+        return false;
+    };
     let traced = trace_requests().then(|| (format!("{:?}", request.id), Instant::now()));
     if let Some((id, _)) = &traced {
         trace(format_args!("request start id={id} method={method}"));
@@ -797,6 +850,152 @@ mod tests {
 
         drop(without);
         with.shutdown().unwrap();
+        server.join().unwrap();
+    }
+
+    /// Holds `projects.list` open until released, to keep a call in flight.
+    struct Blocking {
+        started: Mutex<std::sync::mpsc::Sender<()>>,
+        release: Mutex<std::sync::mpsc::Receiver<()>>,
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl RpcHandler for Blocking {
+        fn capabilities(&self) -> Vec<Capability> {
+            vec![Capability::Health, Capability::Projects]
+        }
+
+        fn dispatch(&self, method: &str, _: Value) -> Result<Value, RpcError> {
+            self.calls.lock().unwrap().push(method.to_owned());
+            self.started.lock().unwrap().send(()).unwrap();
+            self.release.lock().unwrap().recv().unwrap();
+            Ok(json!({}))
+        }
+
+        fn events_after(&self, _: i64, _: usize) -> Result<Vec<IpcEvent>, RpcError> {
+            Ok(Vec::new())
+        }
+    }
+
+    type Started = std::sync::mpsc::Receiver<()>;
+    type Release = std::sync::mpsc::Sender<()>;
+
+    fn serve_blocking(
+        dir: &std::path::Path,
+    ) -> (Arc<Blocking>, Started, Release, std::thread::JoinHandle<()>) {
+        let (started_tx, started) = std::sync::mpsc::channel();
+        let (release, release_rx) = std::sync::mpsc::channel();
+        let handler = Arc::new(Blocking {
+            started: Mutex::new(started_tx),
+            release: Mutex::new(release_rx),
+            calls: Mutex::new(Vec::new()),
+        });
+        let server = {
+            let dir = dir.to_path_buf();
+            let handler = handler.clone();
+            std::thread::spawn(move || {
+                Server::serve_with_handler(
+                    ServerConfig::new(dir, "shutdown-if-idle-test")
+                        .with_idle_timeout(Duration::from_secs(30))
+                        .with_stream_timeout(Duration::from_secs(5)),
+                    handler,
+                )
+                .unwrap();
+            })
+        };
+        (handler, started, release, server)
+    }
+
+    #[test]
+    fn shutdown_if_idle_is_busy_while_a_handler_is_in_flight_then_stops_when_idle() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (_, started, release, server) = serve_blocking(dir.path());
+        let caps = [Capability::Health, Capability::Projects];
+        let mut worker = connect(dir.path(), &caps);
+        let mut control = connect(dir.path(), &caps);
+
+        let call = std::thread::spawn(move || worker.projects_list().map(|_| worker));
+        started.recv_timeout(Duration::from_secs(10)).unwrap();
+        assert!(!control.shutdown_if_idle().unwrap());
+        assert!(!server.is_finished());
+
+        release.send(()).unwrap();
+        let mut worker = call.join().unwrap().unwrap();
+        // The in-flight slot drops just after the reply, so allow a moment.
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !control.shutdown_if_idle().unwrap() {
+            assert!(Instant::now() < deadline, "never became idle");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        server.join().unwrap();
+        assert!(worker.health().is_err());
+    }
+
+    #[test]
+    fn shutdown_if_idle_closes_admission_for_connections_opened_before_it() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (handler, _started, _release, server) = serve_blocking(dir.path());
+        let caps = [Capability::Health, Capability::Projects];
+        let mut early = connect(dir.path(), &caps);
+        let mut control = connect(dir.path(), &caps);
+
+        assert!(control.shutdown_if_idle().unwrap());
+        assert!(early.projects_list().is_err());
+        assert!(handler.calls.lock().unwrap().is_empty());
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn shutdown_if_idle_is_refused_when_the_handler_vetoes_and_the_server_keeps_serving() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let handler = Arc::new(Recorder {
+            calls: Mutex::new(Vec::new()),
+        });
+        let server = {
+            let dir = dir.path().to_path_buf();
+            std::thread::spawn(move || {
+                Server::serve_with_handler(
+                    ServerConfig::new(dir, "shutdown-if-idle-veto")
+                        .with_idle_timeout(Duration::from_secs(30))
+                        .with_stream_timeout(Duration::from_secs(5)),
+                    handler,
+                )
+                .unwrap();
+            })
+        };
+        let mut client = connect(dir.path(), &[Capability::Health]);
+
+        assert!(!client.shutdown_if_idle().unwrap());
+        assert!(client.health().is_ok());
+        assert!(!server.is_finished());
+
+        client.shutdown().unwrap();
+        server.join().unwrap();
+    }
+
+    #[test]
+    fn shutdown_if_idle_needs_the_health_capability_and_an_authenticated_session() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let (_, _started, _release, server) = serve_blocking(dir.path());
+        let mut without = connect(dir.path(), &[Capability::Projects]);
+        assert!(matches!(
+            without.call("shutdown_if_idle", Value::Null),
+            Err(IpcError::UnsupportedCapability)
+        ));
+        let mut stream = crate::transport::connect(dir.path()).unwrap();
+        stream.set_timeouts(Duration::from_secs(5)).unwrap();
+        let request = crate::protocol::RpcRequest {
+            jsonrpc: "2.0".into(),
+            id: crate::protocol::RpcId::Number(1u64.into()),
+            method: "shutdown_if_idle".into(),
+            params: Value::Null,
+        };
+        crate::protocol::write(&mut stream, &request).unwrap();
+        assert!(crate::protocol::read::<crate::protocol::RpcResponse>(&mut stream).is_err());
+
+        let mut health = connect(dir.path(), &[Capability::Health]);
+        assert!(!server.is_finished());
+        assert!(health.shutdown_if_idle().unwrap());
         server.join().unwrap();
     }
 }

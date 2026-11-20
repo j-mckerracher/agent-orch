@@ -22,8 +22,11 @@
 use std::io;
 use std::path::Path;
 
+mod data_lock;
 #[cfg(windows)]
 mod windows;
+
+pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
 
 /// Creates `path` and any missing parents owner-only, then removes other
 /// users' access from `path` itself if it already existed.

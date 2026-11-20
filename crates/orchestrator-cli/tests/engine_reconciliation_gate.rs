@@ -26,14 +26,13 @@ use orchestrator_core::identity::{
 };
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
+use orchestrator_private_fs::DataDirectoryLock;
 use orchestrator_runtime::is_process_running;
 use orchestrator_runtime::reconcile::{
     capture_exact_process_identity, capture_process_identity, observe_owner_process,
     observe_process,
 };
-use orchestrator_store::{
-    DataDirectoryLock, DeliveryOutcome, DeliveryStepRecord, SqliteStore, Store,
-};
+use orchestrator_store::{DeliveryOutcome, DeliveryStepRecord, SqliteStore, Store};
 use std::fs::{self, File};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};

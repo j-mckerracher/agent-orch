@@ -28,8 +28,8 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock, RwLockReadGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
@@ -364,6 +364,17 @@ impl SessionPulse {
     }
 }
 
+/// Admission gate for an idle shutdown: `false` while the daemon serves, `true` once an accepted
+/// shutdown closed it. Work holds a read guard while it runs, and the shutdown decision takes the
+/// write lock, so work either began before the decision (and vetoes it) or never begins.
+pub(crate) type StopGate = Arc<RwLock<bool>>;
+
+/// A read guard while the daemon still serves; `None` once the gate is closed.
+pub(crate) fn serving(gate: &RwLock<bool>) -> Option<RwLockReadGuard<'_, bool>> {
+    let guard = gate.read().unwrap_or_else(PoisonError::into_inner);
+    (!*guard).then_some(guard)
+}
+
 pub(crate) struct Executor {
     inner: Arc<Inner>,
     scheduler: Mutex<Option<JoinHandle<()>>>,
@@ -389,10 +400,40 @@ struct Inner {
     output: Arc<OutputStore>,
     /// Cancel flags of the verification runs in flight, keyed by task id.
     verifying: Mutex<BTreeMap<String, Arc<AtomicBool>>>,
+    /// Supervisor and resumed-verification threads that have started and not ended.
+    workers: AtomicUsize,
+    stop_gate: StopGate,
+}
+
+/// Counts one supervisor or verification thread in `Inner::workers` from before it is spawned
+/// until it ends, so an idle shutdown never sees a gap between the hand-off and the thread.
+struct WorkerSlot(Arc<Inner>);
+
+impl WorkerSlot {
+    fn new(inner: &Arc<Inner>) -> Self {
+        inner.workers.fetch_add(1, Ordering::AcqRel);
+        Self(inner.clone())
+    }
+}
+
+impl Drop for WorkerSlot {
+    fn drop(&mut self) {
+        self.0.workers.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 impl Executor {
+    /// [`Self::start_gated`] with a gate nothing closes.
+    #[cfg(test)]
     pub(crate) fn start(store: Arc<SqliteStore>, config: ExecutorConfig) -> Result<Self, String> {
+        Self::start_gated(store, config, StopGate::default())
+    }
+
+    pub(crate) fn start_gated(
+        store: Arc<SqliteStore>,
+        config: ExecutorConfig,
+        stop_gate: StopGate,
+    ) -> Result<Self, String> {
         let admission = AdmissionGate::new(config.admission.clone(), config.data_dir.clone());
         let treehouse = Treehouse::new(&config.treehouse_program, &config.data_dir)
             .map_err(|error| format!("cannot prepare treehouse: {error}"))?;
@@ -409,6 +450,8 @@ impl Executor {
             pulse: Arc::new(SessionPulse::default()),
             output: Arc::default(),
             verifying: Mutex::default(),
+            workers: AtomicUsize::new(0),
+            stop_gate,
         });
         // A weak reference: the gate outlives the executor and must not keep it alive.
         let weak = Arc::downgrade(&inner);
@@ -487,6 +530,11 @@ impl Executor {
     /// out between an admission and its launch.
     pub(crate) fn has_pending_pass(&self) -> bool {
         *lock(&self.inner.dirty)
+    }
+
+    /// True while a supervisor or verification thread is running.
+    pub(crate) fn has_live_workers(&self) -> bool {
+        self.inner.workers.load(Ordering::Acquire) != 0
     }
 
     /// The next scheduling pass's fairness cursor and whether the restart gate
@@ -661,11 +709,11 @@ impl Inner {
             }
         };
         for (task_id, attempt_id) in pending {
-            let inner = self.clone();
+            let slot = WorkerSlot::new(self);
             let name = format!("verify-{task_id}");
             let spawned = thread::Builder::new()
                 .name(name.clone())
-                .spawn(move || inner.verify_candidate(&task_id, &attempt_id));
+                .spawn(move || slot.0.verify_candidate(&task_id, &attempt_id));
             if let Err(error) = spawned {
                 self.config.diagnostics.error(
                     LOG,
@@ -758,7 +806,9 @@ impl Inner {
         let mut last_started_project = None;
         while !self.stop.load(Ordering::SeqCst) {
             *lock(&self.dirty) = false;
-            if !gate_open {
+            // Held for the whole pass but not for the wait below.
+            let pass_guard = serving(&self.stop_gate);
+            if pass_guard.is_some() && !gate_open {
                 terminate_orphaned_agents(&self.store, diag);
                 let running_before = running_task_ids(&self.store, diag, "before_recovery_gate");
                 match reconcile_before_scheduling_with(&self.store, diag) {
@@ -793,7 +843,7 @@ impl Inner {
                     }
                 }
             }
-            if gate_open {
+            if pass_guard.is_some() && gate_open {
                 self.schedule_pass(&mut last_started_project);
                 *lock(&self.cursor) = last_started_project.clone();
             }
@@ -802,6 +852,7 @@ impl Inner {
             } else {
                 BLOCKED_RETRY
             };
+            drop(pass_guard);
             let dirty = lock(&self.dirty);
             if !*dirty && !self.stop.load(Ordering::SeqCst) {
                 drop(
@@ -1133,13 +1184,13 @@ impl Inner {
 
     /// Hands a recorded session to its own supervisor thread.
     fn start_supervisor(self: &Arc<Self>, job: Job) -> Result<(), String> {
-        let inner = self.clone();
+        let slot = WorkerSlot::new(self);
         let supervisor_job = job.clone();
         let spawned = thread::Builder::new()
             .name(format!("agent-{}", job.task_id))
             .spawn(move || {
-                supervise(&inner, supervisor_job);
-                inner.request_pass();
+                supervise(&slot.0, supervisor_job);
+                slot.0.request_pass();
             });
         if let Err(error) = spawned {
             fail_before_agent_exit(

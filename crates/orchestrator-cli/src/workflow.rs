@@ -45,16 +45,14 @@ use orchestrator_engine::verify::{verify_attempt, Verified};
 use orchestrator_git::{
     create_task_worktree, release_task_worktree, BranchPrefix, Released, Repository, Treehouse,
 };
+use orchestrator_private_fs::{DataDirectoryLock, DataDirectoryLockError};
 #[cfg(test)]
 use orchestrator_runtime::reconcile::DeliveryEvidence;
 use orchestrator_runtime::reconcile::{
     capture_exact_process_identity, capture_process_identity, observe_owner_process,
     observe_process,
 };
-use orchestrator_store::{
-    CancellationOwner, CancellationStatus, DataDirectoryLock, DataDirectoryLockError, SqliteStore,
-    Store,
-};
+use orchestrator_store::{CancellationOwner, CancellationStatus, SqliteStore, Store};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 #[cfg(windows)]

@@ -139,15 +139,17 @@ impl DaemonApi {
                 let Some(api) = weak.upgrade() else {
                     return;
                 };
-                let now_ms = crate::executor::unix_now_ms();
-                let passed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    api.merge_pending(now_ms);
-                    api.landing_tick(now_ms);
-                }));
-                if passed.is_err() {
-                    api.config
-                        .diagnostics
-                        .error(LOG, "landing_pass_panicked", &[]);
+                if let Some(_serving) = crate::executor::serving(&api.stop_gate) {
+                    let now_ms = crate::executor::unix_now_ms();
+                    let passed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        api.merge_pending(now_ms);
+                        api.landing_tick(now_ms);
+                    }));
+                    if passed.is_err() {
+                        api.config
+                            .diagnostics
+                            .error(LOG, "landing_pass_panicked", &[]);
+                    }
                 }
                 drop(api);
                 let (flag, wake) = &*signal;

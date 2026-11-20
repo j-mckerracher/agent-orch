@@ -43,8 +43,8 @@ use sha2::{Digest, Sha256};
 use orchestrator_core::permission::PermissionLevel;
 
 use crate::executor::{
-    agent_command, placeholder_status_dir, submit_channel, ChannelSupport, Executor,
-    ExecutorConfig, COPILOT_RUNS_DIR,
+    agent_command, placeholder_status_dir, serving, submit_channel, ChannelSupport, Executor,
+    ExecutorConfig, StopGate, COPILOT_RUNS_DIR,
 };
 use crate::idempotency;
 use orchestrator_diagnostics::Level;
@@ -91,6 +91,9 @@ pub(crate) struct DaemonApi {
     /// The pull request poller and merge worker: its thread, its signal and its in-memory
     /// schedule. Started by `main`; stopped by `shutdown`.
     landing: landing::LandingState,
+    /// Closed by an accepted idle shutdown. Requests, the scheduler and the background passes hold
+    /// a read guard while they work, so none can start after it closes.
+    stop_gate: StopGate,
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -314,6 +317,7 @@ impl DaemonApi {
             grant_try_state: Mutex::new(grant_matcher::TryState::default()),
             github,
             landing: landing::LandingState::default(),
+            stop_gate: StopGate::default(),
         };
         api.reconcile_actions();
         Ok(api)
@@ -329,17 +333,20 @@ impl DaemonApi {
         );
         let github: Arc<dyn GitHub> = Arc::new(orchestrator_git::github::GhCli::from_env());
         let mut api = Self::with_config(data_dir, config.clone(), github)?;
-        let executor = Executor::start(api.store.clone(), config)?;
+        let executor = Executor::start_gated(api.store.clone(), config, api.stop_gate.clone())?;
         // Recovery settles the batches a crash left running before the loop starts, so a
         // restart never makes a second turn for one record.
-        let wake = Arc::new(wake::WakeService::new(
-            api.store.clone(),
-            api.conversations.clone(),
-            executor.pulse(),
-            Arc::new(wake::SystemClock),
-            api.config.load.clone(),
-            api.config.diagnostics.clone(),
-        ));
+        let wake = Arc::new(
+            wake::WakeService::new(
+                api.store.clone(),
+                api.conversations.clone(),
+                executor.pulse(),
+                Arc::new(wake::SystemClock),
+                api.config.load.clone(),
+                api.config.diagnostics.clone(),
+            )
+            .with_stop_gate(api.stop_gate.clone()),
+        );
         // A transient store error is logged inside and does not stop startup.
         let _ = wake.recover();
         wake.start();
@@ -353,6 +360,7 @@ impl DaemonApi {
         self.stop_landing();
         self.stop_grant_matcher();
         self.conversations.shutdown();
+        self.local_usage.shutdown();
         if let Some(wake) = &self.wake {
             wake.stop();
         }
@@ -423,6 +431,9 @@ impl RpcHandler for DaemonApi {
         params: Value,
         context: &CallContext<'_>,
     ) -> Result<Value, RpcError> {
+        let Some(_serving) = serving(&self.stop_gate) else {
+            return Err(RpcError::Conflict);
+        };
         let result = self.report_internal(|| match method {
             "projects.list" => self.projects_list(params),
             "projects.register" => self.register_project(params),
@@ -559,6 +570,33 @@ impl RpcHandler for DaemonApi {
 
     fn journal_epoch(&self) -> Result<Option<String>, RpcError> {
         self.report_internal(|| self.store.store_epoch().map(Some).map_err(map_store_error))
+    }
+
+    /// Closes the admission gate when nothing runs or can start. `try_write` fails while any
+    /// request or background pass holds a read guard, which counts as busy.
+    fn try_begin_idle_shutdown(&self) -> bool {
+        let Ok(mut closed) = self.stop_gate.try_write() else {
+            return false;
+        };
+        if *closed {
+            return true;
+        }
+        let Ok(tasks) = self.store.list() else {
+            return false;
+        };
+        let busy = tasks
+            .iter()
+            .any(|task| matches!(task.state, TaskState::Running | TaskState::Verifying))
+            || self.conversations.has_active_turns()
+            || self
+                .executor
+                .as_ref()
+                .is_some_and(|executor| executor.has_pending_pass() || executor.has_live_workers());
+        if busy {
+            return false;
+        }
+        *closed = true;
+        true
     }
 
     fn keep_alive(&self) -> bool {
