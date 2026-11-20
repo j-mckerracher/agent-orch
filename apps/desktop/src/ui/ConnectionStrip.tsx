@@ -1,4 +1,5 @@
 /** C1: connection strip, history and continuity state, shared by every screen. */
+import { useEffect, useState } from "react";
 import { presentError } from "../daemon/errors";
 import type { ConnectionStatus } from "../daemon/connection";
 import { formatTime } from "./format";
@@ -60,6 +61,12 @@ export function ConnectionStrip({ layout }: ConnectionStripProps = {}) {
   const { connection: snap, connected } = useGate();
   const journal = useSource(() => sources.journal.identity(), "journal", sources.journal.provenance);
   const { connectionStripExpanded, setConnectionStripExpanded } = useLayoutSettings(layout);
+  // Refresh / reconnect is pending from the click until the connection settles (connected, or failed), not while it is
+  // still reconnecting: a settled connection is the answer, shown in the status pill and the alert below.
+  const [asked, setAsked] = useState(false);
+  useEffect(() => {
+    if (snap.status !== "connecting" && snap.status !== "reconnecting") setAsked(false);
+  }, [snap.status]);
 
   const attention = connectionAttention({ bridgeBound, connection: snap, journal });
   // The saved choice applies only while the connection is healthy; it is restored when health returns.
@@ -112,7 +119,14 @@ export function ConnectionStrip({ layout }: ConnectionStripProps = {}) {
             {ATTENTION_TEXT[attention]}
           </span>
         )}
-        <Button onClick={() => connection.reconnect({ fresh: true })} disabled={!bridgeBound}>
+        <Button
+          pending={asked}
+          onClick={() => {
+            setAsked(true);
+            connection.reconnect({ fresh: true });
+          }}
+          disabled={!bridgeBound}
+        >
           Refresh / reconnect
         </Button>
       </div>

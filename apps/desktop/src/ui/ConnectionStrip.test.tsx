@@ -1,6 +1,6 @@
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { DaemonError } from "../daemon/errors";
 import { createFixtureSources } from "../sources/fixtures";
 import { FakeDaemon } from "../test/fakeDaemon";
@@ -190,6 +190,18 @@ describe("ConnectionStrip when the connection needs attention", () => {
     fake.openError = null;
     await user.click(screen.getByRole("button", { name: "Refresh / reconnect" }));
     await connected();
+  });
+
+  it("Refresh / reconnect shows pending on its button from the click until the connection settles", async () => {
+    const fake = new FakeDaemon();
+    fake.openError = new DaemonError("disconnected", "down");
+    const { services, user } = setup({ fake, connection: { maxAutoAttempts: 0 } });
+    // Wait for the settled failure, not the first state: the initial attempt must finish before the click.
+    await waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Disconnected"));
+    // Hold the reconnect in place, so the test sees the button while the connection has not yet answered.
+    vi.spyOn(services.connection, "reconnect").mockImplementation(() => undefined);
+    await user.click(screen.getByRole("button", { name: "Refresh / reconnect" }));
+    expect(screen.getByRole("button", { name: "Refresh / reconnect" })).toHaveAttribute("aria-busy", "true");
   });
 
   it("locks open when the daemon is unavailable (no bridge answer)", async () => {
