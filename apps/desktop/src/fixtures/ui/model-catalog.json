@@ -35,9 +35,9 @@
             "name": "GitHub Copilot (placeholder)",
             "installed": true,
             "launchable": true,
-            "modelSelection": "unknown",
-            "models": { "status": "unknown", "reason": "The Copilot CLI cannot list models without a billable call. Runs use the default model from your Copilot settings." },
-            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
+            "modelSelection": "supported",
+            "models": { "status": "ok", "ageMs": 5000, "value": [{ "id": "fixture:copilot-model-large", "label": "Placeholder Copilot model", "efforts": ["low", "high"] }, { "id": "fixture:copilot-model-small", "label": "Placeholder Copilot small model" }] },
+            "efforts": { "status": "unsupported", "reason": "Effort levels are reported per model." }
           },
           {
             "id": "fixture:provider-github-copilot-unavailable",

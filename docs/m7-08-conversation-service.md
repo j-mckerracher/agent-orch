@@ -368,9 +368,12 @@ chose for that message. The rules:
 - **Copilot is chosen like the others, with its own limits (DPES-1105).** A
   Copilot choice runs when the CLI is available and advertises the required
   command options. A missing CLI fails the turn with `runtime_unavailable`.
-  The Copilot CLI cannot list models or efforts without a billable call, so its
-  catalog offers neither: a model is refused with `selection_models_unsupported`
-  and an effort with `selection_effort_unsupported`. A choice with neither runs
+  The Copilot CLI lists its models, and the levels of each, through its `--acp`
+  server without a billable call. The daemon reads them for the catalog, keeps
+  the read for 30 minutes, and passes a chosen model and effort to the CLI as
+  `--model` and `--reasoning-effort`. A model the CLI does not list is refused
+  with `selection_unknown_model`, and a model whose list could not be read with
+  `selection_models_unknown`. A choice with neither runs
   the default model from the user's Copilot settings. A send never starts a
   sign-in check. The sign-in record comes from earlier runs and from the
   explicit check. A run that shows the account signed out fails its turn with

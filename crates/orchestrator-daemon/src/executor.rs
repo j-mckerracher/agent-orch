@@ -1652,6 +1652,7 @@ pub(crate) fn agent_command(
                 config.copilot_credit_cap,
                 workflow_agent,
             );
+            args.extend(CopilotAdapter::selection_args(model, effort));
             extend_copilot_channel(&mut args, permission, channel);
             Some((
                 config
@@ -1728,18 +1729,12 @@ async fn launch_channel(
 }
 
 /// Launches a Copilot task. The run directory lives in the handle, so it is
-/// removed when the run ends. A model selection is refused, because Copilot
-/// offers none.
+/// removed when the run ends. A model or effort choice goes on the command line.
 async fn spawn_copilot(
     inner: &Inner,
     job: &Job,
     workflow_agent: Option<WorkflowAgent>,
 ) -> Result<(Box<dyn AgentHandle>, ChannelSupport), LaunchFailure> {
-    if job.model_selection.is_some() {
-        return Err(
-            "model selection refused: GitHub Copilot offers no model or effort selection".into(),
-        );
-    }
     let mut adapter = CopilotAdapter::new();
     if let Some(program) = &inner.config.copilot_program {
         adapter = adapter.with_program(program);
@@ -1766,6 +1761,11 @@ async fn spawn_copilot(
         inner.config.copilot_credit_cap,
         workflow_agent.as_ref(),
     );
+    let selection = job.model_selection.as_ref();
+    args.extend(CopilotAdapter::selection_args(
+        selection.and_then(|s| s.model.as_deref()),
+        selection.and_then(|s| s.effort.as_deref()),
+    ));
     extend_copilot_channel(&mut args, job.permission, job.channel(support));
     inner
         .config

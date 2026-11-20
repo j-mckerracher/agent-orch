@@ -858,7 +858,7 @@ impl ConversationRuntime for AgentRuntime {
             // empty and its usage file sits beside it, never in a repository.
             let run = CopilotRun::create(&self.exec.data_dir.join(COPILOT_RUNS_DIR))
                 .map_err(|_| RuntimeFailure::Failed)?;
-            let args = CopilotAdapter::conversation_args(
+            let mut args = CopilotAdapter::conversation_args(
                 request.level,
                 &prompt.joined(),
                 &run.usage_file(),
@@ -866,6 +866,10 @@ impl ConversationRuntime for AgentRuntime {
                 self.exec.copilot_credit_cap,
             )
             .ok_or(RuntimeFailure::LevelUnsupported)?;
+            args.extend(CopilotAdapter::selection_args(
+                selected.model.as_deref(),
+                selected.effort.as_deref(),
+            ));
             let launch = AgentLaunchRequest {
                 program: selected.program.clone(),
                 args,

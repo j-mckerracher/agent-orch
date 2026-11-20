@@ -5,7 +5,7 @@ import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import { ALL_CAPABILITIES, type LoadHoldWire, type LoadMeterWire, type SettingsWire } from "../../../daemon/types";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { observation, okResult } from "../../../sources/surfaces/result";
-import type { LoadReading, ModelCatalog, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
+import type { LoadReading, ModelCatalog, ModelProvider, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
 import { type Services } from "../../services";
@@ -81,10 +81,19 @@ const DISPATCH_CATALOG: ModelCatalog = {
   })),
 };
 
-// Covers the shapes a provider can have: models and efforts (Codex, Claude Code), an ok-but-empty list (Pi), and facets the
-// daemon reports as unsupported (Copilot) (DPES-1105).
+// Covers the shapes a provider can have: models and efforts (Codex, Claude Code), an ok-but-empty list (Pi), Copilot's
+// models with levels per model, and Copilot when its model list could not be read (DPES-1105).
 const NOW = { observedAt: "2026-11-17T00:00:00Z", ageMs: 0 };
-const REAL_SHAPED_CATALOG: ModelCatalog = {
+const COPILOT: ModelProvider = {
+  id: "github-copilot", name: "GitHub Copilot", installed: true, launchable: true, modelSelection: "supported",
+  models: { status: "ok", value: [{ id: "gpt-a", label: "GPT A", efforts: ["low", "high"] }, { id: "mini", label: "Mini", efforts: [] }], ...NOW },
+  efforts: { status: "unsupported", reason: "Effort levels are reported per model." },
+};
+const COPILOT_UNREAD: ModelProvider = {
+  ...COPILOT,
+  models: { status: "unknown", reason: "The Copilot model list could not be read. Retry shortly." },
+};
+const catalogWith = (copilot: ModelProvider): ModelCatalog => ({
   providers: [
     DISPATCH_CATALOG.providers[0]!,
     {
@@ -97,13 +106,9 @@ const REAL_SHAPED_CATALOG: ModelCatalog = {
       models: { status: "ok", value: [], ...NOW },
       efforts: { status: "ok", value: [], ...NOW },
     },
-    {
-      id: "github-copilot", name: "GitHub Copilot", installed: true, launchable: true, modelSelection: "unsupported",
-      models: { status: "unsupported", reason: "Copilot cannot list models without a billable call." },
-      efforts: { status: "unsupported", reason: "This provider exposes no effort setting." },
-    },
+    copilot,
   ],
-};
+});
 
 async function dispatchPage(wire: SettingsWire, catalog: ModelCatalog = DISPATCH_CATALOG) {
   const { fake, services } = await connected(wire);
@@ -184,9 +189,9 @@ describe("Agent dispatch defaults", () => {
     const { fake, services } = await dispatchPage(
       {
         ...OPEN,
-        dispatch_defaults: { default_agent: "codex", providers: { pi: { model: "old" }, "github-copilot": { model: "old" } } },
+        dispatch_defaults: { default_agent: "codex", providers: { pi: { model: "old" }, "github-copilot": { model: "gpt-a" } } },
       },
-      REAL_SHAPED_CATALOG,
+      catalogWith(COPILOT),
     );
     const user = userEvent.setup();
     page(services, "agents");
@@ -197,48 +202,60 @@ describe("Agent dispatch defaults", () => {
     expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({
       dispatch_defaults: {
         default_agent: "codex",
-        providers: { codex: { model: "m1", effort: "high" }, pi: { model: "old" }, "github-copilot": { model: "old" } },
+        providers: { codex: { model: "m1", effort: "high" }, pi: { model: "old" }, "github-copilot": { model: "gpt-a" } },
       },
     });
 
     const overrides = screen.getByText("Per-provider overrides").closest("details")!;
     expect(within(overrides).getByText("2 set")).toBeInTheDocument();
-    // A saved choice keeps its picker usable; the picker with nothing saved is disabled and says why.
-    expect(within(overrides).getByLabelText("GitHub Copilot model")).toBeEnabled();
-    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toBeDisabled();
-    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription(/own default effort/);
     await user.selectOptions(within(overrides).getByLabelText("Claude Code model"), "sonnet");
     await user.selectOptions(within(overrides).getByLabelText("Claude Code effort"), "low");
     expect(within(overrides).getByLabelText("Claude Code model")).toHaveValue("sonnet");
     expect(within(overrides).getByLabelText("Claude Code effort")).toHaveValue("low");
     expect(within(overrides).getByText("3 set")).toBeInTheDocument();
+    // Copilot lists models, with levels per model: a model with none says so, and one with levels offers them.
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toBeEnabled();
+    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot model"), "mini");
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toBeDisabled();
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription(
+      "This model has no effort levels. It runs with its own default effort.",
+    );
+    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot model"), "gpt-a");
+    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot effort"), "low");
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveValue("low");
     await user.selectOptions(within(overrides).getByLabelText("Pi model"), "");
-    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot model"), "");
     expect(within(overrides).getByLabelText("Pi model")).toHaveValue("");
-    expect(within(overrides).getByLabelText("GitHub Copilot model")).toHaveValue("");
-    expect(within(overrides).getByText("1 set")).toBeInTheDocument();
+    expect(within(overrides).getByText("2 set")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: SAVE }));
     await until(() => fake.callsTo("settings.set").length === 2, "second save");
     const second = (fake.callsTo("settings.set")[1]?.params as { dispatch_defaults: { providers: object } }).dispatch_defaults;
-    expect(second.providers).toEqual({ codex: { model: "m1", effort: "high" }, "claude-code": { model: "sonnet", effort: "low" } });
+    expect(second.providers).toEqual({
+      codex: { model: "m1", effort: "high" },
+      "claude-code": { model: "sonnet", effort: "low" },
+      "github-copilot": { model: "gpt-a", effort: "low" },
+    });
   });
 
   it("says in place why a provider's model or effort list cannot be chosen from", async () => {
-    const { services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: "codex", providers: {} } }, REAL_SHAPED_CATALOG);
+    const { services } = await dispatchPage(
+      { ...OPEN, dispatch_defaults: { default_agent: "codex", providers: {} } },
+      catalogWith(COPILOT_UNREAD),
+    );
     page(services, "agents");
     const overrides = (await screen.findByText("Per-provider overrides")).closest("details")!;
-    // An empty list (status ok) and a facet the provider does not support are both disabled and described.
+    // An empty list (status ok) and a list that could not be read are both disabled and described.
     const NO_MODELS = "This provider lists no models to choose from. It runs with its own default model.";
     const NO_EFFORTS = "No effort levels to choose from. It runs with its own default effort.";
     expect(within(overrides).getByLabelText("Pi model")).toBeDisabled();
     expect(within(overrides).getByLabelText("Pi model")).toHaveAccessibleDescription(NO_MODELS);
     expect(within(overrides).getByLabelText("Pi effort")).toBeDisabled();
     expect(within(overrides).getByLabelText("Pi effort")).toHaveAccessibleDescription(NO_EFFORTS);
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toBeDisabled();
     expect(within(overrides).getByLabelText("GitHub Copilot model")).toHaveAccessibleDescription(
-      "Copilot cannot list models without a billable call.",
+      "The Copilot model list could not be read. Retry shortly.",
     );
     expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription(
-      "This provider exposes no effort setting. It runs with its own default effort.",
+      "Effort levels are reported per model. It runs with its own default effort.",
     );
     // A provider with a list stays usable and carries no explanation.
     expect(within(overrides).getByLabelText("Claude Code model")).toBeEnabled();

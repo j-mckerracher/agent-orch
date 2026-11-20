@@ -34,6 +34,7 @@ use crate::codex_adapter::CodexAdapter;
 use crate::copilot_adapter::{
     probe_version as probe_copilot_version, CopilotAdapter, COPILOT_AGENT,
 };
+use crate::copilot_models::models as copilot_models;
 use crate::copilot_sign_in::{
     SignInRecord, SignInState, NOT_CHECKED_DETAIL, NOT_SIGNED_IN_DETAIL, NO_SEAT_DETAIL,
 };
@@ -46,10 +47,11 @@ const PI_AGENT: &str = "pi";
 const CODEX_PROVIDER: &str = "openai";
 const CLAUDE_PROVIDER: &str = "anthropic";
 const COPILOT_PROVIDER: &str = "github";
-/// Copilot's CLI cannot list models without a billable call, so no list is
-/// offered; a run uses the default model from the user's Copilot settings.
-const COPILOT_MODELS_DETAIL: &str = "The Copilot CLI cannot list models without a billable call. Runs use the default model from your Copilot settings.";
-const COPILOT_EFFORTS_DETAIL: &str = "Reasoning effort is not offered for GitHub Copilot; the CLI reports its levels only per model.";
+/// Copilot's models come from its `--acp` server (see `copilot_models`). When that read fails,
+/// the facet is `unknown` with this text, and a run cannot name a model.
+const COPILOT_MODELS_UNREAD: &str = "The Copilot model list could not be read. Retry shortly.";
+const COPILOT_MODELS_LISTED: &str = "Listed by the Copilot CLI (`copilot --acp`).";
+const COPILOT_EFFORTS_DETAIL: &str = "effort levels are reported per model";
 /// Claude Code's stable model aliases, as its model documentation lists them
 /// (`--model <alias>`). `fable` is left out: on some plans it bills to usage
 /// credits, which a headless run cannot confirm with the user. The account's
@@ -442,14 +444,14 @@ fn log_probe(agent: &str, probe: &str, program: &Path, result: &Result<Captured,
 /// supervisor in `orchestrator-runtime` does for agent launches, but that
 /// needs a suspended spawn and handle plumbing that is out of scope for a
 /// read-only probe. Tracked as a Windows follow-up.
-struct ProcessGroup {
+pub(crate) struct ProcessGroup {
     #[cfg(unix)]
     leader: Option<u32>,
     armed: AtomicBool,
 }
 
 impl ProcessGroup {
-    fn of(child: &tokio::process::Child) -> Self {
+    pub(crate) fn of(child: &tokio::process::Child) -> Self {
         #[cfg(not(unix))]
         let _ = child;
         Self {
@@ -460,7 +462,7 @@ impl ProcessGroup {
     }
 
     /// Kill every member. Harmless when the group is already empty.
-    fn kill(&self) {
+    pub(crate) fn kill(&self) {
         #[cfg(unix)]
         if let Some(leader) = self.leader.and_then(|pid| i32::try_from(pid).ok()) {
             // SAFETY: `kill` with a negative pid only signals the group this
@@ -471,7 +473,7 @@ impl ProcessGroup {
 
     /// The group has been dealt with; dropping must not signal a pid the
     /// system may have reused.
-    fn disarm(&self) {
+    pub(crate) fn disarm(&self) {
         self.armed.store(false, Ordering::Release);
     }
 }
@@ -566,15 +568,15 @@ fn safe_token(value: &str, max: usize, extra: &[char]) -> bool {
         && chars.all(|c| c.is_ascii_alphanumeric() || extra.contains(&c))
 }
 
-fn safe_model_id(value: &str) -> bool {
+pub(crate) fn safe_model_id(value: &str) -> bool {
     safe_token(value, MAX_ID_LEN, &['.', '_', ':', '/', '@', '+', '-'])
 }
 
-fn safe_effort(value: &str) -> bool {
+pub(crate) fn safe_effort(value: &str) -> bool {
     value.chars().all(|c| !c.is_ascii_uppercase()) && safe_token(value, MAX_TOKEN_LEN, &['-', '_'])
 }
 
-fn display_name(raw: Option<&str>, fallback: &str) -> String {
+pub(crate) fn display_name(raw: Option<&str>, fallback: &str) -> String {
     let cleaned: String = raw
         .unwrap_or("")
         .chars()
@@ -1274,7 +1276,7 @@ impl ClaudeCodeAdapter {
 
 /// The Copilot catalog from the session's sign-in record. Its CLI version was
 /// probed by the caller.
-fn copilot_catalog(sign_in: &SignInRecord) -> AgentCatalog {
+fn copilot_catalog(sign_in: &SignInRecord, models: Facet<ModelOption>) -> AgentCatalog {
     let (state, detail) = match sign_in.state {
         SignInState::NotChecked => (CatalogState::Available, NOT_CHECKED_DETAIL.to_owned()),
         SignInState::Ready => (CatalogState::Available, "ready".to_owned()),
@@ -1302,14 +1304,15 @@ fn copilot_catalog(sign_in: &SignInRecord) -> AgentCatalog {
         provider: Some(COPILOT_PROVIDER.to_owned()),
         state,
         detail,
-        models: Facet::without_items(CatalogState::Unsupported, COPILOT_MODELS_DETAIL),
+        models,
         efforts: Facet::without_items(CatalogState::Unsupported, COPILOT_EFFORTS_DETAIL),
     }
 }
 
 impl CopilotAdapter {
-    /// Read this adapter's catalog. Only `copilot --version` runs, which is not
-    /// a billable call. Sign-in comes from `sign_in`.
+    /// Read this adapter's catalog. `copilot --version` and the `--acp` model read run, and
+    /// neither is a billable call. Sign-in comes from `sign_in`. A signed-out account or one
+    /// with no seat is not asked for models.
     pub async fn catalog(&self, limit: Duration, sign_in: &SignInRecord) -> AgentCatalog {
         let Some(program) = self.locate() else {
             return AgentCatalog::uniform(
@@ -1320,7 +1323,22 @@ impl CopilotAdapter {
             );
         };
         match probe_copilot_version(&program, limit).await {
-            Ok(_) => copilot_catalog(sign_in),
+            Ok(_) => {
+                let blocked = matches!(sign_in.state, SignInState::NotSignedIn | SignInState::NoSeat);
+                let models = if blocked {
+                    Facet::without_items(CatalogState::Unknown, COPILOT_MODELS_UNREAD)
+                } else {
+                    match copilot_models(&program, limit).await {
+                        Some(items) => Facet {
+                            state: CatalogState::Available,
+                            detail: COPILOT_MODELS_LISTED.to_owned(),
+                            items,
+                        },
+                        None => Facet::without_items(CatalogState::Unknown, COPILOT_MODELS_UNREAD),
+                    }
+                };
+                copilot_catalog(sign_in, models)
+            }
             Err(error) => {
                 eprintln!("orchestrator-agents: {COPILOT_AGENT} catalog version probe: {error}");
                 AgentCatalog::uniform(

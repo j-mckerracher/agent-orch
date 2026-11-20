@@ -1383,7 +1383,17 @@ fn fake_copilot(layout: &Layout, stream: &str, code: i32) -> (PathBuf, PathBuf) 
     let body = format!(
         "#!/bin/sh\n\
          if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.113.'\n  exit 0\nfi\n\
-         if [ \"$1\" = \"--help\" ]; then\n  printf '%s\\n' --prompt --output-format --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir --usage-output-file -C --allow-tool --deny-tool --allow-all --assisted-approval --model --max-ai-credits\n  exit 0\nfi\n\
+         if [ \"$1\" = \"--help\" ]; then\n  printf '%s\\n' --prompt --output-format --log-level --no-auto-update --no-ask-user --no-custom-instructions --disable-builtin-mcps --disallow-temp-dir --usage-output-file -C --allow-tool --deny-tool --allow-all --assisted-approval --model --reasoning-effort --max-ai-credits\n  exit 0\nfi\n\
+         if [ \"$1\" = \"--acp\" ]; then\n\
+         while IFS= read -r line; do\n\
+         id=$(printf '%s' \"$line\" | /usr/bin/sed -n 's/.*\"id\":\\([0-9]*\\).*/\\1/p')\n\
+         case \"$line\" in\n\
+         *'\"initialize\"'*) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{}}}}\\n' \"$id\" ;;\n\
+         *'\"session/new\"'*) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{\"sessionId\":\"s1\",\"models\":{{\"availableModels\":[{{\"modelId\":\"claude-haiku-4.5\",\"name\":\"Haiku\"}}]}}}}}}\\n' \"$id\" ;;\n\
+         *'\"session/set_config_option\"'*) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{\"configOptions\":[{{\"id\":\"reasoning_effort\",\"currentValue\":\"high\",\"options\":[{{\"value\":\"low\"}},{{\"value\":\"high\"}}]}}]}}}}\\n' \"$id\" ;;\n\
+         *'\"session/close\"'*) printf '{{\"jsonrpc\":\"2.0\",\"id\":%s,\"result\":{{}}}}\\n' \"$id\"; exit 0 ;;\n\
+         esac\n\
+         done\n  exit 0\nfi\n\
          printf 'cwd=%s args=%s\\n' \"$PWD\" \"$(printf '%s ' \"$@\" | /usr/bin/tr '\\n' ' ')\" >> '{log}'\n\
          /bin/cat '{stream}'\n\
          exit {code}\n",
@@ -1485,33 +1495,36 @@ fn a_copilot_that_is_not_signed_in_fails_the_turn_with_its_reason() {
 
 #[cfg(unix)]
 #[test]
-fn a_model_or_effort_for_copilot_is_refused_before_anything_launches() {
+fn a_listed_model_and_effort_for_copilot_reach_the_cli_and_an_unlisted_one_never_launches() {
     let layout = Layout::new();
     let (copilot, log) = fake_copilot(&layout, COPILOT_COMPLETED, 0);
     let daemon = start(&layout, &[("AGENT_ORCH_COPILOT_PROGRAM", &text(&copilot))]);
     let mut chat = Chat::open(&layout);
-    // The Copilot CLI cannot list models or efforts, so the catalog offers neither.
+    // The model is listed by the CLI's `--acp` server, so the run carries it on its command line.
     let sent = chat.send_choice(
         &global(),
         "hi",
         "m-1",
-        json!({"agent": "github-copilot", "model": "claude-haiku-4.5"}),
+        json!({"agent": "github-copilot", "model": "claude-haiku-4.5", "effort": "low"}),
     );
-    assert_eq!(
-        sent["turn"]["error_code"], "selection_models_unsupported",
-        "{sent}"
+    let page = chat.settled(&global());
+    assert_eq!(reply(&page), "OK", "{sent} {page}");
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains("--model claude-haiku-4.5") && lines[0].contains("--reasoning-effort low"),
+        "{}",
+        lines[0]
     );
+    // A model the CLI does not list is refused before anything launches.
     let sent = chat.send_choice(
         &global(),
         "hi",
         "m-2",
-        json!({"agent": "github-copilot", "effort": "high"}),
+        json!({"agent": "github-copilot", "model": "not-listed"}),
     );
-    assert_eq!(
-        sent["turn"]["error_code"], "selection_effort_unsupported",
-        "{sent}"
-    );
-    assert!(launch_lines(&log).is_empty(), "the agent was launched");
+    assert_eq!(sent["turn"]["error_code"], "selection_unknown_model", "{sent}");
+    assert_eq!(launch_lines(&log).len(), 1, "the agent was launched again");
     stop(&layout, daemon, chat);
 }
 

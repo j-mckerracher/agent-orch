@@ -43,14 +43,17 @@ function PairRows({
   const noModels = models.length === 0 && !selection.model;
   const noEfforts = efforts.length === 0 && !selection.effort;
   const modelHint = provider.models.status !== "ok" ? provider.models.reason : noModels ? NO_MODELS : null;
-  // With models to pick from, an unsupported effort list is the per-model case: choosing a model fills it in.
+  // A chosen model with no levels says so. Otherwise, with models to pick from, an unsupported effort list is the
+  // per-model case: choosing a model fills it in.
   const effortHint = !noEfforts
     ? null
-    : provider.efforts.status === "ok"
-      ? NO_EFFORTS
-      : models.length > 0
-        ? provider.efforts.reason
-        : `${provider.efforts.reason} ${OWN_EFFORT}`;
+    : selected
+      ? `This model has no effort levels. ${OWN_EFFORT}`
+      : provider.efforts.status === "ok"
+        ? NO_EFFORTS
+        : models.length > 0
+          ? provider.efforts.reason
+          : `${provider.efforts.reason} ${OWN_EFFORT}`;
   return (
     <>
       <div className="settings-row">

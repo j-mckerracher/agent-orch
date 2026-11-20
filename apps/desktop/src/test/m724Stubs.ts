@@ -255,18 +255,27 @@ export const PI_CATALOG: AgentCatalogEntry = {
   efforts: { state: "unsupported", detail: "pi lists no efforts", items: [] },
 };
 
-/** GitHub Copilot before any sign-in check: installed and pinned, sign-in not yet confirmed (DPES-1105). */
+/** GitHub Copilot before any sign-in check: installed and pinned, sign-in not yet confirmed (DPES-1105). Its CLI lists the models, and levels per model. */
 export const COPILOT_CATALOG: AgentCatalogEntry = {
   agent: "github-copilot",
   provider: "github",
   state: "unknown",
   detail: "Not confirmed yet: sign-in is checked on your first Copilot use. If you have not signed in, run `copilot login`.",
   models: {
-    state: "unsupported",
-    detail: "The Copilot CLI cannot list models without a billable call. Runs use the default model from your Copilot settings.",
-    items: [],
+    state: "available",
+    detail: "Listed by the Copilot CLI (`copilot --acp`).",
+    items: [
+      { id: "gpt-a", display_name: "GPT A", efforts: ["low", "high"], default_effort: "high" },
+      { id: "mini", display_name: "Mini", efforts: [], default_effort: null },
+    ],
   },
-  efforts: { state: "unsupported", detail: "This provider exposes no effort setting.", items: [] },
+  efforts: { state: "unsupported", detail: "effort levels are reported per model", items: [] },
+};
+
+/** GitHub Copilot when its model list could not be read: the models are unknown, never empty (DPES-1105). */
+export const COPILOT_UNREAD_CATALOG: AgentCatalogEntry = {
+  ...COPILOT_CATALOG,
+  models: { state: "unknown", detail: "The Copilot model list could not be read. Retry shortly.", items: [] },
 };
 
 /** GitHub Copilot when its CLI is not installed: launch is unavailable (DPES-1105). */

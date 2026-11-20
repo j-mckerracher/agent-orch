@@ -6,7 +6,7 @@ Open Settings from the sidebar. Each group has its own Save button.
 
 Choose a default provider, then set the model and effort for each provider. Save dispatch defaults to keep these choices across app and daemon restarts. Switching the default provider preserves the other providers' choices. Model and effort options come from the installed agents' catalogs; refresh the list if a catalog is still loading.
 
-Under **Per-provider overrides**, a provider whose catalog lists no models or no effort levels (Pi and GitHub Copilot list none) shows that picker greyed out, with the reason beneath it. There is nothing to choose: the provider runs with its own default model or effort. A choice you saved earlier stays selectable so you can switch it back to **Provider default**, which clears that provider's override.
+Under **Per-provider overrides**, a model or effort picker with nothing to choose from is greyed out, with the reason beneath it. Pi lists no models or efforts. GitHub Copilot lists the models its account can use and the levels each supports, and shows an empty model picker only when the daemon could not read that list. A picker with nothing to choose means the provider runs with its own default. A choice you saved earlier stays selectable so you can switch it back to **Provider default**, which clears that provider's override.
 
 These settings apply to new app/daemon tasks across projects, including chat-proposed tasks and workstream tasks. Explicit task choices take precedence, followed by named work classes, then these defaults. An explicit provider uses only that provider's saved choices. An explicit different model does not inherit effort from the saved model. Choosing provider defaults leaves model or effort selection to the provider.
 
