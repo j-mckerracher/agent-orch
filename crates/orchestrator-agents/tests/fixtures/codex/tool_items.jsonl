@@ -1,0 +1,15 @@
+{"type":"thread.started","thread_id":"01a1b721-1f91-7393-ae1d-6aace8e4646a"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"Check the file first."}}
+{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"Running the requested shell command."}}
+{"type":"item.started","item":{"id":"item_2","type":"command_execution","command":"/bin/zsh -lc 'head -n 3 Cargo.toml'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"command_execution","command":"/bin/zsh -lc 'head -n 3 Cargo.toml'","aggregated_output":"# Root Cargo workspace.\n#\n# Dependency direction\n","exit_code":0,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc 'ls nonexistent_dir'","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_3","type":"command_execution","command":"/bin/zsh -lc 'ls nonexistent_dir'","aggregated_output":"ls: nonexistent_dir: No such file or directory\n","exit_code":1,"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_4","type":"file_change","changes":[{"path":"/tmp/scratch/src/a.rs","kind":"update"},{"path":"/tmp/scratch/src/b.rs","kind":"add"}],"status":"completed"}}
+{"type":"item.started","item":{"id":"item_5","type":"mcp_tool_call","server":"motif","tool":"tasks_list","arguments":{"project":"demo"},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_5","type":"mcp_tool_call","server":"motif","tool":"tasks_list","arguments":{"project":"demo"},"result":null,"error":{"message":"server unavailable"},"status":"failed"}}
+{"type":"item.completed","item":{"id":"item_6","type":"web_search","query":"rust cargo workspace dependencies"}}
+{"type":"item.completed","item":{"id":"item_7","type":"todo_list","items":[{"text":"x","completed":false}]}}
+{"type":"item.completed","item":{"id":"item_8","type":"agent_message","text":"done"}}
+{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1}}

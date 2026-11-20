@@ -44,13 +44,17 @@ Every reply, including automatic updates, follows the same rules. It states outc
 
 When a reply acted on or reported tasks that have a pull request MCAO recorded, the links are listed under the reply as `Pull request 12: https://github.com/<owner>/<repo>/pull/12`. The app builds each link from its own records, not from the reply text. The app does not open links, so use the copy button next to each one.
 
-## Thinking
+## Live activity
 
-When the agent exposes its reasoning, a "Thinking" block appears above that turn's reply. It is open while the agent works and collapses when the reply starts. Click it to open it again. Copy thinking copies the full text.
+While the agent works on a turn, an activity block appears above the reply. It shows the agent's thinking and a timeline of its tool calls in the order they happened. The status line under it says what the agent is doing, for example "Thinking · 4 s" or "Running Read · 12 s". When the agent has sent nothing for 20 seconds the line reads "No activity for 20 s", so a hung agent looks different from a busy one. Cancel reply stays available the whole time.
 
-The block shows everything the provider exposes. Newer Claude and GitHub Copilot models return summarized thinking. Codex returns raw reasoning only on models that support it. Turns from before this feature have no thinking.
+Each tool call shows its name and a one-line summary, such as the file path or the command. A spinner means the call is running, a check means it finished, a cross means it failed, and a stop mark means the turn ended before the call did (canceled, timed out, failed or interrupted by a restart). Select a call, or focus it and press Enter or Space, to open a short preview of its result. When you scroll up in a long log the view stops following new lines, and Jump to latest takes you back.
 
-Thinking is capped at 1 MiB per chat turn. When the cap is reached, the text ends with "[thinking truncated: limit reached]".
+The thinking text is open while the agent works and collapses when the reply starts. Click it to open it again. Copy thinking copies the full text. It shows everything the provider exposes. Newer Claude and GitHub Copilot models return summarized thinking. Codex returns raw reasoning only on models that support it. Turns from before this feature have no activity.
+
+Limits and redaction. Thinking is capped at 1 MiB per chat turn. When the cap is reached, the text ends with "[thinking truncated: limit reached]". Thinking is stored as the provider sent it and is not redacted. Tool input and results can hold secrets, so the daemon redacts credentials in them before it stores anything. A tool summary keeps 160 characters and a result preview keeps 400, and a longer text ends with "...[truncated N chars]". The full file contents and the full command output are never stored. A turn keeps at most 400 tool calls, then one line says later calls are not shown.
+
+An older daemon does not record tool calls. The block then shows thinking only, with the time since you sent the message.
 
 ## Clear history or remove a coordinator
 

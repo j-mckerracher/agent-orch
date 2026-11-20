@@ -40,6 +40,7 @@ import type {
   SessionEntry,
   SessionEventsPage,
   SessionOutputTail,
+  SessionActivityPage,
   SessionThinkingPage,
   TaskMessageWire,
   TaskRecord,
@@ -226,6 +227,17 @@ export class DaemonApi {
   }
 
   /**
+   * Starts a Queued task now, past the worker caps and the load gate. User-only. Conflict when the task is not queued,
+   * the restart gate is closed, or something other than capacity (a dependency, an open question) holds it back.
+   */
+  async tasksForceStart(taskId: string, idempotencyKey: string): Promise<{ task_id: string; forced: boolean }> {
+    return this.session.request("tasks.force_start", {
+      task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /**
    * DPES-1106. Queues the user's message for a Waiting task; the worker resumes with it. User-only.
    * Conflict when the task is not waiting or already holds the most messages.
    */
@@ -273,6 +285,15 @@ export class DaemonApi {
   /** Read-only; `after` is the previous page's `next_cursor`. */
   async sessionsThinking(sessionId: string, options: { after?: number; limit?: number } = {}): Promise<SessionThinkingPage> {
     return this.session.request("sessions.thinking", {
+      session_id: realId(sessionId),
+      ...(options.after === undefined ? {} : { after: options.after }),
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
+    });
+  }
+
+  /** Read-only; `after` is the previous page's `next_cursor`. */
+  async sessionsActivity(sessionId: string, options: { after?: number; limit?: number } = {}): Promise<SessionActivityPage> {
+    return this.session.request("sessions.activity", {
       session_id: realId(sessionId),
       ...(options.after === undefined ? {} : { after: options.after }),
       ...(options.limit === undefined ? {} : { limit: options.limit }),

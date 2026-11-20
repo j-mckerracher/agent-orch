@@ -7,8 +7,8 @@ import { Button, Disclosure, EmptyState } from "../../theme";
 import { DisabledAction, PlaceholderMark, StatePill } from "./common";
 import { OutputTail } from "./OutputTail";
 import { rowFromTask, type WorkRow } from "./model";
+import { SessionActivity } from "./SessionActivity";
 import { SessionControls } from "./SessionControls";
-import { SessionThinking } from "./SessionThinking";
 import { TaskControls } from "./TaskControls";
 
 const PAYLOAD_LIMIT = 200;
@@ -120,7 +120,7 @@ function Selected({ initial, live }: { initial: WorkRow; live: boolean }) {
       {real && session && (
         <>
           <OutputTail key={session.id} taskId={row.id} sessionId={session.id} running={running} />
-          <SessionThinking key={`${session.id}:thinking`} sessionId={session.id} running={running} />
+          <SessionActivity key={`${session.id}:activity`} sessionId={session.id} running={running} />
         </>
       )}
 

@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, memo, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
 import { PROJECT_CONVERSATIONS_REQUIRED } from "../../../sources/surfaces/conversationLive";
@@ -18,6 +18,8 @@ import { matchesFilter } from "../../format";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { ChatComposer } from "../../chat/ChatComposer";
+import { ActivityLog } from "../../activity/ActivityLog";
+import { ActivityStatus, phaseLabel } from "../../activity/ActivityStatus";
 import { ChatLog } from "../../chat/ChatLog";
 import { Badge, Bubble, Button, CopyButton, EmptyState, Markdown } from "../../theme";
 import { PullRequestLinks } from "./PullRequestLinks";
@@ -34,11 +36,10 @@ import { ReturnBrief } from "./ReturnBrief";
 import { RoutedInStrip } from "./RoutedInStrip";
 import { CoordinatorStrip } from "./CoordinatorStrip";
 import { REMOVE_OPEN_WORK_TEXT, scopeLockReason } from "./coordinatorModel";
-import { ThinkingBlock } from "./ThinkingBlock";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
-import { formatAt } from "./time";
+import { Timestamp } from "../../chat/Timestamp";
 import { useActionDecisions } from "./useActionDecisions";
 import { useMonitoring, type MonitoringModel } from "./useMonitoring";
 import { useRetained } from "./useRetained";
@@ -416,6 +417,8 @@ function Conversation({
   const awaitingDaemon = shownProposals.some((p) => p.state === "approved");
 
   const lines = transcript.status === "ok" ? transcript.data.entries.length + simulated.length : simulated.length;
+  // The newest line changes as the newest entry grows, which its count does not show.
+  const lastSequence = transcript.status === "ok" ? (transcript.data.entries[transcript.data.entries.length - 1]?.sequence ?? 0) : 0;
 
   // The daemon has no push stream: read again while the latest turn is still running.
   const turn = transcript.status === "ok" ? (transcript.data.turn ?? null) : null;
@@ -424,6 +427,9 @@ function Conversation({
     transcript.status === "ok" &&
     transcript.data.entries.some((entry) => entry.turnId === turn.id && entry.kind === "status");
   const running = live && turn?.state === "running";
+  // What the running turn is doing now. An older daemon sends none, so the status line then has only a wait time.
+  const activity = running && transcript.status === "ok" ? (transcript.data.activity ?? null) : null;
+  const waitingSince = useMemo(() => Date.now(), [turn?.id]);
   // A wake turn is the orchestrator's own: sending is allowed and the daemon cancels it first (DPES-1105 Phase 3).
   const wakeRunning = running && turn?.trigger === "wake";
   const userRunning = running && !wakeRunning;
@@ -510,7 +516,9 @@ function Conversation({
       blocked =
         'This daemon cannot use a chosen model or effort. Open model settings and choose "Use the daemon default", or update the daemon.';
     else if (choiceBlocked !== null) blocked = `Your agent choice cannot be used. ${choiceBlocked}`;
-    else if (userRunning) blocked = "The orchestrator is still working on your last message. Wait for it to finish or cancel it.";
+    else if (userRunning) {
+      blocked = `The orchestrator is still working on your last message${activity ? `: ${phaseLabel(activity)}` : ""}. Wait for it to finish or cancel it.`;
+    }
   }
   const empty = draft.trim() === "";
   const canSend = blocked === null && !empty && !busy;
@@ -716,7 +724,7 @@ function Conversation({
         {target.kind !== "project" && <ReturnBrief />}
       </header>
 
-      <ChatLog label={`Conversation with ${option.label}`} scrollKey={`${lines}:${transcript.status}`}>
+      <ChatLog key={`log:${option.key}`} label={`Conversation with ${option.label}`} scrollKey={`${lines}:${transcript.status}:${lastSequence}`}>
         <TranscriptBody
           transcript={transcript}
           label={option.label}
@@ -740,14 +748,14 @@ function Conversation({
         </p>
       )}
       {userRunning && (
-        <p role="status" className="ws-note ws-runtime">
-          Waiting for the orchestrator&apos;s reply…{" "}
+        <div className="ws-note ws-runtime act-live">
+          <ActivityStatus live={activity} fallback={{ text: "Waiting for the orchestrator's reply…", since: waitingSince }} />
           {surfaces.conversation.cancel && (
             <Button variant="quiet" onClick={() => void cancel()}>
               Cancel reply
             </Button>
           )}
-        </p>
+        </div>
       )}
 
       {target.kind === "project" && (
@@ -851,7 +859,7 @@ function TranscriptBody({
       author="You"
       time={
         <>
-          <time dateTime={entry.at}>{formatAt(entry.at)}</time> <Badge tone="placeholder">SIMULATED, not recorded</Badge>
+          <Timestamp at={entry.at} /> <Badge tone="placeholder">SIMULATED, not recorded</Badge>
         </>
       }
       actions={<CopyButton text={entry.text} />}
@@ -915,6 +923,7 @@ function TranscriptBody({
             label={label}
             wakeTurn={entry.turnId !== undefined && wakeTurns.has(entry.turnId)}
             runtime={latestTurn && entry.turnId === latestTurn.id ? latestTurn.runtime : undefined}
+            turnRunning={latestTurn?.state === "running" && entry.turnId === latestTurn.id}
           />
           {afterTurn && entry.turnId !== undefined && entries[index + 1]?.turnId !== entry.turnId && afterTurn(entry.turnId)}
           <WakeRecords records={placement.after.get(entry.id) ?? []} taskRoute={taskRoute} />
@@ -925,30 +934,37 @@ function TranscriptBody({
   );
 }
 
-function EntryBubble({
+/** Re-renders only for an entry that changed: a poll hands back the same entry object when nothing in it moved. */
+const EntryBubble = memo(function EntryBubble({
   entry,
   label,
   wakeTurn,
   runtime,
+  turnRunning,
 }: {
   entry: ConversationEntry;
   label: string;
   wakeTurn: boolean;
   /** The runtime of this entry's turn, when the transcript has it (the latest turn only). */
   runtime: WakeRuntime | undefined;
+  /** The entry's turn is the latest and still running; a tool call of it with no finish yet is in progress. */
+  turnRunning: boolean;
 }) {
   // The opening entry of an automatic turn is event lines inside an update, not something the user wrote.
-  if (entry.origin === "wake") return <WakeLines text={entry.text} runtime={runtime} />;
-  if (entry.kind === "thinking") return <ThinkingBlock text={entry.text} streaming={entry.streaming === true} />;
+  if (entry.origin === "wake") return <WakeLines text={entry.text} at={entry.at} runtime={runtime} />;
+  if (entry.kind === "activity") return <ActivityLog items={entry.items ?? []} streaming={entry.streaming === true} active={turnRunning} at={entry.at} />;
   const human = entry.role === "user";
   // A daemon turn outcome is a system line, never a reply from the orchestrator. It is daemon text, so it stays plain.
   if (entry.kind === "status") {
     return (
       <>
         <div className="ws-state ws-turn-status">
-          <p role="status" className="ws-turn-status-text">
-            {entry.text}
-          </p>
+          <div className="ws-turn-status-body">
+            <Timestamp at={entry.at} />
+            <p role="status" className="ws-turn-status-text">
+              {entry.text}
+            </p>
+          </div>
           <CopyButton text={entry.text} label="Copy status" />
         </div>
         <PullRequestLinks links={entry.pullRequests} />
@@ -961,7 +977,7 @@ function EntryBubble({
       author={human ? "You" : label}
       time={
         <>
-          <time dateTime={entry.at}>{formatAt(entry.at)}</time>
+          <Timestamp at={entry.at} />
           {entry.streaming && (
             <>
               {" "}
@@ -991,4 +1007,12 @@ function EntryBubble({
   ) : (
     bubble
   );
-}
+},
+// `runtime` is a new object on every read, so it is compared by value.
+(a, b) =>
+  a.entry === b.entry &&
+  a.label === b.label &&
+  a.wakeTurn === b.wakeTurn &&
+  a.turnRunning === b.turnRunning &&
+  a.runtime?.name === b.runtime?.name &&
+  a.runtime?.version === b.runtime?.version);

@@ -294,7 +294,7 @@ fn session_thinking_pages_by_cursor() {
     assert_eq!(store.session_thinking("s1", 0, 0).unwrap().chunks.len(), 0);
 
     assert!(
-        raw(directory.path(), "UPDATE session_thinking SET body = 'x'")
+        raw(directory.path(), "UPDATE session_activity SET body = 'x'")
             .unwrap_err()
             .to_string()
             .contains("append-only")

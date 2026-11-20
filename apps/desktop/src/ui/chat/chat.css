@@ -162,3 +162,14 @@
     border: 1px solid CanvasText;
   }
 }
+
+.ws-time {
+  color: var(--subtle);
+  font-size: 11px;
+}
+
+/* On a wake update or turn status the time sits on its own line under the label. */
+.ws-wake-body > .ws-time,
+.ws-turn-status-body > .ws-time {
+  display: block;
+}

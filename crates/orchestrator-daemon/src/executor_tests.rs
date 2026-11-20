@@ -705,6 +705,47 @@ fn scheduler_limits_hold_and_a_finished_task_releases_its_slot() {
 }
 
 #[test]
+fn a_forced_task_starts_past_a_full_worker_pool_and_only_a_queued_task_can_be_forced() {
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let api = fixture.api_with(&waiting_agent(&fixture, &release), |config| {
+        config.limits = SchedulerLimits::new(Some(1), Some(1)).unwrap();
+    });
+    let first = fixture.submit(&api, "force-1", 0);
+    let second = fixture.submit(&api, "force-2", 0);
+    wait_state(&api, &first, "Running");
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &second)["state"], "Queued");
+
+    assert_eq!(
+        api.dispatch(
+            "tasks.force_start",
+            json!({"task_id": first, "idempotency_key": "force-running"})
+        ),
+        Err(RpcError::Conflict)
+    );
+    assert_eq!(
+        api.dispatch(
+            "tasks.force_start",
+            json!({"task_id": "missing", "idempotency_key": "force-missing"})
+        ),
+        Err(RpcError::NotFound)
+    );
+    api.dispatch(
+        "tasks.force_start",
+        json!({"task_id": second, "idempotency_key": "force-queued"}),
+    )
+    .unwrap();
+
+    wait_state(&api, &second, "Running");
+    assert_eq!(task(&api, &first)["state"], "Running");
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &first, "Succeeded");
+    wait_state(&api, &second, "Succeeded");
+    api.shutdown();
+}
+
+#[test]
 fn a_closed_load_gate_keeps_a_queued_task_queued_and_leaves_a_running_task_alone() {
     use crate::api::load::tests::close_gate;
     let fixture = Fixture::new();
@@ -2496,7 +2537,8 @@ fn update_idle_a_closed_gate_holds_back_the_scheduler_until_it_reopens() {
     let gate = StopGate::default();
     *gate.write().unwrap() = true;
     let config = fixture.config(&data, &succeeding_agent(&fixture));
-    let executor = Executor::start_gated(store.clone(), config, gate.clone()).unwrap();
+    let executor =
+        Executor::start_gated(store.clone(), config, gate.clone(), Arc::default()).unwrap();
 
     executor.wake();
     thread::sleep(Duration::from_millis(300));
@@ -2910,6 +2952,41 @@ mod usage_paths {
             "unknown is never recorded as 0"
         );
         assert_eq!(reported.output_tokens, None);
+    }
+
+    #[test]
+    fn thinking_and_tool_rows_are_stored_even_without_an_activity_board() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "no-board");
+        let handle = ScriptedHandle {
+            events: vec![
+                Ok(Some(AgentEvent::ThinkingDelta {
+                    text: "weigh".into(),
+                })),
+                Ok(Some(AgentEvent::ThinkingDelta { text: "ing".into() })),
+                Ok(Some(AgentEvent::ToolStarted {
+                    tool_id: "c1".into(),
+                    name: "shell".into(),
+                    summary: "ls".into(),
+                })),
+                Ok(Some(AgentEvent::ThinkingDelta {
+                    text: "after".into(),
+                })),
+                Ok(Some(AgentEvent::SessionExited { exit_code: Some(0) })),
+            ],
+            usage: Vec::new(),
+        };
+        run(handle, &store, &owner).unwrap();
+        let page = store.session_activity(&owner.session_id, 0, 100).unwrap();
+        let rows: Vec<(&str, &str)> = page
+            .entries
+            .iter()
+            .map(|entry| (entry.kind.as_str(), entry.body.as_str()))
+            .collect();
+        assert_eq!(rows.len(), 3, "{rows:?}");
+        assert_eq!(rows[0], ("thinking", "weighing"));
+        assert_eq!(rows[1].0, "tool_started");
+        assert_eq!(rows[2], ("thinking", "after"));
     }
 
     #[test]
@@ -3701,4 +3778,98 @@ fn task_thinking_is_stored_and_served_by_sessions_thinking_not_the_output() {
             .iter()
             .any(|line| line.contains("weighing"))
     );
+}
+
+#[test]
+fn task_tool_calls_are_stored_redacted_and_served_with_a_live_snapshot_by_sessions_activity() {
+    const START: &str = r#"printf '{"type":"item.started","item":{"id":"ID","type":"command_execution","command":"COMMAND","aggregated_output":"","exit_code":null,"status":"in_progress"}}\n'
+"#;
+    const END: &str = r#"printf '{"type":"item.completed","item":{"id":"ID","type":"command_execution","command":"COMMAND","aggregated_output":"OUTPUT","exit_code":0,"status":"completed"}}\n'
+"#;
+    let step = |template: &str, id: &str, command: &str, output: &str| {
+        template
+            .replace("ID", id)
+            .replace("COMMAND", command)
+            .replace("OUTPUT", output)
+    };
+    let fixture = Fixture::new();
+    let release = fixture.marker("release-agent");
+    // Built at run time so the source holds no credential-shaped literal for the secret scanner.
+    let password = ["hunter2", "planted"].join("-");
+    let token = ["ghp_PLANTED", "0123456789abcdefghij"].concat();
+    let secret_command = format!("deploy {token} password={password}");
+    let secret_output = format!("ok password={password}");
+    let agent = fixture.script(
+        "tool-agent",
+        &format!(
+            "{THREAD_STARTED}printf '{{\"type\":\"item.completed\",\"item\":{{\"id\":\"r\",\"type\":\"reasoning\",\"text\":\"planning\"}}}}\\n'\n{}{}{}while [ ! -e '{}' ]; do sleep 0.05; done\n{}echo produced > agent-output.txt\n{}{TURN_COMPLETED}",
+            step(START, "c1", "ls src", ""),
+            step(END, "c1", "ls src", "main.rs"),
+            step(START, "c2", &secret_command, ""),
+            release.display(),
+            step(END, "c2", &secret_command, &secret_output),
+            message_line("done"),
+        ),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "tools-1", 0);
+    let session_id = format!("{task_id}-session-1");
+    let activity = |after: u64| {
+        api.dispatch(
+            "sessions.activity",
+            json!({"session_id": session_id, "after": after}),
+        )
+        .unwrap()
+    };
+    let kinds = |page: &Value| -> Vec<String> {
+        page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|entry| entry["kind"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    wait_until("the second tool to be running", || {
+        let page = activity(0);
+        kinds(&page).len() == 4 && page["live"]["phase"] == "tool"
+    });
+    let running = activity(0);
+    assert_eq!(
+        kinds(&running),
+        ["thinking", "tool_started", "tool_finished", "tool_started"]
+    );
+    assert_eq!(running["live"]["tool"]["id"], "c2");
+    assert_eq!(running["live"]["tool"]["name"], "shell");
+    assert!(!running.to_string().contains("PLANTED") && !running.to_string().contains("hunter2"));
+    // The older thinking-only read still serves thinking rows only.
+    let thinking = api
+        .dispatch("sessions.thinking", json!({"session_id": session_id}))
+        .unwrap();
+    assert_eq!(
+        thinking["chunks"].as_array().unwrap().len(),
+        1,
+        "{thinking}"
+    );
+
+    // A cursor read returns only what is newer.
+    let cursor = running["entries"][2]["sequence"].clone();
+    let newer = activity(cursor.as_u64().unwrap());
+    assert_eq!(kinds(&newer), ["tool_started"]);
+
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &task_id, "Succeeded");
+    let done = activity(0);
+    assert_eq!(
+        kinds(&done),
+        [
+            "thinking",
+            "tool_started",
+            "tool_finished",
+            "tool_started",
+            "tool_finished"
+        ]
+    );
+    assert!(done["live"].is_null(), "{done}");
+    assert!(!done.to_string().contains("PLANTED") && !done.to_string().contains("hunter2"));
+    api.shutdown();
 }

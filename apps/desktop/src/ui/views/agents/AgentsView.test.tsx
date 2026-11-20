@@ -296,10 +296,10 @@ describe("Agents & Sessions, live mode", () => {
     expect(fake.callsTo("sessions.output_tail")[0]!.params).toMatchObject({ task_id: "t-run", session_id: "s-1" });
   });
 
-  it("shows the selected session's thinking in a Thinking disclosure, empty by default", async () => {
+  it("shows the selected session's activity in an Activity disclosure, empty by default", async () => {
     const { user } = await liveView(seeded());
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    expect(await screen.findByText("No thinking recorded")).toBeInTheDocument();
+    expect(await screen.findByText("No activity recorded")).toBeInTheDocument();
   });
 
   it("shows the selected session's recorded thinking and the size-limit note", async () => {
@@ -461,6 +461,34 @@ describe("Agents & Sessions, live mode", () => {
     expect(cancel).toHaveAccessibleDescription(/The task is Failed/);
   });
 
+  it("force-starts only a queued task, sending tasks.force_start for it", async () => {
+    const { fake, user } = await liveView();
+    const running = await screen.findByRole("button", { name: "Force start" });
+    expect(running).toBeDisabled();
+    expect(running).toHaveAccessibleDescription(/only a queued task can be force-started/);
+
+    await user.click(screen.getByRole("tab", { name: "Queued (1)" }));
+    await user.click(screen.getByRole("button", { name: /t-queued/ }));
+    const force = await screen.findByRole("button", { name: "Force start" });
+    await waitFor(() => expect(force).toBeEnabled());
+    await user.click(force);
+
+    expect(await screen.findByText(/The daemon accepted the force start/)).toBeInTheDocument();
+    expect(fake.callsTo("tasks.force_start")).toHaveLength(1);
+    expect(fake.callsTo("tasks.force_start")[0]!.params).toEqual({ task_id: "t-queued", idempotency_key: expect.any(String) });
+  });
+
+  it("offers no force start to a session that cannot send user-only methods", async () => {
+    const fake = seeded();
+    fake.approver = false;
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Queued (1)" }));
+    await user.click(screen.getByRole("button", { name: /t-queued/ }));
+    const force = await screen.findByRole("button", { name: "Force start" });
+    expect(force).toBeDisabled();
+    expect(force).toHaveAccessibleDescription(/can force a start/);
+    expect(fake.callsTo("tasks.force_start")).toHaveLength(0);
+  });
 
   it("shows an empty state when there are no tasks", async () => {
     const fake = seeded();

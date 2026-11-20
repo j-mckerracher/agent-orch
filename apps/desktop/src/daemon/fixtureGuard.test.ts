@@ -41,6 +41,7 @@ const ROWS: Row[] = [
   row("tasksCancel", "tasks.cancel", (a) => a.tasksCancel(FX, "k"), (a) => a.tasksCancel(REAL, "k")),
   row("tasksArchive", "tasks.archive", (a) => a.tasksArchive([REAL, FX], "k"), (a) => a.tasksArchive([REAL], "k")),
   row("tasksDiscard", "tasks.discard", (a) => a.tasksDiscard(FX, "k"), (a) => a.tasksDiscard(REAL, "k")),
+  row("tasksForceStart", "tasks.force_start", (a) => a.tasksForceStart(FX, "k"), (a) => a.tasksForceStart(REAL, "k")),
   row("tasksMessage", "tasks.message", (a) => a.tasksMessage(FX, "hi", "k"), (a) => a.tasksMessage(REAL, "hi", "k")),
   row("tasksRetry", "tasks.retry", (a) => a.tasksRetry(FX, "k"), (a) => a.tasksRetry(REAL, "k")),
   row("sessionsList", "sessions.list", (a) => a.sessionsList(FX), (a) => a.sessionsList(REAL)),
@@ -48,6 +49,7 @@ const ROWS: Row[] = [
   row("sessionsEvents", "sessions.events", (a) => a.sessionsEvents(REAL, FX), (a) => a.sessionsEvents(REAL, "s1")),
   row("sessionsOutputTail", "sessions.output_tail", (a) => a.sessionsOutputTail(REAL, FX), (a) => a.sessionsOutputTail(REAL, "s1")),
   row("sessionsThinking", "sessions.thinking", (a) => a.sessionsThinking(FX), (a) => a.sessionsThinking("s1")),
+  row("sessionsActivity", "sessions.activity", (a) => a.sessionsActivity(FX), (a) => a.sessionsActivity("s1")),
   row("approvalsResolve", "approvals.resolve", (a) => a.approvalsResolve(FX, "approve", "k"), (a) => a.approvalsResolve(REAL, "approve", "k")),
   row("workspacesDiff", "workspaces.diff", (a) => a.workspacesDiff({ task_id: FX }), (a) => a.workspacesDiff({ task_id: REAL })),
   row(

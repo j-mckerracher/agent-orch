@@ -476,7 +476,8 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "projects.set_defaults" => Some(Capability::Projects),
         // DPES-673: draft normalization shares the capability of the submit it feeds.
         "tasks.submit" | "tasks.list" | "tasks.get" | "tasks.cancel" | "tasks.retry"
-        | "tasks.archive" | "tasks.discard" | "tasks.message" | "intake.normalize" => {
+        | "tasks.archive" | "tasks.discard" | "tasks.message" | "tasks.force_start"
+        | "intake.normalize" => {
             Some(Capability::Tasks)
         }
         "agents.capabilities"
@@ -493,7 +494,8 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "sessions.get"
         | "sessions.events"
         | "sessions.output_tail"
-        | "sessions.thinking" => Some(Capability::Sessions),
+        | "sessions.thinking"
+        | "sessions.activity" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
         "delivery.request" => Some(Capability::Delivery),
@@ -749,6 +751,7 @@ mod tests {
             "sessions.events",
             "sessions.output_tail",
             "sessions.thinking",
+            "sessions.activity",
         ] {
             assert_eq!(method_capability(method), Some(Capability::Sessions));
         }

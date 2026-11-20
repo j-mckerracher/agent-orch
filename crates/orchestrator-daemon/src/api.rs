@@ -164,7 +164,7 @@ struct CancelParams {
     idempotency_key: String,
 }
 
-/// A task and an idempotency key: `tasks.discard`.
+/// A task and an idempotency key: `tasks.discard`, `tasks.force_start`.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct TaskKeyParams {
@@ -333,14 +333,19 @@ impl DaemonApi {
         );
         let github: Arc<dyn GitHub> = Arc::new(orchestrator_git::github::GhCli::from_env());
         let mut api = Self::with_config(data_dir, config.clone(), github)?;
-        let executor = Executor::start_gated(api.store.clone(), config, api.stop_gate.clone())?;
+        let executor = Executor::start_gated(
+            api.store.clone(),
+            config,
+            api.stop_gate.clone(),
+            api.conversations.board(),
+        )?;
         // Recovery settles the batches a crash left running before the loop starts, so a
         // restart never makes a second turn for one record.
         let wake = Arc::new(
             wake::WakeService::new(
                 api.store.clone(),
                 api.conversations.clone(),
-                executor.pulse(),
+                executor.board(),
                 Arc::new(wake::SystemClock),
                 api.config.load.clone(),
                 api.config.diagnostics.clone(),
@@ -448,6 +453,7 @@ impl RpcHandler for DaemonApi {
             "tasks.discard" => self.discard_task(params),
             "tasks.message" => self.message_task(params),
             "tasks.retry" => self.retry_task(params),
+            "tasks.force_start" => self.force_start_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
             "agents.catalog" => self.agents_catalog(params),
             "agents.validate_selection" => self.agents_validate_selection(params),
@@ -457,6 +463,7 @@ impl RpcHandler for DaemonApi {
             "sessions.events" => self.session_events(params),
             "sessions.output_tail" => self.session_output_tail(params),
             "sessions.thinking" => self.session_thinking(params),
+            "sessions.activity" => self.session_activity(params),
             "approvals.list" => self.list_approvals(params),
             "approvals.resolve" => self.resolve_approval(params),
             "workspaces.diff" => self.workspace_diff(params),
@@ -1075,6 +1082,35 @@ impl DaemonApi {
         self.wake_executor();
         serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
             .map_err(|_| RpcError::Internal)
+    }
+
+    /// `tasks.force_start` (user-only): the user's word that a queued task starts now, past the
+    /// worker caps, the load gate and the admission check. The restart gate, dependencies,
+    /// open questions, project registration and worktree ownership still hold it back. A task
+    /// that is not queued, or that a pass would not start even when forced, is `Conflict`; an
+    /// unknown one is `NotFound`. The task leaves `Queued` when the executor launches it.
+    fn force_start_task(&self, params: Value) -> Result<Value, RpcError> {
+        let request: TaskKeyParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.force_start",
+            &key,
+            &request,
+            || {
+                let task = self.store.get(&request.task_id).map_err(map_store_error)?;
+                let executor = self.executor.as_ref().ok_or(RpcError::Conflict)?;
+                if task.state != TaskState::Queued
+                    || executor.dispatch_state().1
+                    || !self.can_start_forced(&request.task_id)?
+                {
+                    return Err(RpcError::Conflict);
+                }
+                executor.force_start(&request.task_id);
+                Ok(json!({"task_id": request.task_id, "forced": true}))
+            },
+        )
     }
 
     /// Reports each known agent family: whether its executable is installed
@@ -2171,6 +2207,8 @@ thread_local! {
 #[path = "api_actions.rs"]
 mod actions;
 use actions::project_code;
+#[path = "api_activity.rs"]
+mod activity_rpc;
 #[path = "admission.rs"]
 pub(crate) mod admission;
 #[path = "api_authority.rs"]
@@ -2178,7 +2216,7 @@ mod authority;
 #[path = "api_brief.rs"]
 mod brief;
 #[path = "api_conversation_agent.rs"]
-mod conversation_agent;
+pub(crate) mod conversation_agent;
 #[path = "api_conversation_orphans.rs"]
 mod conversation_orphans;
 #[path = "api_conversation_runtime.rs"]

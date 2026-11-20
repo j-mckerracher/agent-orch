@@ -160,7 +160,10 @@ fn default_global_limit_starts_ten_tasks() {
     let plan = run(&tasks, SchedulerLimits::default(), None, Some(&allow_all)).unwrap();
 
     assert_eq!(plan.started, ids[..10]);
-    assert_eq!(rejection(&plan, "t10"), &RejectionReason::GlobalLimitReached);
+    assert_eq!(
+        rejection(&plan, "t10"),
+        &RejectionReason::GlobalLimitReached
+    );
 }
 
 #[test]
