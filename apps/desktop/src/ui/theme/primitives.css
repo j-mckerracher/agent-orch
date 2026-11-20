@@ -329,6 +329,22 @@
   color: var(--red);
 }
 
+/* The visible result, shown only for the two seconds after a copy; the icon stays in place. */
+.ui-copy-result {
+  margin-left: 4px;
+  font-size: 11px;
+  white-space: nowrap;
+  align-self: center;
+}
+
+.ui-copy[data-state="copied"] .ui-copy-result {
+  color: var(--green);
+}
+
+.ui-copy[data-state="failed"] .ui-copy-result {
+  color: var(--red);
+}
+
 .ui-visually-hidden {
   position: absolute;
   width: 1px;
