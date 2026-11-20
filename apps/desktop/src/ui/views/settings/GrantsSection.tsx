@@ -5,7 +5,8 @@ import { basename } from "../../format";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import type { GrantItem, GrantPolicy, GrantTerms, GrantsSnapshot, Workstream } from "../../../sources/surfaces/types";
 import { useGate, useServices, useStore, useSurface } from "../../services";
-import { Badge, Button, Pill } from "../../theme";
+import { Badge, Button, Disclosure, Pill } from "../../theme";
+import { Dialog } from "../../Dialog";
 import { Notice } from "../../widgets";
 import { SaveButton, useSaveGuard } from "./SaveBar";
 import {
@@ -64,7 +65,7 @@ type MergeField = "scope" | "prefix" | "hours" | "uses" | "budget" | "confirmed"
 
 const describedBy = (...ids: Array<string | false | null | undefined>) => ids.filter(Boolean).join(" ") || undefined;
 
-function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; policy: GrantPolicy; fixture: boolean; reload: () => void }) {
+function GrantsBody({ grants, policy, fixture, reload, headingId }: { grants: GrantItem[]; policy: GrantPolicy; fixture: boolean; reload: () => void; headingId: string }) {
   const { surfaces, data } = useServices();
   const gate = useGate();
   const source = surfaces.grants;
@@ -72,6 +73,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
   const [typed, setTyped] = useState<GrantDraft | null>(null);
   const [touched, setTouched] = useState<ReadonlySet<Field>>(new Set());
   const [busy, setBusy] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [announcement, setAnnouncement] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
   const [mergeTyped, setMergeTyped] = useState<MergeDraft | null>(null);
   const [mergeTouched, setMergeTouched] = useState<ReadonlySet<MergeField>>(new Set());
@@ -150,11 +152,13 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
 
   const create = () =>
     submit(reason, "create", termsOf(draft, policy), () => {
+      setAdding(false);
       setTyped(null);
       setTouched(new Set());
     }, createFailureText);
   const createMerge = () =>
     submit(mergeReason, "merge", mergeTermsOf(mergeDraft), () => {
+      setAdding(false);
       // The prefix stays: it is a per-machine choice, not part of one approval.
       setMergeTyped({ ...initialMergeDraft(policy), prefix: mergeDraft.prefix });
       setMergeTouched(new Set());
@@ -179,12 +183,24 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
     }
   };
 
+  // One polite region for the whole section, so a create and a revoke never overwrite each other unheard. It sits in the dialog while that is open, so an error is seen.
+  const announced = (
+      <div role="status" aria-live="polite" aria-label="Standing approvals result" className="settings-result">
+        {announcement?.kind === "ok" && <p>{announcement.text}</p>}
+        {announcement?.kind === "bad" && <Notice tone="bad">{announcement.text}</Notice>}
+      </div>
+  );
+
   return (
     <>
-      <p className="settings-intro">{INTRO_TEXT}</p>
-      <p className="settings-hint">
-        {NEVER_GRANTED_TEXT}
-      </p>
+      <div className="settings-head-row">
+        <h3 id={headingId}>{SECTION_TITLE}</h3>
+        <Button onClick={() => setAdding(true)}>Add</Button>
+      </div>
+      {adding && (
+        <Dialog title="Add a standing approval" onClose={() => setAdding(false)} footer={<Button onClick={() => setAdding(false)}>Cancel</Button>}>
+          <p>{INTRO_TEXT}</p>
+          <p className="settings-hint">{NEVER_GRANTED_TEXT}</p>
       <form
         noValidate
         aria-disabled={locked || undefined}
@@ -194,7 +210,6 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
         }}
       >
         <fieldset className="settings-fieldset" disabled={locked || busy !== null}>
-          <legend>Create a standing approval</legend>
           <div className="settings-row" role="radiogroup" aria-labelledby={ids.scope}>
             <span id={ids.scope} className="settings-label">
               Covers
@@ -309,6 +324,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
       </form>
 
       {mergeOffered(policy) && (
+        <Disclosure summary="Unattended merges (advanced)">
         <form
           noValidate
           aria-label={MERGE_TITLE}
@@ -413,9 +429,12 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
             <SaveButton label="Save unattended merge approval" reason={mergeReason} saving={busy === "merge"} tried={mergeGuard.tried} reasonId={mergeIds.reason} />
           </div>
         </form>
+        </Disclosure>
       )}
 
-      <h3 className="settings-subhead">Your standing approvals</h3>
+          {announced}
+        </Dialog>
+      )}
       {grants.length === 0 ? (
         <p className="settings-hint">None yet. Nothing runs without your approval.</p>
       ) : (
@@ -464,11 +483,7 @@ function GrantsBody({ grants, policy, fixture, reload }: { grants: GrantItem[]; 
           {REVOKE_LOCKED_NOTE}
         </p>
       )}
-      {/* One polite region for the whole section, so a create and a revoke never overwrite each other unheard. */}
-      <div role="status" aria-live="polite" aria-label="Standing approvals result" className="settings-result">
-        {announcement?.kind === "ok" && <p>{announcement.text}</p>}
-        {announcement?.kind === "bad" && <Notice tone="bad">{announcement.text}</Notice>}
-      </div>
+      {!adding && announced}
     </>
   );
 }
@@ -540,16 +555,19 @@ export function GrantsSection() {
   if (gate.settling && result.status !== "ok") return null;
   return (
     <section aria-labelledby={headingId} className="settings-section">
-      <h2 id={headingId}>{SECTION_TITLE}</h2>
       {result.status !== "ok" ? (
-        <Notice tone="warn" role="status">
-          Standing approvals could not be read. {result.reason}
-        </Notice>
+        <>
+          <h3 id={headingId}>{SECTION_TITLE}</h3>
+          <Notice tone="warn" role="status">
+            Standing approvals could not be read. {result.reason}
+          </Notice>
+        </>
       ) : (
         <GrantsBody
           grants={result.data.grants}
           policy={result.data.policy}
           fixture={!live}
+          headingId={headingId}
           reload={() => setNonce((value) => value + 1)}
         />
       )}

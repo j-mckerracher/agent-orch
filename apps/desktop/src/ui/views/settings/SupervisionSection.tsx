@@ -1,16 +1,14 @@
 /** DPES-1105 Phase 3: the "Checks on running work" and "Automatic replies" sections of the Settings page. */
-import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { APPROVER_REQUIRED_NOTICE } from "../../../daemon/errors";
 import type { SettingsSnapshot, SupervisionSettings, WakeLimitSettings } from "../../../sources/surfaces/types";
 import { useGate } from "../../services";
 import { EmptyState } from "../../theme";
-import { Notice } from "../../widgets";
 import { NOT_CONNECTED_REASON } from "./settingsModel";
-import { SaveButton, useSaveGuard } from "./SaveBar";
+import { outcomeOf, usePageSave } from "./pageSave";
 import {
   BASE_MINUTES_MAX,
   BASE_MINUTES_MIN,
-  FIXTURE_SAVE_TEXT,
   INVALID_REASON,
   NO_LIMIT_NOTE,
   SUPERVISION_INTRO,
@@ -39,7 +37,7 @@ import {
   type WakeField,
   type WakeTyped,
 } from "./supervisionModel";
-import type { SettingsModel, SaveResult } from "./useSettings";
+import type { SettingsModel } from "./useSettings";
 import { useSettingsGroups, type SettingsGroupsModel } from "./useSettingsGroups";
 
 const HINT: Record<SupervisionField, string> = {
@@ -102,34 +100,6 @@ function Field({
   );
 }
 
-function Actions({
-  label,
-  reason,
-  tried,
-  saving,
-  result,
-  savedText,
-}: {
-  label: string;
-  reason: string | null;
-  tried: boolean;
-  saving: boolean;
-  result: SaveResult | null;
-  savedText: string;
-}) {
-  return (
-    <div className="settings-actions">
-      <SaveButton label={label} reason={reason} saving={saving} tried={tried} />
-      {/* One live region per section, so two saves never overwrite each other's announcement. */}
-      <div role="status" aria-live="polite" aria-label={`${label} result`} className="settings-result">
-        {result?.kind === "saved" && <p>{savedText}</p>}
-        {result?.kind === "fixture" && <p>{FIXTURE_SAVE_TEXT}</p>}
-        {result?.kind === "failed" && <Notice tone="bad">{result.message}</Notice>}
-      </div>
-    </div>
-  );
-}
-
 /** The reason Save is off for lack of a connection or approver, else null. */
 function useLockReason(model: SettingsModel): { locked: boolean; reason: string | null } {
   const gate = useGate();
@@ -138,15 +108,13 @@ function useLockReason(model: SettingsModel): { locked: boolean; reason: string 
   return { locked, reason: locked ? APPROVER_REQUIRED_NOTICE : null };
 }
 
-function Section({ title, intro, children, onSubmit }: { title: string; intro: string; children: ReactNode; onSubmit: (event: FormEvent) => void }) {
+function Section({ title, intro, children }: { title: string; intro: string; children: ReactNode }) {
   const headingId = useId();
   return (
     <section aria-labelledby={headingId} className="settings-section">
-      <h2 id={headingId}>{title}</h2>
+      <h3 id={headingId}>{title}</h3>
       <p className="settings-intro">{intro}</p>
-      <form noValidate onSubmit={onSubmit}>
-        {children}
-      </form>
+      <div>{children}</div>
     </section>
   );
 }
@@ -171,22 +139,19 @@ function ChecksSection({
   const patch = supervisionPatch(saved, typed);
   const invalid = (Object.keys(errors) as SupervisionField[]).some((field) => errors[field] !== null);
   const reason = lockReason ?? (invalid ? INVALID_REASON : null);
-  const { tried, guard } = useSaveGuard();
+  usePageSave(reason, async () => {
+    const result = await groups.save({ supervision: patch });
+    if (result.kind === "saved") {
+      setTyped({});
+      onSaved();
+    }
+    return outcomeOf(result, SUPERVISION_SAVED_TEXT);
+  });
   const inputs = previewInputs(saved, typed);
   const fields: SupervisionField[] = ["baseMinutes", "minSeconds", "wallMinutes"];
 
   return (
-    <Section
-      title="Checks on running work"
-      intro={SUPERVISION_INTRO}
-      onSubmit={guard(reason, () => {
-        void groups.save("supervision", { supervision: patch }).then((ok) => {
-          if (!ok) return;
-          setTyped({});
-          onSaved();
-        });
-      })}
-    >
+    <Section title="Checks on running work" intro={SUPERVISION_INTRO}>
       {fields.map((field) => (
         <Field
           key={field}
@@ -203,7 +168,6 @@ function ChecksSection({
       <p id={previewId} className="settings-hint">
         {inputs ? previewText(inputs.baseSecs, inputs.minSecs) : ""}
       </p>
-      <Actions label="Save check settings" reason={reason} tried={tried} saving={groups.saving.supervision} result={groups.results.supervision} savedText={SUPERVISION_SAVED_TEXT} />
     </Section>
   );
 }
@@ -226,20 +190,17 @@ function RepliesSection({
   const patch = wakePatch(saved, typed);
   const invalid = WAKE_FIELDS.some((field) => errorOf(field) !== null);
   const reason = lockReason ?? (invalid ? INVALID_REASON : null);
-  const { tried, guard } = useSaveGuard();
+  usePageSave(reason, async () => {
+    const result = await groups.save({ wakeLimits: patch });
+    if (result.kind === "saved") {
+      setTyped({});
+      onSaved();
+    }
+    return outcomeOf(result, WAKE_SAVED_TEXT);
+  });
 
   return (
-    <Section
-      title="Automatic replies"
-      intro={WAKE_INTRO}
-      onSubmit={guard(reason, () => {
-        void groups.save("wake", { wakeLimits: patch }).then((ok) => {
-          if (!ok) return;
-          setTyped({});
-          onSaved();
-        });
-      })}
-    >
+    <Section title="Automatic replies" intro={WAKE_INTRO}>
       {WAKE_FIELDS.map((field) => (
         <Field
           key={field}
@@ -253,7 +214,6 @@ function RepliesSection({
         />
       ))}
       {anyUnlimited(saved, typed) && <p className="settings-hint">{NO_LIMIT_NOTE}</p>}
-      <Actions label="Save reply limits" reason={reason} tried={tried} saving={groups.saving.wake} result={groups.results.wake} savedText={WAKE_SAVED_TEXT} />
     </Section>
   );
 }

@@ -9,7 +9,7 @@ import { notOk, observation } from "../../../sources/surfaces/result";
 import type { MemoryArchived, MemoryEntry, MemoryKind, MemoryReceipt, MemorySnapshot, Workstream } from "../../../sources/surfaces/types";
 import { basename } from "../../format";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
-import { Badge, Button, Pill } from "../../theme";
+import { Badge, Button, Disclosure, Pill } from "../../theme";
 import { Notice } from "../../widgets";
 import {
   FIXTURE_TEXT,
@@ -275,6 +275,7 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
         </ul>
       )}
 
+      <Disclosure summary={`Add ${copy.noun}`}>
       <form
         noValidate
         aria-disabled={locked || undefined}
@@ -345,6 +346,7 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
           {formReason}
         </p>
       )}
+      </Disclosure>
 
       {archived.length > 0 && (
         <details>
@@ -463,7 +465,6 @@ export function PreferencesSection() {
   const supported = !live || gate.connection.capabilities.includes("standing_approvals");
   const [localScope, setLocalScope] = useState("");
   const [learningScope, setLearningScope] = useState(GLOBAL_SCOPE);
-  const headingId = useId();
 
   const loadedWorkstreams = useSurface(
     () =>
@@ -491,8 +492,7 @@ export function PreferencesSection() {
   const fixture = !live;
   const nothingChosen = { value: "", label: projectOptions.length + workstreamOptions.length === 0 ? "No projects or workstreams to choose" : "Choose a project or workstream" };
   return (
-    <section aria-labelledby={headingId} className="settings-section">
-      <h2 id={headingId}>{SECTION_TITLE}</h2>
+    <section aria-label={SECTION_TITLE} className="settings-section">
       <MemoryList copy={SHARED_LIST} doc={shared} fixture={fixture} scope={GLOBAL_SCOPE} />
       <MemoryList
         copy={LOCAL_LIST}

@@ -13,7 +13,7 @@ export function LimitsMachineLoadSection() {
   const slots = state.status === "ok" && state.data.slots.status === "ok" ? state.data.slots.value : null;
   return (
     <section aria-labelledby={headingId} className="settings-section" data-testid="limits-machine-load">
-      <h2 id={headingId}>Current machine load</h2>
+      <h3 id={headingId}>Current machine load</h3>
       {slots && (
         <p data-testid="limits-slots">
           {slots.used} of {slots.limit} agent slots in use · {Math.max(0, slots.limit - slots.used)} available

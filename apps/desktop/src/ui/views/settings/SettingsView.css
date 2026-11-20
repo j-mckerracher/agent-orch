@@ -1,21 +1,122 @@
 /* Settings (DPES-1105). Reads theme tokens only; no hard-coded colors. */
 
-/* Sections flow into as many 30rem columns as fit, so wide windows are used. */
-.settings-view {
-  column-width: 30rem;
-  column-gap: 20px;
-}
-
+/* A left menu and one page. The menu stacks above the page in a narrow window. */
 .settings-head {
-  column-span: all;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px;
 }
 
+.settings-layout {
+  display: grid;
+  grid-template-columns: minmax(11rem, 14rem) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .settings-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.settings-menu {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-search {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.settings-menu-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.settings-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-menu-item:hover {
+  background: var(--panel);
+}
+
+.settings-menu-item[aria-current="page"] {
+  background: var(--panel);
+  font-weight: 600;
+}
+
+.settings-page > h2 {
+  margin: 0 0 4px;
+}
+
+.settings-head-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.settings-head-row > h3 {
+  margin: 0;
+}
+
+.settings-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-switch {
+  display: grid;
+  gap: 4px;
+  padding: 0 0 16px;
+}
+
+.settings-switch + .settings-switch {
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-switch input {
+  width: auto;
+}
+
+.settings-switch label {
+  font-weight: 600;
+}
+
+/* One Save bar closes a page. */
+.settings-savebar {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--control-border);
+}
+
 .settings-section {
-  break-inside: avoid;
   margin: 0 0 20px;
   padding: 16px 20px;
   border: 1px solid var(--line);
@@ -49,6 +150,7 @@
 
 .settings-row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 6px;
   margin: 0 0 24px;
 }
@@ -222,11 +324,7 @@
   font-weight: 600;
 }
 
-/* Agents inventory: a wide table, so the section spans every column. */
-.settings-agents {
-  column-span: all;
-}
-
+/* Agents inventory: a wide table inside a disclosure. */
 .settings-agents table {
   font-size: 13px;
 }

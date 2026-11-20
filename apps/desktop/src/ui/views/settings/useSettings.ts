@@ -22,13 +22,11 @@ export interface SettingsModel {
   /** True when the source is daemon-backed; fixture values never appear then. */
   live: boolean;
   load: SettingsLoad;
-  saving: boolean;
-  result: SaveResult | null;
   /** The sentence for the polite live region; empty until the gate changes state after the first read. */
   gateAnnouncement: string;
   reload: () => void;
-  /** Resolves true when the daemon accepted the change, so the caller can drop the typed text. */
-  save: (patch: Partial<LoadLimits>) => Promise<boolean>;
+  /** Resolves with what happened; `saved` means the daemon accepted the change, so the caller can drop the typed text. */
+  save: (patch: Partial<LoadLimits>) => Promise<SaveResult>;
 }
 
 function settle(previous: SettingsLoad, next: SurfaceResult<SettingsSnapshot>): SettingsLoad {
@@ -44,12 +42,9 @@ export function useSettings(): SettingsModel {
   const source = surfaces.settings;
   const live = source.provenance.kind === "daemon";
   const [load, setLoad] = useState<SettingsLoad>({ status: "loading" });
-  const [saving, setSaving] = useState(false);
-  const [result, setResult] = useState<SaveResult | null>(null);
   const [announcement, setAnnouncement] = useState("");
   // Only the newest answer is applied: a slow read never overwrites a later read or a save reply.
   const latest = useRef(0);
-  const busy = useRef(false);
   const seenClosed = useRef<boolean | null>(null);
 
   const read = useCallback(() => {
@@ -86,31 +81,19 @@ export function useSettings(): SettingsModel {
   }, [closed]);
 
   const save = useCallback(
-    async (patch: Partial<LoadLimits>) => {
-      if (busy.current) return false;
-      busy.current = true;
-      setSaving(true);
-      setResult(null);
+    async (patch: Partial<LoadLimits>): Promise<SaveResult> => {
       try {
         const receipt = await source.set(patch);
-        if (receipt.simulated) {
-          setResult({ kind: "fixture" });
-          return false;
-        }
+        if (receipt.simulated) return { kind: "fixture" };
         latest.current += 1;
         setLoad({ status: "ready", snapshot: receipt.snapshot, refreshFailed: false });
-        setResult({ kind: "saved" });
-        return true;
+        return { kind: "saved" };
       } catch (error) {
-        setResult({ kind: "failed", message: saveFailureText(asDaemonError(error)) });
-        return false;
-      } finally {
-        busy.current = false;
-        setSaving(false);
+        return { kind: "failed", message: saveFailureText(asDaemonError(error)) };
       }
     },
     [source],
   );
 
-  return { live, load, saving, result, gateAnnouncement: announcement, reload: read, save };
+  return { live, load, gateAnnouncement: announcement, reload: read, save };
 }

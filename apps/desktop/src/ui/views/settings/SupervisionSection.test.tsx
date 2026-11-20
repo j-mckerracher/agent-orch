@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { APPROVER_REQUIRED_NOTICE } from "../../../daemon/errors";
@@ -8,16 +8,17 @@ import { observation, okResult } from "../../../sources/surfaces/result";
 import type { SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
-import { ServicesProvider, type Services } from "../../services";
-import { SettingsView } from "./SettingsView";
+import { type Services } from "../../services";
+import { renderSettingsPage } from "../../../test/settingsPage";
 
 const BASE = "Check interval with one task running (minutes)";
 const MIN = "Fastest check interval (seconds)";
 const HOURLY = "Replies per hour, per conversation";
 const DAILY = "Replies per day, per conversation";
 const BUDGET = "Daily token budget for automatic replies";
-const SAVE_CHECKS = "Save check settings";
-const SAVE_REPLIES = "Save reply limits";
+const SAVE = "Save changes";
+const call = (fake: FakeDaemon, group: string) =>
+  fake.callsTo("settings.set").find((item) => group in (item.params as Record<string, unknown>));
 
 const WITH_GROUPS: SettingsWire = {
   load: { cpu_percent: 80, memory_percent: 85, disk_percent: 90 },
@@ -34,13 +35,7 @@ afterEach(() => {
   while (stops.length) stops.pop()!();
 });
 
-function page(services: Services) {
-  return render(
-    <ServicesProvider services={services}>
-      <SettingsView />
-    </ServicesProvider>,
-  );
-}
+const page = (services: Services) => renderSettingsPage(services, "limits");
 
 /** A connected daemon whose `settings.set` applies the groups it is sent and answers with the result. */
 async function connected(wire: SettingsWire = WITH_GROUPS, approver: boolean | null = true) {
@@ -95,7 +90,7 @@ describe("Supervision and automatic reply sections", () => {
     const field = await typeInto(user, BASE, "241");
     expect(field).toHaveAttribute("aria-invalid", "true");
     expect(field).toHaveAccessibleDescription(/Enter a whole number from 1 to 240\./);
-    const save = screen.getByRole("button", { name: SAVE_CHECKS });
+    const save = screen.getByRole("button", { name: SAVE });
     expect(save).toBeEnabled();
     expect(save).toHaveAccessibleDescription("Fix the fields marked as invalid before saving.");
   });
@@ -104,10 +99,10 @@ describe("Supervision and automatic reply sections", () => {
     const { services } = await connected(WITH_GROUPS, false);
     page(services);
     await input(BASE);
-    const save = await screen.findByRole("button", { name: SAVE_CHECKS });
+    const save = await screen.findByRole("button", { name: SAVE });
     expect(save).toBeEnabled();
     expect(save).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
-    expect(screen.getByRole("button", { name: SAVE_REPLIES })).toHaveAccessibleDescription(APPROVER_REQUIRED_NOTICE);
+    expect(screen.getAllByRole("button", { name: SAVE })).toHaveLength(1);
   });
 
   it("supervision_sections_save_sends_one_settings_set_with_every_valid_field_of_the_saved_group", async () => {
@@ -115,26 +110,25 @@ describe("Supervision and automatic reply sections", () => {
     const { fake, services } = await connected();
     page(services);
     await typeInto(user, BASE, "20");
-    await user.click(screen.getByRole("button", { name: SAVE_CHECKS }));
+    await user.click(screen.getByRole("button", { name: SAVE }));
     expect(await screen.findByText("Saved. New checks use these settings from the next check.")).toBeInTheDocument();
-    const calls = fake.callsTo("settings.set");
-    expect(calls).toHaveLength(1);
-    const { idempotency_key, ...groups } = calls[0]!.params as Record<string, unknown>;
+    // One Save writes the limits page's three groups, each with every valid field.
+    const { idempotency_key, ...groups } = call(fake, "supervision")!.params as Record<string, unknown>;
     expect(idempotency_key).toEqual(expect.any(String));
     expect(groups).toEqual({ supervision: { base_interval_secs: 1200, min_interval_secs: 60, attempt_wall_minutes: 120 } });
+    expect(call(fake, "wake_limits")!.params).toMatchObject({ wake_limits: { hourly_cap: 6, daily_cap: 40, daily_token_budget: null } });
     expect(await input(BASE)).toHaveValue(20);
   });
 
-  it("supervision_sections_each_section_has_its_own_result_region", async () => {
+  it("supervision_sections_one_save_bar_says_what_each_section_saved", async () => {
     const user = userEvent.setup();
     const { services } = await connected();
     page(services);
     await typeInto(user, BASE, "20");
-    await user.click(screen.getByRole("button", { name: SAVE_CHECKS }));
-    const checks = await screen.findByRole("status", { name: `${SAVE_CHECKS} result` });
-    const replies = screen.getByRole("status", { name: `${SAVE_REPLIES} result` });
-    await waitFor(() => expect(checks).toHaveTextContent("Saved."));
-    expect(replies).toBeEmptyDOMElement();
+    await user.click(screen.getByRole("button", { name: SAVE }));
+    const result = await screen.findByRole("status", { name: "Save result" });
+    await waitFor(() => expect(result).toHaveTextContent("Saved. New checks use these settings from the next check."));
+    expect(result).toHaveTextContent("Saved. New limits apply from the next automatic reply.");
   });
 
   it("supervision_sections_clearing_a_cap_shows_the_no_limit_note_and_saves_null", async () => {
@@ -144,13 +138,13 @@ describe("Supervision and automatic reply sections", () => {
     await input(HOURLY);
     expect(screen.getByText("No limit means a busy fleet can spend tokens on automatic replies without a cap.")).toBeInTheDocument();
     await typeInto(user, HOURLY, "");
-    await user.click(screen.getByRole("button", { name: SAVE_REPLIES }));
+    await user.click(screen.getByRole("button", { name: SAVE }));
     await screen.findByText("Saved. New limits apply from the next automatic reply.");
-    expect(fake.callsTo("settings.set")[0]!.params).toMatchObject({ wake_limits: { hourly_cap: null } });
-    expect(fake.callsTo("settings.set")[0]!.params).not.toHaveProperty("supervision");
+    expect(call(fake, "wake_limits")!.params).toMatchObject({ wake_limits: { hourly_cap: null } });
+    expect(call(fake, "wake_limits")!.params).not.toHaveProperty("supervision");
     await typeInto(user, DAILY, "no limit");
     await typeInto(user, BUDGET, "500000");
-    expect(screen.getByRole("button", { name: SAVE_REPLIES })).toBeEnabled();
+    expect(screen.getByRole("button", { name: SAVE })).toBeEnabled();
   });
 
   it("supervision_sections_an_older_daemon_without_the_groups_shows_the_unavailable_text_and_no_inputs", async () => {
@@ -158,14 +152,14 @@ describe("Supervision and automatic reply sections", () => {
     page(services);
     expect(await screen.findByText("This daemon cannot change these settings.")).toBeInTheDocument();
     expect(screen.queryByRole("spinbutton", { name: BASE })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: SAVE_CHECKS })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: SAVE })).toHaveLength(1);
   });
 
   it("supervision_sections_fixture_mode_says_nothing_was_saved_and_calls_no_daemon_method", async () => {
     const user = userEvent.setup();
     page(createServices());
     await typeInto(user, BASE, "20");
-    await user.click(screen.getByRole("button", { name: SAVE_CHECKS }));
+    await user.click(screen.getByRole("button", { name: SAVE }));
     expect(await screen.findByText("Fixture data: nothing was saved.")).toBeInTheDocument();
   });
 
@@ -187,14 +181,14 @@ describe("Supervision and automatic reply sections", () => {
     expect((screen.getByRole("spinbutton", { name: BASE }) as HTMLInputElement).value).toBe("30");
   });
 
-  it("supervision_sections_leave_the_load_sections_own_save_working_beside_them", async () => {
+  it("supervision_sections_save_with_the_machine_load_limits_in_the_same_click", async () => {
     const user = userEvent.setup();
     const { fake, services } = await connected();
     page(services);
     await typeInto(user, "CPU limit (percent)", "85");
-    await user.click(screen.getByRole("button", { name: "Save machine load limits" }));
-    await waitFor(() => expect(fake.callsTo("settings.set")).toHaveLength(1));
-    const { idempotency_key: _key, ...groups } = fake.callsTo("settings.set")[0]!.params as Record<string, unknown>;
+    await user.click(screen.getByRole("button", { name: SAVE }));
+    await waitFor(() => expect(fake.callsTo("settings.set")).toHaveLength(3));
+    const { idempotency_key: _key, ...groups } = call(fake, "load")!.params as Record<string, unknown>;
     expect(groups).toEqual({ load: { cpu_percent: 85, memory_percent: 85, disk_percent: 90 } });
   });
 });

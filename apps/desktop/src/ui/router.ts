@@ -29,7 +29,7 @@ const isGlobalView = (segment: string | undefined): segment is GlobalView =>
   GLOBAL_VIEWS.includes(segment as GlobalView);
 
 export type Route =
-  | { name: "global"; view: GlobalView; workstreamId?: string; taskId?: string; projectId?: string }
+  | { name: "global"; view: GlobalView; workstreamId?: string; taskId?: string; projectId?: string; settingsPage?: string }
   | { name: "projects" }
   | { name: "project"; projectId: string }
   | { name: "tasks"; projectId: string; filter: TaskFilter }
@@ -46,10 +46,11 @@ export const DEFAULT_ROUTE: Route = { name: "global", view: "workspace" };
 export function formatRoute(route: Route): string {
   switch (route.name) {
     case "global":
-      // The selected workstream and task are only meaningful on their own views (DPES-1105, DPES-1044).
+      // The selected workstream, task and settings page are only meaningful on their own views (DPES-1105, DPES-1044).
       if (route.workstreamId !== undefined && route.view === "workstreams") return `#/workstreams?workstream=${enc(route.workstreamId)}`;
       if (route.taskId !== undefined && (route.view === "agents" || route.view === "review")) return `#/${route.view}?task=${enc(route.taskId)}`;
       if (route.view === "review" && route.projectId !== undefined) return `#/review?project=${enc(route.projectId)}`;
+      if (route.settingsPage !== undefined && route.view === "settings") return `#/settings?page=${enc(route.settingsPage)}`;
       return `#/${route.view}`;
     case "projects":
       return "#/projects";
@@ -89,7 +90,10 @@ export function parseRoute(hash: string): Route {
     const workstreamId = parts[0] === "workstreams" ? params.get("workstream") : null;
     if (workstreamId) return { name: "global", view: parts[0], workstreamId };
     const taskId = parts[0] === "agents" ? params.get("task") : null;
-    return taskId ? { name: "global", view: parts[0], taskId } : { name: "global", view: parts[0] };
+    if (taskId) return { name: "global", view: parts[0], taskId };
+    // A bare `#/settings` (an old link) opens the first page.
+    const settingsPage = parts[0] === "settings" ? params.get("page") : null;
+    return settingsPage ? { name: "global", view: parts[0], settingsPage } : { name: "global", view: parts[0] };
   }
   if (parts[0] !== "project") return DEFAULT_ROUTE;
   if (!parts[1]) return { name: "projects" };

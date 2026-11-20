@@ -70,7 +70,7 @@ describe("notifications settings section", () => {
   it("renders no disabled owner, response-time, silence or audit controls", async () => {
     render(<NotificationsSection client={clientFor(snapshot()).client} />);
     await screen.findByText(/Permission: prompt/);
-    const section = screen.getByRole("heading", { name: "Notifications" }).closest("section")!;
+    const section = screen.getByRole("heading", { name: "Decision notifications" }).closest("section")!;
     expect(within(section).queryByText(/owner|response time|silence|audit/i)).toBeNull();
     for (const control of within(section).queryAllByRole("button")) expect(control).toBeEnabled();
   });

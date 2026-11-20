@@ -22,7 +22,7 @@ afterEach(() => {
 });
 
 function renderSettings() {
-  const services = createServices({ initialRoute: { name: "global", view: "settings" } });
+  const services = createServices({ initialRoute: { name: "global", view: "settings", settingsPage: "appearance" } });
   render(<App services={services} globalViews={settingsGlobalViews} />);
 }
 
@@ -30,7 +30,7 @@ describe("Settings > Appearance", () => {
   it("is where the theme toggle lives now: reachable in Settings, absent from the shell", async () => {
     renderSettings();
     const section = await screen.findByTestId("settings-appearance");
-    expect(within(section).getByRole("heading", { level: 2, name: "Appearance" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "Appearance" })).toBeInTheDocument();
     expect(within(section).getByRole("button", { name: /dark mode/i })).toBeInTheDocument();
     expect(within(screen.getByTestId("shell-sidebar")).queryByRole("button", { name: /dark mode/i })).toBeNull();
   });
