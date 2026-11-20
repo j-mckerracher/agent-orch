@@ -4,6 +4,7 @@ import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../../../daemon/errors"
 import { basename } from "../../format";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import type { GrantItem, GrantPolicy, GrantTerms, GrantsSnapshot, Workstream } from "../../../sources/surfaces/types";
+import { CLEAR_MS } from "../../action";
 import { useGate, useServices, useStore, useSurface } from "../../services";
 import { Badge, Button, Disclosure, Pill } from "../../theme";
 import { Dialog } from "../../Dialog";
@@ -125,7 +126,13 @@ function GrantsBody({ grants, policy, fixture, reload, headingId }: { grants: Gr
     ? workstreams.map((item) => ({ value: item.id, label: item.title }))
     : projectOptions;
 
-  const finish = (kind: "ok" | "bad", text: string) => setAnnouncement({ kind, text });
+  // A minor confirmation (a new approval) clears itself; a destructive or merge result stays until the next action.
+  const clearTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const finish = (kind: "ok" | "bad", text: string, minor = false) => {
+    clearTimeout(clearTimer.current);
+    setAnnouncement({ kind, text });
+    if (minor && kind === "ok") clearTimer.current = setTimeout(() => setAnnouncement(null), CLEAR_MS);
+  };
 
   /** One create for both forms: `blocked` is the form's disabled reason, `reset` clears the form once the grant is saved. */
   const submit = async (blocked: string | null, busyKey: string, terms: GrantTerms, reset: () => void, failure: typeof createFailureText) => {
@@ -136,9 +143,9 @@ function GrantsBody({ grants, policy, fixture, reload, headingId }: { grants: Gr
     try {
       const receipt = await source.create(terms);
       if (receipt.simulated) {
-        finish("ok", receipt.notice ?? FIXTURE_TEXT);
+        finish("ok", receipt.notice ?? FIXTURE_TEXT, busyKey === "create");
       } else {
-        finish("ok", createdText(receipt.grant));
+        finish("ok", createdText(receipt.grant), busyKey === "create");
         reset();
         reload();
       }
@@ -183,12 +190,21 @@ function GrantsBody({ grants, policy, fixture, reload, headingId }: { grants: Gr
     }
   };
 
-  // One polite region for the whole section, so a create and a revoke never overwrite each other unheard. It sits in the dialog while that is open, so an error is seen.
+  // One polite region for the whole section, so a create and a revoke never overwrite each other unheard. A failure is an
+  // alert beside it, not inside it. It sits in the dialog while that is open, so an error is seen.
+  const busyLabel = busy === null ? null : busy === "create" ? "Creating…" : busy === "merge" ? "Saving…" : "Revoking…";
   const announced = (
-      <div role="status" aria-live="polite" aria-label="Standing approvals result" className="settings-result">
+    <div className="settings-result">
+      <div role="status" aria-live="polite" aria-label="Standing approvals result">
+        {busyLabel !== null && <p className="ui-action-pending">{busyLabel}</p>}
         {announcement?.kind === "ok" && <p>{announcement.text}</p>}
-        {announcement?.kind === "bad" && <Notice tone="bad">{announcement.text}</Notice>}
       </div>
+      {announcement?.kind === "bad" && (
+        <Notice tone="bad" role="alert">
+          {announcement.text}
+        </Notice>
+      )}
+    </div>
   );
 
   return (
@@ -309,8 +325,8 @@ function GrantsBody({ grants, policy, fixture, reload, headingId }: { grants: Gr
           <Button
             type="submit"
             variant="primary"
-            disabled={reason !== null || busy !== null}
-            aria-busy={busy === "create"}
+            disabled={reason !== null}
+            pending={busy === "create"}
             aria-describedby={reason === null ? undefined : ids.reason}
           >
             Create standing approval
@@ -467,7 +483,8 @@ function GrantsBody({ grants, policy, fixture, reload, headingId }: { grants: Gr
                   <Button
                     aria-label={`Revoke standing approval: ${name}`}
                     aria-describedby={locked ? `${ids.reason}-revoke` : undefined}
-                    disabled={locked || busy !== null}
+                    disabled={locked || (busy !== null && busy !== `revoke:${grant.id}`)}
+                    pending={busy === `revoke:${grant.id}`}
                     onClick={() => void revoke(grant)}
                   >
                     Revoke
