@@ -1,4 +1,4 @@
-/** One task's own view: Output, Activity, Attempts and the event feed, an Actions menu, and technical detail one click deeper. */
+/** One task's own view: Chat, Output, Attempts and the event feed, an Actions menu, and technical detail one click deeper. */
 import { useEffect, useId, useState } from "react";
 import { timelineKey, type Timeline } from "../../../daemon/appData";
 import { agentDisplayName } from "../../../daemon/agentDisplayNames";
@@ -10,7 +10,7 @@ import { WsTabs } from "../workstreams/WsTabs";
 import { StatePill } from "./common";
 import { OutputTail } from "./OutputTail";
 import { isRunningSession, rowFromTask, type WorkRow } from "./model";
-import { SessionActivity } from "./SessionActivity";
+import { TaskConversation } from "../../TaskConversation";
 import { useTaskActions } from "./TaskActions";
 import { taskSubtitle } from "./TaskList";
 
@@ -97,6 +97,27 @@ export function TaskDetail({ initial, live, onBack }: { initial: WorkRow; live: 
         label={`Views of ${row.objective}`}
         tabs={[
           {
+            // Always the first tab, so the window opens on it every time (WsTabs starts on the first tab).
+            id: "chat",
+            label: "Chat",
+            content: real ? (
+              <>
+                {row.sessions === null && <p role="status">Sessions unknown: this task's session list has not loaded.</p>}
+                {/* The session picker above picks the thread. `tasks.message` addresses the task: the daemon queues the
+                    text for its one waiting session and has no per-session or live-steering message. */}
+                <TaskConversation
+                  taskId={row.id}
+                  state={row.state}
+                  sessionId={session?.id ?? null}
+                  running={running}
+                  agent={agentDisplayName(row.agent)}
+                />
+              </>
+            ) : (
+              <EmptyState title="No conversation" description="The conversation is only read from the daemon." />
+            ),
+          },
+          {
             id: "output",
             label: "Output",
             content:
@@ -106,18 +127,6 @@ export function TaskDetail({ initial, live, onBack }: { initial: WorkRow; live: 
                 noSession("output")
               ) : (
                 <EmptyState title="No output" description="Output is only read from the daemon." />
-              ),
-          },
-          {
-            id: "activity",
-            label: "Activity",
-            content:
-              real && session ? (
-                <SessionActivity key={`${session.id}:activity`} sessionId={session.id} running={running} />
-              ) : real ? (
-                noSession("activity")
-              ) : (
-                <EmptyState title="No activity" description="Activity is only read from the daemon." />
               ),
           },
           {

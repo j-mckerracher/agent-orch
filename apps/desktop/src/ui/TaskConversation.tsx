@@ -1,4 +1,11 @@
-/** The task window's Conversation section: the workspace chat (thread and composer) bound to one task's session (DPES-1088). */
+/**
+ * The Chat of one task (DPES-1088, DPES-1044): the workspace chat (thread and composer) bound to one task's session.
+ * Order of the thread: the session's activity (thinking and tool calls, in the daemon's order), then its retained output,
+ * then what was said in this window. The daemon gives activity and output separate sequences and no times, so they cannot
+ * be interleaved with each other or with messages; the older entries sit first and the live status line sits last.
+ * Sending goes to the task (`tasks.message`, or `decisions.answer` for an open question): the daemon reads either only
+ * from a Waiting task and cannot address one session of several.
+ */
 import { useState, type ReactNode } from "react";
 import type { OutputLine, TaskState } from "../daemon/types";
 import { ChatLog } from "./chat/ChatLog";

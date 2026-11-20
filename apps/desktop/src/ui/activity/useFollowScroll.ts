@@ -31,5 +31,20 @@ export function useFollowScroll(scrollKey: string | number) {
     setBehind(false);
   }, []);
 
+  // A log in a hidden tab panel has no height and loses its scroll position; showing it again lands on the newest line.
+  useEffect(() => {
+    const log = ref.current;
+    if (!log || typeof ResizeObserver === "undefined") return;
+    let height = log.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const shown = height === 0 && log.clientHeight > 0;
+      height = log.clientHeight;
+      if (shown) jump();
+      else if (following.current) log.scrollTop = log.scrollHeight;
+    });
+    observer.observe(log);
+    return () => observer.disconnect();
+  }, [jump]);
+
   return { ref, onScroll, behind, jump };
 }
