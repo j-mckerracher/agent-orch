@@ -114,8 +114,8 @@ export function CoordinatorStrip({ snapshot, lockReason, onSaveScope, onSaved }:
           <Button
             type="submit"
             variant="secondary"
-            disabled={reason !== null || saving}
-            aria-busy={saving}
+            disabled={reason !== null}
+            pending={saving}
             aria-describedby={reason !== null ? `${ids}-reason` : undefined}
           >
             Save scope
@@ -133,7 +133,7 @@ export function CoordinatorStrip({ snapshot, lockReason, onSaveScope, onSaved }:
             {result !== null && "notice" in result && <p className="ws-small">{result.notice}</p>}
             {result !== null && "error" in result &&
               (result.error.kind === "invalid-params" ? (
-                <Notice tone="bad">{INVALID_SCOPE_TEXT}</Notice>
+                <Notice tone="bad" role="alert">{INVALID_SCOPE_TEXT}</Notice>
               ) : (
                 <ErrorNotice error={result.error} action="Saving the scope" />
               ))}
