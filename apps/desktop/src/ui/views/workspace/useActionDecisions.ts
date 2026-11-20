@@ -9,7 +9,7 @@ import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import type { ActionProposal, ConversationSource, Decision } from "../../../sources/surfaces/types";
 import { useServices } from "../../services";
 import { reloadWorkstreams } from "../workstreams/model";
-import { outcomeAnnouncement, requestErrorText, type WorkstreamNames } from "./actionCardModel";
+import { outcomeAnnouncement, type WorkstreamNames } from "./actionCardModel";
 
 export interface ActionDecisions {
   /** Proposal ids with a decision in flight. Each card waits on its own decision only. */
@@ -90,9 +90,9 @@ export function useActionDecisions(options: {
         announce(notice);
       }
     } catch (thrown) {
+      // The card shows this failure as an alert beside its buttons; it is not also written to the status line.
       const error = asDaemonError(thrown);
       update(scope, (value) => ({ ...value, errors: withEntry(value.errors, proposal.id, error) }));
-      announce(requestErrorText(error, parent));
     } finally {
       sending.current.delete(proposal.id);
       update(scope, (value) => ({ ...value, inFlight: withFlight(value.inFlight, proposal.id, false) }));
