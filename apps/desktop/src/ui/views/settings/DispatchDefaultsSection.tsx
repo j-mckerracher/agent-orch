@@ -16,6 +16,9 @@ export function DispatchDefaultsSection({ model }: { model: SettingsModel }) {
 
 type Selection = { model?: string; effort?: string };
 
+const NO_MODELS = "This provider lists no models to choose from. It runs with its own default model.";
+const NO_EFFORTS = "No effort levels to choose from. It runs with its own default effort.";
+
 /** One provider's model and effort pickers. `names` are the two labels. */
 function PairRows({
   provider,
@@ -35,6 +38,11 @@ function PairRows({
   const models = provider.models.status === "ok" ? provider.models.value : [];
   const selected = models.find((item) => item.id === selection.model);
   const efforts = effortsFor(provider, selected);
+  // A list with nothing to pick stays disabled, and says why in place: the provider runs with its own default.
+  const noModels = models.length === 0 && !selection.model;
+  const noEfforts = efforts.length === 0 && !selection.effort;
+  const modelHint = provider.models.status !== "ok" ? provider.models.reason : noModels ? NO_MODELS : null;
+  const effortHint = !noEfforts ? null : provider.efforts.status === "ok" ? NO_EFFORTS : provider.efforts.reason;
   return (
     <>
       <div className="settings-row">
@@ -42,7 +50,8 @@ function PairRows({
         <select
           id={`${idPrefix}-model`}
           value={selection.model ?? ""}
-          disabled={disabled || (models.length === 0 && !selection.model)}
+          disabled={disabled || noModels}
+          aria-describedby={modelHint ? `${idPrefix}-model-hint` : undefined}
           onChange={(event) => onChoose(event.target.value ? { model: event.target.value } : {})}
         >
           <option value="">Provider default model</option>
@@ -53,14 +62,19 @@ function PairRows({
             </option>
           ))}
         </select>
-        {provider.models.status !== "ok" && <p className="settings-hint">{provider.models.reason}</p>}
+        {modelHint && (
+          <p id={`${idPrefix}-model-hint`} className="settings-hint">
+            {modelHint}
+          </p>
+        )}
       </div>
       <div className="settings-row">
         <label htmlFor={`${idPrefix}-effort`}>{names.effort}</label>
         <select
           id={`${idPrefix}-effort`}
           value={selection.effort ?? ""}
-          disabled={disabled || (efforts.length === 0 && !selection.effort)}
+          disabled={disabled || noEfforts}
+          aria-describedby={effortHint ? `${idPrefix}-effort-hint` : undefined}
           onChange={(event) => onChoose({ ...selection, effort: event.target.value || undefined })}
         >
           <option value="">Provider default effort</option>
@@ -71,6 +85,11 @@ function PairRows({
             </option>
           ))}
         </select>
+        {effortHint && (
+          <p id={`${idPrefix}-effort-hint`} className="settings-hint">
+            {effortHint}
+          </p>
+        )}
       </div>
     </>
   );

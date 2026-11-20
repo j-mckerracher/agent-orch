@@ -81,7 +81,30 @@ const DISPATCH_CATALOG: ModelCatalog = {
   })),
 };
 
-async function dispatchPage(wire: SettingsWire) {
+// Shaped like the real daemon: Codex and Claude Code list models; Pi lists empty lists; Copilot reports none (DPES-1105).
+const NOW = { observedAt: "2026-11-17T00:00:00Z", ageMs: 0 };
+const REAL_SHAPED_CATALOG: ModelCatalog = {
+  providers: [
+    DISPATCH_CATALOG.providers[0]!,
+    {
+      id: "claude-code", name: "Claude Code", installed: true, launchable: true, modelSelection: "supported",
+      models: { status: "ok", value: [{ id: "opus", label: "Opus", efforts: [] }, { id: "sonnet", label: "Sonnet", efforts: [] }], ...NOW },
+      efforts: { status: "ok", value: ["low", "high"], ...NOW },
+    },
+    {
+      id: "pi", name: "Pi", installed: true, launchable: true, modelSelection: "unsupported",
+      models: { status: "ok", value: [], ...NOW },
+      efforts: { status: "ok", value: [], ...NOW },
+    },
+    {
+      id: "github-copilot", name: "GitHub Copilot", installed: true, launchable: true, modelSelection: "unsupported",
+      models: { status: "unsupported", reason: "Copilot cannot list models without a billable call." },
+      efforts: { status: "unsupported", reason: "This provider exposes no effort setting." },
+    },
+  ],
+};
+
+async function dispatchPage(wire: SettingsWire, catalog: ModelCatalog = DISPATCH_CATALOG) {
   const { fake, services } = await connected(wire);
   let saved = wire;
   fake.stub("settings.get", () => saved);
@@ -90,7 +113,7 @@ async function dispatchPage(wire: SettingsWire) {
     return saved;
   });
   vi.spyOn(services.surfaces.models, "catalog").mockResolvedValue(
-    okResult(services.surfaces.models.provenance, DISPATCH_CATALOG, observation(Date.now())),
+    okResult(services.surfaces.models.provenance, catalog, observation(Date.now())),
   );
   fake.stub("agents.validate_selection", { valid: true });
   return { fake, services };
@@ -154,6 +177,61 @@ describe("Agent dispatch defaults", () => {
     await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
     expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({ dispatch_defaults: { default_agent: null, providers: {} } });
+  });
+
+  it("keeps every override usable after saving the default, saves the picks, and clears one with Provider default", async () => {
+    const { fake, services } = await dispatchPage(
+      { ...OPEN, dispatch_defaults: { default_agent: "codex", providers: { pi: { model: "old" } } } },
+      REAL_SHAPED_CATALOG,
+    );
+    const user = userEvent.setup();
+    page(services, "agents");
+    await user.selectOptions(await screen.findByLabelText("Default model"), "m1");
+    await user.selectOptions(screen.getByLabelText("Default effort"), "high");
+    await user.click(screen.getByRole("button", { name: SAVE }));
+    expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({
+      dispatch_defaults: { default_agent: "codex", providers: { codex: { model: "m1", effort: "high" }, pi: { model: "old" } } },
+    });
+
+    const overrides = screen.getByText("Per-provider overrides").closest("details")!;
+    expect(within(overrides).getByText("1 set")).toBeInTheDocument();
+    await user.selectOptions(within(overrides).getByLabelText("Claude Code model"), "sonnet");
+    await user.selectOptions(within(overrides).getByLabelText("Claude Code effort"), "low");
+    expect(within(overrides).getByText("2 set")).toBeInTheDocument();
+    expect(within(overrides).getByLabelText("Claude Code model")).toHaveValue("sonnet");
+    expect(within(overrides).getByLabelText("Claude Code effort")).toHaveValue("low");
+    await user.selectOptions(within(overrides).getByLabelText("Pi model"), "");
+    expect(within(overrides).getByLabelText("Pi model")).toHaveValue("");
+    expect(within(overrides).getByText("1 set")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: SAVE }));
+    await until(() => fake.callsTo("settings.set").length === 2, "second save");
+    expect(fake.callsTo("settings.set")[1]?.params).toMatchObject({
+      dispatch_defaults: { default_agent: "codex", providers: { codex: { model: "m1", effort: "high" }, "claude-code": { model: "sonnet", effort: "low" } } },
+    });
+    expect(
+      (fake.callsTo("settings.set")[1]?.params as { dispatch_defaults: { providers: object } }).dispatch_defaults.providers,
+    ).not.toHaveProperty("pi");
+  });
+
+  it("says in place why a provider's model or effort list cannot be chosen from", async () => {
+    const { services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: "codex", providers: {} } }, REAL_SHAPED_CATALOG);
+    page(services, "agents");
+    const overrides = (await screen.findByText("Per-provider overrides")).closest("details")!;
+    // An empty list (status ok) and a facet the provider does not support are both disabled and described.
+    const NO_MODELS = "This provider lists no models to choose from. It runs with its own default model.";
+    const NO_EFFORTS = "No effort levels to choose from. It runs with its own default effort.";
+    expect(within(overrides).getByLabelText("Pi model")).toBeDisabled();
+    expect(within(overrides).getByLabelText("Pi model")).toHaveAccessibleDescription(NO_MODELS);
+    expect(within(overrides).getByLabelText("Pi effort")).toBeDisabled();
+    expect(within(overrides).getByLabelText("Pi effort")).toHaveAccessibleDescription(NO_EFFORTS);
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toHaveAccessibleDescription(
+      "Copilot cannot list models without a billable call.",
+    );
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription("This provider exposes no effort setting.");
+    // A provider with a list stays usable and carries no explanation.
+    expect(within(overrides).getByLabelText("Claude Code model")).toBeEnabled();
+    expect(within(overrides).getByLabelText("Claude Code model")).not.toHaveAccessibleDescription();
   });
 
   it("does not allow a token-only session to save dispatch defaults", async () => {
