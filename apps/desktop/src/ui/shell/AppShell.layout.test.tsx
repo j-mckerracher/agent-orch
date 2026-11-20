@@ -9,6 +9,7 @@ import { AppShell } from "./AppShell";
 import type { ShellSlots } from "./slots";
 
 const slots: ShellSlots = {
+  activity: null,
   agentsCount: null,
   reviewCount: null,
   topUsage: null,

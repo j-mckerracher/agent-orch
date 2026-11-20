@@ -52,6 +52,7 @@ export function RunningCount() {
 }
 
 export const defaultShellSlots: ShellSlots = {
+  activity: null,
   agentsCount: <RunningCount />,
   reviewCount: <ReviewCount />,
   topUsage: <span data-testid="slot-top-usage">Usage: not available</span>,

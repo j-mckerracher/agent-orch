@@ -9,6 +9,7 @@ import type { ReactNode } from "react";
  *
  * | Slot               | Region                                   | Owner item |
  * | ------------------ | ---------------------------------------- | ---------- |
+ * | `activity`         | right column beside main (workspace)     | DPES-1105  |
  * | `agentsCount`      | count beside "Agents" (running tasks)    | DPES-1044  |
  * | `reviewCount`      | count beside "Review"                    | M7-13      |
  * | `topUsage`         | top bar, usage pill                      | M7-16      |
@@ -16,6 +17,8 @@ import type { ReactNode } from "react";
  * | `topNeedYou`       | top bar, the one "N need you" count      | DPES-1044  |
  */
 export interface ShellSlots {
+  /** `null` removes the activity column. Shown on the Workspace route only. */
+  activity: ReactNode;
   agentsCount: ReactNode;
   reviewCount: ReactNode;
   topUsage: ReactNode;
