@@ -23,7 +23,7 @@ interface Setup {
   evidence: ReviewEvidenceSource;
 }
 
-function setup(opts: { approvals?: Approval[]; scope?: { projectId?: string; taskId?: string }; fixtureEvidence?: boolean; changeSource?: ChangeRequestSource; record?: ReviewScreenProps["record"]; workstreamOf?: ReviewScreenProps["workstreamOf"] } = {}) {
+function setup(opts: { approvals?: Approval[]; scope?: { taskId?: string }; fixtureEvidence?: boolean; changeSource?: ChangeRequestSource; record?: ReviewScreenProps["record"]; workstreamOf?: ReviewScreenProps["workstreamOf"] } = {}) {
   const approvals = opts.approvals ?? [approval()];
   const state = { list: [...approvals] };
   const client = makeClient({
@@ -107,36 +107,51 @@ describe("S6 identity, diff and navigation", () => {
     expect(screen.getByText(/no longer exists in the worktree/)).toBeTruthy();
   });
 
-  it("goes back to the originating task and, for project scope, the project", async () => {
-    const task = setup();
+  it("goes back to the review queue", async () => {
+    const { onBack } = setup();
     await ready();
-    await userEvent.click(screen.getByRole("button", { name: /Back to task task-1/ }));
-    expect(task.onBack).toHaveBeenCalledWith({ taskId: "task-1" });
-    task.unmount();
-
-    const project = setup({ scope: { projectId: "project-1" } });
-    await ready();
-    await userEvent.click(screen.getByRole("button", { name: /Back to project project-1/ }));
-    expect(project.onBack).toHaveBeenCalledWith({ projectId: "project-1", taskId: undefined });
+    await userEvent.click(screen.getByRole("button", { name: "← Review" }));
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
-  it("scopes pending decisions to the project via tasks.list", async () => {
-    setup({ approvals: [approval({ id: "a1", taskId: "task-1" }), approval({ id: "a2", taskId: "task-2" })], scope: { projectId: "project-2" } });
-    const select = (await screen.findByLabelText("Pending decision")) as HTMLSelectElement;
-    expect([...select.options].map((o) => o.value)).toEqual(["a2"]);
+  it("names the task, project, commit and checks in the title and facts, and has one primary button", async () => {
+    setup();
+    await ready();
+    expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent("Review changes: Objective of task-1");
+    expect(document.querySelector(".rv-sub")).toHaveTextContent("project-1 · commit aaaaaaa · checks passed");
+    expect(document.querySelectorAll(".ui-btn-primary")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "Accept" })).toHaveClass("ui-btn-primary");
   });
 
-  it("hides non-delivery decisions and says how many", async () => {
-    const policy: Approval = { ...approval({ id: "p1" }), action: { ...approval().action, kind: { type: "policy_change" } } };
-    setup({ approvals: [policy] });
-    expect(await screen.findByText(/1 non-delivery decision/)).toBeTruthy();
+  it("keeps the identity, six facts and audit under a collapsed Technical details", async () => {
+    setup({ record: () => <section aria-label="Record probe">Record probe</section> });
+    await ready();
+    const details = screen.getByText("Technical details").closest("details")!;
+    expect(details.open).toBe(false);
+    expect(within(details).getByRole("region", { name: "Candidate identity" })).toBeTruthy();
+    expect(within(details).getByRole("region", { name: "Record probe" })).toBeTruthy();
+  });
+
+  it("offers Changes, Evidence, Request changes and History as tabs, with the file count on Changes", async () => {
+    setup();
+    await ready();
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Changes 2", "Evidence", "Request changes", "History"]);
+  });
+
+  it("opens the evidence in its own tab", async () => {
+    setup();
+    await ready();
+    await userEvent.click(screen.getByRole("tab", { name: "Evidence" }));
+    const panel = screen.getByRole("region", { name: "Action parameters and verification evidence" });
+    expect(panel).toBeVisible();
+    expect(panel).toHaveTextContent("run-1");
   });
 });
 
 describe("S6 states", () => {
   it("shows the empty state", async () => {
     setup({ approvals: [] });
-    expect(await screen.findByText(/No pending decisions for this task/)).toBeTruthy();
+    expect(await screen.findByText(/no longer waiting for a decision/)).toBeTruthy();
   });
 
   it("shows loading before the first response", async () => {
@@ -273,7 +288,6 @@ describe("Accept / Reject", () => {
     const { client } = setup({ fixtureEvidence: true });
     await screen.findAllByText(/cannot authorize approval or delivery/);
     expect(accept().disabled).toBe(true);
-    expect(screen.getAllByText("PLACEHOLDER DATA").length).toBeGreaterThan(0);
     await waitFor(() => expect(reject().disabled).toBe(false));
     await userEvent.click(accept());
     expect(client.callsOf("approvals.resolve")).toEqual([]);
@@ -361,7 +375,7 @@ describe("Delivery", () => {
 
   it("is unavailable with fixture evidence and never sends fixture ids", async () => {
     const { client } = setup({ fixtureEvidence: true });
-    await screen.findByText(/Delivery is unavailable/);
+    await waitFor(() => expect(reject().disabled).toBe(false));
     expect(deliver().disabled).toBe(true);
     await userEvent.click(reject());
     await screen.findByText(/is now rejected/);
@@ -369,34 +383,47 @@ describe("Delivery", () => {
   });
 });
 
+const openTab = (name: string) => userEvent.click(screen.getByRole("tab", { name }));
+
 describe("Request changes (D8)", () => {
-  it("never calls approvals.resolve or any daemon method and shows PLACEHOLDER DATA", async () => {
+  it("never calls approvals.resolve or any daemon method", async () => {
     const { client } = setup();
     await ready();
     const before = client.calls.length;
-    await userEvent.click(screen.getByRole("button", { name: "Request changes" }));
+    await openTab("Request changes");
     await userEvent.type(screen.getByLabelText(/Feedback/), "Please add tests");
     await userEvent.click(screen.getByRole("button", { name: /Send feedback/ }));
     await screen.findByText(/No daemon call was made/);
     expect(client.calls.length).toBe(before);
     expect(client.callsOf("approvals.resolve")).toEqual([]);
-    const panel = screen.getByRole("region", { name: "Request changes" });
-    expect(within(panel).getAllByText("PLACEHOLDER DATA").length).toBeGreaterThan(1);
   });
 
-  it.each(["empty", "error", "unavailable"])("labels the %s change-request state as PLACEHOLDER DATA", async (scenario) => {
+  it("shows the sent request in the History tab", async () => {
+    setup();
+    await ready();
+    await openTab("Request changes");
+    await userEvent.type(screen.getByLabelText(/Feedback/), "Please add tests");
+    await userEvent.click(screen.getByRole("button", { name: /Send feedback/ }));
+    await screen.findByText(/No daemon call was made/);
+    await openTab("History");
+    expect(within(screen.getByRole("list", { name: "Change request history" })).getByText(/Please add tests/)).toBeVisible();
+  });
+
+  it.each([
+    ["empty", /No changes were requested yet/],
+    ["error", /Change request history error/],
+  ])("says plainly that the %s change-request history has nothing to show", async (scenario, text) => {
     setup({ changeSource: createFixtureChangeRequestSource(scenario) });
     await ready();
-    const panel = screen.getByRole("region", { name: "Request changes" });
-    await waitFor(() => expect(within(panel).getByText(/Change request history/)).toBeTruthy());
-    expect(within(panel).getAllByText("PLACEHOLDER DATA").length).toBeGreaterThan(0);
+    await openTab("History");
+    await waitFor(() => expect(screen.getByText(text)).toBeVisible());
   });
 
   it("shows a failed submit as an error without touching the daemon", async () => {
     const { client } = setup({ changeSource: createFixtureChangeRequestSource("error") });
     await ready();
     const before = client.calls.length;
-    await userEvent.click(screen.getByRole("button", { name: "Request changes" }));
+    await openTab("Request changes");
     await userEvent.type(screen.getByLabelText(/Feedback/), "x");
     await userEvent.click(screen.getByRole("button", { name: /Send feedback/ }));
     expect((await screen.findAllByRole("alert")).length).toBeGreaterThan(0);
@@ -422,16 +449,15 @@ describe("D7/D8 swappability", () => {
     };
     setup({ changeSource: stub });
     await ready();
+    await openTab("Request changes");
     const panel = screen.getByRole("region", { name: "Request changes" });
-    expect(within(panel).queryByText("PLACEHOLDER DATA")).toBeNull();
-    expect(within(panel).getByText("Ask for changes.")).toBeTruthy();
     // Daemon-provenance evidence enabled Accept; fixture evidence cannot.
     expect(accept().disabled).toBe(false);
-    await userEvent.click(within(panel).getByRole("button", { name: "Request changes" }));
     await userEvent.type(within(panel).getByLabelText(/Feedback/), "Please add tests");
     await userEvent.click(within(panel).getByRole("button", { name: "Send request" }));
     await within(panel).findByText(/Receipt real-1: changes_requested/);
     expect(panel.textContent).not.toMatch(/simulated|No daemon call|Preview only|PLACEHOLDER/i);
+    expect(screen.queryByTestId("fixture-note")).toBeNull();
   });
 });
 
@@ -620,7 +646,7 @@ describe("request integrity", () => {
 });
 
 describe("fixture daemon demo mode", () => {
-  it("is labeled PLACEHOLDER DATA on receipts, and its fixture evidence cannot authorize anything", async () => {
+  it("notes the fixture data under Technical details, and its fixture evidence cannot authorize anything", async () => {
     const client = createFixtureDaemonClient();
     render(
       <ReviewScreen
@@ -631,25 +657,25 @@ describe("fixture daemon demo mode", () => {
         onBack={() => undefined}
       />,
     );
-    await screen.findByLabelText("Pending decision");
     await waitFor(() => expect(reject().disabled).toBe(false));
     expect(accept().disabled).toBe(true);
     expect(deliver().disabled).toBe(true);
     await userEvent.click(reject());
-    const receipt = await screen.findByText(/receipt from daemon/);
-    expect(receipt.textContent).toContain("PLACEHOLDER DATA");
+    await screen.findByText(/receipt from daemon/);
+    // The provenance note lives under Technical details.
+    expect(within(screen.getByText("Technical details").closest("details")!).getByTestId("fixture-note")).toHaveTextContent(/placeholder data/i);
   });
 });
 
 describe("six-fact record placement", () => {
-  it("renders the record after the diff and before the Decision actions", async () => {
+  it("renders the record under Technical details, after the diff and the delivery step", async () => {
     setup({ record: () => <section aria-label="Record probe">Record probe</section> });
     await ready();
     const probe = screen.getByRole("region", { name: "Record probe" });
     const diff = screen.getByRole("region", { name: "Diff" });
-    const decision = screen.getByRole("region", { name: "Decision" });
+    const delivery = screen.getByRole("region", { name: "Delivery" });
     expect(diff.compareDocumentPosition(probe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(probe.compareDocumentPosition(decision) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(delivery.compareDocumentPosition(probe) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
@@ -663,12 +689,9 @@ describe("candidate identity and actions", () => {
     expect(identity).toHaveTextContent("Authentication");
   });
 
-  it("shows Request additional checks disabled with its reason, beside Request changes", async () => {
+  it("hides Request additional checks: the daemon has no method for it", async () => {
     setup();
     await ready();
-    const button = screen.getByRole("button", { name: "Request additional checks" });
-    expect(button).toBeDisabled();
-    expect(button).toHaveAccessibleDescription("The daemon has no method to request more checks.");
-    expect(button.parentElement).toBe(screen.getByRole("button", { name: "Request changes" }).parentElement);
+    expect(screen.queryByRole("button", { name: "Request additional checks" })).toBeNull();
   });
 });

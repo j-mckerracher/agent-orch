@@ -22,7 +22,6 @@ export interface CreateServicesOptions {
   initialRoute?: Route;
   connection?: Omit<ConnectionOptions, "connector">;
   data?: AppDataOptions;
-  renderReview?: Services["renderReview"];
   /** Persists form drafts across window close/reopen. */
   draftStorage?: DraftStorage;
 }
@@ -41,6 +40,5 @@ export function createServices(options: CreateServicesOptions = {}): Services {
     router: new RouterStore(options.initialRoute),
     drafts: new DraftsStore(options.draftStorage),
     bridgeBound: options.connector !== undefined,
-    renderReview: options.renderReview,
   };
 }

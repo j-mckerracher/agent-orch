@@ -65,7 +65,6 @@ const LEGACY_ROUTES: Array<[string, Route]> = [
   ["tasks", { name: "tasks", projectId: REPO, filter: "all" }],
   ["task", { name: "task", projectId: REPO, taskId: "t1" }],
   ["coordinator", { name: "coordinator", projectId: REPO }],
-  ["review", { name: "review", projectId: REPO, taskId: null }],
 ];
 
 function daemon() {

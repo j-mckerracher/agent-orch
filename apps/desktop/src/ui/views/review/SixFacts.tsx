@@ -5,7 +5,7 @@
 import type { Approval, DeliveryResult, TaskRecord } from "../../../daemon/types";
 import type { MutationView } from "../../../review/useReview";
 import type { ReviewEvidenceResult } from "../../../review/sources";
-import { Badge, Pill, type Tone } from "../../theme";
+import { Pill, type Tone } from "../../theme";
 import { stateLabel } from "../../format";
 
 export interface Fact {
@@ -125,13 +125,10 @@ export function deriveFacts({ approval, task, evidence, delivery, evidenceProble
   return [execution, claim, checks, review, approved, integrated];
 }
 
-export function SixFacts({ facts, fixture }: { facts: Fact[]; fixture: boolean }) {
+export function SixFacts({ facts }: { facts: Fact[] }) {
   return (
-    <section aria-labelledby="rd-facts-title" className="rd-card rd-facts">
-      <h3 id="rd-facts-title">
-        Six separate facts {fixture && <Badge tone="placeholder">PLACEHOLDER DATA</Badge>}
-      </h3>
-      <p className="rd-note">Each fact stands alone. A passing fact never implies another one.</p>
+    <section aria-labelledby="rd-facts-title" className="rd-facts">
+      <h3 id="rd-facts-title">Six separate facts</h3>
       <ol className="rd-fact-list">
         {facts.map((fact) => (
           <li key={fact.id} className="rd-fact" data-fact={fact.id}>

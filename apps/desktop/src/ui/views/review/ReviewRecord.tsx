@@ -1,5 +1,4 @@
-// Six-fact completion record for the selected candidate. Shared by the global Review & Decisions
-// view and the project review route so both derive the same facts from the same review state.
+// The record under a candidate's Technical details: the six facts, attempts and tokens, and audit transitions.
 import { evidenceBlockers, type ActionContext } from "../../../review/binding";
 import type { ReviewState } from "../../../review/useReview";
 import { Attempts, type AttemptsLoader } from "./Attempts";
@@ -21,20 +20,11 @@ function bindingContext(state: ReviewState): ActionContext {
   };
 }
 
-export function SixFactsRecord({
-  state,
-  fixture,
-  loadAttempts,
-}: {
-  state: ReviewState;
-  fixture: boolean;
-  loadAttempts?: AttemptsLoader;
-}) {
+export function SixFactsRecord({ state, loadAttempts }: { state: ReviewState; loadAttempts?: AttemptsLoader }) {
   if (!state.approval) return null;
   return (
     <>
       <SixFacts
-        fixture={fixture}
         facts={deriveFacts({
           approval: state.approval,
           task: state.task,
@@ -44,6 +34,20 @@ export function SixFactsRecord({
         })}
       />
       {loadAttempts && <Attempts taskId={state.approval.action.task_id} approvalId={state.approval.id} load={loadAttempts} />}
+      <section aria-label="Task audit transitions" className="rd-audit">
+        <h3>Task audit transitions</h3>
+        {state.task === null ? (
+          <p className="rd-note">The task record is not available, so no transitions are listed.</p>
+        ) : !state.task.events || state.task.events.length === 0 ? (
+          <p className="rd-note">The daemon has recorded no transitions for this task.</p>
+        ) : (
+          <ol aria-label="Task audit transitions" className="rd-events">
+            {state.task.events.map((event, index) => (
+              <li key={`${index}-${event}`}>{event}</li>
+            ))}
+          </ol>
+        )}
+      </section>
     </>
   );
 }

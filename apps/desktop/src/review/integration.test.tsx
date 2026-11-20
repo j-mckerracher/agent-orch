@@ -6,7 +6,7 @@ import { FakeDaemon, mkApproval, until } from "../test/fakeDaemon";
 import { createServices } from "../ui/createServices";
 import { parseRoute } from "../ui/router";
 import { createReviewClient } from "./client";
-import { ReviewRoute } from "./ReviewRoute";
+import { reviewGlobalViews } from "../ui/views/review/register";
 
 describe("S6 integration with the M5-03 daemon stack", () => {
   it("requests the workspaces and delivery capabilities and routes review methods through DaemonApi", async () => {
@@ -31,19 +31,13 @@ describe("S6 integration with the M5-03 daemon stack", () => {
     }
   });
 
-  it("is reachable from the shell route and returns to the task or project route", async () => {
-    const services = createServices({
-      initialRoute: parseRoute("#/project/p1/review/fixture-task-1?fixture=1"),
-      renderReview: (props) => <ReviewRoute {...props} />,
-    });
-    expect(services.router.getSnapshot()).toEqual({
-      name: "review",
-      projectId: "p1",
-      taskId: "fixture-task-1",
-      query: "fixture=1",
-    });
-    render(<App services={services} />);
-    await userEvent.click(await screen.findByRole("button", { name: /Back to task fixture-task-1/ }));
-    expect(services.router.getSnapshot()).toEqual({ name: "task", projectId: "p1", taskId: "fixture-task-1" });
+  it("opens a candidate from the old project route and goes back to the review queue", async () => {
+    window.history.replaceState({}, "", "/?fixture=1");
+    const services = createServices({ initialRoute: parseRoute("#/project/p1/review/fixture-task-1") });
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review", taskId: "fixture-task-1" });
+    render(<App services={services} globalViews={reviewGlobalViews} />);
+    await userEvent.click(await screen.findByRole("button", { name: "← Review" }));
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review" });
+    window.history.replaceState({}, "", "/");
   });
 });

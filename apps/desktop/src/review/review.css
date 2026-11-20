@@ -1,15 +1,140 @@
-.review-screen { font-family: var(--font-sans); padding: 12px; max-width: 1200px; color: var(--ink); }
-.review-screen header { display: flex; gap: 12px; align-items: center; }
-.review-screen .panel { border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--panel); padding: 8px 12px; margin: 10px 0; }
-.review-screen .placeholder-tag {
-  background: var(--amber-bg); color: var(--amber); border: 1px dashed var(--amber); padding: 0 4px; font-weight: 600; font-size: 0.8em;
+/* The candidate page (ReviewScreen). Token variables only; both themes come from ui/theme. */
+.review-screen {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  font-family: var(--font-sans);
+  color: var(--ink);
 }
-.review-screen .blockers { background: var(--soft); padding: 6px 10px; margin-top: 8px; }
-.review-screen .diff-region { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 12px; }
+
+.review-screen .rv-back {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.review-screen .rv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+
+.review-screen .rv-title {
+  min-width: 0;
+  flex: 1 1 20rem;
+}
+
+.review-screen .rv-title h1 {
+  overflow-wrap: anywhere;
+}
+
+.review-screen .rv-sub {
+  margin: 4px 0 0;
+  color: var(--subtle);
+  font-size: 13px;
+}
+
+.review-screen .rv-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.review-screen .rv-panel {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.review-screen .rv-field {
+  display: grid;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.review-screen .rv-delivery {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.review-screen .rv-delivery p {
+  margin: 0;
+}
+
+.review-screen .blockers {
+  padding: 6px 10px;
+  border-left: 3px solid var(--amber);
+  border-radius: var(--radius-sm);
+  background: var(--soft);
+}
+
+.review-screen .diff-region {
+  display: grid;
+  grid-template-columns: minmax(0, 280px) minmax(0, 1fr);
+  gap: 12px;
+}
+
+@container (max-width: 680px) {
+  .review-screen .diff-region {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* Grid items default to min-width: auto, so a long diff line would widen the column instead of scrolling. */
 .review-screen .diff-region > aside,
-.review-screen .diff-view { min-width: 0; }
-.review-screen .diff-text { overflow: auto; max-height: 480px; background: var(--soft); border: 1px solid var(--line); padding: 6px; }
-.review-screen .diff-text .add { color: var(--ink); background: color-mix(in srgb, var(--success-bg) 45%, transparent); }
-.review-screen .diff-text .del { color: var(--ink); background: color-mix(in srgb, var(--red-bg) 45%, transparent); }
-.review-screen dt { font-weight: 600; }
+.review-screen .diff-view {
+  min-width: 0;
+}
+
+.review-screen .diff-region ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.review-screen .diff-text {
+  overflow: auto;
+  max-height: 480px;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
+  font: 12px/1.5 var(--font-mono);
+}
+
+.review-screen .diff-text .add {
+  display: block;
+  color: var(--green);
+  background: var(--green-bg);
+}
+
+.review-screen .diff-text .del {
+  display: block;
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+.review-screen dl {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 4px 14px;
+  margin: 0;
+}
+
+.review-screen dt {
+  color: var(--subtle);
+  font-weight: 600;
+}
+
+.review-screen dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}

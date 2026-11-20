@@ -365,22 +365,3 @@ describe("S2 project detail and submission", () => {
     expect(within(section).getByTestId("badge-D1")).not.toHaveTextContent("PLACEHOLDER");
   });
 });
-
-describe("shell", () => {
-  it("falls back to a stub for S6 when M5-04 has not supplied one, and renders an injected one", async () => {
-    const fake = new FakeDaemon();
-    fake.projects = [{ id: REPO }];
-    await mount(fake, { route: { name: "review", projectId: REPO, taskId: null } });
-    expect(await screen.findByText(/delivered by M5-04/)).toBeInTheDocument();
-  });
-
-  it("renders the injected review screen with the route identifiers", async () => {
-    const fake = new FakeDaemon();
-    await mount(fake, {
-      route: { name: "review", projectId: REPO, taskId: "t1" },
-      renderReview: ({ projectId, taskId }) => <p>review {projectId} {taskId}</p>,
-    });
-    expect(await screen.findByText(`review ${REPO} t1`)).toBeInTheDocument();
-    await until(() => true);
-  });
-});

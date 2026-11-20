@@ -20,7 +20,6 @@ import type { ReviewEvidenceResult, ReviewEvidenceSource } from "./sources";
 import { createReviewSession, type MutationView, type Mutations, type ReviewSession } from "./reviewSession";
 
 export interface ReviewScope {
-  projectId?: string;
   taskId?: string;
 }
 
@@ -116,10 +115,12 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
   const selectedTaskId = useRef<string | null>(null);
   const snapshot = useRef<{ id: string; commit: string; digest: string } | null>(null);
 
+  // The session keeps decisions from every task; only this scope's own stay selectable.
+  const inScope = useCallback((a: Approval) => scope.taskId === undefined || a.action.task_id === scope.taskId, [scope.taskId]);
   const items = useMemo(() => {
     const ids = new Set(pending.map((a) => a.id));
-    return [...pending, ...Object.values(resolved).filter((a) => !ids.has(a.id))];
-  }, [pending, resolved]);
+    return [...pending, ...Object.values(resolved).filter((a) => !ids.has(a.id) && inScope(a))];
+  }, [pending, resolved, inScope]);
   const approval = items.find((a) => a.id === selectedId) ?? null;
   selectedTaskId.current = approval?.action.task_id ?? null;
 
@@ -188,13 +189,6 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
         let all: Approval[];
         try {
           all = await client.call<Approval[]>("approvals.list", {});
-          if (scope.taskId === undefined && scope.projectId !== undefined) {
-            const tasks = await client.call<TaskRecord[]>("tasks.list", {});
-            const inProject = new Set(
-              tasks.filter((t) => t.contract.project_id === scope.projectId).map((t) => t.contract.id),
-            );
-            all = all.filter((a) => inProject.has(a.action.task_id));
-          }
         } catch (error) {
           if (seq !== loadSeq.current) return;
           const e = asDaemonError(error);
@@ -213,7 +207,7 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
         const wanted = preferId ?? snapshot.current?.id ?? null;
         const visible = [
           ...reviewable,
-          ...Object.values(session.state().resolved).filter((r) => !reviewable.some((a) => a.id === r.id)),
+          ...Object.values(session.state().resolved).filter((r) => !reviewable.some((a) => a.id === r.id) && inScope(r)),
         ];
         const next = visible.find((a) => a.id === wanted) ?? (preferId ? null : visible[0] ?? null);
         const previous = snapshot.current;
@@ -259,7 +253,7 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
         }
       }
     },
-    [client, scope.projectId, scope.taskId, loadContext, session],
+    [client, scope.taskId, loadContext, session, inScope],
   );
 
   // Initial load, and a fresh baseline whenever the client or scope changes.
@@ -268,7 +262,7 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
   useEffect(() => {
     snapshot.current = null;
     void refreshRef.current(null);
-  }, [client, evidenceSource, scope.projectId, scope.taskId]);
+  }, [client, evidenceSource, scope.taskId]);
 
   // Any event for the reviewed task, or a reconnect, makes the preview stale,
   // except the single `approval.<decision>` event (payload.approval_id) that

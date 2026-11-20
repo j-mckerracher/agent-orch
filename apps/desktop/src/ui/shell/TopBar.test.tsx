@@ -255,7 +255,7 @@ describe("local search", () => {
     await user.type(search(), "a1");
     const approval = await screen.findByRole("option", { name: /LocalReviewMerge for t1/ });
     await user.click(approval);
-    expect(services.router.getSnapshot()).toEqual({ name: "review", projectId: REPO, taskId: "t1" });
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review", taskId: "t1" });
 
     await user.type(search(), "/work/other");
     await user.click(await screen.findByRole("option", { name: /other/ }));

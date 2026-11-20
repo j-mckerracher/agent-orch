@@ -190,7 +190,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
                   <li key={approval.id} className="ps-project-row">
                     Approval <code>{approval.id}</code> for task <code>{approval.action.task_id}</code>{" "}
                     <Button
-                      onClick={() => router.navigate({ name: "review", projectId, taskId: approval.action.task_id })}
+                      onClick={() => router.navigate({ name: "global", view: "review", taskId: approval.action.task_id })}
                     >
                       Open review
                     </Button>

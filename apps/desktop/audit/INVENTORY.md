@@ -11,14 +11,14 @@ desktop frontend served by Vite from `motif-mcao/main` (be553261e). The running 
 | R1 | global/workspace | `#/workspace` (default) | `#command-center` (Orchestrator Workspace) |
 | R2 | global/workstreams | `#/workstreams` | `#workstreams` |
 | R3 | global/agents | `#/agents` | `#agents-sessions` |
-| R4 | global/review | `#/review` | `#review-decisions` |
+| R4 | global/review | `#/review` (`?task=<id>` opens one candidate, `?project=<id>` filters) | `#review-decisions` (section D) |
 | R5 | projects | `#/projects` | none (app-only) |
 | R6 | project | `#/project/:id` | none |
 | R7 | tasks | `#/project/:id/tasks/:filter` (all, queued, running, blocked, review, terminal, state:*) | none |
 | R8 | task | `#/project/:id/task/:taskId` | none |
 | R9 | fixture-task | `#/project/:id/preview/:id` | none |
 | R10 | coordinator | `#/project/:id/coordinator` | partial: workspace "Talking to: `<coordinator>`" variants |
-| R11 | project review | `#/project/:id/review/:taskId?` (+ `fixture=1&evidence=&changes=`) | `#review-decisions` detail |
+| R11 | project review (old form) | `#/project/:id/review/:taskId?` redirects to R4 | `#review-decisions` detail |
 
 ## Modes (from `src/native/boot.ts`)
 

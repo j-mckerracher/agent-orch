@@ -243,7 +243,7 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 Back to tasks
               </Button>
               {candidateApprovals.length > 0 ? (
-                <Button variant="primary" onClick={() => router.navigate({ name: "review", projectId, taskId })}>
+                <Button variant="primary" onClick={() => router.navigate({ name: "global", view: "review", taskId })}>
                   Review candidate
                 </Button>
               ) : (

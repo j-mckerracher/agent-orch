@@ -22,7 +22,7 @@ function choiceFor(interval: number | null): IntervalChoice {
   return "custom";
 }
 
-export function DecisionNotifications({ client = decisionNotificationsClient }: { client?: DecisionNotificationsClient }) {
+export function NotificationsSection({ client = decisionNotificationsClient }: { client?: DecisionNotificationsClient }) {
   const [snapshot, setSnapshot] = useState<DecisionNotificationSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
@@ -161,8 +161,8 @@ export function DecisionNotifications({ client = decisionNotificationsClient }: 
   const retryPermission = snapshot?.permission === "denied";
 
   return (
-    <section className="rd-notifications" aria-label="Decision notifications">
-      <h2>Decision notifications</h2>
+    <section className="settings-section settings-notifications" aria-label="Decision notifications">
+      <h2>Notifications</h2>
       {loadError && <p role="alert">Notifications: unknown · Permission: unknown · Decisions needing attention: unknown. {loadError}</p>}
       {!snapshot && !loadError && <p role="status">Loading notification status… Decisions needing attention: unknown.</p>}
       {snapshot && (
@@ -170,10 +170,10 @@ export function DecisionNotifications({ client = decisionNotificationsClient }: 
           <p role="status">
             Notifications: {unavailable ? "unavailable" : snapshot.enabled ? "enabled" : "disabled"} · Permission: {snapshot.permission} · Decisions needing attention: {snapshot.pending_count ?? "unknown"}
           </p>
-          {snapshot.error && <p role="alert">{snapshot.error}</p>}
+          {snapshot.error && <p role={unavailable ? undefined : "alert"}>{snapshot.error}</p>}
           {operationError && <p role="alert">{operationError}</p>}
           {!unavailable && (
-            <div className="rd-notification-controls">
+            <div className="settings-notification-controls">
               <label>
                 Reminder interval
                 <select
@@ -218,7 +218,7 @@ export function DecisionNotifications({ client = decisionNotificationsClient }: 
             </div>
           )}
           {!unavailable && snapshot.pending_count !== null && snapshot.pending_count > 0 && (
-            <div className="rd-notification-controls" role="group" aria-label="Local reminder actions">
+            <div className="settings-notification-controls" role="group" aria-label="Local reminder actions">
               <Button onClick={() => void applyNotice({ action: "acknowledge" })} disabled={busy}>
                 Acknowledge reminders
               </Button>

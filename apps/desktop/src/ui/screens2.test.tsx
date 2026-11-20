@@ -422,12 +422,9 @@ describe("S4 task and session detail", () => {
   });
 
   it("offers Review candidate only when an approval is pending for the task and routes to S6", async () => {
-    const { user } = await mount(seeded(), {
-      route: taskRoute("t-r"),
-      renderReview: ({ projectId, taskId }) => <p>review {projectId} {taskId}</p>,
-    });
+    const { user, services } = await mount(seeded(), { route: taskRoute("t-r") });
     await user.click(await screen.findByRole("button", { name: "Review candidate" }));
-    expect(await screen.findByText(`review ${REPO} t-r`)).toBeInTheDocument();
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review", taskId: "t-r" });
   });
 
   it("links dependencies that are known and flags those that are not", async () => {
@@ -875,12 +872,12 @@ describe("S5 coordinator", () => {
   });
 
   it("lists related real tasks and pending decisions and navigates to them", async () => {
-    const { user } = await mount(seeded(), { route, renderReview: ({ taskId }) => <p>review {taskId}</p> });
+    const { user, services } = await mount(seeded(), { route });
     const related = await screen.findByRole("list", { name: "Related tasks" });
     expect(within(related).getAllByRole("listitem")).toHaveLength(4);
     expect(within(related).queryByText("t-other")).not.toBeInTheDocument();
     await user.click(within(screen.getByRole("list", { name: "Pending decisions" })).getByRole("button", { name: "Open review" }));
-    expect(await screen.findByText("review t-r")).toBeInTheDocument();
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review", taskId: "t-r" });
   });
 
   it("shows why related queued tasks have not started", async () => {

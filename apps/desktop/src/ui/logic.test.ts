@@ -86,9 +86,8 @@ describe("router", () => {
     { name: "task", projectId: "/repo", taskId: "task-1" },
     { name: "fixture-task", projectId: "/repo", id: "fixture:task-queued" },
     { name: "coordinator", projectId: "/repo" },
-    { name: "review", projectId: "/repo", taskId: "task-1" },
-    { name: "review", projectId: "/repo", taskId: null },
-    { name: "review", projectId: "/repo", taskId: "fixture-task-1", query: "fixture=1&evidence=missing" },
+    { name: "global", view: "review", taskId: "task-1" },
+    { name: "global", view: "review", projectId: "/repo" },
   ];
 
   it.each(routes)("round-trips %j through the hash", (route) => {

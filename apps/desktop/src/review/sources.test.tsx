@@ -1,9 +1,10 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it } from "vitest";
 import { App } from "../App";
 import { DaemonError } from "../daemon/errors";
 import { createServices } from "../ui/createServices";
-import { ReviewRoute } from "./ReviewRoute";
+import { reviewGlobalViews } from "../ui/views/review/register";
 import { createFixtureChangeRequestSource, createFixtureReviewEvidenceSource } from "./sources";
 
 const request = { taskId: "t", approvalId: "a", candidateCommit: "c", digestHex: "d" };
@@ -52,24 +53,24 @@ describe("daemon error mapping", () => {
 });
 
 describe("S6 mounted in the app shell", () => {
-  const mountReview = (query?: string) => {
-    const services = createServices({
-      initialRoute: { name: "review", projectId: "fixture-project", taskId: "fixture-task-1", query },
-      renderReview: (props) => <ReviewRoute {...props} />,
-    });
-    return render(<App services={services} />);
+  const mountReview = (search = "") => {
+    window.history.replaceState({}, "", `/${search}`);
+    const services = createServices({ initialRoute: { name: "global", view: "review", taskId: "fixture-task-1" } });
+    return render(<App services={services} globalViews={reviewGlobalViews} />);
   };
+  afterEach(() => window.history.replaceState({}, "", "/"));
 
   it("defaults to the real client: Offline strip, error state and no fixture data", async () => {
     mountReview();
-    expect((await screen.findByRole("alert")).textContent).toMatch(/Pending decisions are unavailable/);
+    expect((await screen.findAllByRole("alert")).some((alert) => /Pending decisions are unavailable/.test(alert.textContent ?? ""))).toBe(true);
     expect(screen.getByTestId("connection-status")).toHaveTextContent("Offline");
     expect(screen.queryByText(/fixture-approval-1/)).toBeNull();
   });
 
   it("uses the labeled fixture daemon only when explicitly requested", async () => {
-    mountReview("fixture=1");
-    expect(await screen.findByText(/FIXTURE DAEMON — PLACEHOLDER DATA/)).toBeTruthy();
-    expect(await screen.findByLabelText("Pending decision")).toBeTruthy();
+    mountReview("?fixture=1");
+    await userEvent.click(await screen.findByText("Technical details"));
+    expect(await screen.findByTestId("fixture-note")).toHaveTextContent(/placeholder data/);
+    expect(await screen.findByRole("button", { name: "Accept" })).toBeTruthy();
   });
 });
