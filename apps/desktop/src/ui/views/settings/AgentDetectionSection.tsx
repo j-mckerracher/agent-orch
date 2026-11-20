@@ -10,7 +10,7 @@ export function AgentDetectionSection() {
   const availability = useSource(() => sources.execution.availability(), "availability", sources.execution.provenance);
   return (
     <section aria-labelledby={headingId} className="settings-section">
-      <h2 id={headingId}>Agent detection</h2>
+      <h3 id={headingId}>Agent detection</h3>
       <SourceSection title="Detected agents" provenance={sources.agents.provenance} result={agents} emptyText="No agents reported.">
         {(list) => (
           <ul className="ps-steps">

@@ -120,7 +120,7 @@ test("sidebar and connection controls stay separate and independent", async ({ p
 
 test("System Usage and agent slots stay reachable and unclipped on the Settings page at 960 CSS px", async ({ page }) => {
   await page.setViewportSize(viewport);
-  await page.goto("/?fixture=1#/settings");
+  await page.goto("/?fixture=1#/settings?page=limits");
   await expect(page.getByTestId("fixture-banner")).toBeVisible();
 
   const section = page.getByTestId("limits-machine-load");
@@ -149,6 +149,8 @@ test("System Usage and agent slots stay reachable and unclipped on the Settings 
 
 const censusRoutes = [
   "#/workspace", "#/workstreams", "#/agents", "#/review", "#/projects",
+  "#/settings", "#/settings?page=limits", "#/settings?page=autonomy", "#/settings?page=repositories",
+  "#/settings?page=memory", "#/settings?page=notifications", "#/settings?page=appearance",
   "#/project/fixture%3Aproject-alpha", "#/project/fixture%3Aproject-alpha/tasks/open",
   "#/project/fixture%3Aproject-alpha/task/fixture%3Atask-auth-1",
   "#/project/fixture%3Aproject-alpha/preview/fixture%3Atask-auth-1",
@@ -224,7 +226,7 @@ test("Back and Forward traverse canonical and non-canonical routes", async ({ pa
     await expect(page).toHaveURL(/#\/agents$/);
   }
   // The old project review hash redirects to the Review view, so it is read back as that route.
-  const landed = (route: string) => (route.includes("/review/") ? "#/review\\?task=fixture%3Atask-auth-1" : route);
+  const landed = (route: string) => (route.includes("/review/") ? "#/review\\?task=fixture%3Atask-auth-1" : route.replaceAll("?", "\\?"));
   for (const route of censusRoutes) {
     await page.evaluate(hash => { location.hash = hash; }, route);
     await expect(page).toHaveURL(new RegExp(landed(route) + "$"));

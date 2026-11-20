@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { APPROVER_REQUIRED_NOTICE } from "../../../daemon/errors";
@@ -6,13 +6,13 @@ import type { SettingsWire } from "../../../daemon/types";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
-import { ServicesProvider, type Services } from "../../services";
+import { type Services } from "../../services";
 import { HOME_DIRECTORY_REFUSED_TEXT } from "./HomeDirectorySection";
-import { SettingsView } from "./SettingsView";
+import { renderSettingsPage } from "../../../test/settingsPage";
 
 const LABEL = "Home directory";
-const SAVE = "Save home directory";
-const RESULT = "Save home directory result";
+const SAVE = "Save changes";
+const RESULT = "Save result";
 
 const BASE: SettingsWire = {
   load: { cpu_percent: 80, memory_percent: 85, disk_percent: 90 },
@@ -26,13 +26,7 @@ afterEach(() => {
   while (stops.length) stops.pop()!();
 });
 
-function page(services: Services) {
-  return render(
-    <ServicesProvider services={services}>
-      <SettingsView />
-    </ServicesProvider>,
-  );
-}
+const page = (services: Services) => renderSettingsPage(services, "repositories");
 
 async function connected(wire: SettingsWire, approver: boolean | null = true) {
   const fake = new FakeDaemon();
@@ -61,7 +55,7 @@ describe("Home directory section", () => {
   it("home_directory_shows_the_saved_folder_with_the_example_and_what_it_is_for", async () => {
     const { services } = await connected({ ...BASE, home_directory: "/Users/ada/Code" });
     page(services);
-    expect(await screen.findByRole("heading", { level: 2, name: "Home directory" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { level: 3, name: "Home directory" })).toBeInTheDocument();
     const input = screen.getByRole("textbox", { name: LABEL });
     expect(input).toHaveValue("/Users/ada/Code");
     expect(input).toHaveAttribute("placeholder", "~/Code");
@@ -79,8 +73,7 @@ describe("Home directory section", () => {
   it("home_directory_is_hidden_for_a_daemon_that_does_not_send_the_setting", async () => {
     const { services } = await connected(BASE);
     page(services);
-    await screen.findByRole("heading", { level: 2, name: "Machine load limits" });
-    await screen.findByLabelText("CPU limit (percent)");
+    await screen.findByRole("heading", { level: 3, name: "Your repositories" });
     expect(screen.queryByRole("heading", { name: "Home directory" })).not.toBeInTheDocument();
   });
 

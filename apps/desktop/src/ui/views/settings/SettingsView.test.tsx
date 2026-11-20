@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
@@ -8,13 +8,13 @@ import { observation, okResult } from "../../../sources/surfaces/result";
 import type { LoadReading, ModelCatalog, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
-import { ServicesProvider, type Services } from "../../services";
-import { SettingsView } from "./SettingsView";
+import { type Services } from "../../services";
+import { renderSettingsPage } from "../../../test/settingsPage";
 
 const CPU = "CPU limit (percent)";
 const MEMORY = "Memory limit (percent)";
 const DISK = "Disk limit (percent)";
-const SAVE = "Save machine load limits";
+const SAVE = "Save changes";
 const SAVED_TEXT = "Saved. The new limits apply from the next measurement.";
 
 const mean = (meter: LoadMeterWire["meter"], mean_percent: number): LoadMeterWire => ({ meter, state: "mean", mean_percent });
@@ -39,13 +39,7 @@ afterEach(() => {
   while (stops.length) stops.pop()!();
 });
 
-function page(services: Services) {
-  return render(
-    <ServicesProvider services={services}>
-      <SettingsView />
-    </ServicesProvider>,
-  );
-}
+const page = (services: Services, id = "limits") => renderSettingsPage(services, id);
 
 /** A connected daemon session that negotiated `capabilities`; `settings.get` answers `wire` unless the test stubs it again. */
 async function connected(
@@ -106,7 +100,7 @@ describe("Agent dispatch defaults", () => {
   it("saves per-provider pairs, preserves them when switching providers, and restores after remount", async () => {
     const { fake, services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: null, providers: {} } });
     const user = userEvent.setup();
-    const first = page(services);
+    const first = page(services, "agents");
     await user.selectOptions(await screen.findByLabelText("codex model"), "m1");
     await user.selectOptions(screen.getByLabelText("codex effort"), "high");
     await user.selectOptions(screen.getByLabelText("claude-code model"), "m2");
@@ -114,7 +108,7 @@ describe("Agent dispatch defaults", () => {
     await user.selectOptions(screen.getByLabelText("Default provider"), "claude-code");
     await user.selectOptions(screen.getByLabelText("Default provider"), "codex");
     expect(screen.getByLabelText("claude-code effort")).toHaveValue("medium");
-    await user.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
     expect(fake.callsTo("settings.set")[0]?.params).toEqual({
       idempotency_key: expect.any(String),
@@ -124,13 +118,25 @@ describe("Agent dispatch defaults", () => {
       },
     });
     first.unmount();
-    page(services);
+    page(services, "agents");
     expect(await screen.findByLabelText("Default provider")).toHaveValue("codex");
-    expect(await screen.findByLabelText("codex effort")).toHaveValue("high");
+    expect(await screen.findByLabelText("Default effort")).toHaveValue("high");
     expect(screen.getByLabelText("claude-code model")).toHaveValue("m2");
-    await user.selectOptions(screen.getByLabelText("codex model"), "m2");
-    expect(screen.getByLabelText("codex effort")).toHaveValue("");
-    expect(within(screen.getByLabelText("codex effort")).queryByRole("option", { name: "high" })).not.toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("Default model"), "m2");
+    expect(screen.getByLabelText("Default effort")).toHaveValue("");
+    expect(within(screen.getByLabelText("Default effort")).queryByRole("option", { name: "high" })).not.toBeInTheDocument();
+  });
+
+  it("shows the default provider's model and effort at the top and keeps other providers' overrides in a collapsed disclosure", async () => {
+    const { services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: "codex", providers: { "claude-code": { model: "m2" } } } });
+    page(services, "agents");
+    expect(await screen.findByLabelText("Default model")).toBeInTheDocument();
+    expect(screen.getByLabelText("Default effort")).toBeInTheDocument();
+    expect(screen.queryByLabelText("codex model")).not.toBeInTheDocument();
+    const overrides = screen.getByText("Per-provider overrides").closest("details")!;
+    expect(overrides).not.toHaveAttribute("open");
+    expect(within(overrides).getByText("1 set")).toBeInTheDocument();
+    expect(within(overrides).getByLabelText("claude-code model")).toHaveValue("m2");
   });
 
   it("retains unavailable saved choices, reports validation failures, and lets the user clear them", async () => {
@@ -139,13 +145,13 @@ describe("Agent dispatch defaults", () => {
     });
     fake.stub("agents.validate_selection", { valid: false, reason: "unknown_model", detail: "The selected model is no longer available." });
     const user = userEvent.setup();
-    page(services);
-    expect(await screen.findByLabelText("codex model")).toHaveValue("gone");
-    await user.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    page(services, "agents");
+    expect(await screen.findByLabelText("Default model")).toHaveValue("gone");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("codex: The selected model is no longer available.")).toBeInTheDocument();
     expect(fake.callsTo("settings.set")).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Clear dispatch defaults" }));
-    await user.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    await user.click(screen.getByRole("button", { name: "Clear defaults" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
     expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({ dispatch_defaults: { default_agent: null, providers: {} } });
   });
@@ -158,9 +164,9 @@ describe("Agent dispatch defaults", () => {
     stops.push(() => { services.connection.stop(); services.data.dispose(); });
     services.connection.start();
     await until(() => services.connection.getSnapshot().status === "connected", "connected");
-    page(services);
+    page(services, "agents");
     expect(await screen.findByLabelText("Default provider")).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Save dispatch defaults" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(fake.callsTo("settings.set")).toHaveLength(0);
   });
 });
@@ -169,10 +175,11 @@ describe("Settings page, live", () => {
   it("registers a local repository from Settings and shows it in the repository list", async () => {
     const { fake, services } = await connected();
     const user = userEvent.setup();
-    page(services);
-    const region = await screen.findByRole("region", { name: "Repositories" });
-    await user.type(within(region).getByLabelText("Repository path"), "/work/new-repo");
-    await user.click(within(region).getByRole("button", { name: "Register repository" }));
+    page(services, "repositories");
+    const region = await screen.findByRole("region", { name: "Your repositories" });
+    await user.click(within(region).getByRole("button", { name: "Add repository" }));
+    await user.type(screen.getByLabelText("Repository path"), "/work/new-repo");
+    await user.click(screen.getByRole("button", { name: "Register repository" }));
 
     expect(await within(region).findByText("Repository registered.")).toBeInTheDocument();
     expect(await within(region).findByRole("list", { name: "Registered repositories" })).toHaveTextContent("/work/new-repo");
@@ -182,12 +189,13 @@ describe("Settings page, live", () => {
   it("rejects a relative repository path in Settings without calling the daemon", async () => {
     const { fake, services } = await connected();
     const user = userEvent.setup();
-    page(services);
-    const region = await screen.findByRole("region", { name: "Repositories" });
-    await user.type(within(region).getByLabelText("Repository path"), "relative/repo");
-    await user.click(within(region).getByRole("button", { name: "Register repository" }));
+    page(services, "repositories");
+    const region = await screen.findByRole("region", { name: "Your repositories" });
+    await user.click(within(region).getByRole("button", { name: "Add repository" }));
+    await user.type(screen.getByLabelText("Repository path"), "relative/repo");
+    await user.click(screen.getByRole("button", { name: "Register repository" }));
 
-    expect(await within(region).findByRole("alert")).toHaveTextContent("Enter an absolute repository path.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Enter an absolute repository path.");
     expect(fake.callsTo("projects.register")).toHaveLength(0);
   });
 
@@ -522,8 +530,8 @@ describe("Settings page, refresh", () => {
 
 describe("Settings page, notifications", () => {
   it("settings_page_carries_the_notifications_section_for_decisions_that_need_you", async () => {
-    page(createServices());
-    expect(await screen.findByRole("heading", { level: 2, name: "Notifications" })).toBeInTheDocument();
+    page(createServices(), "notifications");
+    expect(await screen.findByRole("heading", { level: 3, name: "Decision notifications" })).toBeInTheDocument();
   });
 });
 

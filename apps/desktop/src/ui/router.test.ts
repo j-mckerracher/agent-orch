@@ -62,6 +62,15 @@ describe("global routes", () => {
     expect(formatRoute({ name: "global", view: "workspace", workstreamId: "ws-1" })).toBe("#/workspace");
   });
 
+  it("formats and parses a settings page, and keeps the old bare link opening the first page", () => {
+    const route: Route = { name: "global", view: "settings", settingsPage: "limits" };
+    expect(formatRoute(route)).toBe("#/settings?page=limits");
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+    expect(parseRoute("#/settings")).toEqual({ name: "global", view: "settings" });
+    expect(parseRoute("#/settings?page=")).toEqual({ name: "global", view: "settings" });
+    expect(formatRoute({ name: "global", view: "agents", settingsPage: "limits" })).toBe("#/agents");
+  });
+
   it("formats and parses a selected task on the agents view, and keeps the old bare link", () => {
     const route: Route = { name: "global", view: "agents", taskId: "t 1" };
     expect(formatRoute(route)).toBe("#/agents?task=t%201");

@@ -17,7 +17,8 @@ afterEach(() => {
 });
 
 const VIEWS: GlobalView[] = ["workspace", "workstreams", "agents", "review", "settings"];
-const route = (view: GlobalView): Route => ({ name: "global", view });
+// System Usage sits on the Limits page of Settings.
+const route = (view: GlobalView): Route => ({ name: "global", view, ...(view === "settings" ? { settingsPage: "limits" } : {}) });
 
 describe("M7 wiring", () => {
   it("registers a view for every global route and fills every shell slot", () => {
@@ -40,7 +41,7 @@ describe("M7 wiring", () => {
   });
 
   it("turns the ambient background on by default, with the switch beside the theme toggle in Settings > Appearance", async () => {
-    const services = createServices({ initialRoute: route("settings") });
+    const services = createServices({ initialRoute: { name: "global", view: "settings", settingsPage: "appearance" } });
     render(
       <>
         <App services={services} shellSlots={appShellSlots} globalViews={appGlobalViews} />

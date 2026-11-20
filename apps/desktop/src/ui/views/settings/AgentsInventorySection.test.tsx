@@ -1,11 +1,10 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
-import { ServicesProvider } from "../../services";
-import { SettingsView } from "./SettingsView";
+import { renderSettingsPage } from "../../../test/settingsPage";
 
 const CODEX = {
   agent: "codex",
@@ -43,11 +42,7 @@ async function settings(fake: FakeDaemon, { live = true } = {}) {
     services.connection.start();
     await until(() => services.connection.getSnapshot().status === "connected", "connected");
   }
-  render(
-    <ServicesProvider services={services}>
-      <SettingsView />
-    </ServicesProvider>,
-  );
+  renderSettingsPage(services, "agents");
   return userEvent.setup();
 }
 
@@ -57,7 +52,9 @@ describe("Settings > Agents inventory", () => {
     fake.stub("agents.capabilities", [CODEX, { agent: "pi", installed: true, launchable: false, capabilities: null }]);
     await settings(fake);
     const section = within(await screen.findByTestId("agents-inventory"));
-    expect(section.getByRole("heading", { level: 2, name: "Agents" })).toBeInTheDocument();
+    // The adapters are one click deeper: a collapsed disclosure on the Agents page.
+    expect(screen.getByTestId("installed-adapters")).not.toHaveAttribute("open");
+    expect(screen.getByText("Installed adapters")).toBeInTheDocument();
     const table = await section.findByRole("table", { name: "Adapter inventory" });
     const codex = within(table).getByRole("row", { name: /Codex/ });
     expect(within(codex).getByText("Installed and launchable")).toBeInTheDocument();

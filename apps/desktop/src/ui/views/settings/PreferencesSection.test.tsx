@@ -130,14 +130,14 @@ describe("preferences section", () => {
   it("hides_quietly_without_the_capability", async () => {
     await section({ configure: (daemon) => (daemon.unknownCapabilities = ["standing_approvals"]) });
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(screen.queryByRole("heading", { name: SECTION_TITLE })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: SECTION_TITLE })).not.toBeInTheDocument();
   });
 
   it("hides_quietly_when_the_daemon_has_the_capability_but_no_memory_methods", async () => {
     const { fake } = await section({ memory: false });
     await waitFor(() => expect(fake.callsTo("memory.list").length).toBeGreaterThan(0));
     await new Promise((resolve) => setTimeout(resolve, 60));
-    expect(screen.queryByRole("heading", { name: SECTION_TITLE })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: SECTION_TITLE })).not.toBeInTheDocument();
     expect(screen.queryByText(/could not be read/)).not.toBeInTheDocument();
   });
 
@@ -149,7 +149,7 @@ describe("preferences section", () => {
       },
     });
     await addShared();
-    expect(screen.getByRole("heading", { name: SECTION_TITLE })).toBeInTheDocument();
+    expect(screen.getByRole("region", { name: SECTION_TITLE })).toBeInTheDocument();
     expect(screen.getByText(/Every conversation follows them unless a message says otherwise/)).toBeInTheDocument();
     const items = within(sharedList()).getAllByRole("listitem");
     expect(items).toHaveLength(2);

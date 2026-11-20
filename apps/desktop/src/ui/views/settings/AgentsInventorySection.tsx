@@ -1,8 +1,8 @@
 /** Settings > Agents: which adapters are installed and what each reports. Flags are shown as reported; unknown stays unknown. */
-import { useId } from "react";
 import { useServices } from "../../services";
-import { Pill, type Tone } from "../../theme";
+import { Disclosure, Pill, type Tone } from "../../theme";
 import { PlaceholderBadge } from "../../widgets";
+import { AgentDetectionSection } from "./AgentDetectionSection";
 import { LoadRegion } from "../agents/common";
 import type { Flag } from "./inventoryModel";
 import { useAgentsInventory } from "./useAgentsInventory";
@@ -23,12 +23,10 @@ function FlagPill({ flag }: { flag: Flag }) {
 }
 
 export function AgentsInventorySection() {
-  const headingId = useId();
   const { sources } = useServices();
   const { live, inventory, reload } = useAgentsInventory();
   return (
-    <section aria-labelledby={headingId} className="settings-section settings-agents" data-testid="agents-inventory">
-      <h2 id={headingId}>Agents</h2>
+    <section aria-label="Installed adapters" className="settings-agents" data-testid="agents-inventory">
       <p className="settings-intro">The adapters this machine can run.</p>
       {!live && (
         <p>
@@ -98,5 +96,15 @@ export function AgentsInventorySection() {
         )}
       </LoadRegion>
     </section>
+  );
+}
+
+/** The collapsed "Installed adapters" part of the Agents page. Adapter detection joins the inventory here. */
+export function InstalledAdapters() {
+  return (
+    <Disclosure summary="Installed adapters" data-testid="installed-adapters">
+      <AgentsInventorySection />
+      <AgentDetectionSection />
+    </Disclosure>
   );
 }

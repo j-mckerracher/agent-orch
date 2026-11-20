@@ -162,7 +162,7 @@ export function NotificationsSection({ client = decisionNotificationsClient }: {
 
   return (
     <section className="settings-section settings-notifications" aria-label="Decision notifications">
-      <h2>Notifications</h2>
+      <h3>Decision notifications</h3>
       {loadError && <p role="alert">Notifications: unknown · Permission: unknown · Decisions needing attention: unknown. {loadError}</p>}
       {!snapshot && !loadError && <p role="status">Loading notification status… Decisions needing attention: unknown.</p>}
       {snapshot && (

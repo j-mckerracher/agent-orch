@@ -49,9 +49,11 @@ interface Options {
   surfaces?: SurfaceSources;
   grants?: unknown[];
   configure?: (fake: FakeDaemon) => void;
+  /** Open the Add dialog first; the form lives there. */
+  open?: boolean;
 }
 
-async function section({ approver = true, surfaces, grants = [GRANT], configure }: Options = {}) {
+async function section({ approver = true, surfaces, grants = [GRANT], configure, open = true }: Options = {}) {
   const fake = new FakeDaemon();
   fake.approver = approver;
   fake.projects = [{ id: PROJECT }];
@@ -71,7 +73,9 @@ async function section({ approver = true, surfaces, grants = [GRANT], configure 
       <GrantsSection />
     </ServicesProvider>,
   );
-  return { fake, user: userEvent.setup() };
+  const user = userEvent.setup();
+  if (open) await user.click(await screen.findByRole("button", { name: "Add" }));
+  return { fake, user };
 }
 
 const CREATE = "Create standing approval";
@@ -87,10 +91,35 @@ async function fill(user: ReturnType<typeof userEvent.setup>, kinds: string[] = 
 
 describe("standing approvals section", () => {
   it("grants_section_hides_quietly_without_the_capability", async () => {
-    await section({ configure: (daemon) => (daemon.unknownCapabilities = ["standing_approvals"]) });
+    await section({ open: false, configure: (daemon) => (daemon.unknownCapabilities = ["standing_approvals"]) });
     await new Promise((resolve) => setTimeout(resolve, 60));
     expect(screen.queryByRole("region", { name: "Standing approvals" })).not.toBeInTheDocument();
     expect(screen.queryByText(/could not be read/)).not.toBeInTheDocument();
+  });
+
+  it("grants_section_lists_approvals_and_keeps_the_form_closed_until_add_is_clicked", async () => {
+    const { user } = await section({ open: false });
+    expect(await screen.findByRole("list", { name: "Standing approvals" })).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: CREATE })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Add" }));
+    const dialog = screen.getByRole("dialog", { name: "Add a standing approval" });
+    expect(within(dialog).getByRole("button", { name: CREATE })).toBeInTheDocument();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("grants_section_empty_state_is_one_line", async () => {
+    await section({ open: false, grants: [] });
+    expect(await screen.findByText("None yet. Nothing runs without your approval.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add" })).toBeInTheDocument();
+  });
+
+  it("grants_section_closes_the_dialog_once_the_approval_is_created", async () => {
+    const { user } = await section();
+    await fill(user);
+    await user.click(await create());
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("grants_section_offers_only_the_grantable_kinds_and_never_makes_a_control_of_the_others", async () => {
