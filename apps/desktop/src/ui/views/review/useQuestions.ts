@@ -49,24 +49,26 @@ function questionErrorText(error: DaemonError, operation: "answer" | "defer"): s
   }
 }
 
-export function useQuestions(): QuestionsModel {
+export function useQuestions(enabled = true): QuestionsModel {
   const { surfaces } = useServices();
   const gate = useGate();
   const source = surfaces.questions;
   const live = source.provenance.kind === "daemon";
   const supported = !live || gate.connection.capabilities.includes("holds");
+  // A caller that cannot yet use the list (the task window, before its reply box is on) reads nothing.
+  const active = enabled && supported;
   const [nonce, setNonce] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [announcement, setAnnouncement] = useState("");
 
   const loaded = useSurface(
     () =>
-      supported
+      active
         ? source.list()
         : Promise.resolve(notOk<QuestionItem[]>(source.provenance, "unsupported", "This daemon has no questions.", observation(Date.now()))),
-    `questions#${nonce}`,
+    `questions${active ? "" : "-off"}#${nonce}`,
     source.provenance,
-    supported ? { pollMs: HOLDS_POLL_MS, onFocus: true } : undefined,
+    active ? { pollMs: HOLDS_POLL_MS, onFocus: true } : undefined,
   );
   const result = useRetained(loaded, "questions");
 
@@ -118,9 +120,9 @@ export function useQuestions(): QuestionsModel {
 
   return {
     supported,
-    loading: supported && result.status === "loading",
-    unavailable: supported && (result.status === "unavailable" || result.status === "unknown") ? result.reason : null,
-    items: supported && result.status === "ok" ? result.data : NO_QUESTIONS,
+    loading: active && result.status === "loading",
+    unavailable: active && (result.status === "unavailable" || result.status === "unknown") ? result.reason : null,
+    items: active && result.status === "ok" ? result.data : NO_QUESTIONS,
     fixture: !live,
     blocked,
     busy,
