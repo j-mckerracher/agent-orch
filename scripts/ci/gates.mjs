@@ -167,7 +167,7 @@ export function gatesFor(platform) {
       pattern: "\\bbuilt in \\d", needs: ["desktop-npm-ci"],
     },
     {
-      name: "desktop-vitest", mode: "vitest", cwd: UI, exe: "npx", args: ["vitest", "run"], timeout: 1200,
+      name: "desktop-vitest", mode: "vitest", cwd: UI, exe: "npx", args: ["vitest", "run", ...(process.env.VITEST_SHARD ? ["--shard", process.env.VITEST_SHARD] : [])], timeout: 1200,
       needs: ["desktop-npm-ci"],
     },
   );
