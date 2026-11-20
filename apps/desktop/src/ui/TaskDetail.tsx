@@ -9,9 +9,7 @@ import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
 import { TaskQueueStatus } from "./TaskQueueStatus";
-import { TaskReply } from "./TaskReply";
-import { OutputTail } from "./views/agents/OutputTail";
-import { SessionThinking } from "./views/agents/SessionThinking";
+import { TaskConversation } from "./TaskConversation";
 import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
 
 export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; previewId?: string }) {
@@ -294,18 +292,13 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                 </p>
               )}
             </section>
-            <section aria-label="Agent conversation" className="ps-section">
-              <h2>Conversation</h2>
-              {sessionId === null ? (
-                <p>No recorded session, so there is no conversation to show.</p>
-              ) : (
-                <>
-                  <OutputTail key={sessionId} taskId={taskId} sessionId={sessionId} running={running} />
-                  <SessionThinking key={`${sessionId}:thinking`} sessionId={sessionId} running={running} />
-                </>
-              )}
-              <TaskReply taskId={taskId} state={record.state} />
-            </section>
+            <TaskConversation
+              taskId={taskId}
+              state={record.state}
+              sessionId={sessionId}
+              running={running}
+              agent={agentDisplayName(record.contract.agent)}
+            />
             <section aria-label="Attempts" className="ps-section">
               <h2>Attempts</h2>
               {record.attempts.length === 0 ? (

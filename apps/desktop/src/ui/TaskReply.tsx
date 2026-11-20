@@ -1,13 +1,28 @@
 /** Reply box on the task window (DPES-1106): answers the agent's open question, or sends it a message while it waits. */
-import { useId, useState } from "react";
+import { useState } from "react";
 import { APPROVER_REQUIRED_NOTICE, type DaemonError } from "../daemon/errors";
 import type { TaskState } from "../daemon/types";
 import type { QuestionItem } from "../sources/surfaces/types";
+import { ChatComposer } from "./chat/ChatComposer";
 import { TERMINAL_STATES } from "./format";
 import { type Gate, useGate, useServices } from "./services";
 import { Button } from "./theme";
 import { ErrorNotice } from "./widgets";
 import { type QuestionsModel, useQuestions } from "./views/review/useQuestions";
+
+/** One thing the person said (or the question they answered) in this window. The daemon keeps no message history to read back. */
+export interface Turn {
+  key: string;
+  from: "agent" | "you";
+  text: string;
+}
+
+/** What the reply box can do right now: why it is off, the open question it answers, and the question list behind both. */
+export interface TaskReplyModel {
+  reason: string | null;
+  question: QuestionItem | undefined;
+  questions: QuestionsModel;
+}
 
 /** The first reason the reply box is off, or null. Runs before the question list is read, so a non-approver never reaches `decisions.list`. */
 function blockedReason(gate: Gate, state: TaskState): string | null {
@@ -20,89 +35,54 @@ function blockedReason(gate: Gate, state: TaskState): string | null {
   return "The agent is not waiting for a reply, so it cannot be messaged yet.";
 }
 
-export function TaskReply({ taskId, state }: { taskId: string; state: TaskState }) {
-  const reason = blockedReason(useGate(), state);
-  if (reason === null) return <WaitingReply taskId={taskId} />;
-  return <MessageForm taskId={taskId} reason={reason} />;
-}
-
-/** A Waiting task: the answer box when its question is open, otherwise the message box. Reads the question list only here. */
-function WaitingReply({ taskId }: { taskId: string }) {
-  const model = useQuestions();
-  const question = model.items.find((item) => item.taskId === taskId && item.state === "open");
+export function useTaskReply(taskId: string, state: TaskState): TaskReplyModel {
+  const base = blockedReason(useGate(), state);
+  const questions = useQuestions(base === null);
+  if (base !== null) return { reason: base, question: undefined, questions };
   // Without the list the app cannot tell whether a question is open, so a message could queue behind one.
-  const unknown = !model.supported
+  const unknown = !questions.supported
     ? "This daemon does not report open questions, so the app cannot tell whether one is open."
-    : model.unavailable ?? (model.loading ? "Checking whether a question is open." : null);
-  return (
-    <div>
-      {model.announcement !== "" && <p role="status">{model.announcement}</p>}
-      {unknown !== null ? (
-        <MessageForm taskId={taskId} reason={unknown} />
-      ) : question === undefined ? (
-        <MessageForm taskId={taskId} reason={null} />
-      ) : (
-        <AnswerForm question={question} model={model} />
-      )}
-    </div>
-  );
+    : (questions.unavailable ?? (questions.loading ? "Checking whether a question is open." : null));
+  const question = unknown === null ? questions.items.find((item) => item.taskId === taskId && item.state === "open") : undefined;
+  return { reason: unknown, question, questions };
 }
 
-/** The open question: its options only fill the box; "Send answer" sends the words exactly as typed. */
-function AnswerForm({ question, model }: { question: QuestionItem; model: QuestionsModel }) {
-  const [text, setText] = useState("");
-  const inputId = useId();
-  return (
-    <div>
-      <p>{question.question}</p>
-      {question.options.length > 0 && (
-        <span role="group" aria-label="Options">
-          {question.options.map((option) => (
-            <Button key={option} variant="quiet" onClick={() => setText(option)}>
-              {option}
-            </Button>
-          ))}
-        </span>
-      )}
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void model.answer(question, text).then((sent) => {
-            if (sent) setText("");
-          });
-        }}
-      >
-        <label htmlFor={inputId}>Your answer</label>
-        <textarea id={inputId} rows={3} value={text} onChange={(event) => setText(event.target.value)} />
-        <Button type="submit" variant="primary" disabled={model.busy !== null || text.trim() === ""}>
-          Send answer
-        </Button>
-      </form>
-    </div>
-  );
-}
+let nextMessage = 0;
 
-/** Free-form message to the task's agent. A `reason` turns the box off and says why. */
-function MessageForm({ taskId, reason }: { taskId: string; reason: string | null }) {
+/**
+ * The chat composer for one task. With an open question the text is the answer and the options only fill the box;
+ * otherwise it is a free-form message. Either way the words go exactly as typed.
+ */
+export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: TaskReplyModel; onTurns: (turns: Turn[]) => void }) {
   const { data } = useServices();
+  const { reason, question, questions } = reply;
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<DaemonError | null>(null);
-  const inputId = useId();
-  const reasonId = useId();
-  const off = reason !== null;
-  const describedBy = off ? reasonId : undefined;
+  const busy = question ? questions.busy !== null : sending;
   // A different text would mint a new key while the old send may still have queued, so the text stays put until it settles.
   const locked = sending || error?.indeterminate === true;
+  const canSend = reason === null && !busy && text.trim() !== "";
 
   const send = async () => {
+    if (question) {
+      if (await questions.answer(question, text)) {
+        onTurns([
+          { key: question.id, from: "agent", text: question.question },
+          { key: `${question.id}:answer`, from: "you", text },
+        ]);
+        setText("");
+      }
+      return;
+    }
     setSending(true);
     setSent(false);
     setError(null);
     const result = await data.messageTask(taskId, text);
     setSending(false);
     if (result.ok) {
+      onTurns([{ key: `message-${nextMessage++}`, from: "you", text }]);
       setText("");
       setSent(true);
     } else {
@@ -111,32 +91,33 @@ function MessageForm({ taskId, reason }: { taskId: string; reason: string | null
   };
 
   return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        void send();
-      }}
-    >
-      <label htmlFor={inputId}>Message to the agent</label>
-      <textarea
-        id={inputId}
-        rows={3}
-        value={text}
-        disabled={off || locked}
-        aria-describedby={describedBy}
-        onChange={(event) => setText(event.target.value)}
-      />
-      <Button type="submit" variant="primary" disabled={off || sending || text.trim() === ""} aria-describedby={describedBy}>
-        Send message
-      </Button>
-      {reason !== null && (
-        <p id={reasonId} className="muted">
-          {reason}
-        </p>
+    <>
+      {question && question.options.length > 0 && (
+        <span role="group" aria-label="Options" className="task-chat-options">
+          {question.options.map((option) => (
+            <Button key={option} variant="quiet" onClick={() => setText(option)}>
+              {option}
+            </Button>
+          ))}
+        </span>
       )}
-      {sent && <p role="status">Sent. The agent resumes shortly.</p>}
-      {error && <SendError error={error} />}
-    </form>
+      <ChatComposer
+        label={question ? "Your answer" : "Message to the agent"}
+        sendLabel={question ? "Send answer" : "Send message"}
+        placeholder={question ? "Answer the agent's question…" : "Reply to the agent…"}
+        value={text}
+        onChange={setText}
+        onSend={() => void send()}
+        canSend={canSend}
+        busy={busy}
+        disabled={reason !== null || locked}
+        blocked={reason}
+      />
+      <div aria-live="polite" className="ws-feedback">
+        {sent && <p role="status">Sent. The agent resumes shortly.</p>}
+        {error && <SendError error={error} />}
+      </div>
+    </>
   );
 }
 

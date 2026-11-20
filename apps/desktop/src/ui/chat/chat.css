@@ -1,0 +1,164 @@
+/* Chat pieces shared by the Orchestrator Workspace and the task window (ChatLog, ChatComposer). Token variables only. */
+.ws-log {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 160px;
+  padding: 4px 2px 8px;
+  overflow: auto;
+}
+
+.ws-log .ui-bubble-body {
+  overflow-wrap: anywhere;
+}
+
+.ws-log:focus-visible {
+  outline: var(--focus-width, 2px) solid var(--focus);
+  outline-offset: 2px;
+}
+
+.ws-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.ws-state p {
+  margin: 0;
+}
+
+.ws-note,
+.ws-small {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.ws-note {
+  padding-top: 12px;
+}
+
+.ws-blocked {
+  padding: 2px 4px 0;
+}
+
+.ws-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 13px;
+  background: var(--panel);
+}
+
+.ws-composer:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 var(--focus-width, 2px) var(--focus);
+}
+
+/* One line at rest (rows={1}); a longer draft scrolls inside the box. */
+.ws-composer textarea {
+  width: 100%;
+  resize: none;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: 13px/1.5 var(--font-sans);
+}
+
+/* The composer shell shows the focus ring for the textarea; the other controls keep their own. */
+.ws-composer textarea:focus-visible {
+  outline: none;
+}
+
+/* Placeholder text uses the readable secondary token (Chrome's default gray fails 4.5:1 on the dark panel). */
+.ws-composer textarea::placeholder {
+  color: var(--subtle);
+  opacity: 1;
+}
+
+/* One row at every width: the chips shrink and truncate instead of wrapping the send button away. */
+.ws-composer-row {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.ws-composer .ws-send {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* A composer with no controls beside it keeps the send button at the right edge. */
+.ws-composer .ws-send:only-child {
+  margin-left: auto;
+}
+
+.ws-feedback p {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+.ws-feedback .notice {
+  margin: 4px 0 0;
+}
+
+/* Task window (TaskConversation): the thread sits in a page section, so it scrolls inside a capped height. */
+.task-chat {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-chat > h2 {
+  margin: 0;
+}
+
+.task-chat .ws-log {
+  flex: none;
+  max-height: min(32rem, 60vh);
+}
+
+.task-chat-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* Worker output is plain text and never rendered as Markdown: each line keeps its own spacing. */
+.ws-output {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  font: 12px/1.5 var(--font-mono);
+}
+
+.ws-output > div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ws-output-stream {
+  color: var(--muted);
+}
+
+@media (forced-colors: active) {
+  .ws-composer {
+    border: 1px solid CanvasText;
+  }
+}
