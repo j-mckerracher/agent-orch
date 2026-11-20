@@ -196,7 +196,7 @@ describe("CopyButton", () => {
     const { container } = render(<CopyButton text="**Plan** ready" />);
     await user.click(screen.getByRole("button", { name: "Copy message" }));
     expect(await navigator.clipboard.readText()).toBe("**Plan** ready");
-    expect(screen.getByText("Copied")).toBeInTheDocument();
+    expect(container.querySelector(".ui-copy-result")).toHaveTextContent("Copied");
     expect(container.firstElementChild).toHaveAttribute("data-state", "copied");
   });
 
@@ -210,7 +210,7 @@ describe("CopyButton", () => {
     expect(container.firstElementChild).toHaveAttribute("data-state", "copied");
     await act(async () => void (await vi.advanceTimersByTimeAsync(2000)));
     expect(container.firstElementChild).toHaveAttribute("data-state", "idle");
-    expect(screen.queryByText("Copied")).toBeNull();
+    expect(container.querySelector(".ui-copy-result")).toBeNull();
   });
 
   it("says so when the clipboard refuses", async () => {
@@ -218,7 +218,7 @@ describe("CopyButton", () => {
     vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(new Error("denied"));
     const { container } = render(<CopyButton text="x" label="Copy status" />);
     await user.click(screen.getByRole("button", { name: "Copy status" }));
-    expect(await screen.findByText("Copy failed")).toBeInTheDocument();
+    expect(await screen.findByText("Copy failed", { selector: ".ui-copy-result" })).toBeInTheDocument();
     expect(container.firstElementChild).toHaveAttribute("data-state", "failed");
   });
 });

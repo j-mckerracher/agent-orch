@@ -1,7 +1,9 @@
 import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import type { DaemonError } from "../../../daemon/errors";
 import { Button } from "../../theme";
 import { Dialog } from "../../Dialog";
 import { usePopover } from "../../usePopover";
+import { ErrorNotice } from "../../widgets";
 import type { TargetOption } from "./targets";
 import "./ConversationActions.css";
 
@@ -16,9 +18,10 @@ export interface ConversationActionsProps {
   running: boolean;
   /** Another action on this conversation is in flight. */
   busy: boolean;
-  onClear: () => void;
-  /** Present for project coordinators only. */
-  onRemove?: () => void;
+  /** Resolves when the clear ends; the dialog's confirm button shows pending until then. */
+  onClear: () => Promise<void>;
+  /** Present for project coordinators only. Resolves when the removal ends. */
+  onRemove?: () => Promise<void>;
   /** A workstream conversation has no history actions: its menu holds only `children`. */
   history?: boolean;
   /** Scope, monitoring and coordinator controls, shown above the actions in the menu. */
@@ -66,7 +69,18 @@ export function ConversationActions({
     panelRef.current?.querySelector<HTMLElement>('[role="menuitem"], button, input, a[href]')?.focus(),
   );
   const [dialog, setDialog] = useState<"clear" | "remove" | null>(null);
+  // The confirm button runs its action and keeps the dialog open, with its own spinner, until the action ends.
+  const [confirming, setConfirming] = useState(false);
   const reason = historyActionReason({ live, connected, supported, running, busy });
+  const confirm = async (action: () => Promise<void>) => {
+    setConfirming(true);
+    try {
+      await action();
+    } finally {
+      setConfirming(false);
+      setDialog(null);
+    }
+  };
 
   const choose = (action: "clear" | "remove") => {
     if (reason !== null) return;
@@ -158,19 +172,15 @@ export function ConversationActions({
       {dialog === "clear" && (
         <Dialog
           title={`Clear history for ${option.label}?`}
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            if (!confirming) setDialog(null);
+          }}
           footer={
             <>
-              <Button variant="secondary" onClick={() => setDialog(null)}>
+              <Button variant="secondary" disabled={confirming} onClick={() => setDialog(null)}>
                 Cancel
               </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setDialog(null);
-                  onClear();
-                }}
-              >
+              <Button variant="danger" pending={confirming} onClick={() => void confirm(onClear)}>
                 Clear history permanently
               </Button>
             </>
@@ -187,19 +197,15 @@ export function ConversationActions({
       {dialog === "remove" && onRemove && (
         <Dialog
           title={`Remove ${option.label}?`}
-          onClose={() => setDialog(null)}
+          onClose={() => {
+            if (!confirming) setDialog(null);
+          }}
           footer={
             <>
-              <Button variant="secondary" onClick={() => setDialog(null)}>
+              <Button variant="secondary" disabled={confirming} onClick={() => setDialog(null)}>
                 Cancel
               </Button>
-              <Button
-                variant="danger"
-                onClick={() => {
-                  setDialog(null);
-                  onRemove();
-                }}
-              >
+              <Button variant="danger" pending={confirming} onClick={() => void confirm(onRemove)}>
                 Remove coordinator permanently
               </Button>
             </>
@@ -225,12 +231,14 @@ export interface AddCoordinatorDialogProps {
   projects: readonly { id: string; label: string }[];
   /** The project being added, while its request is in flight. */
   busyId: string | null;
+  /** Why the last add failed; shown here, because the dialog covers the page. */
+  error?: DaemonError | null;
   onAdd: (projectId: string) => void;
   onClose: () => void;
 }
 
 /** Lists projects without a coordinator, with an "Add" action each (DPES-1105). An added coordinator starts with an empty conversation. */
-export function AddCoordinatorDialog({ projects, busyId, onAdd, onClose }: AddCoordinatorDialogProps) {
+export function AddCoordinatorDialog({ projects, busyId, error = null, onAdd, onClose }: AddCoordinatorDialogProps) {
   return (
     <Dialog
       title="Add a coordinator"
@@ -250,7 +258,8 @@ export function AddCoordinatorDialog({ projects, busyId, onAdd, onClose }: AddCo
               <span>{project.label}</span>
               <Button
                 variant="secondary"
-                disabled={busyId !== null}
+                pending={busyId === project.id}
+                disabled={busyId !== null && busyId !== project.id}
                 aria-label={`Add ${project.label}`}
                 onClick={() => onAdd(project.id)}
               >
@@ -260,6 +269,7 @@ export function AddCoordinatorDialog({ projects, busyId, onAdd, onClose }: AddCo
           ))}
         </ul>
       )}
+      {error && <ErrorNotice error={error} action="Adding the coordinator" />}
       <p>
         An added coordinator starts with an empty conversation. One you add back keeps its scope sentence and the
         project&apos;s preferences and learnings. The project and its tasks are not changed.

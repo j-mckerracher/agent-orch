@@ -127,4 +127,14 @@ describe("MonitoringChip", () => {
     mount(model({ note: "Fixture data: nothing was saved" }));
     expect(screen.getByText("Fixture data: nothing was saved")).toBeInTheDocument();
   });
+
+  it("monitoring_chip_says_a_change_is_being_saved_in_a_status_region", () => {
+    mount(model({ pending: "quiet" }));
+    expect(screen.getByText("Changing the monitoring mode…")).toHaveAttribute("role", "status");
+  });
+
+  it("monitoring_chip_says_a_saved_change_in_a_status_region", () => {
+    mount(model({ note: "Monitoring set to quiet." }));
+    expect(screen.getByText("Monitoring set to quiet.")).toHaveAttribute("role", "status");
+  });
 });

@@ -227,6 +227,11 @@ export function CopyButton({ text, label = "Copy message", className }: CopyButt
       >
         <CopyIcon state={state} />
       </button>
+      {state !== "idle" && (
+        <span className="ui-copy-result" aria-hidden="true">
+          {COPY_RESULT[state]}
+        </span>
+      )}
       <span className="ui-visually-hidden" aria-live="polite" aria-atomic="true">
         {COPY_RESULT[state]}
       </span>

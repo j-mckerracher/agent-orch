@@ -7,7 +7,7 @@ import { ChatComposer } from "./chat/ChatComposer";
 import { TERMINAL_STATES } from "./format";
 import { type Gate, useGate, useServices, useStore } from "./services";
 import { Button } from "./theme";
-import { ErrorNotice } from "./widgets";
+import { ErrorNotice, Notice } from "./widgets";
 import { type QuestionsModel, useQuestions } from "./views/review/useQuestions";
 
 /** One thing the person said (or the question they answered) in this window. The daemon keeps no message history to read back. `at` is an ISO instant. */
@@ -23,6 +23,10 @@ export interface TaskReplyModel {
   reason: string | null;
   question: QuestionItem | undefined;
   questions: QuestionsModel;
+  /** Sends an answer; resolves true when the daemon confirmed it. A refusal sets `answerFailed`. */
+  answer: (question: QuestionItem, text: string) => Promise<boolean>;
+  /** The last answer was refused: the reason is `questions.announcement`, shown as an alert with Retry. */
+  answerFailed: boolean;
 }
 
 /** The first reason the reply box is off, or null. Runs before the question list is read, so a non-approver never reaches `decisions.list`. */
@@ -39,13 +43,20 @@ function blockedReason(gate: Gate, state: TaskState): string | null {
 export function useTaskReply(taskId: string, state: TaskState): TaskReplyModel {
   const base = blockedReason(useGate(), state);
   const questions = useQuestions(base === null);
-  if (base !== null) return { reason: base, question: undefined, questions };
+  const [answerFailed, setAnswerFailed] = useState(false);
+  const answer = async (question: QuestionItem, text: string) => {
+    setAnswerFailed(false);
+    const ok = await questions.answer(question, text);
+    setAnswerFailed(!ok);
+    return ok;
+  };
+  if (base !== null) return { reason: base, question: undefined, questions, answer, answerFailed };
   // Without the list the app cannot tell whether a question is open, so a message could queue behind one.
   const unknown = !questions.supported
     ? "This daemon does not report open questions, so the app cannot tell whether one is open."
     : (questions.unavailable ?? (questions.loading ? "Checking whether a question is open." : null));
   const question = unknown === null ? questions.items.find((item) => item.taskId === taskId && item.state === "open") : undefined;
-  return { reason: unknown, question, questions };
+  return { reason: unknown, question, questions, answer, answerFailed };
 }
 
 let nextMessage = 0;
@@ -71,7 +82,7 @@ export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: T
 
   const send = async () => {
     if (question) {
-      if (await questions.answer(question, text)) {
+      if (await reply.answer(question, text)) {
         onTurns([
           { key: question.id, from: "agent", text: question.question, at: question.askedAt },
           { key: `${question.id}:answer`, from: "you", text, at: new Date().toISOString() },
@@ -121,6 +132,14 @@ export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: T
         {sent && <p role="status">Sent. The agent resumes shortly.</p>}
         {error && <SendError error={error} />}
       </div>
+      {reply.answerFailed && (
+        <Notice tone="bad" role="alert">
+          {questions.announcement}{" "}
+          <Button variant="quiet" onClick={() => void send()}>
+            Retry
+          </Button>
+        </Notice>
+      )}
     </>
   );
 }

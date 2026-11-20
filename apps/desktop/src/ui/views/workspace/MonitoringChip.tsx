@@ -117,11 +117,10 @@ export function MonitoringChip({ model, target, canChange }: MonitoringChipProps
         </NavLink>
       </div>
       {error && <ErrorNotice error={error} action="Changing the monitoring mode" />}
-      {note && (
-        <p role="status" className="ws-small">
-          {note}
-        </p>
-      )}
+      {/* Always mounted, so the change in progress and the saved result are announced. */}
+      <p role="status" className="ws-small">
+        {pending !== null ? "Changing the monitoring mode…" : (note ?? "")}
+      </p>
     </div>
   );
 }

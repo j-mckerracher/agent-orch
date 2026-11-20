@@ -114,7 +114,22 @@ describe("CoordinatorStrip", () => {
     const onSaved = vi.fn();
     render(<CoordinatorStrip snapshot={{ coordinator: state() }} lockReason={null} onSaveScope={onSaveScope} onSaved={onSaved} />);
     await user.click(screen.getByRole("button", { name: "Save scope" }));
-    expect(await screen.findByText(/The daemon refused this scope/)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/The daemon refused this scope/);
     expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it("coordinator_strip_holds_save_pending_until_the_daemon_answers", async () => {
+    const user = userEvent.setup();
+    let finish: () => void = () => {};
+    const onSaveScope = vi.fn((sentence: string | null) => new Promise<ReturnType<typeof receipt>>((resolve) => (finish = () => resolve(receipt(sentence)))));
+    render(<CoordinatorStrip snapshot={{ coordinator: state() }} lockReason={null} onSaveScope={onSaveScope} />);
+    const save = screen.getByRole("button", { name: "Save scope" });
+    await user.click(save);
+    expect(save).toHaveAttribute("aria-busy", "true");
+    await user.click(save);
+    expect(onSaveScope).toHaveBeenCalledTimes(1);
+    finish();
+    expect(await screen.findByText("Scope saved.")).toBeInTheDocument();
+    expect(save).not.toHaveAttribute("aria-busy", "true");
   });
 });

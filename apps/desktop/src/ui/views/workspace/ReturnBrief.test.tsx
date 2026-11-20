@@ -116,6 +116,19 @@ describe("return brief panel", () => {
     expect(screen.getByRole("status")).toHaveTextContent("Return brief acknowledged");
   });
 
+  it("brief_panel_failed_acknowledge_is_an_alert_with_a_retry_that_hides_the_panel", async () => {
+    const { fake, user } = await mount({ configure: (daemon) => daemon.failNext("monitoring.brief_ack", { code: -32000, message: "boom" }) });
+    await panel();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The return brief could not be acknowledged.");
+    expect(screen.getByRole("region", { name: /While you were away/ })).toBeInTheDocument();
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(screen.queryByRole("region", { name: /While you were away/ })).not.toBeInTheDocument());
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(fake.callsTo("monitoring.brief_ack")).toHaveLength(2);
+  });
+
   it("brief_panel_announces_that_a_brief_is_ready_in_one_polite_status_region", async () => {
     await mount();
     await panel();
