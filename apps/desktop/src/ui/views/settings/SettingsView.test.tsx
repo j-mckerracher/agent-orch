@@ -56,6 +56,7 @@ async function connected(
   const fake = new FakeDaemon();
   fake.capabilitiesOverride = [...capabilities];
   fake.stub("settings.get", wire);
+  fake.stub("agents.capabilities", []);
   configure(fake);
   const services = createServices({ connector: fake, connection: { backoffMs: [5], requestTimeoutMs: 250 }, data: { coalesceMs: 10 } });
   stops.push(() => {

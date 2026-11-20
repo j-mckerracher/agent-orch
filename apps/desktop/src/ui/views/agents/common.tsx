@@ -1,18 +1,8 @@
-/** Small shared pieces of the Agents & Sessions view. Tokens only; no color is the sole cue. */
-import { useId, type ReactNode } from "react";
-import type { SourceId } from "../../../sources/types";
-import { Badge, Button, EmptyState, Pill, type Tone } from "../../theme";
-import type { Flag } from "./inventoryModel";
+/** Small shared pieces of the Agents view and Settings > Agents. Tokens only; no color is the sole cue. */
+import type { ReactNode } from "react";
+import { stateLabel } from "../../format";
+import { Button, EmptyState, Pill, type Tone } from "../../theme";
 import type { Load } from "./useAgentsData";
-
-/** Same wording and test id as the shared PlaceholderBadge, drawn with the theme primitive. */
-export function PlaceholderMark({ id }: { id: SourceId }) {
-  return (
-    <Badge tone="placeholder" data-testid={`badge-${id}`}>
-      PLACEHOLDER DATA ({id})
-    </Badge>
-  );
-}
 
 const STATE_TONE: Record<string, Tone> = {
   Created: "neutral",
@@ -31,70 +21,12 @@ const STATE_TONE: Record<string, Tone> = {
   VerificationFailed: "bad",
 };
 
+export const stateTone = (state: string): Tone => STATE_TONE[state] ?? "neutral";
+
+const SPACED: Record<string, string> = { VerificationFailed: "Verification failed", CandidateReady: "Candidate ready" };
+
 export function StatePill({ state }: { state: string }) {
-  return <Pill tone={STATE_TONE[state] ?? "neutral"}>{state}</Pill>;
-}
-
-const FLAG_TEXT: Record<Flag, { tone: Tone; text: string }> = {
-  yes: { tone: "ok", text: "Yes" },
-  no: { tone: "neutral", text: "No" },
-  unknown: { tone: "warn", text: "Unknown" },
-};
-
-export function FlagPill({ flag }: { flag: Flag }) {
-  const { tone, text } = FLAG_TEXT[flag];
-  return (
-    <Pill tone={tone} className="agents-flag">
-      {text}
-    </Pill>
-  );
-}
-
-/** Shown when a live control needs the daemon's tasks capability and this link does not have it. */
-export const NOT_LINKED_REASON = "Not connected, or the tasks capability was not negotiated.";
-
-/** A live or simulated action. Its reason sits beside it whenever it explains something: always when disabled. */
-export function Control({
-  label,
-  disabled,
-  reason,
-  variant,
-  onClick,
-}: {
-  label: string;
-  disabled: boolean;
-  reason: string | null;
-  variant?: "danger" | "primary" | "secondary";
-  onClick: () => void;
-}) {
-  const id = useId();
-  return (
-    <div className="agents-action">
-      <Button variant={variant} disabled={disabled} aria-describedby={reason ? id : undefined} onClick={onClick}>
-        {label}
-      </Button>
-      {reason && (
-        <span id={id} className="agents-reason">
-          {reason}
-        </span>
-      )}
-    </div>
-  );
-}
-
-/** A control the daemon cannot honor: disabled, with the reason always visible and linked. */
-export function DisabledAction({ label, reason }: { label: string; reason: string }) {
-  const id = useId();
-  return (
-    <div className="agents-action">
-      <Button disabled aria-describedby={id}>
-        {label}
-      </Button>
-      <span id={id} className="agents-reason">
-        {reason}
-      </span>
-    </div>
-  );
+  return <Pill tone={stateTone(state)}>{SPACED[state] ?? stateLabel(state)}</Pill>;
 }
 
 export function LoadRegion<T>({

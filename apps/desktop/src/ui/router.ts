@@ -24,7 +24,7 @@ const isGlobalView = (segment: string | undefined): segment is GlobalView =>
   GLOBAL_VIEWS.includes(segment as GlobalView);
 
 export type Route =
-  | { name: "global"; view: GlobalView; workstreamId?: string }
+  | { name: "global"; view: GlobalView; workstreamId?: string; taskId?: string }
   | { name: "projects" }
   | { name: "project"; projectId: string }
   | { name: "tasks"; projectId: string; filter: TaskFilter }
@@ -41,10 +41,10 @@ export const DEFAULT_ROUTE: Route = { name: "global", view: "workspace" };
 export function formatRoute(route: Route): string {
   switch (route.name) {
     case "global":
-      // The selected workstream is only meaningful on the workstreams view (DPES-1105).
-      return route.workstreamId !== undefined && route.view === "workstreams"
-        ? `#/workstreams?workstream=${enc(route.workstreamId)}`
-        : `#/${route.view}`;
+      // The selected workstream and task are only meaningful on their own views (DPES-1105, DPES-1044).
+      if (route.workstreamId !== undefined && route.view === "workstreams") return `#/workstreams?workstream=${enc(route.workstreamId)}`;
+      if (route.taskId !== undefined && route.view === "agents") return `#/agents?task=${enc(route.taskId)}`;
+      return `#/${route.view}`;
     case "projects":
       return "#/projects";
     case "project":
@@ -74,7 +74,9 @@ export function parseRoute(hash: string): Route {
   if (parts[0] === "projects") return { name: "projects" };
   if (isGlobalView(parts[0])) {
     const workstreamId = parts[0] === "workstreams" ? new URLSearchParams(query).get("workstream") : null;
-    return workstreamId ? { name: "global", view: parts[0], workstreamId } : { name: "global", view: parts[0] };
+    if (workstreamId) return { name: "global", view: parts[0], workstreamId };
+    const taskId = parts[0] === "agents" ? new URLSearchParams(query).get("task") : null;
+    return taskId ? { name: "global", view: parts[0], taskId } : { name: "global", view: parts[0] };
   }
   if (parts[0] !== "project") return DEFAULT_ROUTE;
   if (!parts[1]) return { name: "projects" };

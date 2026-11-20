@@ -1,4 +1,4 @@
-/** Read-only "Recent output" panel: plain-text worker output with no input and no controls. */
+/** Read-only "Output" tab body: plain-text worker output with no input and no controls. */
 import { ErrorNotice } from "../../widgets";
 import { useGate } from "../../services";
 import { useOutputTail } from "./useOutputTail";
@@ -7,12 +7,8 @@ export function OutputTail({ taskId, sessionId, running }: { taskId: string; ses
   const tail = useOutputTail(taskId, sessionId, running);
   const { connected } = useGate();
   return (
-    <section aria-label="Recent output" className="agents-controls agents-output">
-      <h4>Recent output</h4>
-      <p className="agents-sub">
-        Read-only, shown as plain text. Output is not redacted and may contain secrets.
-        {running ? " Refreshes about every 2 seconds while the session runs." : ""}
-      </p>
+    <section aria-label="Recent output" className="agents-output">
+      <p className="agents-sub">Output is not redacted and may contain secrets.</p>
       {!connected && <p role="status">Not connected to the daemon: recent output is not refreshing.</p>}
       {tail.error && <ErrorNotice error={tail.error} action="Refreshing recent output" />}
       {!tail.loaded ? (

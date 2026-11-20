@@ -1,26 +1,17 @@
-/**
- * Pure derivations for the Agents & Sessions view (M7-14). No React, no I/O.
- *
- * Failed counts are sessions, not tasks. Disconnected has no daemon source (D3), so it is never
- * counted: the view says "not available" instead of a number.
- */
+/** Pure derivations for the Agents view (M7-14). No React, no I/O. */
 import type { Approval, SessionEntry, TaskRecord, TaskState } from "../../../daemon/types";
 import type { PreviewTask, TaskRef } from "../../../sources/types";
-import { matchesFilter } from "../../format";
-
-export type TabId = "active" | "waiting" | "available" | "queued" | "failed" | "finished" | "disconnected";
+import { basename, matchesFilter } from "../../format";
 
 /** Tabs whose rows are tasks, picked by task state alone. */
-export type TaskTab = "active" | "waiting" | "queued" | "failed" | "finished";
+export type TaskTab = "running" | "waiting" | "queued" | "failed" | "finished";
 
-export const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
-  { id: "active", label: "Active" },
+export const TABS: ReadonlyArray<{ id: TaskTab; label: string }> = [
+  { id: "running", label: "Running" },
   { id: "waiting", label: "Waiting" },
-  { id: "available", label: "Available / idle" },
   { id: "queued", label: "Queued" },
-  { id: "failed", label: "Failed sessions" },
+  { id: "failed", label: "Failed" },
   { id: "finished", label: "Finished" },
-  { id: "disconnected", label: "Disconnected" },
 ];
 
 export interface WorkSession {
@@ -42,6 +33,8 @@ export interface WorkRow {
   origin: "real" | "fixture";
   objective: string;
   agent: string;
+  /** Repository name; null for a preview task, which has none. */
+  project: string | null;
   state: TaskState;
   attempts: WorkAttempt[];
   /** Null until the daemon's session list has loaded: session counts and rows are then unknown, never zero. */
@@ -51,33 +44,13 @@ export interface WorkRow {
   timeline: Array<{ at: string; kind: string; detail: string }>;
 }
 
-/** A session that ended unsuccessfully, with the attempt it belonged to when the daemon links one. */
-export interface FailedSession {
-  row: WorkRow;
-  session: WorkSession;
-  attempt: WorkAttempt | null;
-}
-
-export interface Headline {
-  runningTasks: number;
-  /** Null while any row's session list is unknown. */
-  runningSessions: number | null;
-  /** Every Created or Queued task; equals the Queued tab length. */
-  queued: number;
-  /** The queued tasks whose dependencies are met (`queued - blocked`). */
-  readyQueued: number;
-  /** Tasks blocked on the operator's reply (state Waiting). */
-  waiting: number;
-  blocked: number;
-}
-
 const RUNNING_SESSION = new Set(["Spawning", "Running"]);
 /** Every task state names its tab; a new TaskState does not compile until it is placed. */
 const STATE_TAB: Readonly<Record<TaskState, TaskTab>> = {
   Created: "queued",
   Queued: "queued",
-  Running: "active",
-  Verifying: "active",
+  Running: "running",
+  Verifying: "running",
   Waiting: "waiting",
   Failed: "failed",
   VerificationFailed: "failed",
@@ -86,9 +59,6 @@ const STATE_TAB: Readonly<Record<TaskState, TaskTab>> = {
 };
 
 export const isRunningSession = (state: string): boolean => RUNNING_SESSION.has(state);
-export const isActive = (row: WorkRow): boolean => STATE_TAB[row.state] === "active";
-export const isQueued = (row: WorkRow): boolean => STATE_TAB[row.state] === "queued";
-export const isFailed = (row: WorkRow): boolean => STATE_TAB[row.state] === "failed";
 
 export function taskRef(row: WorkRow): TaskRef {
   return row.origin === "real" ? { origin: "real", taskId: row.id, state: row.state } : { origin: "fixture", id: row.id };
@@ -105,6 +75,7 @@ export function rowFromTask(task: TaskRecord, entries: readonly SessionEntry[] |
     origin: "real",
     objective: task.contract.objective,
     agent: task.contract.agent,
+    project: basename(task.contract.project_id),
     state: task.state,
     attempts: task.attempts.map((a) => ({ id: a.id, state: a.state, number: a.attempt_number })),
     sessions: entries === null ? null : [...sessions.values()],
@@ -127,6 +98,7 @@ export function rowsFromPreview(previews: readonly PreviewTask[]): WorkRow[] {
     origin: "fixture",
     objective: task.objective,
     agent: task.agent,
+    project: null,
     state: task.state,
     attempts: task.attempts.map((a, index) => ({ id: a.id, state: a.state, number: index + 1 })),
     sessions: task.sessions.map((s) => ({ id: s.id, state: s.state, adapter: null, attemptId: null })),
@@ -144,45 +116,14 @@ export function latestAttempt(row: WorkRow): WorkAttempt | null {
   return best;
 }
 
-/** True once every row's session list has loaded. Only then can session counts be stated. */
-export const sessionsKnown = (rows: readonly WorkRow[]): boolean => rows.every((row) => row.sessions !== null);
-
-/**
- * Sessions that ended unsuccessfully: aborted, or belonging to an attempt that failed.
- * Rows with unknown sessions contribute none, so check `sessionsKnown` before showing a count.
- */
-export function failedSessions(rows: readonly WorkRow[]): FailedSession[] {
-  const found: FailedSession[] = [];
-  for (const row of rows) {
-    for (const session of row.sessions ?? []) {
-      const attempt = row.attempts.find((a) => a.id === session.attemptId) ?? null;
-      if (session.state === "Aborted" || attempt?.state === "Failed") found.push({ row, session, attempt });
-    }
-  }
-  return found;
-}
-
-/** Failed tasks with no failed session on record. Unknown sessions are never "no session on record". */
-export function failedWithoutSession(rows: readonly WorkRow[]): WorkRow[] {
-  const counted = new Set(failedSessions(rows).map((failed) => failed.row.id));
-  return rows.filter((row) => row.sessions !== null && isFailed(row) && !counted.has(row.id));
-}
-
-export function headline(rows: readonly WorkRow[]): Headline {
-  const queued = rows.filter(isQueued);
-  return {
-    runningTasks: rows.filter(isActive).length,
-    runningSessions: sessionsKnown(rows)
-      ? rows.reduce((n, row) => n + (row.sessions ?? []).filter((s) => isRunningSession(s.state)).length, 0)
-      : null,
-    waiting: tabRows("waiting", rows).length,
-    queued: queued.length,
-    readyQueued: queued.filter((row) => !row.blocked).length,
-    blocked: queued.filter((row) => row.blocked).length,
-  };
-}
-
-/** Task lists for the tabs that list tasks by state. Failed derives its own rows. */
-export function tabRows(tab: Exclude<TaskTab, "failed">, rows: readonly WorkRow[]): WorkRow[] {
+/** The task list under one tab, in daemon order. */
+export function tabRows(tab: TaskTab, rows: readonly WorkRow[]): WorkRow[] {
   return rows.filter((row) => STATE_TAB[row.state] === tab);
+}
+
+/** `1 running · 2 queued`, plus waiting tasks when there are any (they need the operator). */
+export function summaryLine(rows: readonly WorkRow[]): string {
+  const count = (tab: TaskTab) => tabRows(tab, rows).length;
+  const waiting = count("waiting");
+  return [`${count("running")} running`, `${count("queued")} queued`, ...(waiting > 0 ? [`${waiting} waiting`] : [])].join(" · ");
 }
