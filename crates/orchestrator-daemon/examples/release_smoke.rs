@@ -192,7 +192,7 @@ fn agent(pid_file: &Path) {
     }
     // The daemon refuses a task until the CLI's `exec --help` advertises the options it passes.
     if std::env::args().skip(1).eq(["exec", "--help"]) {
-        println!("  --json\n  --sandbox <MODE>\n  --approve-for-me\n  --ignore-user-config\n  -c <KEY=VALUE>");
+        println!("  --json\n  --sandbox <MODE>\n  --approve-for-me\n  --add-dir <DIR>\n  --ignore-user-config\n  -c <KEY=VALUE>");
         return;
     }
     let mut stdout = std::io::stdout();
@@ -331,6 +331,7 @@ impl Daemon {
         let mut child = command
             // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
             .env("AGENT_ORCH_LOAD_GATE", "off")
+            .env("HOME", &env.home)
             .env("AGENT_ORCH_CODEX_PROGRAM", &env.agent)
             .env("AGENT_ORCH_CLAUDE_PROGRAM", env.work.join("no-such-agent"))
             .env("AGENT_ORCH_PI_PROGRAM", env.work.join("no-such-agent"))
@@ -405,6 +406,8 @@ struct Env {
     log: PathBuf,
     pid_file: PathBuf,
     agent: PathBuf,
+    /// A home that holds the pstack plugin, without which the daemon refuses every launch (DPES-1126).
+    home: PathBuf,
 }
 
 impl Env {
@@ -462,6 +465,24 @@ fn submit(data: &Path, project_id: &str, key: &str) -> String {
             .ok()
     });
     submitted["contract"]["id"].as_str().unwrap().to_owned()
+}
+
+fn install_plugin(home: &Path) {
+    let plugin = home.join("pstack");
+    fs::create_dir_all(plugin.join("agents")).unwrap();
+    fs::create_dir_all(plugin.join("workflow-router")).unwrap();
+    fs::write(
+        plugin.join("agents/workflow-agent.md"),
+        "---\nname: workflow-agent\n---\n\nRead the workflow-router skill first.\n",
+    )
+    .unwrap();
+    fs::write(plugin.join("workflow-router/SKILL.md"), "# Router\n").unwrap();
+    let registry = home.join(".claude/plugins/installed_plugins.json");
+    fs::create_dir_all(registry.parent().unwrap()).unwrap();
+    let installed = json!({
+        "plugins": { "pstack@mayo-skills": [{ "installPath": plugin.display().to_string() }] }
+    });
+    fs::write(registry, installed.to_string()).unwrap();
 }
 
 fn target_ref(task_id: &str) -> String {
@@ -525,8 +546,10 @@ fn scenario(options: &Options) -> Value {
         log: work.join("daemon.log"),
         pid_file: work.join("agent.pid"),
         agent: std::env::current_exe().unwrap(),
+        home: work.join("home"),
         work: work.clone(),
     };
+    install_plugin(&env.home);
     let _stop_agents = StopAgents(env.pid_file.with_extension(AGENT_STOP_EXTENSION));
     LOG.set(env.log.clone()).ok();
     fs::create_dir_all(&env.data).unwrap();
