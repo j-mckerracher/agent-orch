@@ -435,6 +435,9 @@ struct Shared {
     source: Box<dyn ReaderSource>,
     state: Mutex<State>,
     wake: Condvar,
+    /// The worker thread, joined by `LocalUsageService::shutdown`. Locked only briefly, and
+    /// never while waiting for the worker.
+    worker: Mutex<Option<thread::JoinHandle<()>>>,
 }
 
 impl Shared {
@@ -482,7 +485,27 @@ impl LocalUsageService {
                     cache: Cache::default(),
                 }),
                 wake: Condvar::new(),
+                worker: Mutex::new(None),
             }),
+        }
+    }
+
+    /// Stops the worker and waits for it. A read underway is cancelled, which
+    /// terminates and reaps the reader process. Safe to call more than once.
+    pub fn shutdown(&self) {
+        {
+            let mut state = self.shared.lock();
+            state.shutdown = true;
+            self.shared.wake.notify_all();
+        }
+        let worker = self
+            .shared
+            .worker
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .take();
+        if let Some(worker) = worker {
+            let _ = worker.join();
         }
     }
 
@@ -556,14 +579,12 @@ impl LocalUsageService {
 
 impl Drop for LocalUsageService {
     fn drop(&mut self) {
-        let mut state = self.shared.lock();
-        state.shutdown = true;
-        self.shared.wake.notify_all();
+        self.shutdown();
     }
 }
 
 fn ensure_worker(shared: &Arc<Shared>, state: &mut State) {
-    if state.worker_started {
+    if state.worker_started || state.shutdown {
         return;
     }
     state.worker_started = true;
@@ -571,9 +592,10 @@ fn ensure_worker(shared: &Arc<Shared>, state: &mut State) {
     let spawned = thread::Builder::new()
         .name("local-usage".into())
         .spawn(move || worker_loop(worker));
-    if spawned.is_err() {
+    match spawned {
+        Ok(handle) => *shared.worker.lock().unwrap_or_else(PoisonError::into_inner) = Some(handle),
         // No thread means no reads; the snapshot shows the state, never a figure.
-        state.worker_started = false;
+        Err(_) => state.worker_started = false,
     }
 }
 

@@ -1,5 +1,6 @@
 import { useEffect, type ReactNode } from "react";
 import { ConnectionStrip, Crumbs } from "./ui/ConnectionStrip";
+import { DesktopUpdates } from "./ui/DesktopUpdates";
 import { Coordinator } from "./ui/Coordinator";
 import { ProjectDetail } from "./ui/ProjectDetail";
 import { ProjectList } from "./ui/ProjectList";
@@ -90,7 +91,17 @@ function ShellHost({
     activity: route.name === "global" && route.view === "workspace" ? merged.activity : null,
   };
   return (
-    <AppShell route={route} connection={<ConnectionStrip />} slots={slots} mainLandmark={route.name === "global"}>
+    <AppShell
+      route={route}
+      connection={
+        <>
+          <ConnectionStrip />
+          <DesktopUpdates />
+        </>
+      }
+      slots={slots}
+      mainLandmark={route.name === "global"}
+    >
       <Screen route={route} globalViews={globalViews} />
     </AppShell>
   );

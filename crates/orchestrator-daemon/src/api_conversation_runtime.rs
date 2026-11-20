@@ -271,6 +271,11 @@ pub(crate) trait ConversationRuntime: Send + Sync {
     /// the background, so none outlives the daemon.
     fn shutdown(&self) {}
 
+    /// True while a started turn has not finished.
+    fn has_active_turns(&self) -> bool {
+        false
+    }
+
     fn start_turn(
         &self,
         request: TurnRequest,
@@ -766,6 +771,11 @@ impl ConversationService {
     /// See [`ConversationRuntime::shutdown`].
     pub(crate) fn shutdown(&self) {
         self.runtime.shutdown();
+    }
+
+    /// See [`ConversationRuntime::has_active_turns`].
+    pub(crate) fn has_active_turns(&self) -> bool {
+        self.runtime.has_active_turns()
     }
 
     /// See [`ConversationRuntime::settings_changed`]. Called after the daemon's settings are

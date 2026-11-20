@@ -70,7 +70,8 @@ test("gates take their counts from expected.mjs", () => {
     assert.deepEqual([mac[gate].passed, mac[gate].runningSequence], [MACOS[key].passed, MACOS[key].sequence], gate);
   }
   for (const table of [win, mac]) {
-    assert.equal(table["store-tests"].ignored, 1);
+    assert.equal(table["store-tests"].ignored, 0);
+    assert.equal(table["private-fs-tests"].ignored, 1);
     assert.equal(table["node-self-tests"].passed, NODE_SELF_TESTS.passed);
     assert.equal(table["node-self-tests"].mode, "node-tests");
   }

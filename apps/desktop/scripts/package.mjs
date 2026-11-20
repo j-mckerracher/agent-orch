@@ -1,5 +1,8 @@
 // Stages the daemon sidecar and the codeburn resources, then runs `tauri build` for one bundle type.
-// Usage (from apps/desktop): node scripts/package.mjs <app|nsis>
+// Usage (from apps/desktop): node scripts/package.mjs <app|nsis> [--config <JSON>]
+// The optional JSON is merged over src-tauri/tauri.bundle.conf.json by the Tauri CLI (scripts/release/package.mjs
+// passes the Windows signing fields and the updater switch this way). The updater signing key and password, when
+// present, are handed to the Tauri build only, never to the sidecar staging scripts.
 //
 // Tauri's `--ci` flag reads the CI environment variable and accepts only
 // `true` or `false`; many CI systems and harnesses set `CI=1`, which aborts
@@ -11,11 +14,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const bundles = new Set(["app", "nsis"]);
-const bundle = process.argv[2];
-if (!bundles.has(bundle)) {
-  console.error(`usage: node scripts/package.mjs <${[...bundles].join("|")}>`);
+const [bundle, ...rest] = process.argv.slice(2);
+if (!bundles.has(bundle) || ![0, 2].includes(rest.length) || (rest.length === 2 && (rest[0] !== "--config" || !rest[1]))) {
+  console.error(`usage: node scripts/package.mjs <${[...bundles].join("|")}> [--config <JSON>]`);
   process.exit(2);
 }
+const config = rest.length === 2 ? ["--config", rest[1]] : [];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const desktop = join(here, "..");
@@ -29,11 +33,17 @@ const normalizeCi = (env) => {
   return next;
 };
 
-const run = (command, args) => {
+const updaterSecrets = {};
+for (const name of ["TAURI_SIGNING_PRIVATE_KEY", "TAURI_SIGNING_PRIVATE_KEY_PASSWORD"]) {
+  if (process.env[name] !== undefined) updaterSecrets[name] = process.env[name];
+  delete process.env[name];
+}
+
+const run = (command, args, extraEnv) => {
   const result = spawnSync(command, args, {
     cwd: desktop,
     stdio: "inherit",
-    env: normalizeCi(process.env),
+    env: { ...normalizeCi(process.env), ...extraEnv },
   });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
@@ -50,6 +60,7 @@ run(process.execPath, [
   "build",
   "--config",
   "src-tauri/tauri.bundle.conf.json",
+  ...config,
   "--bundles",
   bundle,
-]);
+], updaterSecrets);

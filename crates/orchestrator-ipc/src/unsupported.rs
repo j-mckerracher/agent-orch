@@ -71,6 +71,9 @@ impl Client {
     pub fn shutdown(&mut self) -> Result<(), IpcError> {
         Err(IpcError::Unsupported)
     }
+    pub fn shutdown_if_idle(&mut self) -> Result<bool, IpcError> {
+        Err(IpcError::Unsupported)
+    }
     pub fn projects_list(&mut self) -> Result<Value, IpcError> {
         Err(IpcError::Unsupported)
     }

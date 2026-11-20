@@ -4,7 +4,7 @@ use std::sync::{mpsc, Arc, Barrier};
 use std::thread;
 use std::time::{Duration, Instant};
 
-use orchestrator_store::{DataDirectoryLock, DataDirectoryLockError};
+use orchestrator_private_fs::{DataDirectoryLock, DataDirectoryLockError};
 
 fn lock_record(pid: u32, start: &str, token: &str) -> String {
     format!("pid={pid}\nstart={start}\ntoken={token}\n")

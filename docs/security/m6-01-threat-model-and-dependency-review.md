@@ -118,8 +118,12 @@ links are not followed, and images are not fetched. One optional package has
 an install script (`fsevents`, a macOS file-watch helper pulled in by vite for
 development); it is not in the shipped bundle.
 
-Plugins: the Tauri host registers no plugins and its capability grants no
-shell, fs, http, or opener permissions. There is no auto-updater. Agent
+Plugins: the Tauri host registers the notification and window-state plugins.
+Release builds that carry an updater public key (DPES-1044) also register the
+updater and single-instance plugins. The updater runs natively through the
+user's `gh` login and verifies a minisign signature before installing; the
+webview gets only the two `desktop_update_*` commands and no shell, fs, http,
+or opener permissions. Builds without a key have no updater. Agent
 "plugins" are the three adapters (Codex, Claude Code, Pi). Their programs are
 chosen by `AGENT_ORCH_{CODEX,CLAUDE,PI}_PROGRAM` in the daemon's own
 environment, which a child never sees after F1.
@@ -136,7 +140,7 @@ change does not edit workflows.
 | R1 | An agent runs as the user's OS account. It can read `daemon.token` and the data directory, call IPC (including `approvals.resolve`), and read any file the user can. Env scrubbing is a speed bump only. | Needs an OS sandbox or a separate account; out of scope for v1 (M0-04 section 5). |
 | R2 | A worktree is not a sandbox. | Same as R1. |
 | R3 | Codex runs with `--approve-for-me`; `ApprovalRequired` is not enforced per tool call. The executor treats it as workspace-writes with approval before delivery. The CLI hardcodes workspace-writes. | Adapter capability limit. The daemon refuses `ReadOnly` with `Forbidden` and the UI no longer offers it. |
-| R4 | No signed release or updater. The Tauri bundle target is `all` and unsigned. | Release engineering (M6-02 and M6-03). |
+| R4 | No OS-signed release. The Tauri bundle target is `all` and unsigned. In-app updates (DPES-1044) are trusted through a separate minisign key, not OS code signing; losing it requires a manually installed build with a new key (docs/release-ci.md, In-app updates). | Release engineering (M6-02 and M6-03). |
 | R5 | Git subprocesses inherit repo-location variables (`GIT_DIR`, `GIT_WORK_TREE`, and similar) from the user's own environment. About ten spawn sites in git, cli, and daemon. | Set by the user, not an attacker; the daemon's environment is trusted. |
 | R6 | RUSTSEC-2026-0459 (F5). Exposure needs a crafted database plus `-wal` pair in the per-user data directory, which means the attacker already has the user's file access. | Blocked on a `sqlx` release. Re-check on each sqlx update; remove the ignore when `libsqlite3-sys >= 0.39` resolves. |
 | R7 | Proxy URLs in the baseline can embed credentials. | Deliberate: agents must work behind a proxy. |

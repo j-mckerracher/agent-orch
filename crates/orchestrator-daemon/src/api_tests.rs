@@ -911,6 +911,103 @@ fn running_task_keeps_daemon_alive_without_connected_clients() {
 }
 
 #[test]
+fn update_idle_closes_admission_when_nothing_runs() {
+    let (_directory, api) = new_api();
+    register_project(&api);
+
+    assert!(api.try_begin_idle_shutdown());
+    for (method, params) in [
+        ("projects.list", Value::Null),
+        ("tasks.submit", submit_params("late-key", "Too late")),
+    ] {
+        assert_eq!(api.dispatch(method, params), Err(RpcError::Conflict));
+    }
+    assert!(api.store.list().unwrap().is_empty());
+}
+
+#[test]
+fn update_idle_is_refused_while_a_task_runs_and_leaves_the_daemon_serving() {
+    let (_directory, api) = new_api();
+    register_project(&api);
+    create_running_task(&api, "running-task");
+
+    assert!(!api.try_begin_idle_shutdown());
+    assert!(api.dispatch("projects.list", Value::Null).is_ok());
+}
+
+#[test]
+fn update_idle_is_refused_while_a_request_or_pass_holds_the_gate_then_accepted() {
+    let (_directory, api) = new_api();
+    let working = serving(&api.stop_gate).expect("gate is open");
+
+    assert!(!api.try_begin_idle_shutdown());
+    assert!(
+        serving(&api.stop_gate).is_some(),
+        "a refusal changes nothing"
+    );
+    drop(working);
+    assert!(api.try_begin_idle_shutdown());
+    assert!(serving(&api.stop_gate).is_none());
+}
+
+#[test]
+fn update_idle_recovers_a_poisoned_gate_and_accepts_when_idle() {
+    let (_directory, api) = new_api();
+    let gate = api.stop_gate.clone();
+    let poisoner = std::thread::spawn(move || {
+        let _held = gate.write().unwrap();
+        panic!("poison the gate");
+    });
+    assert!(poisoner.join().is_err());
+    assert!(api.stop_gate.is_poisoned());
+
+    assert!(api.try_begin_idle_shutdown());
+    assert!(serving(&api.stop_gate).is_none());
+}
+
+#[test]
+fn update_idle_is_refused_while_a_conversation_turn_runs() {
+    use crate::api::conversation_runtime::{
+        ConversationRuntime, ConversationService, ReplySink, RuntimeFailure, RuntimeIdentity,
+        TurnControl, TurnRequest,
+    };
+
+    struct Turning;
+
+    impl ConversationRuntime for Turning {
+        fn identity(&self, _: Option<&conversation_runtime::Choice>) -> RuntimeIdentity {
+            RuntimeIdentity {
+                name: "turning".into(),
+                version: "1.0.0".into(),
+            }
+        }
+
+        fn has_active_turns(&self) -> bool {
+            true
+        }
+
+        fn start_turn(
+            &self,
+            _: TurnRequest,
+            _: ReplySink,
+        ) -> Result<Box<dyn TurnControl>, RuntimeFailure> {
+            Err(RuntimeFailure::Busy)
+        }
+    }
+
+    let (_directory, mut api) = new_api();
+    api.conversations = ConversationService::new(
+        api.store.clone(),
+        Arc::new(Turning),
+        Arc::new(conversation_agent::StoreWorkstreams(api.store.clone())),
+        false,
+        api.config.load.clone(),
+    );
+
+    assert!(!api.try_begin_idle_shutdown());
+}
+
+#[test]
 fn idempotency_fingerprint_normalizes_omitted_optional_fields() {
     let (_directory, api) = new_api();
     let omitted = json!({

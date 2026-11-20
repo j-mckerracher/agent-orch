@@ -12,7 +12,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use orchestrator_store::{DataDirectoryLock, DataDirectoryLockError};
+use orchestrator_private_fs::{DataDirectoryLock, DataDirectoryLockError};
 
 const LOCK_FILE: &str = ".orchestrator.lock";
 

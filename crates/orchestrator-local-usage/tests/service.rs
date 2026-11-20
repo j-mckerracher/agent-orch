@@ -361,6 +361,27 @@ fn opt_out_kills_a_running_reader() -> Result<(), String> {
     )
 }
 
+fn shutdown_ends_a_running_reader_and_may_repeat() -> Result<(), String> {
+    let scenario = Scenario::new("hang");
+    let service = scenario.service(timing(), false);
+    service
+        .set_enabled(true, window())
+        .map_err(|e| e.to_string())?;
+    let started = wait_for(Duration::from_secs(10), || scenario.runs() > 0);
+    check(started, "the hanging reader should have started")?;
+    let began = Instant::now();
+    service.shutdown();
+    check(
+        began.elapsed() < Duration::from_secs(3),
+        "shutdown must cancel the reader, not wait out its timeout",
+    )?;
+    service.shutdown();
+    check(
+        !service.read(window()).refreshing,
+        "no read may start after shutdown",
+    )
+}
+
 fn a_hung_reader_times_out_and_the_read_never_waits() -> Result<(), String> {
     let scenario = Scenario::new("hang");
     let quick = Timing {
@@ -539,6 +560,10 @@ fn main() {
         (
             "opt-out kills a running reader",
             opt_out_kills_a_running_reader,
+        ),
+        (
+            "shutdown ends a running reader and may repeat",
+            shutdown_ends_a_running_reader_and_may_repeat,
         ),
         (
             "a hung reader times out; reads never wait",

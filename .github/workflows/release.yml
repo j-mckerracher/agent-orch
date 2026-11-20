@@ -12,7 +12,10 @@ name: release
 # environment; when they are absent the job still builds, warns, and labels the artifact UNSIGNED (see
 # scripts/release/signing.mjs) for a manual run. A `v*` tag build FAILS without signing secrets unless
 # the repository variable ALLOW_UNSIGNED_RELEASE is "true". Set REQUIRE_SIGNING (input or repository
-# variable) to make absent secrets an error for a manual run too. See docs/release-ci.md.
+# variable) to make absent secrets an error for a manual run too. In-app updates are off unless the repository
+# variable MCAO_UPDATES_ENABLED is "true" on a tag run that publishes: then both build jobs sign the updater
+# payloads (secrets of the `release` environment) and the publish job verifies and uploads them with latest.json.
+# See docs/release-ci.md.
 
 on:
   push:
@@ -54,6 +57,8 @@ jobs:
     env:
       CI: "true"
       RUST_TOOLCHAIN: ${{ matrix.rust }}
+      # The updater key reaches the Package step only on a run that can publish; no other step or branch build gets it.
+      UPDATER_RUN_ELIGIBLE: ${{ startsWith(github.ref, 'refs/tags/v') && (github.event_name == 'push' || inputs.publish) }}
     steps:
       - name: Configure git
         run: |
@@ -81,7 +86,9 @@ jobs:
         working-directory: apps/desktop
         run: npm ci
 
-      # The only step that sees signing secrets. Absent secrets are empty strings and skip signing.
+      # The only step that sees signing secrets. Absent secrets are empty strings and skip signing. The updater key
+      # and password are passed only when updates are enabled on an eligible tag run; package.mjs hands them to the
+      # Tauri build alone.
       - name: Package
         id: package
         env:
@@ -97,6 +104,10 @@ jobs:
           WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
           WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
           WINDOWS_TIMESTAMP_URL: ${{ vars.WINDOWS_TIMESTAMP_URL }}
+          MCAO_UPDATES_ENABLED: ${{ (env.UPDATER_RUN_ELIGIBLE == 'true' && vars.MCAO_UPDATES_ENABLED) || '' }}
+          MCAO_UPDATER_PUBLIC_KEY: ${{ (env.UPDATER_RUN_ELIGIBLE == 'true' && vars.MCAO_UPDATER_PUBLIC_KEY) || '' }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ (env.UPDATER_RUN_ELIGIBLE == 'true' && vars.MCAO_UPDATES_ENABLED == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY) || '' }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ (env.UPDATER_RUN_ELIGIBLE == 'true' && vars.MCAO_UPDATES_ENABLED == 'true' && secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD) || '' }}
         run: node scripts/release/package.mjs "${{ matrix.name }}" --out "$RUNNER_TEMP/release"
 
       # Installs the artifact just built, runs the packaged daemon through install, cancel, recovery and
@@ -153,8 +164,8 @@ jobs:
     needs: [build]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # The job holds no signing secrets: only the build step does. The environment also limits the job to
-    # v* tags, and it can require a reviewer's approval before the release goes public.
+    # The job holds no signing secrets and no updater private key: only the build step does. The environment also
+    # limits the job to v* tags, and it can require a reviewer's approval before the release goes public.
     environment: release
     # The only job with write access: it creates the release for the tag that was pushed.
     permissions:
@@ -174,21 +185,50 @@ jobs:
           path: ${{ runner.temp }}/downloads
 
       # Fails unless the tag equals v plus the version in every version source, and every installer
-      # matches the digest its build recorded. Writes the assets and the release notes.
+      # matches the digest its build recorded. Writes the assets and the release notes. When updates are
+      # enabled it also requires the updater payloads, signatures and writes latest.json. The job gets the public key only.
       - name: Check versions and assemble the release
         id: assemble
+        env:
+          MCAO_UPDATES_ENABLED: ${{ vars.MCAO_UPDATES_ENABLED }}
+          MCAO_UPDATER_PUBLIC_KEY: ${{ vars.MCAO_UPDATER_PUBLIC_KEY }}
         run: node scripts/release/publish.mjs "$TAG" --downloads "$RUNNER_TEMP/downloads" --out "$RUNNER_TEMP/publish"
 
+      # Needs a minisign binary; the distro package is the only source, so a missing one fails the job.
+      - name: Install minisign
+        if: steps.assemble.outputs.updater == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y minisign
+          command -v minisign
+
+      # Runs before any upload: a payload that does not verify against the configured public key, or whose
+      # signed version differs from latest.json, stops the job with nothing published.
+      - name: Verify the updater signatures
+        if: steps.assemble.outputs.updater == 'true'
+        env:
+          MCAO_UPDATER_PUBLIC_KEY: ${{ vars.MCAO_UPDATER_PUBLIC_KEY }}
+        run: node scripts/release/verify-updater.mjs "$RUNNER_TEMP/publish/assets"
+
       # The only step that sees the token. release-please makes the draft release when its pull request
-      # merges; a tag push has none yet, so the release is created as a draft first. The installers are
+      # merges; a tag push has none yet, so the release is created as a draft first. The assets are
       # uploaded before the release goes public. --verify-tag stops it from publishing a tag that was not pushed.
+      # release-state.mjs first compares with what exists: a published release with exactly these assets is left
+      # untouched, one that differs fails, and a draft may only hold assets this build also has.
       - name: Publish the GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
           PRERELEASE: ${{ steps.assemble.outputs.prerelease }}
         run: |
+          set -o pipefail
           notes="$RUNNER_TEMP/publish/release-notes.md"
-          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+          action=$(gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            | node scripts/release/release-state.mjs "$TAG" "$RUNNER_TEMP/publish/assets")
+          if [ "$action" = "noop" ]; then
+            echo "$TAG is already published with exactly these assets; nothing to do"
+            exit 0
+          fi
+          if [ "$action" = "create" ]; then
             gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --title "$TAG" --notes-file "$notes"
           fi
           gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber "$RUNNER_TEMP/publish/assets"/*

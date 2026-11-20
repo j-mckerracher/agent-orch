@@ -14,6 +14,7 @@
 mod bridge;
 mod launch;
 mod notifications;
+mod updates;
 
 use bridge::{Bridge, HostError, Opened};
 use notifications::{
@@ -24,6 +25,7 @@ use serde_json::Value;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Manager, RunEvent, State, WebviewWindow, Window, WindowEvent};
 use tauri_plugin_window_state::StateFlags;
+use updates::{desktop_update_check, desktop_update_install};
 
 /// Opens an authenticated daemon connection for the calling window. Frames
 /// arrive on `on_frame` as `{kind: "message", message}` and one final
@@ -64,6 +66,28 @@ fn daemon_close(window: Window, bridge: State<'_, Bridge>, connection_id: u64) {
     bridge.close(window.label(), connection_id);
 }
 
+/// Rebuilds the window from its config; the macOS app outlives its last window.
+#[cfg(target_os = "macos")]
+fn open_main_window(app: &AppHandle) {
+    if let Some(config) = app.config().app.windows.first() {
+        let _ = tauri::WebviewWindowBuilder::from_config(app, config)
+            .and_then(|builder| builder.build());
+    }
+}
+
+/// A second launch of an updater-enabled build surfaces the running instance.
+#[cfg(any(target_os = "macos", target_os = "windows"))]
+fn show_main_window(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.unminimize();
+        let _ = window.show();
+        let _ = window.set_focus();
+    } else {
+        #[cfg(target_os = "macos")]
+        open_main_window(app);
+    }
+}
+
 #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
 fn on_run_event(app: &AppHandle, event: RunEvent) {
     match event {
@@ -76,12 +100,7 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
         RunEvent::Reopen {
             has_visible_windows: false,
             ..
-        } if app.webview_windows().is_empty() => {
-            if let Some(config) = app.config().app.windows.first() {
-                let _ = tauri::WebviewWindowBuilder::from_config(app, config)
-                    .and_then(|builder| builder.build());
-            }
-        }
+        } if app.webview_windows().is_empty() => open_main_window(app),
         RunEvent::Exit => {
             if let Some(service) = app.try_state::<Result<Service, String>>() {
                 if let Ok(service) = service.inner() {
@@ -95,7 +114,20 @@ fn on_run_event(app: &AppHandle, event: RunEvent) {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let context = tauri::generate_context!();
+    let updates_enabled = updates::enabled(context.config());
+    let mut builder = tauri::Builder::default();
+    // First, so a second instance exits before it can start anything.
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    if updates_enabled {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, _, _| {
+            show_main_window(app)
+        }));
+    }
+    if updates_enabled {
+        builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
+    }
+    builder
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -103,6 +135,7 @@ pub fn run() {
                 .build(),
         )
         .manage(Bridge::from_environment())
+        .manage(updates::Operation::default())
         .setup(|app| {
             let service = notifications::create_tray(app.handle())
                 .map_err(|_| "Unable to create the notification tray.".to_owned())
@@ -120,14 +153,16 @@ pub fn run() {
             daemon_close,
             decision_notifications_get,
             decision_notifications_set,
-            decision_notifications_notice
+            decision_notifications_notice,
+            desktop_update_check,
+            desktop_update_install
         ])
         .on_window_event(|window, event| {
             if matches!(event, WindowEvent::Destroyed) {
                 window.state::<Bridge>().close_window(window.label());
             }
         })
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(on_run_event);
 }
