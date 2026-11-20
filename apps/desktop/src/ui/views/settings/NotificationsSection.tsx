@@ -26,6 +26,7 @@ export function NotificationsSection({ client = decisionNotificationsClient }: {
   const [snapshot, setSnapshot] = useState<DecisionNotificationSnapshot | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [operationError, setOperationError] = useState<string | null>(null);
+  const [liveUpdatesUnavailable, setLiveUpdatesUnavailable] = useState(false);
   const [busy, setBusy] = useState(false);
   const [choice, setChoice] = useState<IntervalChoice>(String(DEFAULT_INTERVAL) as IntervalChoice);
   const [customInterval, setCustomInterval] = useState(String(DEFAULT_INTERVAL));
@@ -39,6 +40,7 @@ export function NotificationsSection({ client = decisionNotificationsClient }: {
     lifecycle.current += 1;
     setSnapshot(null);
     setLoadError(null);
+    setLiveUpdatesUnavailable(false);
     const onSnapshot = (next: DecisionNotificationSnapshot) => {
       if (!active) return;
       revision.current += 1;
@@ -53,14 +55,20 @@ export function NotificationsSection({ client = decisionNotificationsClient }: {
       setLoadError("Notification status updates are unavailable.");
     };
 
+    // A failed subscription only costs live updates; the controls still work from get().
     void client
       .listen(onSnapshot, onListenError)
-      .then((stop) => {
-        if (!active) {
-          stop();
-          return;
-        }
-        unlisten = stop;
+      .then(
+        (stop) => {
+          if (active) unlisten = stop;
+          else stop();
+        },
+        () => {
+          if (active) setLiveUpdatesUnavailable(true);
+        },
+      )
+      .then(() => {
+        if (!active) return;
         const requestRevision = ++revision.current;
         return client
           .get()
@@ -76,9 +84,6 @@ export function NotificationsSection({ client = decisionNotificationsClient }: {
               setLoadError("Notification state could not be loaded.");
             }
           });
-      })
-      .catch(() => {
-        if (active) setLoadError("Notification status updates are unavailable.");
       });
 
     return () => {
@@ -170,7 +175,8 @@ export function NotificationsSection({ client = decisionNotificationsClient }: {
           <p role="status">
             Notifications: {unavailable ? "unavailable" : snapshot.enabled ? "enabled" : "disabled"} · Permission: {snapshot.permission} · Decisions needing attention: {snapshot.pending_count ?? "unknown"}
           </p>
-          {snapshot.error && <p role={unavailable ? undefined : "alert"}>{snapshot.error}</p>}
+          {liveUpdatesUnavailable && <p>Live status updates are unavailable; reopen Settings to refresh.</p>}
+          {snapshot.error &&<p role={unavailable ? undefined : "alert"}>{snapshot.error}</p>}
           {operationError && <p role="alert">{operationError}</p>}
           {!unavailable && (
             <div className="settings-notification-controls">

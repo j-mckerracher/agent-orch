@@ -129,6 +129,28 @@ describe("notifications settings section", () => {
     expect(client.set).not.toHaveBeenCalled();
   });
 
+  it("still loads state and controls when the live subscription is rejected", async () => {
+    const fake = clientFor(snapshot({ enabled: true, permission: "granted" }));
+    fake.client.listen = vi.fn(async () => { throw new Error("event.listen not allowed"); });
+    render(<NotificationsSection client={fake.client} />);
+
+    expect(await screen.findByText(/Permission: granted/)).toBeInTheDocument();
+    expect(screen.getByText("Live status updates are unavailable; reopen Settings to refresh.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Disable notifications" })).toBeInTheDocument();
+  });
+
+  it("shows the load error when both the subscription and state load fail", async () => {
+    const client: DecisionNotificationsClient = {
+      get: vi.fn(async () => { throw new Error("private host detail"); }),
+      set: vi.fn(async () => snapshot()),
+      notice: vi.fn(async () => snapshot()),
+      listen: vi.fn(async () => { throw new Error("event.listen not allowed"); }),
+    };
+    render(<NotificationsSection client={client} />);
+
+    expect(await screen.findByText(/Notification state could not be loaded\./)).toBeInTheDocument();
+  });
+
   it("keeps newer event state over stale command results and removes listener on unmount", async () => {
     const user = userEvent.setup();
     let resolveSet: ((value: DecisionNotificationSnapshot) => void) | undefined;

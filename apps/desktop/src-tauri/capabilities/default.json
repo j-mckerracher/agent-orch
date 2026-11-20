@@ -1,8 +1,8 @@
 [
   {
     "identifier": "default",
-    "description": "The main window may use daemon bridge, decision-notification and desktop-update commands only; no core, shell or filesystem permissions.",
+    "description": "The main window may use daemon bridge, decision-notification and desktop-update commands, plus event listen/unlisten for status events; no other core, shell or filesystem permissions.",
     "windows": ["main"],
-    "permissions": ["allow-daemon-open", "allow-daemon-send", "allow-daemon-close", "allow-decision-notifications-get", "allow-decision-notifications-set", "allow-decision-notifications-notice", "allow-desktop-update-check", "allow-desktop-update-install"]
+    "permissions": ["core:event:allow-listen", "core:event:allow-unlisten", "allow-daemon-open","allow-daemon-send", "allow-daemon-close", "allow-decision-notifications-get", "allow-decision-notifications-set", "allow-decision-notifications-notice", "allow-desktop-update-check", "allow-desktop-update-install"]
   }
 ]
