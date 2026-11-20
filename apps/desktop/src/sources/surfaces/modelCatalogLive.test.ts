@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { FakeDaemon } from "../../test/fakeDaemon";
-import { CLAUDE_CATALOG, CODEX_CATALOG, COLD_CATALOG, COPILOT_CATALOG, PI_CATALOG, stubValidate } from "../../test/m724Stubs";
+import { CLAUDE_CATALOG, CODEX_CATALOG, COLD_CATALOG, COPILOT_CATALOG, COPILOT_UNREAD_CATALOG, PI_CATALOG, stubValidate } from "../../test/m724Stubs";
 import { connect, populate } from "./testkit";
 
 const stops: Array<() => void> = [];
@@ -49,34 +49,49 @@ describe("live model catalog", () => {
     }
   });
 
-  it("labels GitHub Copilot with its display name, offers no model list, and shows the reason as text", async () => {
+  const copilotCapabilities = {
+    agent: "github-copilot",
+    installed: true,
+    launchable: true,
+    capabilities: {
+      streaming: true,
+      interactive_input: false,
+      structured_output: true,
+      cancellation: true,
+      session_resumption: false,
+      approvals: false,
+      model_selection: true,
+    },
+  };
+
+  it("labels GitHub Copilot with its display name, lists the models its CLI reports, and keeps levels per model", async () => {
     const fake = populate(new FakeDaemon());
-    fake.stub("agents.capabilities", [
-      {
-        agent: "github-copilot",
-        installed: true,
-        launchable: true,
-        capabilities: {
-          streaming: true,
-          interactive_input: false,
-          structured_output: false,
-          cancellation: true,
-          session_resumption: false,
-          approvals: false,
-          model_selection: false,
-        },
-      },
-    ]);
+    fake.stub("agents.capabilities", [copilotCapabilities]);
     fake.stub("agents.catalog", [COPILOT_CATALOG]);
     const result = await (await live(fake)).models.catalog();
     expect(result.status).toBe("ok");
     if (result.status !== "ok") return;
     const copilot = result.data.providers.find((item) => item.id === "github-copilot");
-    expect(copilot).toBeDefined();
     expect(copilot?.name).toBe("GitHub Copilot");
-    expect(copilot?.modelSelection).toBe("unsupported");
-    expect(copilot?.models.status).not.toBe("ok");
-    expect(copilot?.models).toMatchObject({ reason: expect.stringContaining("billable call") });
+    expect(copilot?.modelSelection).toBe("supported");
+    expect(copilot?.models.status).toBe("ok");
+    if (copilot?.models.status !== "ok") return;
+    expect(copilot.models.value.map((item) => [item.id, item.efforts, item.defaultEffort])).toEqual([
+      ["gpt-a", ["low", "high"], "high"],
+      ["mini", [], null],
+    ]);
+    expect(copilot.efforts.status).toBe("unsupported");
+  });
+
+  it("keeps Copilot's models unknown, with the reason as text, when its list could not be read", async () => {
+    const fake = populate(new FakeDaemon());
+    fake.stub("agents.capabilities", [copilotCapabilities]);
+    fake.stub("agents.catalog", [COPILOT_UNREAD_CATALOG]);
+    const result = await (await live(fake)).models.catalog();
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    const copilot = result.data.providers.find((item) => item.id === "github-copilot");
+    expect(copilot?.models).toMatchObject({ status: "unknown", reason: "The Copilot model list could not be read. Retry shortly." });
   });
 
   it("binds per-model efforts for Codex, adapter-wide efforts for Claude, and Pi as unsupported", async () => {

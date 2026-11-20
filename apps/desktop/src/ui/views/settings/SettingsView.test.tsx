@@ -5,7 +5,7 @@ import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import { ALL_CAPABILITIES, type LoadHoldWire, type LoadMeterWire, type SettingsWire } from "../../../daemon/types";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { observation, okResult } from "../../../sources/surfaces/result";
-import type { LoadReading, ModelCatalog, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
+import type { LoadReading, ModelCatalog, ModelProvider, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
 import { type Services } from "../../services";
@@ -81,7 +81,36 @@ const DISPATCH_CATALOG: ModelCatalog = {
   })),
 };
 
-async function dispatchPage(wire: SettingsWire) {
+// Covers the shapes a provider can have: models and efforts (Codex, Claude Code), an ok-but-empty list (Pi), Copilot's
+// models with levels per model, and Copilot when its model list could not be read (DPES-1105).
+const NOW = { observedAt: "2026-11-17T00:00:00Z", ageMs: 0 };
+const COPILOT: ModelProvider = {
+  id: "github-copilot", name: "GitHub Copilot", installed: true, launchable: true, modelSelection: "supported",
+  models: { status: "ok", value: [{ id: "gpt-a", label: "GPT A", efforts: ["low", "high"] }, { id: "mini", label: "Mini", efforts: [] }], ...NOW },
+  efforts: { status: "unsupported", reason: "Effort levels are reported per model." },
+};
+const COPILOT_UNREAD: ModelProvider = {
+  ...COPILOT,
+  models: { status: "unknown", reason: "The Copilot model list could not be read. Retry shortly." },
+};
+const catalogWith = (copilot: ModelProvider): ModelCatalog => ({
+  providers: [
+    DISPATCH_CATALOG.providers[0]!,
+    {
+      id: "claude-code", name: "Claude Code", installed: true, launchable: true, modelSelection: "supported",
+      models: { status: "ok", value: [{ id: "opus", label: "Opus", efforts: [] }, { id: "sonnet", label: "Sonnet", efforts: [] }], ...NOW },
+      efforts: { status: "ok", value: ["low", "high"], ...NOW },
+    },
+    {
+      id: "pi", name: "Pi", installed: true, launchable: true, modelSelection: "unsupported",
+      models: { status: "ok", value: [], ...NOW },
+      efforts: { status: "ok", value: [], ...NOW },
+    },
+    copilot,
+  ],
+});
+
+async function dispatchPage(wire: SettingsWire, catalog: ModelCatalog = DISPATCH_CATALOG) {
   const { fake, services } = await connected(wire);
   let saved = wire;
   fake.stub("settings.get", () => saved);
@@ -90,7 +119,7 @@ async function dispatchPage(wire: SettingsWire) {
     return saved;
   });
   vi.spyOn(services.surfaces.models, "catalog").mockResolvedValue(
-    okResult(services.surfaces.models.provenance, DISPATCH_CATALOG, observation(Date.now())),
+    okResult(services.surfaces.models.provenance, catalog, observation(Date.now())),
   );
   fake.stub("agents.validate_selection", { valid: true });
   return { fake, services };
@@ -156,6 +185,83 @@ describe("Agent dispatch defaults", () => {
     expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({ dispatch_defaults: { default_agent: null, providers: {} } });
   });
 
+  it("keeps every override usable after saving the default, saves the picks, and clears one with Provider default", async () => {
+    const { fake, services } = await dispatchPage(
+      {
+        ...OPEN,
+        dispatch_defaults: { default_agent: "codex", providers: { pi: { model: "old" }, "github-copilot": { model: "gpt-a" } } },
+      },
+      catalogWith(COPILOT),
+    );
+    const user = userEvent.setup();
+    page(services, "agents");
+    await user.selectOptions(await screen.findByLabelText("Default model"), "m1");
+    await user.selectOptions(screen.getByLabelText("Default effort"), "high");
+    await user.click(screen.getByRole("button", { name: SAVE }));
+    expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({
+      dispatch_defaults: {
+        default_agent: "codex",
+        providers: { codex: { model: "m1", effort: "high" }, pi: { model: "old" }, "github-copilot": { model: "gpt-a" } },
+      },
+    });
+
+    const overrides = screen.getByText("Per-provider overrides").closest("details")!;
+    expect(within(overrides).getByText("2 set")).toBeInTheDocument();
+    await user.selectOptions(within(overrides).getByLabelText("Claude Code model"), "sonnet");
+    await user.selectOptions(within(overrides).getByLabelText("Claude Code effort"), "low");
+    expect(within(overrides).getByLabelText("Claude Code model")).toHaveValue("sonnet");
+    expect(within(overrides).getByLabelText("Claude Code effort")).toHaveValue("low");
+    expect(within(overrides).getByText("3 set")).toBeInTheDocument();
+    // Copilot lists models, with levels per model: a model with none says so, and one with levels offers them.
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toBeEnabled();
+    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot model"), "mini");
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toBeDisabled();
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription(
+      "This model has no effort levels. It runs with its own default effort.",
+    );
+    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot model"), "gpt-a");
+    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot effort"), "low");
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveValue("low");
+    await user.selectOptions(within(overrides).getByLabelText("Pi model"), "");
+    expect(within(overrides).getByLabelText("Pi model")).toHaveValue("");
+    expect(within(overrides).getByText("2 set")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: SAVE }));
+    await until(() => fake.callsTo("settings.set").length === 2, "second save");
+    const second = (fake.callsTo("settings.set")[1]?.params as { dispatch_defaults: { providers: object } }).dispatch_defaults;
+    expect(second.providers).toEqual({
+      codex: { model: "m1", effort: "high" },
+      "claude-code": { model: "sonnet", effort: "low" },
+      "github-copilot": { model: "gpt-a", effort: "low" },
+    });
+  });
+
+  it("says in place why a provider's model or effort list cannot be chosen from", async () => {
+    const { services } = await dispatchPage(
+      { ...OPEN, dispatch_defaults: { default_agent: "codex", providers: {} } },
+      catalogWith(COPILOT_UNREAD),
+    );
+    page(services, "agents");
+    const overrides = (await screen.findByText("Per-provider overrides")).closest("details")!;
+    // An empty list (status ok) and a list that could not be read are both disabled and described.
+    const NO_MODELS = "This provider lists no models to choose from. It runs with its own default model.";
+    const NO_EFFORTS = "No effort levels to choose from. It runs with its own default effort.";
+    expect(within(overrides).getByLabelText("Pi model")).toBeDisabled();
+    expect(within(overrides).getByLabelText("Pi model")).toHaveAccessibleDescription(NO_MODELS);
+    expect(within(overrides).getByLabelText("Pi effort")).toBeDisabled();
+    expect(within(overrides).getByLabelText("Pi effort")).toHaveAccessibleDescription(NO_EFFORTS);
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toBeDisabled();
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toHaveAccessibleDescription(
+      "The Copilot model list could not be read. Retry shortly.",
+    );
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription(
+      "Effort levels are reported per model. It runs with its own default effort.",
+    );
+    // A provider with a list stays usable and carries no explanation.
+    expect(within(overrides).getByLabelText("Claude Code model")).toBeEnabled();
+    expect(within(overrides).getByLabelText("Claude Code model")).not.toHaveAccessibleDescription();
+  });
+
   it("does not allow a token-only session to save dispatch defaults", async () => {
     const fake = new FakeDaemon();
     fake.approver = false;
@@ -166,6 +272,8 @@ describe("Agent dispatch defaults", () => {
     await until(() => services.connection.getSnapshot().status === "connected", "connected");
     page(services, "agents");
     expect(await screen.findByLabelText("Default provider")).toBeDisabled();
+    // The reason is in the section beside the disabled controls, as well as at the Save button.
+    expect(screen.getAllByText(APPROVER_REQUIRED_NOTICE).length).toBeGreaterThan(1);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(fake.callsTo("settings.set")).toHaveLength(0);
   });

@@ -26,7 +26,7 @@ function catalog(providers: ModelProvider[]): SurfaceResult<{ providers: ModelPr
   return { status: "ok", data: { providers }, provenance, ...observed };
 }
 
-/** Copilot as the daemon reports it: no model or effort list, since its CLI cannot list them without a billable call. */
+/** Copilot with no model or effort list to choose from, as when its model list could not be read. Its listed shape is in modelCatalogLive.test.ts. */
 function copilot(overrides: Partial<ModelProvider> = {}): ModelProvider {
   return {
     id: "github-copilot",
@@ -34,7 +34,7 @@ function copilot(overrides: Partial<ModelProvider> = {}): ModelProvider {
     installed: true,
     launchable: true,
     modelSelection: "unsupported",
-    models: { status: "unsupported", reason: "The Copilot CLI cannot list models without a billable call." },
+    models: { status: "unsupported", reason: "The Copilot model list could not be read." },
     efforts: { status: "unsupported", reason: "Reasoning effort is not offered for GitHub Copilot." },
     ...overrides,
   };

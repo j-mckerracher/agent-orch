@@ -14,6 +14,7 @@ pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;
 pub mod copilot_adapter;
+mod copilot_models;
 pub mod copilot_parser;
 pub mod copilot_sign_in;
 pub mod copilot_usage;

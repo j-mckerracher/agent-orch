@@ -11,8 +11,9 @@
 //! - passes `--max-ai-credits` only when the caller turns the credit cap on (a
 //!   soft cap, see [`AI_CREDIT_CAP`]);
 //! - passes a widening flag only at the Full level, which the user chose, and
-//!   never passes a model or effort on a normal run (see
-//!   [`CopilotAdapter::sign_in_check_args`] for the one exception).
+//!   passes a model or effort only when the caller names one (see
+//!   [`CopilotAdapter::selection_args`]; [`CopilotAdapter::sign_in_check_args`]
+//!   names its own model).
 //!
 //! The worktree is source isolation, not a sandbox. Built-in file edits are not
 //! OS-sandboxed (Copilot's own sandbox help says so), so the write rule is
@@ -255,8 +256,21 @@ impl CopilotAdapter {
         args
     }
 
-    /// The Restricted conversation arguments plus the one model this adapter
-    /// ever names: the explicit sign-in check. Normal runs pass no `--model`.
+    /// The flags that carry a model or reasoning level the user chose. The caller adds them to a
+    /// conversation or task vector. A run with no choice adds nothing, so the CLI uses the model
+    /// from the user's Copilot settings.
+    pub fn selection_args(model: Option<&str>, effort: Option<&str>) -> Vec<String> {
+        let mut args = Vec::new();
+        if let Some(model) = model {
+            args.extend(["--model".to_owned(), model.to_owned()]);
+        }
+        if let Some(effort) = effort {
+            args.extend(["--reasoning-effort".to_owned(), effort.to_owned()]);
+        }
+        args
+    }
+
+    /// The Restricted conversation arguments plus the model of the explicit sign-in check.
     pub fn sign_in_check_args(usage_file: &Path, scratch: &Path, credit_cap: bool) -> Vec<String> {
         let mut args = base_args(
             SIGN_IN_PROMPT,
@@ -592,7 +606,7 @@ impl RoutableAdapter for CopilotAdapter {
             cancellation: true, // CopilotHandle::cancel calls ChildSupervisor::cancel.
             session_resumption: false, // `--resume` and `--continue` are never passed.
             approvals: false, // Prompts are denied with `--no-ask-user` and deny rules.
-            model_selection: false, // Normal runs never pass `--model` or `--reasoning-effort`.
+            model_selection: true, // `selection_args` passes `--model` and `--reasoning-effort`.
         }
     }
 }

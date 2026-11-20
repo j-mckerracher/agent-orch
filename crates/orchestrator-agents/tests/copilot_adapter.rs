@@ -487,11 +487,102 @@ fn a_task_writes_only_under_its_worktree_and_runs_no_shell() {
 }
 
 #[test]
-fn only_the_sign_in_check_names_a_model() {
+fn only_the_sign_in_check_and_a_chosen_selection_name_a_model() {
     let check = sign_in_check();
     assert_eq!(values_of(&check, "--model"), ["claude-haiku-4.5"]);
     assert!(!conversation("hi").iter().any(|arg| arg == "--model"));
     assert!(!task("x").iter().any(|arg| arg == "--model"));
+
+    assert!(CopilotAdapter::selection_args(None, None).is_empty());
+    assert_eq!(
+        CopilotAdapter::selection_args(Some("gpt-a"), Some("high")),
+        ["--model", "gpt-a", "--reasoning-effort", "high"]
+    );
+    assert_eq!(
+        CopilotAdapter::selection_args(None, Some("low")),
+        ["--reasoning-effort", "low"]
+    );
+}
+
+/// A fake `copilot --acp` that answers the four calls the model read makes. `auto` is listed
+/// twice, and only `gpt-a` has reasoning levels.
+#[cfg(unix)]
+pub const FAKE_ACP: &str = r#"if [ "$1" = "--version" ]; then printf '%s\n' 'GitHub Copilot CLI 1.0.114.'; exit 0; fi
+if [ "$1" != "--acp" ]; then exit 1; fi
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1}}\n' "$id" ;;
+    *'"session/new"'*) printf '{"jsonrpc":"2.0","method":"session/update","params":{}}\n{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s1","models":{"availableModels":[{"modelId":"auto","name":"Auto"},{"modelId":"auto","name":"Auto"},{"modelId":"gpt-a","name":"GPT A"},{"modelId":"mini","name":"Mini"}]}}}\n' "$id" ;;
+    *'"value":"gpt-a"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"reasoning_effort","currentValue":"high","options":[{"value":"low"},{"value":"high"}]}]}}\n' "$id" ;;
+    *'"session/set_config_option"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[]}}\n' "$id" ;;
+    *'"session/close"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"; exit 0 ;;
+  esac
+done"#;
+
+#[cfg(unix)]
+#[tokio::test]
+async fn the_catalog_lists_the_models_and_levels_the_cli_reports() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = script(dir.path(), "acp", FAKE_ACP);
+    let signed_in = SignInRecord {
+        state: SignInState::Ready,
+        ..SignInRecord::default()
+    };
+    let catalog = CopilotAdapter::new()
+        .with_program(&program)
+        .catalog(Duration::from_secs(10), &signed_in)
+        .await;
+    assert_eq!(catalog.models.state, CatalogState::Available, "{catalog:?}");
+    let listed: Vec<(&str, &[String], Option<&str>)> = catalog
+        .models
+        .items
+        .iter()
+        .map(|m| (m.id.as_str(), m.efforts.as_slice(), m.default_effort.as_deref()))
+        .collect();
+    let levels = ["low".to_owned(), "high".to_owned()];
+    assert_eq!(
+        listed,
+        [("auto", &[][..], None), ("gpt-a", &levels[..], Some("high")), ("mini", &[][..], None)]
+    );
+    // Levels are per model, so the adapter-wide list says so and offers none.
+    assert_eq!(catalog.efforts.state, CatalogState::Unsupported);
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_server_that_does_not_answer_leaves_the_models_unknown_not_empty() {
+    let dir = tempfile::tempdir().unwrap();
+    let program = fake_copilot(dir.path(), "silent", "1.0.114", "exit 1\n");
+    let catalog = CopilotAdapter::new()
+        .with_program(&program)
+        .catalog(Duration::from_secs(10), &SignInRecord::default())
+        .await;
+    assert_eq!(catalog.models.state, CatalogState::Unknown, "{catalog:?}");
+    assert!(catalog.models.items.is_empty());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_signed_out_account_is_not_asked_for_models() {
+    let dir = tempfile::tempdir().unwrap();
+    let marker = dir.path().join("acp-started");
+    let program = script(
+        dir.path(),
+        "guarded",
+        &format!("if [ \"$1\" = \"--acp\" ]; then touch '{}'; exit 1; fi\nprintf '%s\\n' 'GitHub Copilot CLI 1.0.114.'", marker.display()),
+    );
+    let signed_out = SignInRecord {
+        state: SignInState::NotSignedIn,
+        ..SignInRecord::default()
+    };
+    let catalog = CopilotAdapter::new()
+        .with_program(&program)
+        .catalog(Duration::from_secs(10), &signed_out)
+        .await;
+    assert_eq!(catalog.state, CatalogState::AuthenticationFailed);
+    assert_eq!(catalog.models.state, CatalogState::Unknown);
+    assert!(!marker.exists(), "the model read started for a signed-out account");
 }
 
 #[test]
@@ -528,7 +619,7 @@ async fn detection_is_independent_of_the_verified_version() {
         .await
         .expect("1.0.109 is pinned");
     assert_eq!(caps, CopilotAdapter::new().capabilities());
-    assert!(!caps.model_selection && caps.streaming && caps.cancellation);
+    assert!(caps.model_selection && caps.streaming && caps.cancellation);
 
     let newer = fake_copilot(dir.path(), "newer", "1.2.3", "exit 0\n");
     assert_eq!(
@@ -588,7 +679,7 @@ async fn windows_is_not_refused_and_a_missing_cli_is_reported_as_missing() {
 #[tokio::test]
 async fn the_catalog_states_follow_the_sign_in_record() {
     let dir = tempfile::tempdir().unwrap();
-    let program = fake_copilot(dir.path(), "copilot", "1.0.109", "exit 0\n");
+    let program = script(dir.path(), "copilot", FAKE_ACP);
     let adapter = CopilotAdapter::new().with_program(&program);
     let limit = Duration::from_secs(5);
     let record = |state| SignInRecord {
@@ -601,7 +692,7 @@ async fn the_catalog_states_follow_the_sign_in_record() {
     assert_eq!(not_checked.state, CatalogState::Available);
     assert!(not_checked.detail.starts_with("Not confirmed yet"));
     assert_eq!(not_checked.provider.as_deref(), Some("github"));
-    assert_eq!(not_checked.models.state, CatalogState::Unsupported);
+    assert_eq!(not_checked.models.state, CatalogState::Available);
     assert_eq!(not_checked.efforts.state, CatalogState::Unsupported);
 
     let signed_out = adapter
@@ -609,6 +700,7 @@ async fn the_catalog_states_follow_the_sign_in_record() {
         .await;
     assert_eq!(signed_out.state, CatalogState::AuthenticationFailed);
     assert!(signed_out.detail.contains("copilot login"));
+    assert_eq!(signed_out.models.state, CatalogState::Unknown);
 
     let no_seat = adapter.catalog(limit, &record(SignInState::NoSeat)).await;
     assert_eq!(no_seat.state, CatalogState::Unavailable);
@@ -632,7 +724,8 @@ async fn a_catalog_for_an_unseen_version_keeps_provider_and_model_support_separa
         .catalog(Duration::from_secs(5), &SignInRecord::default())
         .await;
     assert_eq!(catalog.state, CatalogState::Available);
-    assert_eq!(catalog.models.state, CatalogState::Unsupported);
+    // This fake has no `--acp` server, so the models could not be read: unknown, never empty or unsupported.
+    assert_eq!(catalog.models.state, CatalogState::Unknown);
     assert_eq!(catalog.efforts.state, CatalogState::Unsupported);
 }
 

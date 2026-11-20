@@ -17,6 +17,20 @@ const CLAUDE_HELP: &str =
      -p\n--verbose\n--output-format\n--include-partial-messages\n--permission-mode\n\
      --permission-prompts\n--restricted\n--strict-mcp-config\n--tools\n--allowedTools\n--model\n--plugin-dir\n--agent\n";
 
+/// A fake `copilot --acp` that lists `gpt-a` (levels low and high) and `mini` (no levels).
+const COPILOT_ACP: &str = r#"if [ "$1" = "--version" ]; then printf '%s\n' 'GitHub Copilot CLI 1.0.114.'; exit 0; fi
+if [ "$1" != "--acp" ]; then exit 1; fi
+while IFS= read -r line; do
+  id=$(printf '%s' "$line" | sed -n 's/.*"id":\([0-9]*\).*/\1/p')
+  case "$line" in
+    *'"initialize"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id" ;;
+    *'"session/new"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"s1","models":{"availableModels":[{"modelId":"gpt-a","name":"GPT A"},{"modelId":"mini","name":"Mini"}]}}}\n' "$id" ;;
+    *'"value":"gpt-a"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[{"id":"reasoning_effort","currentValue":"high","options":[{"value":"low"},{"value":"high"}]}]}}\n' "$id" ;;
+    *'"session/set_config_option"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{"configOptions":[]}}\n' "$id" ;;
+    *'"session/close"'*) printf '{"jsonrpc":"2.0","id":%s,"result":{}}\n' "$id"; exit 0 ;;
+  esac
+done"#;
+
 struct Agents {
     codex: PathBuf,
     claude: PathBuf,
@@ -410,36 +424,31 @@ fn copilot_is_listed_unavailable_and_its_check_records_nothing_when_the_cli_is_m
     assert_eq!(copilot["sign_in"]["state"], "not_checked");
 }
 
-/// DPES-1105: a Copilot choice is checked against its catalog, which offers no model or effort list. A choice
-/// with neither is valid when the CLI is installed and pinned; a missing CLI is refused with its own reason.
+/// DPES-1105: a Copilot choice is checked against the models its CLI lists. A model it lists is valid, with
+/// a level that model supports; one it does not list is refused; a missing CLI is refused with its own reason.
 /// Unix only: the fake is a shell script.
 #[cfg(unix)]
 #[test]
 fn a_copilot_choice_is_validated_by_its_catalog_and_names_a_missing_cli() {
     let fixture = Fixture::new();
     let agents = agents(&fixture);
-    let copilot = fixture.script(
-        "fake-copilot",
-        "if [ \"$1\" = \"--version\" ]; then\n  printf '%s\\n' 'GitHub Copilot CLI 1.0.109.'\n  exit 0\nfi\nexit 1\n",
-    );
+    let copilot = fixture.script("fake-copilot", COPILOT_ACP);
     let api = fixture.api_with(&agents.codex, |config| {
         config.claude_program = Some(agents.claude.clone());
         config.copilot_program = Some(copilot);
     });
 
-    // A selection with neither part is not checked (the picker sends none), so the checks below name a model or effort.
     assert_eq!(
-        validate(
-            &api,
-            "github-copilot",
-            json!("claude-haiku-4.5"),
-            Value::Null
-        )["reason"],
-        "models_unsupported"
+        validate(&api, "github-copilot", json!("gpt-a"), json!("high"))["valid"],
+        true
     );
     assert_eq!(
-        validate(&api, "github-copilot", Value::Null, json!("high"))["reason"],
+        validate(&api, "github-copilot", json!("gpt-a"), json!("max"))["reason"],
         "effort_unsupported"
+    );
+    assert_eq!(
+        validate(&api, "github-copilot", json!("no-such-model"), Value::Null)["reason"],
+        "unknown_model"
     );
 
     let missing = fixture.marker("no-such-copilot");
