@@ -19,9 +19,6 @@ const IDENTIFYING_KEYS: [&str; 7] = [
     "path",
 ];
 
-/// A value longer than this is content (a file body, a prompt), not an identifier.
-const SHORT_VALUE_MAX_BYTES: usize = 256;
-
 /// Cut `text` to [`SUMMARY_MAX_BYTES`] on a character boundary.
 pub(crate) fn bound(text: &str) -> String {
     let mut end = text.len().min(SUMMARY_MAX_BYTES);
@@ -31,22 +28,17 @@ pub(crate) fn bound(text: &str) -> String {
     text[..end].to_owned()
 }
 
-/// The field of a tool input that names the call: a command, pattern, URL, query or path,
-/// else the first short string value. Empty when the input has none.
+/// The field of a tool input that names the call: a command, pattern, URL, query or path.
+/// Empty when the input has none of those; other fields may hold secrets or content.
 pub(crate) fn input_summary(input: &Value) -> String {
     let Some(object) = input.as_object() else {
         return String::new();
     };
-    let text = IDENTIFYING_KEYS
+    IDENTIFYING_KEYS
         .iter()
         .find_map(|key| object.get(*key)?.as_str())
-        .or_else(|| {
-            object
-                .values()
-                .filter_map(Value::as_str)
-                .find(|value| !value.is_empty() && value.len() <= SHORT_VALUE_MAX_BYTES)
-        });
-    text.map(bound).unwrap_or_default()
+        .map(bound)
+        .unwrap_or_default()
 }
 
 /// Result text from a plain string or an array of `{"type": "text", "text": ...}` blocks, bounded.
@@ -103,11 +95,11 @@ mod tests {
             "*.rs"
         );
         assert_eq!(input_summary(&json!({"url": "https://x"})), "https://x");
+        assert_eq!(input_summary(&json!({"description": "do it", "n": 1})), "");
         assert_eq!(
-            input_summary(&json!({"description": "do it", "n": 1})),
-            "do it"
+            input_summary(&json!({"password": "hunter2", "content": "short secret"})),
+            ""
         );
-        assert_eq!(input_summary(&json!({"body": "x".repeat(300)})), "");
         assert_eq!(input_summary(&json!(["not", "an", "object"])), "");
     }
 

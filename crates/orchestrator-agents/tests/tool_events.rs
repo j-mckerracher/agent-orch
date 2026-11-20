@@ -238,7 +238,7 @@ fn codex_tool_items_report_start_and_finish_with_success_from_status() {
                 "/tmp/scratch/src/a.rs, /tmp/scratch/src/b.rs"
             ),
             finished("item_4", true, ""),
-            started("item_5", "motif.tasks_list", "demo"),
+            started("item_5", "motif.tasks_list", ""),
             finished("item_5", false, "server unavailable"),
             started("item_6", "web_search", "rust cargo workspace dependencies"),
             finished("item_6", true, ""),
