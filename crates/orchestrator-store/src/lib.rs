@@ -130,7 +130,7 @@ pub use sqlite_wake::{
     WakeRecord, WakeState, WAKE_PAGE_SIZE,
 };
 pub use sqlite_worker_status::{
-    PendingReply, ReplyKind, ResumeTarget, StatusEvent, WaitError, WorkerQuestion,
+    MessageAuthor, PendingReply, ReplyKind, ResumeTarget, StatusEvent, WaitError, WorkerQuestion,
     MAX_QUEUED_MESSAGES,
 };
 pub use sqlite_workstreams::{

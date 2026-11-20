@@ -9,6 +9,9 @@ import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button } from "./theme";
 import { TaskQueueStatus } from "./TaskQueueStatus";
+import { TaskReply } from "./TaskReply";
+import { OutputTail } from "./views/agents/OutputTail";
+import { SessionThinking } from "./views/agents/SessionThinking";
 import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
 
 export function PlaceholderPanels({ taskRef, previewId }: { taskRef: TaskRef; previewId?: string }) {
@@ -161,6 +164,8 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
   const sessionEntries = taskSessions[taskId]?.data ?? null;
   const sessions = sessionEntries?.map((entry) => entry.session) ?? task?.sessions ?? [];
   const sessionId = chosen && sessions.some((s) => s.id === chosen) ? chosen : (sessions[sessions.length - 1]?.id ?? null);
+  const session = sessions.find((s) => s.id === sessionId);
+  const running = session?.state === "Spawning" || session?.state === "Running";
 
   useEffect(() => {
     if (sessionId === null) return;
@@ -288,6 +293,18 @@ export function TaskDetail({ projectId, taskId }: { projectId: string; taskId: s
                   Queued: the daemon has admitted this task but no agent has been launched and no session is recorded.
                 </p>
               )}
+            </section>
+            <section aria-label="Agent conversation" className="ps-section">
+              <h2>Conversation</h2>
+              {sessionId === null ? (
+                <p>No recorded session, so there is no conversation to show.</p>
+              ) : (
+                <>
+                  <OutputTail key={sessionId} taskId={taskId} sessionId={sessionId} running={running} />
+                  <SessionThinking key={`${sessionId}:thinking`} sessionId={sessionId} running={running} />
+                </>
+              )}
+              <TaskReply taskId={taskId} state={record.state} />
             </section>
             <section aria-label="Attempts" className="ps-section">
               <h2>Attempts</h2>

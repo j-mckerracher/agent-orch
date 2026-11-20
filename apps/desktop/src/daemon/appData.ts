@@ -398,6 +398,21 @@ export class AppData extends Store<AppDataSnapshot> {
     }
   }
 
+  /** Sends the user's message to a Waiting task (DPES-1106). User-only; the key is reused only while the outcome is unknown. */
+  async messageTask(taskId: string, text: string): Promise<MutationResult<boolean>> {
+    const scope = `message:${taskId}`;
+    const key = this.tracker.keyFor(scope, text);
+    try {
+      const { queued } = await this.connection.api().tasksMessage(taskId, text, key);
+      this.tracker.settle(scope, null);
+      return { ok: true, value: queued };
+    } catch (error) {
+      const failure = asDaemonError(error);
+      this.tracker.settle(scope, failure);
+      return { ok: false, error: failure };
+    }
+  }
+
   /** Archives finished tasks (DPES-1106). Returns the ids this call newly archived. */
   async archiveTasks(taskIds: string[]): Promise<MutationResult<string[]>> {
     const scope = "archive";

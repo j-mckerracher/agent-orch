@@ -17,7 +17,7 @@ use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
 use orchestrator_store::{
     ActionOutcome, ActionProposal, ArchiveError, AuthorityError, ConversationTarget,
     CoordinatorError, GrantOutcome, HoldSubject, LineageError, LineageRelation, MemoryWriteOutcome,
-    MemoryWriter, ProposalState, ResolveError, TaskOverride, TaskRecord, WaitError,
+    MemoryWriter, MessageAuthor, ProposalState, ResolveError, TaskOverride, TaskRecord, WaitError,
     WorkstreamStoreError,
 };
 
@@ -379,6 +379,7 @@ impl Execution {
                     &request.task_id,
                     &request.idempotency_key,
                     &request.text,
+                    MessageAuthor::Orchestrator,
                 ) {
                     Ok(()) => {
                         api.wake_resumes();

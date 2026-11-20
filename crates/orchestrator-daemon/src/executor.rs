@@ -1256,6 +1256,7 @@ fn reply_for_worker(reply: &orchestrator_store::PendingReply) -> orchestrator_co
             orchestrator_store::ReplyKind::Answer => ReplyKind::Answer,
             orchestrator_store::ReplyKind::Reconcile => ReplyKind::Reconcile,
             orchestrator_store::ReplyKind::Message => ReplyKind::Message,
+            orchestrator_store::ReplyKind::UserMessage => ReplyKind::UserMessage,
         },
         question: reply.question.clone(),
         text: reply.text.clone(),

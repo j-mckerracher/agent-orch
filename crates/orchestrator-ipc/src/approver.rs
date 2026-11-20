@@ -97,6 +97,9 @@ impl ApproverSecret {
 /// `tasks.discard` (DPES-1108 phase 5) is the user's word that a task's committed work is not
 /// wanted, which is what lets that task be archived and its slot returned.
 ///
+/// `tasks.message` (DPES-1106) is the user's own words to a waiting worker, queued as the user's
+/// and not the orchestrator's.
+///
 /// `coordinator.set_scope` (DPES-1108 phase 7) writes the sentence a coordinator's charter is
 /// rendered from and the global orchestrator routes by: persistent text every later prompt
 /// carries, like a note.
@@ -123,6 +126,7 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "decisions.defer",
     "decisions.reconcile",
     "tasks.discard",
+    "tasks.message",
     "coordinator.set_scope",
 ];
 
