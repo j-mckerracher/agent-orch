@@ -77,7 +77,10 @@ struct Inner {
     daemon_program: Option<PathBuf>,
     next_id: AtomicU64,
     connections: Mutex<HashMap<u64, Connection>>,
-    launch_gate: Mutex<()>,
+    /// Serializes whole opens so a concurrent opener finds the daemon the first
+    /// one started instead of racing it for the data-directory lock. The flag
+    /// is true while an update install owns the daemon: opens are then refused.
+    launch_gate: Mutex<bool>,
     /// Secret of the daemon this host process started, set only after that
     /// start succeeded and replaced by the next one. Every connection
     /// presents it, so a reopened window keeps the role, until a daemon
@@ -105,7 +108,7 @@ impl Bridge {
                 daemon_program,
                 next_id: AtomicU64::new(1),
                 connections: Mutex::new(HashMap::new()),
-                launch_gate: Mutex::new(()),
+                launch_gate: Mutex::new(false),
                 approver: Mutex::new(None),
             }),
         }
@@ -114,7 +117,7 @@ impl Bridge {
     /// Opens an authenticated connection for `window`, starting the daemon
     /// first when nothing is serving. `emit` receives `{kind:"message"}` and a
     /// final `{kind:"closed"}` payload and returns false once the webview is
-    /// gone.
+    /// gone. Opens run one at a time and are refused while an update installs.
     pub fn open(
         &self,
         window: &str,
@@ -126,6 +129,10 @@ impl Bridge {
             .data_dir
             .as_deref()
             .ok_or_else(|| HostError::unavailable("the data directory cannot be determined"))?;
+        let gate = self.launch_gate();
+        if *gate {
+            return Err(HostError::unavailable("an update is being installed"));
+        }
         {
             let mut connections = self.connections();
             connections.retain(|_, connection| !connection.dead.load(Ordering::Acquire));
@@ -208,13 +215,6 @@ impl Bridge {
         sink: &Sink,
         attempt: &Attempt<'_>,
     ) -> Result<(Relay, Value, bool), HostError> {
-        // One launch at a time: a concurrent opener finds the daemon the
-        // first one started instead of racing it for the data-directory lock.
-        let _gate = self
-            .inner
-            .launch_gate
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
         match attempt(sink) {
             Ok((relay, welcome)) => return Ok((relay, welcome, false)),
             Err(RelayError::Unavailable) => {}
@@ -283,6 +283,21 @@ impl Bridge {
         }
     }
 
+    /// Refuses every open until the guard is dropped, so an update install
+    /// can stop the daemon without a window restarting it. Waits for an open
+    /// in flight, because the flag is set under the same mutex that serializes
+    /// opens. Fails when another install already holds the gate.
+    pub fn begin_install(&self) -> Result<InstallGuard, HostError> {
+        let mut installing = self.launch_gate();
+        if *installing {
+            return Err(HostError::unavailable(
+                "an update is already being installed",
+            ));
+        }
+        *installing = true;
+        Ok(InstallGuard(Some(self.clone())))
+    }
+
     /// Queues one request from `window` on its connection.
     pub fn send(&self, window: &str, connection_id: u64, message: Value) -> Result<(), HostError> {
         let method = message
@@ -328,6 +343,13 @@ impl Bridge {
         self.connections().len()
     }
 
+    fn launch_gate(&self) -> MutexGuard<'_, bool> {
+        self.inner
+            .launch_gate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
+
     fn connections(&self) -> MutexGuard<'_, HashMap<u64, Connection>> {
         self.inner
             .connections
@@ -351,6 +373,24 @@ impl Bridge {
             .is_some_and(|current| Arc::ptr_eq(current, refused))
         {
             *stored = None;
+        }
+    }
+}
+
+/// Keeps `Bridge::open` closed; dropping it reopens the bridge.
+pub struct InstallGuard(Option<Bridge>);
+
+impl InstallGuard {
+    /// Leaves the bridge closed for the rest of this process, which is about to restart.
+    pub fn keep_closed(mut self) {
+        self.0 = None;
+    }
+}
+
+impl Drop for InstallGuard {
+    fn drop(&mut self) {
+        if let Some(bridge) = self.0.take() {
+            *bridge.launch_gate() = false;
         }
     }
 }
