@@ -14,7 +14,6 @@ import type {
 } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
-import { matchesFilter } from "../../format";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { ChatComposer } from "../../chat/ChatComposer";
@@ -368,8 +367,7 @@ function Conversation({
   onRemoveCoordinator,
   addCoordinator,
 }: ConversationProps) {
-  const { surfaces, drafts, data } = useServices();
-  const { tasks: taskList, approvals } = useStore(data);
+  const { surfaces, drafts } = useServices();
   const gate = useGate();
   const ids = useId();
   const [nonce, setNonce] = useState(0);
@@ -393,7 +391,6 @@ function Conversation({
   const error = feedback?.key === option.key ? feedback.error : null;
   const { target } = option;
   // Hidden until the tasks are listed, and at 0: no count is better than a made-up one.
-  const runningCount = taskList.data?.filter((task) => matchesFilter(task, "running", taskList.data!, approvals.data ?? [])).length ?? 0;
 
   const loaded = useSurface(
     () => surfaces.conversation.transcript(target),
@@ -676,11 +673,6 @@ function Conversation({
           globalUnseen={monitoring.supported ? unseenFor(monitoring.state, GLOBAL_TARGET) : 0}
         />
         {!live && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
-        {runningCount > 0 && (
-          <NavLink to={{ name: "global", view: "agents" }} className="ws-running">
-            {runningCount} running
-          </NavLink>
-        )}
         <ConversationActions
           option={option}
           live={live}
