@@ -164,7 +164,7 @@ struct CancelParams {
     idempotency_key: String,
 }
 
-/// A task and an idempotency key: `tasks.discard`.
+/// A task and an idempotency key: `tasks.discard`, `tasks.force_start`.
 #[derive(Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 struct TaskKeyParams {
@@ -453,6 +453,7 @@ impl RpcHandler for DaemonApi {
             "tasks.discard" => self.discard_task(params),
             "tasks.message" => self.message_task(params),
             "tasks.retry" => self.retry_task(params),
+            "tasks.force_start" => self.force_start_task(params),
             "agents.capabilities" => self.agent_capabilities(params),
             "agents.catalog" => self.agents_catalog(params),
             "agents.validate_selection" => self.agents_validate_selection(params),
@@ -1081,6 +1082,35 @@ impl DaemonApi {
         self.wake_executor();
         serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
             .map_err(|_| RpcError::Internal)
+    }
+
+    /// `tasks.force_start` (user-only): the user's word that a queued task starts now, past the
+    /// worker caps, the load gate and the admission check. The restart gate, dependencies,
+    /// open questions, project registration and worktree ownership still hold it back. A task
+    /// that is not queued, or that a pass would not start even when forced, is `Conflict`; an
+    /// unknown one is `NotFound`. The task leaves `Queued` when the executor launches it.
+    fn force_start_task(&self, params: Value) -> Result<Value, RpcError> {
+        let request: TaskKeyParams = parse_params(params)?;
+        let key = request.idempotency_key.clone();
+        idempotency::run(
+            &self.store,
+            &self.idempotency_gate,
+            "tasks.force_start",
+            &key,
+            &request,
+            || {
+                let task = self.store.get(&request.task_id).map_err(map_store_error)?;
+                let executor = self.executor.as_ref().ok_or(RpcError::Conflict)?;
+                if task.state != TaskState::Queued
+                    || executor.dispatch_state().1
+                    || !self.can_start_forced(&request.task_id)?
+                {
+                    return Err(RpcError::Conflict);
+                }
+                executor.force_start(&request.task_id);
+                Ok(json!({"task_id": request.task_id, "forced": true}))
+            },
+        )
     }
 
     /// Reports each known agent family: whether its executable is installed

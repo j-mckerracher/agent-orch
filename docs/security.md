@@ -157,7 +157,9 @@ pending cards), a `workstream.update` that archives, a `memory.set` of a prefere
 or a conversation's own: preferences are the user's standing instructions that later prompts
 follow, so the orchestrator may only propose them), discarding committed work
 (`tasks.discard`, a user-only method, never an action), the user's own message to a waiting
-task (`tasks.message`, a user-only method, never an action), and every settings, grant,
+task (`tasks.message`, a user-only method, never an action), forcing a queued task past the
+worker caps and the load gate (`tasks.force_start`, a user-only method, never an action), and
+every settings, grant,
 credential, permission-level and approval write (user-only methods, never actions).
 
 **Containment.**

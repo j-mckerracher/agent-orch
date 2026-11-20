@@ -180,7 +180,7 @@ export const MACOS = {
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
   // DPES-1106 adds one portable daemon test and one unix-only executor test: 882 becomes 884, unit binary 750 becomes 752.
   // The wake brief adds one portable daemon test: 884 becomes 885, unit binary 752 becomes 753.
-  daemon: { passed: 907, ignored: 1, sequence: [772, 98, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  daemon: { passed: 908, ignored: 1, sequence: [773, 98, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
@@ -189,7 +189,7 @@ export const MACOS = {
   // workspace-tests gate measured on this branch (CI run 44565723305). After PR #224 (DPES-1108), main's whole-workspace
   // pin is 2467 passed and 2 ignored; minus daemon 882+1, store 432+1 and ipc 121 that is 1032 passed and none ignored.
   // A cancelled waiting task no longer blocks the restart gate: one engine test, so 1054 becomes 1055.
-  workspace: { passed: 1072, ignored: 1 },
+  workspace: { passed: 1073, ignored: 1 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
@@ -300,7 +300,8 @@ export const NODE_SELF_TESTS = { passed: 167 };
 // DPES-1044 desktop update prompt adds DesktopUpdates.test.tsx (1 file, 15 tests): 134 files, 2495 tests.
 // The two-screen Workstreams page (DPES-1044) replaces and adds 14 tests in existing files: 2509, as a full `npx vitest run` counted them.
 // Live agent activity (DPES-1044) adds 3 files and 30 tests net: 137 files, 2539 tests, as a full `npx vitest run` counted them.
-export const VITEST = { files: 137, tests: 2539 };
+// Force start (DPES-1044) adds 2 tests in an existing file: 2543, as a full `npx vitest run` counted them.
+export const VITEST = { files: 137, tests: 2543 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

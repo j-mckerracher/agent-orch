@@ -1,4 +1,4 @@
-/** Task controls: reassign through a new attempt (tasks.retry); amend and decomposition stay disabled with reasons. */
+/** Task controls: force start a queued task (tasks.force_start), reassign through a new attempt (tasks.retry); amend and decomposition stay disabled with reasons. */
 import { useState } from "react";
 import { isFixtureId } from "../../../daemon/api";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
@@ -47,6 +47,20 @@ export function TaskControls({ row, live }: { row: WorkRow; live: boolean }) {
     }
   };
 
+  const forceStart = async () => {
+    setNote(null);
+    setFailure(null);
+    setBusy(true);
+    const result = await data.forceStartTask(row.id);
+    setBusy(false);
+    if (result.ok) {
+      setNote("The daemon accepted the force start. The task leaves the queue when it launches.");
+      void data.watchTask(row.id);
+    } else {
+      setFailure({ error: result.error, action: "Forcing the task to start" });
+    }
+  };
+
   let retryReason: string | null;
   let retryOffered = false;
   switch (retryInfo.state) {
@@ -73,9 +87,27 @@ export function TaskControls({ row, live }: { row: WorkRow; live: boolean }) {
     retryReason = "Not available: this task cannot be retried through the daemon.";
   }
 
+  // `tasks.force_start` is user-only, like discard: only the app that started the daemon may send it.
+  let forceReason: string;
+  let forceOffered = false;
+  if (!real) {
+    forceReason = live ? "Not available: this task has no daemon record." : "Preview only: fixture tasks cannot be force-started.";
+  } else if (row.state !== "Queued") {
+    forceReason = `The task is ${row.state}; only a queued task can be force-started.`;
+  } else if (noLink) {
+    forceReason = noLink;
+  } else if (!(gate.connected && gate.connection.approver)) {
+    forceReason = "Only the app that started the running orchestrator service can force a start.";
+  } else {
+    forceOffered = true;
+    forceReason =
+      "Starts it now even when every worker slot is in use or the machine is busy. A dependency, an open question or the restart gate still holds it back.";
+  }
+
   return (
     <section aria-label="Task controls" className="agents-controls">
       <h4>Task controls</h4>
+      <Control label="Force start" disabled={busy || !forceOffered} reason={forceReason} onClick={() => void forceStart()} />
       <Control
         label={live ? "Reassign via new attempt" : "Preview reassign via new attempt"}
         disabled={busy || !retryOffered || noLink !== null}

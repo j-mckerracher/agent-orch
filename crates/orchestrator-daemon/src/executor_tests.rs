@@ -705,6 +705,47 @@ fn scheduler_limits_hold_and_a_finished_task_releases_its_slot() {
 }
 
 #[test]
+fn a_forced_task_starts_past_a_full_worker_pool_and_only_a_queued_task_can_be_forced() {
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let api = fixture.api_with(&waiting_agent(&fixture, &release), |config| {
+        config.limits = SchedulerLimits::new(Some(1), Some(1)).unwrap();
+    });
+    let first = fixture.submit(&api, "force-1", 0);
+    let second = fixture.submit(&api, "force-2", 0);
+    wait_state(&api, &first, "Running");
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(task(&api, &second)["state"], "Queued");
+
+    assert_eq!(
+        api.dispatch(
+            "tasks.force_start",
+            json!({"task_id": first, "idempotency_key": "force-running"})
+        ),
+        Err(RpcError::Conflict)
+    );
+    assert_eq!(
+        api.dispatch(
+            "tasks.force_start",
+            json!({"task_id": "missing", "idempotency_key": "force-missing"})
+        ),
+        Err(RpcError::NotFound)
+    );
+    api.dispatch(
+        "tasks.force_start",
+        json!({"task_id": second, "idempotency_key": "force-queued"}),
+    )
+    .unwrap();
+
+    wait_state(&api, &second, "Running");
+    assert_eq!(task(&api, &first)["state"], "Running");
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &first, "Succeeded");
+    wait_state(&api, &second, "Succeeded");
+    api.shutdown();
+}
+
+#[test]
 fn a_closed_load_gate_keeps_a_queued_task_queued_and_leaves_a_running_task_alone() {
     use crate::api::load::tests::close_gate;
     let fixture = Fixture::new();

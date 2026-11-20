@@ -596,11 +596,16 @@ fn the_user_only_list_is_exactly_the_reviewed_set() {
             "decisions.reconcile",
             "tasks.discard",
             "tasks.message",
+            "tasks.force_start",
             "coordinator.set_scope",
         ]
     );
     assert_eq!(method_capability("tasks.discard"), Some(Capability::Tasks));
     assert_eq!(method_capability("tasks.message"), Some(Capability::Tasks));
+    assert_eq!(
+        method_capability("tasks.force_start"),
+        Some(Capability::Tasks)
+    );
     for method in [
         "decisions.list",
         "decisions.answer",

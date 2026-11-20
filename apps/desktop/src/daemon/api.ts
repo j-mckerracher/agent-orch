@@ -227,6 +227,17 @@ export class DaemonApi {
   }
 
   /**
+   * Starts a Queued task now, past the worker caps and the load gate. User-only. Conflict when the task is not queued,
+   * the restart gate is closed, or something other than capacity (a dependency, an open question) holds it back.
+   */
+  async tasksForceStart(taskId: string, idempotencyKey: string): Promise<{ task_id: string; forced: boolean }> {
+    return this.session.request("tasks.force_start", {
+      task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /**
    * DPES-1106. Queues the user's message for a Waiting task; the worker resumes with it. User-only.
    * Conflict when the task is not waiting or already holds the most messages.
    */

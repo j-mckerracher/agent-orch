@@ -41,6 +41,7 @@ const ROWS: Row[] = [
   row("tasksCancel", "tasks.cancel", (a) => a.tasksCancel(FX, "k"), (a) => a.tasksCancel(REAL, "k")),
   row("tasksArchive", "tasks.archive", (a) => a.tasksArchive([REAL, FX], "k"), (a) => a.tasksArchive([REAL], "k")),
   row("tasksDiscard", "tasks.discard", (a) => a.tasksDiscard(FX, "k"), (a) => a.tasksDiscard(REAL, "k")),
+  row("tasksForceStart", "tasks.force_start", (a) => a.tasksForceStart(FX, "k"), (a) => a.tasksForceStart(REAL, "k")),
   row("tasksMessage", "tasks.message", (a) => a.tasksMessage(FX, "hi", "k"), (a) => a.tasksMessage(REAL, "hi", "k")),
   row("tasksRetry", "tasks.retry", (a) => a.tasksRetry(FX, "k"), (a) => a.tasksRetry(REAL, "k")),
   row("sessionsList", "sessions.list", (a) => a.sessionsList(FX), (a) => a.sessionsList(REAL)),
