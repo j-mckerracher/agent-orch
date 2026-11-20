@@ -90,6 +90,9 @@ impl ApproverSecret {
 /// supersedes the user's Approved approval for another candidate, and recorded
 /// changes block every later approve of that approval.
 ///
+/// `tasks.force_start` is the user's word that a queued task starts now, past the worker caps
+/// and the load gate that exist to protect the machine, so only the user's app may say it.
+///
 /// The four `decisions.*` methods (DPES-1108 phase 3) are the user's own decisions: only
 /// the user answers, defers or reconciles a question, and the list, which carries the
 /// questions the user is asked, is read by the user's app alone.
@@ -127,6 +130,7 @@ pub const USER_ONLY_METHODS: &[&str] = &[
     "decisions.reconcile",
     "tasks.discard",
     "tasks.message",
+    "tasks.force_start",
     "coordinator.set_scope",
 ];
 

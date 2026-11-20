@@ -638,6 +638,38 @@ fn without_an_installed_agent_the_shipped_runtime_fails_closed_as_unavailable() 
 }
 
 #[test]
+fn a_tool_heavy_turn_does_not_push_earlier_exchanges_out_of_the_history() {
+    let runtime = TestRuntime::new(Mode::Hold);
+    let (_directory, api) = api_with(runtime.clone(), true, Arc::new(Directory(&[])));
+    send(&api, global(), "first", "k1").unwrap();
+    let sink = runtime.sink();
+    sink.delta("one").unwrap();
+    sink.complete();
+
+    send(&api, global(), "second", "k2").unwrap();
+    let sink = runtime.sink();
+    for n in 0..450 {
+        let id = format!("tool-{n}");
+        sink.tool_started(crate::activity::ToolStart::bounded(&id, "shell", "ls").unwrap());
+        sink.tool_finished(crate::activity::ToolEnd::bounded(&id, true, "ok").unwrap());
+    }
+    sink.delta("two").unwrap();
+    sink.complete();
+    let page = get(&api, global(), 0);
+    assert!(kinds(&page).len() < 500, "the page is not the transcript");
+
+    send(&api, global(), "third", "k3").unwrap();
+    let seen = runtime.requests.lock().unwrap();
+    assert_eq!(
+        seen[2].0,
+        [
+            ("first".to_owned(), "one".to_owned()),
+            ("second".to_owned(), "two".to_owned())
+        ]
+    );
+}
+
+#[test]
 fn a_new_turn_sees_the_completed_turns_before_it_and_the_app_state() {
     let runtime = TestRuntime::new(Mode::Reply(vec!["one".into(), "!".into()]));
     let (_directory, api) = api_with(runtime.clone(), true, Arc::new(Directory(&["w1"])));

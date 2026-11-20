@@ -245,12 +245,17 @@ fn deprecated_error_item_and_command_lifecycle_do_not_fail_a_successful_turn() {
             events.as_slice(),
             [
                 AgentEvent::SessionStarted { .. },
+                AgentEvent::ToolStarted { tool_id: started_id, name, .. },
+                AgentEvent::ToolFinished { tool_id: finished_id, success: true, .. },
                 AgentEvent::MessageDelta { text },
                 AgentEvent::TurnFinished {
                     outcome: TurnOutcome::Success
                 },
                 AgentEvent::SessionExited { exit_code: Some(0) }
             ] if text == "TASK_DEMO_OK"
+                && name == "shell"
+                && started_id == "item_1"
+                && finished_id == "item_1"
         ));
         assert!(matches!(
             h.wait().await.expect("wait"),
