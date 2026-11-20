@@ -285,6 +285,7 @@ mod tests {
                 "max_retries",
                 "objective",
                 "parent_id",
+                "permission",
                 "project_id",
                 "verification",
             ]

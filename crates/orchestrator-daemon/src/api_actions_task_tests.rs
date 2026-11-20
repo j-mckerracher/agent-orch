@@ -146,7 +146,7 @@ pub(super) fn chat_submit(key: &str, objective: &str) -> TaskSubmitParams {
             max_retries: 1,
             max_repairs: 1,
             model_selection: None,
-            permission: None,
+            permission: Some(TASK_DEFAULT_PERMISSION),
             work_item: None,
             work_class: None,
         },

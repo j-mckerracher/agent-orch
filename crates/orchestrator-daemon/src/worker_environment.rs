@@ -257,25 +257,27 @@ mod tests {
             drafted: false,
             confirmed: true,
         };
+        // A Unix path has no drive, so it is not absolute on Windows: start from the platform's root.
+        let root = if cfg!(windows) {
+            Path::new(r"C:\")
+        } else {
+            Path::new("/")
+        };
+        let brief = root.join("Users/me/spec/brief.md");
+        let data = root.join("tmp/data.csv");
         let item = WorkItem {
             source: WorkSource {
                 kind: SourceKind::Text,
                 reference: None,
             },
             title: "Spec".into(),
-            ask: "Use `/Users/me/spec/brief.md` and /api/orders.".into(),
+            ask: format!("Use `{}` and /api/orders.", brief.display()),
             acceptance_criteria: vec![
-                criterion("Match the table in /tmp/data.csv."),
+                criterion(&format!("Match the table in {}.", data.display())),
                 criterion("The route /api/orders stays put."),
             ],
         };
-        assert_eq!(
-            named_files(&item),
-            vec![
-                PathBuf::from("/Users/me/spec/brief.md"),
-                PathBuf::from("/tmp/data.csv"),
-            ]
-        );
+        assert_eq!(named_files(&item), vec![brief, data]);
     }
 
     /// A work item whose ask names `path`.

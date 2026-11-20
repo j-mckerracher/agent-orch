@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { DaemonApi } from "../src/daemon/api";
 import { ConnectionManager } from "../src/daemon/connection";
@@ -10,6 +10,8 @@ import { NodeConnector, startDaemon, workRoot, type RunningDaemon } from "./harn
 
 /** A recorded real Claude Code stream whose result reported `total_cost_usd` 0.0086388. */
 const CLAUDE_STREAM = resolve(__dirname, "../../../docs/evidence/m4-02-macos/20261107T215309-0700.stdout.jsonl");
+/** The pstack fixture every launch stages, so the test does not depend on the host's install. */
+const PSTACK_PLUGIN = resolve(__dirname, "../../../crates/orchestrator-daemon/tests/fixtures/pstack");
 const CODEX_USAGE_TURN =
   '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":400,"output_tokens":50,"reasoning_output_tokens":20}}';
 
@@ -85,23 +87,29 @@ describe("real daemon: usage.summary through the live D12 adapter", () => {
 
     const dir = mkdtempSync(join(workRoot(), "s-"));
     scriptDirs.push(dir);
+    mkdirSync(join(dir, ".claude", "plugins"), { recursive: true });
+    writeFileSync(
+      join(dir, ".claude", "plugins", "installed_plugins.json"),
+      JSON.stringify({ plugins: { "pstack@mayo-skills": [{ installPath: PSTACK_PLUGIN }] } }),
+    );
     // An Implement run that exits 0 without changing a file fails, so each agent writes one in its worktree.
     const change = `echo usage-e2e > usage-e2e.txt`;
+    // The help lists the flags the default Auto task argv passes, so the launch check accepts the fakes.
     const codex = script(dir, "codex-agent", [
-      `if [ "$1" = exec ] && [ "$2" = --help ]; then printf '%s\\n' --json --sandbox --ignore-user-config -c; exit 0; fi`,
+      `if [ "$1" = exec ] && [ "$2" = --help ]; then printf '%s\\n' --json --sandbox --approve-for-me --add-dir --ignore-user-config -c; exit 0; fi`,
       change,
       `printf '{"type":"thread.started","thread_id":"01a1b721-1f91-7393-ae1d-6aace8e4646a"}\\n'`,
       `printf '{"type":"turn.started"}\\n'`,
       `printf '%s\\n' '${CODEX_USAGE_TURN}'`,
     ].join("\n"));
     const claude = script(dir, "claude-agent", [
-      `if [ "$1" = --help ]; then printf '%s\\n' -p --verbose --output-format --include-partial-messages --permission-mode --permission-prompts --restricted --strict-mcp-config --tools --allowedTools; exit 0; fi`,
+      `if [ "$1" = --help ]; then printf '%s\\n' -p --verbose --output-format --include-partial-messages --permission-mode --permission-prompts --restricted --strict-mcp-config --tools --allowedTools --disallowedTools --plugin-dir --agent --add-dir; exit 0; fi`,
       change,
       `cat '${CLAUDE_STREAM}'`,
     ].join("\n"));
     process.env.AGENT_ORCH_CODEX_PROGRAM = codex;
     process.env.AGENT_ORCH_CLAUDE_PROGRAM = claude;
-    reporting = await startDaemon();
+    reporting = await startDaemon({ HOME: dir });
     daemons.push(reporting);
 
     const session = new DaemonSession(await new NodeConnector(reporting.dataDir).open(["projects", "tasks", "agents"]));
