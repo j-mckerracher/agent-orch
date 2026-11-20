@@ -549,6 +549,10 @@ These steps apply because the app is unsigned and internal:
   macOS 15 and later. Either try to open MCAO once, then open System Settings, Privacy & Security, and click
   Open Anyway; or move `MCAO.app` to `/Applications` and run
   `xattr -dr com.apple.quarantine /Applications/MCAO.app` in Terminal.
+  The unsigned build is deep ad hoc signed (`codesign --force --deep --sign -`) before zipping. Without that
+  the bundle seal is invalid and macOS says "MCAO is damaged and can't be opened" instead of offering the
+  steps above. If you see that message on an older release, run `xattr -dr com.apple.quarantine` and
+  `codesign --force --deep --sign - MCAO.app` on the app.
 - Windows: SmartScreen shows "Windows protected your PC" when the installer runs. Choose More info, then
   Run anyway.
 - The install smoke of an unsigned build runs with `--allow-unsigned`. It proves the artifact installs and

@@ -159,6 +159,12 @@ try {
         run("xcrun", ["stapler", "validate", app]);
         run("spctl", ["--assess", "--type", "execute", "--verbose=2", app]);
       }
+    } else {
+      // The linker signs only the main binary, ad hoc. The sidecars and resources Tauri adds afterwards leave
+      // that seal inconsistent, and a quarantined download then shows "MCAO is damaged" instead of the
+      // Open Anyway prompt. A deep ad hoc re-sign makes the bundle valid, so the documented install steps work.
+      run("codesign", ["--force", "--deep", "--sign", "-", app]);
+      run("codesign", ["--verify", "--deep", "--strict", "--verbose=2", app]);
     }
     const zip = join(out, `MCAO-${version}-macos-${process.arch}-${label}.zip`);
     run("ditto", ["-c", "-k", "--keepParent", app, zip]);
