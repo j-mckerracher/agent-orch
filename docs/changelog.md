@@ -5,6 +5,58 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.32](https://github.com/mc-innersource/motif-mcao/compare/v0.1.31...v0.1.32) (2026-11-20)
+
+
+### Features
+
+* **agents:** DPES-1044 - Translate tool events for every agent adapter ([4804344](https://github.com/mc-innersource/motif-mcao/commit/4804344e3cd28b5d69e86f6cdaa3a44744ae97d4))
+* **daemon:** DPES-1044 - Record tool activity and serve a live activity snapshot ([e303e14](https://github.com/mc-innersource/motif-mcao/commit/e303e149befe68d939f00b1719679cd1b49dd230))
+* **desktop:** DPES-1044 - Add a Force start button for queued tasks ([3d57ae3](https://github.com/mc-innersource/motif-mcao/commit/3d57ae34b153abdc3867706adcaa5730af344a70))
+* **desktop:** DPES-1044 - Add a Force start button for queued tasks ([ace6fbf](https://github.com/mc-innersource/motif-mcao/commit/ace6fbfe6883abed4153ccb0f115a79657d24447))
+* **desktop:** DPES-1044 - Calm the app shell ([963a3ac](https://github.com/mc-innersource/motif-mcao/commit/963a3ac06eee76404943fab36ba0a0019ccbebab))
+* **desktop:** DPES-1044 - Calm the app shell ([d5bc546](https://github.com/mc-innersource/motif-mcao/commit/d5bc546f59df0c5ce3ed5d63bf952a49d7e3a266))
+* **desktop:** DPES-1044 - Focus the Workspace on the conversation ([05a8e58](https://github.com/mc-innersource/motif-mcao/commit/05a8e58de12966469b55efd44996b25197909828))
+* **desktop:** DPES-1044 - Focus the Workspace on the conversation ([574373c](https://github.com/mc-innersource/motif-mcao/commit/574373c3ab11f24450005f6a04dada6b681d6f86))
+* **desktop:** DPES-1044 - Redesign the Workstreams page as a list and a detail screen ([526321b](https://github.com/mc-innersource/motif-mcao/commit/526321bae5a275d27b241df5ed7a68d6c38753de))
+* **desktop:** DPES-1044 - Redesign the Workstreams page as a list and a detail screen ([16a4281](https://github.com/mc-innersource/motif-mcao/commit/16a42817d4252ef6403f047dd85f793f64bd39c0))
+* **desktop:** DPES-1044 - Show a timestamp on every chat turn ([4b94150](https://github.com/mc-innersource/motif-mcao/commit/4b94150b181eeea78fbec9eb59edd81f46d6b3cb))
+* **desktop:** DPES-1044 - Show a timestamp on every chat turn ([42b1512](https://github.com/mc-innersource/motif-mcao/commit/42b1512f17d93bc7f2b9fdbe38910b0c67bdd3fa))
+* **desktop:** DPES-1044 - Show live agent activity in chat and task conversations ([b73fd63](https://github.com/mc-innersource/motif-mcao/commit/b73fd6316e9083995ce7be2250e36683fbc5a9b7))
+* **desktop:** DPES-1044 - Show live agent activity in chat and task conversations ([cc21a7e](https://github.com/mc-innersource/motif-mcao/commit/cc21a7e95d5f2f2d1333276af98f742f651bf90f))
+* **desktop:** DPES-1044 - Simplify Agents into a task list and detail view ([a9462c4](https://github.com/mc-innersource/motif-mcao/commit/a9462c4675cd130462013e4f224cc58a8b208dca))
+* **desktop:** DPES-1044 - Simplify Agents into a task list and detail view ([69b6015](https://github.com/mc-innersource/motif-mcao/commit/69b6015b8b819ff91907cd0f19cf2c0af2f790ea))
+* **desktop:** DPES-1044 - Simplify Project and Task screens ([647cdd0](https://github.com/mc-innersource/motif-mcao/commit/647cdd0bbcdc6bb276260283a159c48156fbbc55))
+* **desktop:** DPES-1044 - Simplify Project and Task screens ([1c7ab90](https://github.com/mc-innersource/motif-mcao/commit/1c7ab90cf6845b643ecae1027de4d294d6554f47))
+* **desktop:** DPES-1044 - Split Settings into seven pages ([cbc8a06](https://github.com/mc-innersource/motif-mcao/commit/cbc8a064dfef316e39d1834d17abc003be3b8ee4))
+* **desktop:** DPES-1044 - Split Settings into seven pages ([0fdf608](https://github.com/mc-innersource/motif-mcao/commit/0fdf60848402622704158ab6d007774ef05f5a56))
+* **desktop:** DPES-1044 - Unify Review into one queue of what needs you ([72d86d2](https://github.com/mc-innersource/motif-mcao/commit/72d86d2b3dfbf3710a8a2734463eda47c63c081e))
+* **desktop:** DPES-1044 - Unify Review into one queue of what needs you ([e3b545b](https://github.com/mc-innersource/motif-mcao/commit/e3b545b96dbd15e831ef9f0d0ec4ce590163f763))
+
+
+### Bug Fixes
+
+* **agents:** DPES-1044 - Stop using unnamed tool input fields as summaries ([b788166](https://github.com/mc-innersource/motif-mcao/commit/b78816637369588b750b05eced0ce7d6c2771bda))
+* **daemon:** DPES-1044 - Redact private keys in tool text and keep tool rows out of prompt history ([7f4fb7a](https://github.com/mc-innersource/motif-mcao/commit/7f4fb7a40282508190c79b6a1bc75f7240677339))
+* **desktop:** DPES-1044 - Derive stopped tool rows from the turn state and drop the unused approval phase ([bf674b4](https://github.com/mc-innersource/motif-mcao/commit/bf674b4873d50a5192ae995db9d9bcad588c2462))
+* **engine:** DPES-1044 - Stop a cancelled waiting task blocking the restart gate ([d16f5ba](https://github.com/mc-innersource/motif-mcao/commit/d16f5ba75444cedcf49334eff1e0d6db282908a7))
+
+
+### Documentation
+
+* **chat:** DPES-1044 - Document live agent activity and its redaction limits ([9a27570](https://github.com/mc-innersource/motif-mcao/commit/9a27570a3fa001d942534b1611588c639bf109c5))
+* **desktop:** DPES-1044 - Add app windows wireframes and shell screenshots ([2311eef](https://github.com/mc-innersource/motif-mcao/commit/2311eef3dbe3c3412b51116bc893a6a9d083d6ec))
+* **desktop:** DPES-1044 - Add the Workstreams wireframe and screenshots ([a79c53c](https://github.com/mc-innersource/motif-mcao/commit/a79c53c570a8dd6ee094862e9358ab0e9ee521b1))
+* **evidence:** DPES-1044 - Add live agent activity before and after screenshots ([87f9b92](https://github.com/mc-innersource/motif-mcao/commit/87f9b92a76a2fa475a4eb1a0225a1b144b0ac347))
+
+
+### Tests
+
+* **daemon:** DPES-1044 - Build planted test credentials at run time ([07ed10f](https://github.com/mc-innersource/motif-mcao/commit/07ed10fd8183f0547396072c2ea082ed28eabc97))
+* **desktop:** DPES-1044 - Correct the vitest pin after merging main ([a442c67](https://github.com/mc-innersource/motif-mcao/commit/a442c6787d25d8f63cd3ff1b50afa0ec5c0856de))
+* **desktop:** DPES-1044 - Sync CI test pins and wait for the cancelled fake agent to exit ([dbdc658](https://github.com/mc-innersource/motif-mcao/commit/dbdc6588a3c131cff9b34ef864054404b995e040))
+* **desktop:** DPES-1044 - Update the geometry specs for the two-screen Workstreams page ([fa782f3](https://github.com/mc-innersource/motif-mcao/commit/fa782f3e2d33bb80901a1f55c0abfa7603410379))
+
 ## [0.1.31](https://github.com/mc-innersource/motif-mcao/compare/v0.1.30...v0.1.31) (2026-11-20)
 
 
