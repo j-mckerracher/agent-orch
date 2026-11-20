@@ -212,7 +212,7 @@ describe("Agents, the task view", () => {
     expect(detail.getByRole("heading", { level: 1, name: "objective of t-run" })).toBeInTheDocument();
     expect(within(detail.getByRole("heading", { level: 1 }).parentElement!).getByText("Running")).toBeInTheDocument();
     expect(detail.getByText("repo · fake-agent")).toBeInTheDocument();
-    expect(detail.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Output", "Thinking", "Attempts 0", "Event feed"]);
+    expect(detail.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Output", "Activity", "Attempts 0", "Event feed"]);
     expect(screen.queryByRole("tablist", { name: "Task status" })).not.toBeInTheDocument();
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents", taskId: "t-run" });
 
@@ -247,12 +247,19 @@ describe("Agents, the task view", () => {
     expect(fake.callsTo("sessions.output_tail")[0]!.params).toMatchObject({ task_id: "t-run", session_id: "s-1" });
   });
 
-  it("shows recorded thinking and the size-limit note on the Thinking tab", async () => {
+  it("shows the session's activity on the Activity tab, empty by default", async () => {
+    const { user } = await liveView(seeded());
+    const detail = within(await openTask(user, "t-run"));
+    await user.click(detail.getByRole("tab", { name: "Activity" }));
+    expect(await detail.findByText("No activity recorded")).toBeInTheDocument();
+  });
+
+  it("shows recorded thinking and the size-limit note on the Activity tab", async () => {
     const fake = seeded();
     fake.stub("sessions.thinking", { chunks: [{ sequence: 1, body: "Plan the **marker-zz**." }], next_cursor: 1, truncated: true });
     const { user } = await liveView(fake);
     const detail = within(await openTask(user, "t-run"));
-    await user.click(detail.getByRole("tab", { name: "Thinking" }));
+    await user.click(detail.getByRole("tab", { name: "Activity" }));
     expect(await detail.findByText("marker-zz")).toBeInTheDocument();
     expect(detail.getByText("Thinking log hit its size limit.")).toBeInTheDocument();
     expect(fake.callsTo("sessions.thinking")[0]!.params).toMatchObject({ session_id: "s-1" });
@@ -377,12 +384,34 @@ describe("Agents, the Actions menu", () => {
     expect(detail.getAllByRole("button").filter((button) => button.hasAttribute("disabled"))).toEqual([]);
   });
 
-  it("offers no Reassign on a running task and Cancel on a queued one", async () => {
+  it("offers no Reassign on a running task and Cancel attempt and Force start on a queued one", async () => {
     const { user } = await liveView();
     await user.click(screen.getByRole("tab", { name: "Queued 1" }));
     const detail = within(await openTask(user, "t-queued"));
     await user.click(menu(detail));
-    expect(detail.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Cancel attempt"]);
+    expect(detail.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Cancel attempt", "Force start"]);
+  });
+
+  it("force-starts a queued task, sending tasks.force_start for it", async () => {
+    const { fake, user } = await liveView();
+    await user.click(screen.getByRole("tab", { name: "Queued 1" }));
+    const detail = within(await openTask(user, "t-queued"));
+    await user.click(menu(detail));
+    await user.click(detail.getByRole("menuitem", { name: "Force start" }));
+    expect(await screen.findByText(/The daemon accepted the force start/)).toBeInTheDocument();
+    expect(fake.callsTo("tasks.force_start")).toHaveLength(1);
+    expect(fake.callsTo("tasks.force_start")[0]!.params).toEqual({ task_id: "t-queued", idempotency_key: expect.any(String) });
+  });
+
+  it("offers no Force start to a session that cannot send user-only methods", async () => {
+    const fake = seeded();
+    fake.approver = false;
+    const { user } = await liveView(fake);
+    await user.click(screen.getByRole("tab", { name: "Queued 1" }));
+    const queued = within(await openTask(user, "t-queued"));
+    await user.click(menu(queued));
+    expect(queued.getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Cancel attempt"]);
+    expect(fake.callsTo("tasks.force_start")).toHaveLength(0);
   });
 
   it("shows daemon failures for Cancel and Reassign without claiming either succeeded", async () => {

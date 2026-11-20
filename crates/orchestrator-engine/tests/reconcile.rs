@@ -3,15 +3,15 @@ use orchestrator_core::contract::{
 };
 use orchestrator_core::records::Project;
 use orchestrator_core::task::{
-    Attempt, AttemptState, AuditEvent, Session, SessionState, TaskEvent,
+    Attempt, AttemptState, AuditEvent, Session, SessionState, TaskEvent, WaitReason,
 };
 use orchestrator_engine::reconcile::reconcile_before_scheduling;
 use orchestrator_store::{SqliteStore, Store};
 use serde_json::json;
 use tempfile::TempDir;
 
-#[test]
-fn cancelled_verifying_task_does_not_block_reconcile() {
+/// A `Running` task with one live session, `s1`.
+fn running_task_with_live_session() -> (TempDir, SqliteStore) {
     let temp = TempDir::new().unwrap();
     let store = SqliteStore::new(&temp.path().join("store.sqlite")).unwrap();
     store
@@ -72,6 +72,12 @@ fn cancelled_verifying_task_does_not_block_reconcile() {
             },
         )
         .unwrap();
+    (temp, store)
+}
+
+#[test]
+fn cancelled_verifying_task_does_not_block_reconcile() {
+    let (_temp, store) = running_task_with_live_session();
     store
         .update_session_state("task-1", "s1", SessionState::Exited)
         .unwrap();
@@ -89,4 +95,16 @@ fn cancelled_verifying_task_does_not_block_reconcile() {
 
     reconcile_before_scheduling(&store)
         .expect("a verification cancel needs no run-owner confirmation");
+}
+
+#[test]
+fn cancelled_waiting_task_does_not_block_reconcile() {
+    let (_temp, store) = running_task_with_live_session();
+    store
+        .enter_waiting("task-1", "a1", "s1", WaitReason::Blocker, &[])
+        .unwrap();
+    store.cancel_waiting_task("task-1").unwrap();
+
+    reconcile_before_scheduling(&store)
+        .expect("a waiting worker has no process, so its cancel needs no run-owner confirmation");
 }

@@ -19,6 +19,7 @@
 use async_trait::async_trait;
 use orchestrator_runtime::{ChildSupervisor, LaunchRequest, SupervisionEvent, SupervisorError};
 use serde_json::Value;
+use std::collections::{HashSet, VecDeque};
 use std::path::PathBuf;
 use thiserror::Error;
 use uuid::Uuid;
@@ -28,6 +29,7 @@ use crate::contract::{
     AgentLaunchRequest, Result, TurnOutcome,
 };
 use crate::routing::RoutableAdapter;
+use crate::tool_summary::{input_summary, result_summary};
 use crate::usage::{claude_result_usage, UsageReport};
 
 const ALLOWED_TOOLS: &str = "Read,Edit,Write";
@@ -168,6 +170,9 @@ impl AgentHandle for ClaudeCodeHandle {
 
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {
         loop {
+            if let Some(event) = self.parser.take_pending() {
+                return Ok(Some(event));
+            }
             match self.supervisor.next_event().await {
                 Some(SupervisionEvent::StdoutLine(line)) => {
                     if let Some(result) = self.parser.feed(&line) {
@@ -251,6 +256,10 @@ pub struct StreamParser {
     turn_failure: Option<String>,
     violation: Option<ProtocolViolation>,
     usage: Vec<UsageReport>,
+    /// Events from a line that carried more than one tool block.
+    pending: VecDeque<AgentEvent>,
+    started_tools: HashSet<String>,
+    finished_tools: HashSet<String>,
 }
 
 impl StreamParser {
@@ -282,6 +291,11 @@ impl StreamParser {
     /// The first protocol violation, if one occurred.
     pub fn violation(&self) -> Option<&ProtocolViolation> {
         self.violation.as_ref()
+    }
+
+    /// The event a previous `feed` held back; drain it before the next line.
+    pub fn take_pending(&mut self) -> Option<AgentEvent> {
+        self.pending.pop_front()
     }
 
     /// Translate one stdout line. Unknown events and blank lines have no
@@ -327,6 +341,8 @@ impl StreamParser {
         match event_type {
             "system" => self.translate_system(object),
             "stream_event" => self.translate_stream_event(object),
+            "assistant" => Ok(self.translate_tool_blocks(object, true)),
+            "user" => Ok(self.translate_tool_blocks(object, false)),
             "result" => self.translate_result(object),
             _ => Ok(None),
         }
@@ -345,6 +361,58 @@ impl StreamParser {
             .and_then(|id| Uuid::parse_str(id).ok())
             .ok_or(ProtocolViolation::BadField("session_id"))?;
         Ok(Some(AgentEvent::SessionStarted { session_id }))
+    }
+
+    /// Tool calls arrive whole, input included, in `assistant` messages (one block per message
+    /// with partial messages on, so `input_json_delta` fragments need no assembly), and their
+    /// outcomes in `user` messages as `tool_result` blocks. Each id is reported once. A message
+    /// without a content array is an unknown shape and is ignored.
+    fn translate_tool_blocks(
+        &mut self,
+        object: &serde_json::Map<String, Value>,
+        assistant: bool,
+    ) -> Option<AgentEvent> {
+        let blocks = object.get("message")?.get("content")?.as_array()?;
+        for block in blocks {
+            let event = if assistant {
+                self.tool_started(block)
+            } else {
+                self.tool_finished(block)
+            };
+            self.pending.extend(event);
+        }
+        self.pending.pop_front()
+    }
+
+    fn tool_started(&mut self, block: &Value) -> Option<AgentEvent> {
+        if block.get("type")?.as_str()? != "tool_use" {
+            return None;
+        }
+        let tool_id = block.get("id")?.as_str()?;
+        let name = block.get("name")?.as_str()?;
+        if !self.started_tools.insert(tool_id.to_owned()) {
+            return None;
+        }
+        Some(AgentEvent::ToolStarted {
+            tool_id: tool_id.to_owned(),
+            name: name.to_owned(),
+            summary: block.get("input").map(input_summary).unwrap_or_default(),
+        })
+    }
+
+    fn tool_finished(&mut self, block: &Value) -> Option<AgentEvent> {
+        if block.get("type")?.as_str()? != "tool_result" {
+            return None;
+        }
+        let tool_id = block.get("tool_use_id")?.as_str()?;
+        if !self.finished_tools.insert(tool_id.to_owned()) {
+            return None;
+        }
+        Some(AgentEvent::ToolFinished {
+            tool_id: tool_id.to_owned(),
+            success: block.get("is_error").and_then(Value::as_bool) != Some(true),
+            summary: block.get("content").map(result_summary).unwrap_or_default(),
+        })
     }
 
     fn translate_stream_event(

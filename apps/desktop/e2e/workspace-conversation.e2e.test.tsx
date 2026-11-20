@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,6 +33,16 @@ async function until<T>(read: () => T | undefined | false | Promise<T | undefine
   }
 }
 
+/** Whether a process whose command line holds `needle` runs. `pgrep` exits 1 when none does. */
+function agentRunning(needle: string): boolean {
+  try {
+    execFileSync("pgrep", ["-f", needle]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /** The test client's reconnect policy. A restart can outlast a short schedule, after which the client stops trying. */
 type Reconnect = { backoffMs: number[]; maxAutoAttempts?: number };
 
@@ -60,6 +71,10 @@ async function prepare(env: Record<string, string> = noAgentsEnv(), reconnect: R
 // With no installed agent the daemon's runtime fails closed with `runtime_unavailable`. These
 // tests prove the UI reports exactly that and never produces a reply of its own. The tests after
 // them use the deterministic fake agent (`examples/fake_agent`) as the only installed agent.
+/** An activity entry's text is its thinking; every other entry has its own text. */
+const shownText = (entry: { kind: string; text: string; items?: readonly { kind: string; text?: string }[] }) =>
+  entry.kind === "activity" ? (entry.items ?? []).map((item) => item.text ?? "").join("") : entry.text;
+
 describe("Workspace conversation and model selector over the real daemon", () => {
   it("sends to Global, records it, and shows the runtime-unavailable state with no reply", async () => {
     const t = await prepare();
@@ -272,6 +287,41 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
     }
   }, 90000);
 
+  it("shows tool calls and the running phase live, hides planted secrets, and stops open tools on cancel", async () => {
+    const t = await prepare(fakeAgentEnv());
+    try {
+      t.services.drafts.setWorkspaceTarget("global");
+      await until(async () => (await t.direct((api) => api.agentsCatalog())).some((c) => c.agent === "codex" && c.state === "available"), "catalog warm");
+      render(
+        <ServicesProvider services={t.services}>
+          <WorkspaceView />
+        </ServicesProvider>,
+      );
+      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      await userEvent.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "[[fake:tool-hang] read the sources");
+      const send = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+      await waitFor(() => expect((send() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(send());
+
+      expect(await screen.findByText("ls src", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(await screen.findByText(/deploy --token \[REDACTED\]/, undefined, { timeout: 20000 })).toBeTruthy();
+      expect(await screen.findByText("Running shell", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(document.body.textContent).not.toContain("ghp_PLANTED");
+      expect(document.body.textContent).not.toContain("hunter2");
+
+      await userEvent.click(screen.getByRole("button", { name: "Cancel reply" }));
+      expect(await screen.findByText(/Stopped:/, undefined, { timeout: 20000 })).toBeTruthy();
+      expect(document.body.textContent).not.toContain("hunter2");
+      // The gate fails on a leftover agent process, and the daemon ends it just after the turn shows canceled.
+      await until(() => !agentRunning("fake:tool-hang"), "agent process gone");
+    } finally {
+      // The agent sleeps until canceled; a failed assertion must not leave it running past the test.
+      const cancel = screen.queryByRole("button", { name: "Cancel reply" });
+      if (cancel) await userEvent.click(cancel);
+      await t.stop();
+    }
+  }, 90000);
+
   it("sends the model and effort the picker chose to the agent for that message", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mc-model-choice-"));
     const log = join(dir, "agent.log");
@@ -356,7 +406,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       await settled(t, global);
       await conversation.send(global, "two");
       const before = await settled(t, global);
-      expect(before.data.entries.map((e) => [e.role, e.text])).toEqual([
+      expect(before.data.entries.map((e) => [e.role, shownText(e)])).toEqual([
         ["user", "one"],
         ["coordinator", "fake thinking about: one"],
         ["coordinator", "fake reply to: one"],
@@ -370,7 +420,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         const r = await conversation.transcript(global);
         return r.status === "ok" ? r : undefined;
       }, "transcript after restart");
-      expect(after.data.entries.map((e) => [e.role, e.text])).toEqual(before.data.entries.map((e) => [e.role, e.text]));
+      expect(after.data.entries.map((e) => [e.role, shownText(e)])).toEqual(before.data.entries.map((e) => [e.role, shownText(e)]));
       expect(after.data.turn).toMatchObject({ state: "completed" });
 
       const workstream = await t.direct((api) => api.workstreamsCreate("Auth rewrite", "Replace session cookies", "e2e-ws-1"));

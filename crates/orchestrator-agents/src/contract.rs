@@ -72,13 +72,19 @@ pub enum AgentEvent {
     ThinkingDelta {
         text: String,
     },
+    /// A tool call began. `summary` is the provider's raw one-line description of the input
+    /// (a file path, a command). Adapters send it unredacted and uncut; the daemon redacts and
+    /// bounds it before anything is stored or shown.
     ToolStarted {
         tool_id: String,
         name: String,
+        summary: String,
     },
+    /// A tool call ended. `summary` is the raw short result text, empty when the provider gives none.
     ToolFinished {
         tool_id: String,
         success: bool,
+        summary: String,
     },
     ApprovalRequested {
         approval_id: Uuid,

@@ -134,6 +134,9 @@ impl AgentHandle for CodexHandle {
 
     async fn next_event(&mut self) -> Result<Option<AgentEvent>> {
         loop {
+            if let Some(event) = self.parser.take_pending() {
+                return Ok(Some(event));
+            }
             let ev = match self.sup.next_event().await {
                 Some(e) => e,
                 None => return Ok(None),

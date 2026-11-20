@@ -1,4 +1,4 @@
-/** The task's Actions menu: Cancel attempt and Reassign. An action the daemon cannot take now is not offered. */
+/** The task's Actions menu: Cancel attempt, Force start and Reassign. An action the daemon cannot take now is not offered. */
 import { useState, type ReactNode } from "react";
 import { isFixtureId } from "../../../daemon/api";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
@@ -48,6 +48,19 @@ export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]
           const result = await data.cancelTask(row.id);
           if (!result.ok) throw result.error;
           return `Cancel request acknowledged; the daemon now records the task as ${stateLabel(result.value.state)}. The cancel applied to the whole task, not only this attempt. This is not proof that any process has stopped.`;
+        }),
+    });
+  }
+  // `tasks.force_start` is user-only, like discard: only the app that started the daemon may send it.
+  if (linked && row.state === "Queued" && gate.connected && gate.connection.approver) {
+    items.push({
+      label: "Force start",
+      onSelect: () =>
+        void run("Forcing the task to start", async () => {
+          const result = await data.forceStartTask(row.id);
+          if (!result.ok) throw result.error;
+          void data.watchTask(row.id);
+          return "The daemon accepted the force start. The task leaves the queue when it launches.";
         }),
     });
   }
