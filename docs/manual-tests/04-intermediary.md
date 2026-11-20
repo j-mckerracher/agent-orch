@@ -37,38 +37,39 @@ Every step that sends a message and expects a card is **Model-dependent** (RUNNE
 
 ## TC-I-01 The picker lists every target
 
-**Source:** `docs/chat.md` (Global, project coordinators, workstreams).
+**Source:** `docs/chat.md` "Choose who you talk to".
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** Add a coordinator for `manual-test-project` (target picker, **Add coordinator…**, **Add**). In Global, send the workstream message and approve the card.
 
 1. Click the target picker.
-2. Read the list.
+2. Type `Post-MVP` in the search box "Search orchestrators and coordinators". Only `Post-MVP work orchestrator` stays in the list. Clear the box.
+3. Read the full list.
 
-**Expected:** The list shows Global, `manual-test-project`, and `Post-MVP work`. The header always reads "Talking to:" followed by the chosen name. **Screenshot.**
+**Expected:** The list shows `Global orchestrator`, `manual-test-project coordinator`, and `Post-MVP work orchestrator`. The picker button shows the chosen name. **Screenshot.**
 
 ## TC-I-02 The user can talk to a workstream directly
 
-**Source:** `docs/chat.md`.
+**Source:** `docs/chat.md` "Choose who you talk to".
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** TC-I-01.
 
-1. Choose `Post-MVP work`. Type `Status? Reply in one sentence and propose no action.` in the box "Message Post-MVP work". Click **Send message to Post-MVP work**.
+1. Choose `Post-MVP work orchestrator`. Type `Status? Reply in one sentence and propose no action.` in the box "Message Post-MVP work orchestrator". Click the send button (glyph `↑`, labelled "Send message to Post-MVP work orchestrator").
 
 **Expected:** The message and a reply appear in the workstream conversation. Nothing appears in the Global conversation.
 
 ## TC-I-03 A project coordinator answers
 
-**Source:** `docs/chat.md` ("Project coordinators answer through the same runtime"; "A message you send in its conversation is answered there").
+**Source:** `docs/chat.md` "Choose who you talk to" ("Project coordinators answer through the same agent runtime"); `docs/chat.md` "Work with a project coordinator" ("A message you send in its conversation is answered there").
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** TC-I-01.
 
-1. Choose `manual-test-project`. Send `Status? Reply in one sentence and propose no action.`
+1. Choose `manual-test-project coordinator`. Send `Status? Reply in one sentence and propose no action.` with the send button (glyph `↑`, labelled "Send message to manual-test-project coordinator").
 
 **Expected:** A reply appears in the coordinator's conversation. No card appears. Nothing appears in the Global conversation. If the reply proposed a card anyway, count a miss (RUNNER.md rule 8).
 
 ## TC-I-04 A ready scout report wakes Global
 
-**Source:** `docs/m7-08-conversation-service.md` "reports" (automatic relay).
+**Source:** `docs/m7-08-conversation-service.md` "Project defaults, reports and holds (DPES-1105, phase 4)" (**Relay** item).
 **Real agent:** Sonnet (alias), medium, for the chat turns and the scout run. Cost: medium.
 **Preconditions:** Mode **On**.
 
@@ -79,7 +80,7 @@ Every step that sends a message and expects a card is **Model-dependent** (RUNNE
    ```
 
 2. Switch to another target. Wait until the task is `Succeeded`, then up to 5 minutes.
-3. Choose **Global**.
+3. Choose **Global orchestrator**.
 
 **Expected:** A wake notice for the report appears with an update badge. The reply text is from the model, not a raw dump. **Screenshot.**
 
@@ -87,71 +88,49 @@ Every step that sends a message and expects a card is **Model-dependent** (RUNNE
 
 ## TC-I-05 Relayed copy is redacted
 
-**Source:** same (paths become `[path]`, token-like strings are masked).
+**Source:** `docs/m7-08-conversation-service.md` "Project defaults, reports and holds (DPES-1105, phase 4)" (**Relay** item: paths become `[path]`, token-like words are redacted); `docs/design/orchestrator-actions.md` "Residual risks, stated honestly" (the email and IP caveat).
 **Real agent:** none beyond TC-I-04. Cost: low.
 **Preconditions:** TC-I-04.
 
-1. Open the relayed report content from the notice, or the model's quoted text.
+1. Read the model's reply in the Global transcript, and any text it quotes from the report. The app has no report viewer.
 
 **Expected:** `[path]` replaces `/Users/test/secret/file.txt`. The token is masked, not shown. Note: the docs say email and IP addresses may survive. Do not fail on those.
 
-## TC-I-06 Manual relay is available after a failed relay
-
-**Source:** same; `docs/settings.md` ("failed or skipped updates leave the manual relay available").
-**Real agent:** none. Cost: none.
-**Preconditions:** `BLOCKED`. It needs the automatic relay to fail twice, and no trigger makes automatic turns fail with a real agent (setup section 8c). Record `BLOCKED` with that reason and do not run the steps.
-
-1. Wait for the relay notice. The automatic relay is retried about a minute after the first failure. After the second failure the notice reads "Report from task `<task id>` is ready; automatic relay failed. Open the task to read it.", with "The automatic reply failed." under it.
-2. Find the relay action on the notice and click it.
-
-**Expected:** A relay button or link exists on that notice. Clicking it queues a Global turn with the report. The report is not marked relayed until a reply succeeds.
-
-## TC-I-07 Only a successful, non-quiet reply marks the report relayed
-
-**Source:** same (`relayed_at`).
-**Real agent:** none. Cost: none.
-**Preconditions:** `BLOCKED`. It needs quiet replies to a report relay, which a real model does not give on request (setup section 8c). Record `BLOCKED` with that reason and do not run the steps.
-
-1. Let the automatic relay run. It gets a quiet reply, is retried about a minute later, and gets a quiet reply again.
-2. Check the notice.
-
-**Expected:** The notice reads "Report from task `<task id>` is ready; automatic relay failed. Open the task to read it." It does not read "Checked 1 update. Nothing needs you." The report is not marked relayed. A manual relay control stays available; after a manual relay that gets a normal reply, the control is gone, and a proposal made after that reply is labelled "Made after reading a report".
-
 ## TC-I-08 Approvals surface to the user as cards and notices
 
-**Source:** `orchestrator-actions.md` (pending approvals are deterministic notices with a link).
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (event table, "Proposal waiting past a threshold"); the reminder timing is `PROPOSAL_WAIT_MS` in `crates/orchestrator-daemon/src/wake.rs`.
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** In Global, send the failing task message. Leave its card pending. Switch to another target.
 
-1. Wait for the reminder interval or the next wake, up to 15 minutes.
+1. Wait for the reminder. It comes about 30 minutes after the card was proposed. This test's own limit is 35 minutes. If no reminder appears by then, the result is `BLOCKED` with "no proposal notice in 35 minutes".
 2. Look at the target picker and the Global conversation.
 
-**Expected:** The Global entry shows a badge. A notice about a proposal waiting links to the card. The card is still pending. Nothing ran without your approval.
+**Expected:** The Global entry shows a badge. A notice reads "A task.propose proposal is waiting for your decision." It has no **Open task** link. The card is still pending. Nothing ran without your approval.
 
 **Reset:** click **Reject**.
 
 ## TC-I-09 Worker events are reported up to Global
 
-**Source:** `orchestrator-actions.md` (Phase 3 reports task events with a deterministic copy).
+**Source:** `docs/design/orchestrator-actions.md` "Secondmates and the "sub-orchestrator" request" (Phase 3 paragraph: task events reported up to Global with a deterministic copy).
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** TC-I-01. In Global, send the failing workstream task message and approve the card.
 
-1. Choose the `manual-test-project` target. Wait until the task has failed, then up to 5 minutes.
-2. Choose **Global**.
+1. Choose the `manual-test-project coordinator` target. Wait until the task has failed, then up to 5 minutes.
+2. Choose **Global orchestrator**.
 
-**Expected:** Global shows a notice or wake reply about the failed workstream task. You did not have to open the workstream to learn of it.
+**Expected:** Global shows the deterministic task notice only; no model reply follows. You did not have to open the workstream to learn of it.
 
 ## TC-I-10 End-to-end flow
 
-**Source:** all of the above.
+**Source:** `docs/design/orchestrator-actions.md` "Secondmates and the "sub-orchestrator" request" (Phase 3 and Phase 6a paragraphs).
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** Clean data directory (setup section 9). Mode **On**.
 
 1. In Global, send the workstream message. Approve the card.
 2. In Global, send the failing workstream task message. Approve the task card (routed to the workstream).
-3. Switch to the workstream. Confirm the "Routed here by the global orchestrator" strip lists the task.
-4. Switch to `manual-test-project` (add its coordinator first if it is not in the picker). Wait until the task has failed, then up to 5 minutes.
-5. Return to Global. Read the wake notice.
+3. Choose `Post-MVP work orchestrator`. Confirm the "Routed here by the global orchestrator" strip, below the transcript, lists the task.
+4. Choose `manual-test-project coordinator` (add its coordinator first if it is not in the picker). Wait until the task has failed, then up to 5 minutes.
+5. Choose **Global orchestrator**. Read the wake notice.
 6. Send this message and approve the card:
 
    ```text
@@ -175,7 +154,7 @@ Every step that sends a message and expects a card is **Model-dependent** (RUNNE
 
 ## TC-I-11 Wake and relay turns are Restricted
 
-**Source:** `orchestrator-actions.md` (wake turns always run at Restricted); `docs/permission-levels.md`.
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (**Level** bullet: wake turns run at Restricted); `docs/permission-levels.md`.
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** Acting on its own is off. Prompt log running. The Global permission control (Model settings chip) is at Auto, the default.
 
