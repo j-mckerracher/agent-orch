@@ -8,6 +8,7 @@ Use it to check a build of `main` before a release, after a change to the Global
 
 - **The run spends money.** It uses real agents on your Claude Code account: Claude Code with the newest Sonnet model at medium effort, for chat and for tasks. Low-cost tests use a few chat turns. Medium-cost tests also start task runs, and a failed task can run twice because the daemon retries it once on its own. Each test file lists its cost class. Give the runner a spend limit; it stops when the limit or a rate limit is reached.
 - **Codex** is used only by TC-D-03, and only to show a card. Nothing runs on Codex.
+- **Settings tests** (file 12) start no task run. TC-ST-19 sends one chat turn.
 - The machine needs Rust 1.96.0, Node.js 22.20.0, `git`, `sqlite3`, Claude Code installed and signed in, and no other MCAO app or daemon running.
 - Fill in the spend limit and the run time at the top of the prompt. Change the expected model id only when a newer Sonnet is released.
 
@@ -28,8 +29,8 @@ Values for this run (the user fills these in):
 WHAT TO READ
 - docs/manual-tests/README.md: the test list, the terms and the test case format.
 - docs/manual-tests/00-setup.md: build, start, fixture, settings, triggers, reset and cleanup.
-- docs/manual-tests/01-dispatch.md to docs/manual-tests/11-upgrade.md: the tests. Run them in this
-  order: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11.
+- docs/manual-tests/01-dispatch.md to docs/manual-tests/12-settings.md: the tests. Run them in this
+  order: 01, 02, 03, 04, 05, 06, 07, 08, 09, 10, 11, 12.
 - docs/build-from-source.md: the build commands 00-setup.md uses.
 
 HARD RULES
@@ -65,7 +66,8 @@ HARD RULES
    - A task to reach a finished state (Succeeded, Failed, Verifying, Waiting for a reply): 15
      minutes. This covers the daemon's one automatic retry.
    - A wake notice after a task event: 5 minutes.
-   - A stalled-task notice after a task run is paused: 8 minutes.
+   - A stalled-task notice after a task run is paused: 20 minutes. The daemon flags a task after
+     10 minutes of silence at the default check interval, and checks run once per interval.
    If the wait ends and the app shows a state that contradicts the expected result, that is FAIL.
    If the wait ends and nothing happened, the result is BLOCKED with "no <event> in <limit>",
    unless the step is model-dependent (rule 8).
@@ -102,7 +104,7 @@ P5. The data folder from 00-setup.md section 3 does not exist (delete it if a pr
 P6. Start the app as 00-setup.md section 4 says. The window opens and no "Fixture data" text
     appears on the Workspace or Settings pages.
 P7. Do 00-setup.md sections 5 and 6. The screenshots show Claude Code, "Sonnet (alias)" and
-    "medium" in Settings > Agent dispatch defaults and in the Workspace model settings chip.
+    "medium" in Settings > Agents, section Defaults for new tasks, and in the Workspace model settings chip.
 P8. Start the prompt capture (00-setup.md section 7). In Workspace, with Global chosen, send
     `Reply with exactly: pong`. A reply containing pong appears within 4 minutes. In
     $HOME/agent-orch-manual-test/logs/prompts.log, the newest entry has --model sonnet and --effort

@@ -159,7 +159,7 @@ Propose exactly one action and nothing else: decision.ask for the task whose obj
 Purpose: answers are the user's, so other sessions cannot read or send them.
 **Source:** `docs/design/firstmate-behavior-decisions.md` "Phase 3: user decisions (DPES-1108, branch `feat/DPES-1108_user-decisions`)", items 10 and 17.
 **Real agent:** none. Cost: low.
-**Preconditions:** The running daemon was not started by this app, so the app is not its approver (`docs/settings.md` "When settings are locked"). Mark `BLOCKED` if you cannot arrange that.
+**Preconditions:** The running daemon was not started by this app, so the app is not its approver (`docs/settings.md` "When settings are locked"). Build the state as the preconditions of TC-ST-04 (`12-settings.md`) say. Mark `BLOCKED` if you cannot arrange that.
 
 1. Open **Review**.
 

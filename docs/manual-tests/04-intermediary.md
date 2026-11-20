@@ -156,7 +156,7 @@ Every step that sends a message and expects a card is **Model-dependent** (RUNNE
 
 **Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (**Level** bullet: wake turns run at Restricted); `docs/permission-levels.md`.
 **Real agent:** Sonnet (alias), medium. Cost: medium.
-**Preconditions:** Acting on its own is off. Prompt log running. The Global permission control (Model settings chip) is at Auto, the default.
+**Preconditions:** The switch "Let the orchestrator act on its own" is off (Settings > Autonomy). Prompt log running. The Global permission control (Model settings chip) is at Auto, the default.
 
 1. In Global, send the failing task message and approve the card. Wait until the task has failed and a wake notice appears.
 2. Open the wake notice details if shown.

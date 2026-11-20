@@ -82,7 +82,7 @@ Apply these at the start of every test file, in this order, and take the named s
 2. Open **Repositories**. In **Home directory**, enter `~/agent-orch-manual-test/projects/manual-test-project` and click **Save changes**.
 3. Open **Limits**. In **Automatic replies**, check the defaults and change nothing: **Replies per hour, per conversation** is `20`, **Replies per day, per conversation** is `160`, and **Daily token budget for automatic replies** is empty.
 4. On the same page, in **Checks on running work**, change nothing. Record the three values in `ENVIRONMENT.md`: **Check interval with one task running (minutes)**, **Fastest check interval (seconds)** and **Longest time a task may run before it is flagged (minutes)**.
-5. Open **Autonomy**. For files `01` to `04`, clear the switch "Let the orchestrator act on its own". It saves on click, and the result reads "Saved.". For files `05` to `11`, leave the switch on. **Screenshot** `SETUP-<file number>-2`.
+5. Open **Autonomy**. For files `01` to `04`, clear the switch "Let the orchestrator act on its own". It saves on click, and the result reads "Saved.". For files `05` to `12`, leave the switch on. **Screenshot** `SETUP-<file number>-2`.
 6. Open **Workspace** and choose **Global orchestrator** in the target picker. Open the **Model settings** chip. Choose `Claude Code` as **Provider**, `Sonnet (alias)` as **Model** and `medium` as **Effort**. Leave the permission level at its default, Auto. The Monitoring chip reads `Monitoring: on`. **Screenshot** `SETUP-<file number>-3`.
 
 The app remembers the Model settings choice for every conversation target. If a target shows another choice, set it back before you send.
