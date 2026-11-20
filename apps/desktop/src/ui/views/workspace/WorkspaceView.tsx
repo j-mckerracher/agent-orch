@@ -85,12 +85,15 @@ export function WorkspaceView() {
   const [fixtureRemoved, setFixtureRemoved] = useState<readonly string[]>([]);
   const [addOpen, setAddOpen] = useState(false);
   const [addBusy, setAddBusy] = useState<string | null>(null);
+  const [addError, setAddError] = useState<DaemonError | null>(null);
   const [actionNote, setActionNote] = useState<{
     notice: string | null;
     error: DaemonError | null;
     action: string;
     /** A refusal said in plain words instead of the generic failure. */
     refusal?: string;
+    /** Runs the same request again; set for a failure that a second try can fix. */
+    retry?: () => void;
   } | null>(
     null,
   );
@@ -147,12 +150,13 @@ export function WorkspaceView() {
       const failed = asDaemonError(thrown);
       // DPES-1108: the daemon keeps a coordinator that still owns unfinished tasks or an unanswered routed request.
       if (failed.kind === "conflict") setActionNote({ notice: null, error: null, action: "", refusal: REMOVE_OPEN_WORK_TEXT });
-      else setActionNote({ notice: null, error: failed, action: "Removing the coordinator" });
+      else setActionNote({ notice: null, error: failed, action: "Removing the coordinator", retry: () => void removeCoordinator(projectId) });
     }
   };
 
   const addCoordinator = async (projectId: string) => {
     setAddBusy(projectId);
+    setAddError(null);
     setActionNote(null);
     try {
       const receipt = await surfaces.conversation.restoreCoordinator!(projectId);
@@ -162,7 +166,8 @@ export function WorkspaceView() {
       setAddOpen(false);
       setActionNote({ notice: receipt.notice, error: null, action: "" });
     } catch (thrown) {
-      setActionNote({ notice: null, error: asDaemonError(thrown), action: "Adding the coordinator" });
+      // The dialog stays open over this page, so the failure is shown inside it.
+      setAddError(asDaemonError(thrown));
     } finally {
       setAddBusy(null);
     }
@@ -205,13 +210,23 @@ export function WorkspaceView() {
           )}
         </p>
       )}
-      {actionNote?.error && <ErrorNotice error={actionNote.error} action={actionNote.action} />}
+      {actionNote?.error && (
+        <>
+          <ErrorNotice error={actionNote.error} action={actionNote.action} />
+          {actionNote.retry && (
+            <Button variant="quiet" onClick={actionNote.retry}>
+              Retry
+            </Button>
+          )}
+        </>
+      )}
       {actionNote?.refusal && (
         <Notice tone="bad" role="alert">
           {actionNote.refusal}
         </Notice>
       )}
-      {actionNote?.notice && <p role="status">{actionNote.notice}</p>}
+      {/* Always mounted, so a result that appears is announced. It stays until the next coordinator action. */}
+      <div role="status">{actionNote?.notice && <Notice tone="ok">{actionNote.notice}</Notice>}</div>
       <Conversation
         option={option}
         options={options}
@@ -230,13 +245,14 @@ export function WorkspaceView() {
             return rest;
           })
         }
-        onRemoveCoordinator={coordinatorControls ? (projectId) => void removeCoordinator(projectId) : undefined}
+        onRemoveCoordinator={coordinatorControls ? removeCoordinator : undefined}
         addCoordinator={coordinatorControls ? { onAdd: () => setAddOpen(true), reason: addReason } : undefined}
       />
       {addOpen && (
         <AddCoordinatorDialog
           projects={addable}
           busyId={addBusy}
+          error={addError}
           onAdd={(projectId) => void addCoordinator(projectId)}
           onClose={() => setAddOpen(false)}
         />
@@ -347,7 +363,8 @@ interface ConversationProps {
   /** A clear emptied this conversation: drop what the fixture window had simulated for it. */
   onSimulatedCleared: () => void;
   /** Project coordinators only; absent when the surface cannot remove coordinators. */
-  onRemoveCoordinator?: (projectId: string) => void;
+  /** Resolves when the removal ends; its dialog shows pending until then. */
+  onRemoveCoordinator?: (projectId: string) => Promise<void>;
   addCoordinator?: { onAdd: () => void; reason: string | null };
 }
 
@@ -386,7 +403,11 @@ function Conversation({
     error: DaemonError | null;
     turnId?: string;
     action?: string;
+    /** Runs the failed request again, shown beside the error. */
+    retry?: () => void;
   } | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const cancelGuard = useRef(false);
   const notice = feedback?.key === option.key ? feedback.notice : null;
   const error = feedback?.key === option.key ? feedback.error : null;
   const { target } = option;
@@ -557,14 +578,17 @@ function Conversation({
       setFeedback({ key, notice: receipt.notice, error: null });
       setNonce((value) => value + 1);
     } catch (thrown) {
-      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Clearing the history" });
+      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Clearing the history", retry: () => void clearHistory() });
     } finally {
       setBusy(false);
     }
   };
 
+  // A second press before the first answers would cancel twice, so the guard is a ref, not only the pending state.
   const cancel = async () => {
-    if (!turn || !surfaces.conversation.cancel) return;
+    if (!turn || !surfaces.conversation.cancel || cancelGuard.current) return;
+    cancelGuard.current = true;
+    setCancelling(true);
     const key = option.key;
     try {
       const result = await surfaces.conversation.cancel(target, turn.id);
@@ -575,7 +599,10 @@ function Conversation({
       });
       setNonce((value) => value + 1);
     } catch (thrown) {
-      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Canceling the reply" });
+      setFeedback({ key, notice: null, error: asDaemonError(thrown), action: "Canceling the reply", retry: () => void cancel() });
+    } finally {
+      cancelGuard.current = false;
+      setCancelling(false);
     }
   };
 
@@ -681,7 +708,7 @@ function Conversation({
           running={userRunning}
           busy={busy}
           history={target.kind !== "workstream"}
-          onClear={() => void clearHistory()}
+          onClear={clearHistory}
           onRemove={
             target.kind === "project" && onRemoveCoordinator ? () => onRemoveCoordinator(target.projectId) : undefined
           }
@@ -743,7 +770,7 @@ function Conversation({
         <div className="ws-note ws-runtime act-live">
           <ActivityStatus live={activity} fallback={{ text: "Waiting for the orchestrator's reply…", since: waitingSince }} />
           {surfaces.conversation.cancel && (
-            <Button variant="quiet" onClick={() => void cancel()}>
+            <Button variant="quiet" pending={cancelling} onClick={() => void cancel()}>
               Cancel reply
             </Button>
           )}
@@ -811,6 +838,11 @@ function Conversation({
         {error && (
           <>
             <ErrorNotice error={error} action={feedback?.action ?? "Sending the message"} />
+            {feedback?.retry && (
+              <Button variant="quiet" onClick={feedback.retry}>
+                Retry
+              </Button>
+            )}
             {error.indeterminate && !feedback?.action && (
               <p className="ws-small">
                 The daemon may have recorded it. Your draft is kept; sending again reuses the same request key.
