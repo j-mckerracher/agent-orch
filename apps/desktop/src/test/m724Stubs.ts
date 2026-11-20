@@ -255,11 +255,11 @@ export const PI_CATALOG: AgentCatalogEntry = {
   efforts: { state: "unsupported", detail: "pi lists no efforts", items: [] },
 };
 
-/** GitHub Copilot before any sign-in check: installed and pinned, sign-in not yet confirmed (DPES-1105). Its CLI lists the models, and levels per model. */
+/** GitHub Copilot before any sign-in check: the daemon reports it available with the "not confirmed yet" detail. Its CLI lists the models, and levels per model (DPES-1105). */
 export const COPILOT_CATALOG: AgentCatalogEntry = {
   agent: "github-copilot",
   provider: "github",
-  state: "unknown",
+  state: "available",
   detail: "Not confirmed yet: sign-in is checked on your first Copilot use. If you have not signed in, run `copilot login`.",
   models: {
     state: "available",

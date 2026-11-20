@@ -679,7 +679,7 @@ async fn windows_is_not_refused_and_a_missing_cli_is_reported_as_missing() {
 #[tokio::test]
 async fn the_catalog_states_follow_the_sign_in_record() {
     let dir = tempfile::tempdir().unwrap();
-    let program = fake_copilot(dir.path(), "copilot", "1.0.109", "exit 0\n");
+    let program = script(dir.path(), "copilot", FAKE_ACP);
     let adapter = CopilotAdapter::new().with_program(&program);
     let limit = Duration::from_secs(5);
     let record = |state| SignInRecord {
@@ -692,7 +692,7 @@ async fn the_catalog_states_follow_the_sign_in_record() {
     assert_eq!(not_checked.state, CatalogState::Available);
     assert!(not_checked.detail.starts_with("Not confirmed yet"));
     assert_eq!(not_checked.provider.as_deref(), Some("github"));
-    assert_eq!(not_checked.models.state, CatalogState::Unsupported);
+    assert_eq!(not_checked.models.state, CatalogState::Available);
     assert_eq!(not_checked.efforts.state, CatalogState::Unsupported);
 
     let signed_out = adapter
@@ -700,6 +700,7 @@ async fn the_catalog_states_follow_the_sign_in_record() {
         .await;
     assert_eq!(signed_out.state, CatalogState::AuthenticationFailed);
     assert!(signed_out.detail.contains("copilot login"));
+    assert_eq!(signed_out.models.state, CatalogState::Unknown);
 
     let no_seat = adapter.catalog(limit, &record(SignInState::NoSeat)).await;
     assert_eq!(no_seat.state, CatalogState::Unavailable);
@@ -723,7 +724,8 @@ async fn a_catalog_for_an_unseen_version_keeps_provider_and_model_support_separa
         .catalog(Duration::from_secs(5), &SignInRecord::default())
         .await;
     assert_eq!(catalog.state, CatalogState::Available);
-    assert_eq!(catalog.models.state, CatalogState::Unsupported);
+    // This fake has no `--acp` server, so the models could not be read: unknown, never empty or unsupported.
+    assert_eq!(catalog.models.state, CatalogState::Unknown);
     assert_eq!(catalog.efforts.state, CatalogState::Unsupported);
 }
 
