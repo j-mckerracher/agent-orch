@@ -2285,9 +2285,7 @@ async fn monitor_agent_with(
             }
             Some(Ok(Some(event))) => {
                 record_output(job, &event);
-                if let Some(board) = board {
-                    record_activity(store, board, job, &event, &mut thinking);
-                }
+                record_activity(store, board, job, &event, &mut thinking);
                 record_usage(&mut *handle, store, owner, started_ms, requested_model)
             }
             Some(Ok(None)) => {
@@ -2353,15 +2351,20 @@ fn flush_thinking(store: &SqliteStore, job: &Job, thinking: &mut Coalescer) {
 /// tool rows at once, thinking through `thinking`. Everything is best effort.
 fn record_activity(
     store: &SqliteStore,
-    board: &ActivityBoard,
+    board: Option<&ActivityBoard>,
     job: &Job,
     event: &AgentEvent,
     thinking: &mut Coalescer,
 ) {
     let session = job.session_id.as_str();
+    let on_board = |update: &dyn Fn(&ActivityBoard)| {
+        if let Some(board) = board {
+            update(board);
+        }
+    };
     match event {
         AgentEvent::ThinkingDelta { text } => {
-            board.set_phase(session, Phase::Thinking);
+            on_board(&|board| board.set_phase(session, Phase::Thinking));
             if let Some(joined) = thinking.push(text) {
                 if let Err(error) = store.append_session_thinking(session, &joined) {
                     eprintln!(
@@ -2370,7 +2373,9 @@ fn record_activity(
                 }
             }
         }
-        AgentEvent::MessageDelta { .. } => board.set_phase(session, Phase::Replying),
+        AgentEvent::MessageDelta { .. } => {
+            on_board(&|board| board.set_phase(session, Phase::Replying))
+        }
         AgentEvent::ToolStarted {
             tool_id,
             name,
@@ -2384,9 +2389,9 @@ fn record_activity(
                         "orchestrator-daemon: cannot record tool for session {session}: {error}"
                     );
                 }
-                board.tool_started(session, tool);
+                on_board(&|board| board.tool_started(session, tool.clone()));
             }
-            None => board.touch(session),
+            None => on_board(&|board| board.touch(session)),
         },
         AgentEvent::ToolFinished {
             tool_id,
@@ -2401,11 +2406,11 @@ fn record_activity(
                         "orchestrator-daemon: cannot record tool result for session {session}: {error}"
                     );
                 }
-                board.tool_finished(session, &end.id);
+                on_board(&|board| board.tool_finished(session, &end.id));
             }
-            None => board.touch(session),
+            None => on_board(&|board| board.touch(session)),
         },
-        _ => board.touch(session),
+        _ => on_board(&|board| board.touch(session)),
     }
 }
 

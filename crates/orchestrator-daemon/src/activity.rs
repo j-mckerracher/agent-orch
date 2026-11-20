@@ -30,9 +30,25 @@ const FLUSH_BYTES: usize = 2048;
 /// Thinking is written this long after its first buffered delta.
 const FLUSH_AFTER: Duration = Duration::from_millis(250);
 
+const PRIVATE_KEY_TEXT: &str = "[REDACTED private key]";
+
+/// A tool id only joins a start to its end, so it is sanitized and cut but never redacted: a
+/// 64-character hex id would match a token pattern, and two such ids must stay distinct.
+fn tool_id(id: &str) -> String {
+    sanitize(id)
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .take(ID_CHARS)
+        .collect()
+}
+
 /// Sanitizes, folds newlines to spaces, redacts, then truncates. The order matters: a cut made
 /// before redaction could leave half a credential that no pattern recognizes.
 fn bounded(text: &str, max_chars: usize) -> String {
+    // A key spans lines and no pattern in `redact` covers its body, so none of it is kept.
+    if text.contains("-----BEGIN") && text.contains("PRIVATE KEY") {
+        return PRIVATE_KEY_TEXT.to_owned();
+    }
     let folded: String = sanitize(text)
         .chars()
         .map(|c| if matches!(c, '\n' | '\t') { ' ' } else { c })
@@ -51,8 +67,8 @@ pub(crate) struct ToolStart {
 impl ToolStart {
     /// `None` when the provider gave no id: such a call cannot be matched to its end.
     pub(crate) fn bounded(id: &str, name: &str, summary: &str) -> Option<Self> {
-        let id = bounded(id, ID_CHARS);
-        (!id.trim().is_empty()).then(|| Self {
+        let id = tool_id(id);
+        (!id.is_empty()).then(|| Self {
             id,
             name: bounded(name, NAME_CHARS),
             summary: bounded(summary, SUMMARY_CHARS),
@@ -70,8 +86,8 @@ pub(crate) struct ToolEnd {
 
 impl ToolEnd {
     pub(crate) fn bounded(id: &str, ok: bool, summary: &str) -> Option<Self> {
-        let id = bounded(id, ID_CHARS);
-        (!id.trim().is_empty()).then(|| Self {
+        let id = tool_id(id);
+        (!id.is_empty()).then(|| Self {
             id,
             ok,
             summary: bounded(summary, RESULT_CHARS),
@@ -275,6 +291,35 @@ mod tests {
             wide.summary
         );
         assert!(ToolStart::bounded("  ", "Bash", "x").is_none());
+    }
+
+    #[test]
+    fn a_private_key_block_is_replaced_whole_in_a_summary_and_a_result() {
+        let pem = "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----";
+        let start = ToolStart::bounded("t", "Bash", &format!("cat > k <<EOF\n{pem}")).unwrap();
+        assert_eq!(start.summary, "[REDACTED private key]");
+        let end = ToolEnd::bounded("t", true, pem).unwrap();
+        assert_eq!(end.summary, "[REDACTED private key]");
+        let plain = ToolEnd::bounded("t", true, "-----BEGIN CERTIFICATE-----").unwrap();
+        assert_eq!(plain.summary, "-----BEGIN CERTIFICATE-----");
+    }
+
+    #[test]
+    fn a_tool_id_is_cut_but_never_redacted_so_long_hex_ids_stay_distinct() {
+        let first = "a".repeat(63) + "b";
+        let second = "a".repeat(63) + "c";
+        let (a, b) = (
+            ToolStart::bounded(&first, "Bash", "x").unwrap(),
+            ToolStart::bounded(&second, "Bash", "x").unwrap(),
+        );
+        assert_eq!(
+            (a.id.as_str(), b.id.as_str()),
+            (first.as_str(), second.as_str())
+        );
+        let token = format!("ghp_{}", "a1B2c3D4e5".repeat(4));
+        assert_eq!(ToolEnd::bounded(&token, true, "").unwrap().id, token);
+        let long = ToolStart::bounded(&"z".repeat(100), "Bash", "x").unwrap();
+        assert_eq!(long.id.chars().count(), 64);
     }
 
     #[test]

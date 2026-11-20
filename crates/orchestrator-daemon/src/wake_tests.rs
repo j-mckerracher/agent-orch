@@ -57,6 +57,8 @@ struct Probe {
     /// `prepare` answers `Conflict` while set: the agent is still being settled.
     unsettled: AtomicBool,
     prepared: Mutex<Vec<Option<Choice>>>,
+    /// Each answered turn also records one thinking entry and one tool call.
+    activity: AtomicBool,
 }
 
 impl Probe {
@@ -73,6 +75,7 @@ impl Probe {
             cancelled: Arc::new(AtomicBool::new(false)),
             unsettled: AtomicBool::new(false),
             prepared: Mutex::new(Vec::new()),
+            activity: AtomicBool::new(false),
         })
     }
 
@@ -128,6 +131,14 @@ impl ConversationRuntime for Probe {
         let reply = self.reply.lock().unwrap().clone();
         match reply {
             Some(text) => {
+                if self.activity.load(Ordering::SeqCst) {
+                    sink.thinking("pondering");
+                    let start =
+                        crate::activity::ToolStart::bounded("tool-1", "shell", "ls").unwrap();
+                    sink.tool_started(start);
+                    let end = crate::activity::ToolEnd::bounded("tool-1", true, "ok").unwrap();
+                    sink.tool_finished(end);
+                }
                 let _ = sink.delta(&text);
                 if let Some(tokens) = *self.tokens.lock().unwrap() {
                     sink.usage(vec![UsageReport {
@@ -1016,6 +1027,56 @@ fn the_quiet_token_closes_a_heartbeat_as_quiet() {
     tick(&f);
     let second = &records_of(&f, WakeKind::TaskFailed)[0];
     assert_eq!(second.outcome, Some(WakeOutcome::Replied));
+}
+
+#[test]
+fn a_quiet_turn_hides_its_thinking_and_tool_entries_with_its_reply() {
+    let f = fixture();
+    f.probe.activity.store(true, Ordering::SeqCst);
+    f.probe.replying(Some(QUIET_TOKEN));
+    work_check(&f);
+    start_batch(&f);
+    tick(&f);
+    let record = &records_of(&f, WakeKind::WorkCheck)[0];
+    assert_eq!(record.outcome, Some(WakeOutcome::Quiet));
+    let page = get(&f);
+    for hidden in [
+        "reply_chunk",
+        "thinking_chunk",
+        "tool_started",
+        "tool_finished",
+    ] {
+        assert!(
+            page["entries"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|entry| entry["kind"] != hidden),
+            "{hidden} shown: {page}"
+        );
+    }
+
+    // A turn that answered keeps its activity on the wire.
+    f.probe.replying(Some("Task two needs a look."));
+    fail_task(&f, "t-2", "two");
+    tick(&f);
+    start_batch(&f);
+    tick(&f);
+    let page = get(&f);
+    let kinds: Vec<&str> = page["entries"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|entry| entry["kind"].as_str().unwrap())
+        .collect();
+    for shown in [
+        "reply_chunk",
+        "thinking_chunk",
+        "tool_started",
+        "tool_finished",
+    ] {
+        assert!(kinds.contains(&shown), "{shown} missing: {page}");
+    }
 }
 
 /// Runs one work check of a single running task, so the batch is a heartbeat.

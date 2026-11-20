@@ -739,7 +739,7 @@ const MAX_HISTORY_REPLY_BYTES: usize = 4 * 1024;
 /// Kept well under the Windows 32,767-character command line, with room for
 /// an 8 KiB message and the frame.
 const MAX_HISTORY_BYTES: usize = 12 * 1024;
-/// How many of the newest transcript entries are scanned for history.
+/// How many of the newest user, reply and completion entries are scanned for history.
 const HISTORY_SCAN_ENTRIES: i64 = 400;
 
 /// Starts, tracks and cancels turns for both conversation scopes. Cloning shares the
@@ -1152,16 +1152,12 @@ impl ConversationService {
     /// Best effort: an unreadable transcript yields no history, not a failure.
     fn history(&self, target: &ConversationTarget, current_turn: &str) -> Vec<HistoryTurn> {
         let store = &self.shared.store;
-        let Ok(latest) = store.conversation_page(target, 0, 1) else {
-            return Vec::new();
-        };
-        let after = (latest.latest_sequence - HISTORY_SCAN_ENTRIES).max(0);
-        let limit = usize::try_from(HISTORY_SCAN_ENTRIES).map_or(400, |n| n + 1);
-        let Ok(page) = store.conversation_page(target, after, limit) else {
+        let limit = usize::try_from(HISTORY_SCAN_ENTRIES).unwrap_or(400);
+        let Ok(entries) = store.conversation_history_entries(target, limit) else {
             return Vec::new();
         };
         let mut turns: Vec<(String, Option<String>, String, bool)> = Vec::new();
-        for entry in &page.entries {
+        for entry in &entries {
             if turns.last().map(|turn| &turn.0) != Some(&entry.turn_id) {
                 turns.push((entry.turn_id.clone(), None, String::new(), false));
             }

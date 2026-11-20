@@ -343,3 +343,71 @@ fn migration_0074_keeps_thinking_rows_and_accepts_tool_rows() {
     assert_eq!(page.entries.len(), 3);
     assert_eq!(page.entries[2].kind, "tool_started");
 }
+
+#[test]
+fn history_entries_skip_thinking_and_tool_rows_so_a_tool_heavy_turn_cannot_crowd_them_out() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(&directory);
+    begin(&store, "t1");
+    store.append_reply_chunk("t1", "one").unwrap();
+    store
+        .finish_conversation_turn("t1", &TurnOutcome::Completed)
+        .unwrap()
+        .unwrap();
+    begin(&store, "t2");
+    store.append_thinking_chunk("t2", "hmm").unwrap();
+    for n in 0..MAX_TOOL_STARTS {
+        let id = format!("id{n}");
+        store.append_tool_started("t2", &id, "Read", "x").unwrap();
+        store.append_tool_finished("t2", &id, true, "ok").unwrap();
+    }
+    store.append_reply_chunk("t2", "two").unwrap();
+    store
+        .finish_conversation_turn("t2", &TurnOutcome::Completed)
+        .unwrap()
+        .unwrap();
+
+    let entries = store
+        .conversation_history_entries(&ConversationTarget::Global, 400)
+        .unwrap();
+    let order: Vec<_> = entries
+        .iter()
+        .map(|e| (e.turn_id.as_str(), e.kind.as_str()))
+        .collect();
+    assert_eq!(
+        order,
+        [
+            ("t1", "user_message"),
+            ("t1", "reply_chunk"),
+            ("t1", "turn_completed"),
+            ("t2", "user_message"),
+            ("t2", "reply_chunk"),
+            ("t2", "turn_completed"),
+        ]
+    );
+    let newest = store
+        .conversation_history_entries(&ConversationTarget::Global, 2)
+        .unwrap();
+    assert_eq!(
+        newest.iter().map(|e| e.kind.as_str()).collect::<Vec<_>>(),
+        ["reply_chunk", "turn_completed"]
+    );
+}
+
+#[test]
+fn a_thinking_row_whose_body_is_not_json_never_breaks_tool_matching() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(&directory);
+    store
+        .append_session_thinking("s1", "plain {not json")
+        .unwrap();
+    assert!(store
+        .append_session_tool_started("s1", "a", "Read", "x")
+        .unwrap());
+    assert!(store
+        .append_session_tool_finished("s1", "a", true, "ok")
+        .unwrap());
+    assert!(!store
+        .append_session_tool_finished("s1", "a", true, "ok")
+        .unwrap());
+}

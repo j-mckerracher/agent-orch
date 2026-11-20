@@ -279,7 +279,7 @@ impl DaemonApi {
             .map_err(map_conversation_error)?;
         let (proposals, proposals_more) = self.proposals_page(&target)?;
         let (records, wake_records_more) = self.wake_records(&target)?;
-        // A quiet wake turn replied with the quiet token alone: its reply entries stay out of
+        // A quiet wake turn replied with the quiet token alone: its reply and activity entries stay out of
         // the wire and the record carries the collapsed line instead.
         let quiet_turns = quiet_turn_ids(&records);
         let wake_records: Vec<Value> = records.iter().map(wake_record_wire).collect();
@@ -293,7 +293,10 @@ impl DaemonApi {
             .entries
             .iter()
             .filter(|entry| {
-                entry.kind != "reply_chunk" || !quiet_turns.contains(entry.turn_id.as_str())
+                !(matches!(
+                    entry.kind.as_str(),
+                    "reply_chunk" | "thinking_chunk" | "tool_started" | "tool_finished"
+                ) && quiet_turns.contains(entry.turn_id.as_str()))
             })
             .map(|entry| entry_wire(&self.store, entry))
             .collect::<Result<Vec<_>, _>>()?;

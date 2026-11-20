@@ -2914,6 +2914,41 @@ mod usage_paths {
     }
 
     #[test]
+    fn thinking_and_tool_rows_are_stored_even_without_an_activity_board() {
+        let fixture = Fixture::new();
+        let (store, owner) = running_owner(&fixture, "no-board");
+        let handle = ScriptedHandle {
+            events: vec![
+                Ok(Some(AgentEvent::ThinkingDelta {
+                    text: "weigh".into(),
+                })),
+                Ok(Some(AgentEvent::ThinkingDelta { text: "ing".into() })),
+                Ok(Some(AgentEvent::ToolStarted {
+                    tool_id: "c1".into(),
+                    name: "shell".into(),
+                    summary: "ls".into(),
+                })),
+                Ok(Some(AgentEvent::ThinkingDelta {
+                    text: "after".into(),
+                })),
+                Ok(Some(AgentEvent::SessionExited { exit_code: Some(0) })),
+            ],
+            usage: Vec::new(),
+        };
+        run(handle, &store, &owner).unwrap();
+        let page = store.session_activity(&owner.session_id, 0, 100).unwrap();
+        let rows: Vec<(&str, &str)> = page
+            .entries
+            .iter()
+            .map(|entry| (entry.kind.as_str(), entry.body.as_str()))
+            .collect();
+        assert_eq!(rows.len(), 3, "{rows:?}");
+        assert_eq!(rows[0], ("thinking", "weighing"));
+        assert_eq!(rows[1].0, "tool_started");
+        assert_eq!(rows[2], ("thinking", "after"));
+    }
+
+    #[test]
     fn usage_is_recorded_when_the_event_stream_fails() {
         let fixture = Fixture::new();
         let (store, owner) = running_owner(&fixture, "stream-error");

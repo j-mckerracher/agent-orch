@@ -266,7 +266,8 @@ impl SqliteStore {
             let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
             let finished: bool = sqlx::query_scalar(
                 "SELECT EXISTS (SELECT 1 FROM session_activity WHERE session_id = ? \
-                 AND kind = 'tool_finished' AND json_extract(body, '$.id') = ?)",
+                 AND kind = 'tool_finished' AND CASE WHEN kind = 'tool_finished' AND json_valid(body) \
+                 THEN json_extract(body, '$.id') END = ?)",
             )
             .bind(&session_id)
             .bind(&tool_id)
@@ -346,7 +347,8 @@ async fn tool_started_exists(
 ) -> Result<bool, sqlx::Error> {
     sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM session_activity WHERE session_id = ? \
-         AND kind = 'tool_started' AND json_extract(body, '$.id') = ?)",
+         AND kind = 'tool_started' AND CASE WHEN kind = 'tool_started' AND json_valid(body) \
+         THEN json_extract(body, '$.id') END = ?)",
     )
     .bind(session_id)
     .bind(tool_id)

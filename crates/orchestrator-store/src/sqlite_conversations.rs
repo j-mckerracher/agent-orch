@@ -691,6 +691,38 @@ impl SqliteStore {
         })
     }
 
+    /// The newest `limit` entries of a conversation that a prompt's history is built from
+    /// (`user_message`, `reply_chunk`, `turn_completed`), oldest first. Thinking and tool
+    /// entries are left out, so a tool-heavy turn cannot push earlier exchanges out of the window.
+    pub fn conversation_history_entries(
+        &self,
+        target: &ConversationTarget,
+        limit: usize,
+    ) -> Result<Vec<ConversationEntry>, ConversationError> {
+        target.validate()?;
+        let limit = i64::try_from(limit).map_err(|_| StoreError::InvalidEventLimit)?;
+        let conversation_id = target.id();
+        conversation_call(self, move |pool| async move {
+            let rows = sqlx::query(concat!(
+                "SELECT ",
+                entry_columns!(),
+                " FROM conversation_entries WHERE conversation_id = ? \
+                 AND kind IN ('user_message', 'reply_chunk', 'turn_completed') \
+                 ORDER BY sequence DESC LIMIT ?"
+            ))
+            .bind(&conversation_id)
+            .bind(limit)
+            .fetch_all(&pool)
+            .await?;
+            let mut entries = rows
+                .into_iter()
+                .map(decode_entry)
+                .collect::<Result<Vec<_>, _>>()?;
+            entries.reverse();
+            Ok(entries)
+        })
+    }
+
     /// Record the permission level and profile a turn launched with. Called once,
     /// after the agent started, so a turn that never launched records none.
     /// Recording does not depend on the turn's state: the agent may finish
