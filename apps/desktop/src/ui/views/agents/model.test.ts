@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { mkSession, mkTask } from "../../../test/fakeDaemon";
 import { assignmentText, inventoryFromDaemon, inventoryFromPreview } from "./inventoryModel";
-import { failedSessions, failedWithoutSession, headline, latestAttempt, rowsFromDaemon, sessionsKnown, tabRows } from "./model";
+import { TASK_STATES } from "../../format";
+import { failedSessions, failedWithoutSession, headline, isFailed, latestAttempt, rowsFromDaemon, sessionsKnown, tabRows } from "./model";
 
 const REPO = "/work/repo";
 
@@ -38,6 +39,24 @@ describe("agents model", () => {
     expect(stats.queued).toBe(2);
     expect(stats.queued).toBe(tabRows("queued", rows).length);
     expect(stats.blocked).toBe(1);
+  });
+
+  it("lists a Waiting task in the Waiting tab and counts it in the headline, not as running or queued", () => {
+    const waiting = rowsFromDaemon([...tasks, mkTask("wait", REPO, { state: "Waiting" })], [], []);
+    expect(tabRows("waiting", waiting).map((r) => r.id)).toEqual(["wait"]);
+    expect(tabRows("active", waiting).map((r) => r.id)).toEqual(["run", "ver"]);
+    expect(tabRows("queued", waiting).map((r) => r.id)).toEqual(["dep", "q"]);
+    expect(headline(waiting).waiting).toBe(1);
+    expect(headline(waiting).runningTasks).toBe(2);
+    expect(headline(waiting).queued).toBe(2);
+  });
+
+  it("lands every task state in at least one tab", () => {
+    for (const state of TASK_STATES) {
+      const [row] = rowsFromDaemon([mkTask("t", REPO, { state })], [], []);
+      const listed = (["active", "waiting", "queued", "finished"] as const).some((tab) => tabRows(tab, [row!]).length > 0);
+      expect({ state, listed: listed || isFailed(row!) }).toEqual({ state, listed: true });
+    }
   });
 
   it("counts failed sessions, not tasks, and keeps failed tasks with no session apart", () => {

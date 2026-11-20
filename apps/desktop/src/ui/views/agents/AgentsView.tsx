@@ -47,6 +47,9 @@ export function AgentsView() {
               </Pill>
             </li>
             <li>
+              <Pill tone={stats.waiting > 0 ? "warn" : "neutral"}>{stats.waiting} tasks waiting for a reply</Pill>
+            </li>
+            <li>
               <Pill tone={stats.blocked > 0 ? "warn" : "neutral"}>{stats.blocked} tasks blocked</Pill>
             </li>
             <li>

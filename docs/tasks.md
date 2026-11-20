@@ -42,9 +42,13 @@ A task that Succeeded, Failed, VerificationFailed, or Canceled can be archived. 
 
 Open the task to see attempts, sessions, and the timeline. Click Review candidate when the task has a pending approval. A Failed or VerificationFailed task can be retried from its page.
 
+## Conversation
+
+The task page shows the agent's conversation as a chat, like the Orchestrator Workspace. The thread holds the session's thinking, its retained output as plain text, and the messages and answers you send from the page. Type in the box at the bottom and press Enter to send, or Shift+Enter for a new line. The box is off, with the reason shown under it, unless the task is waiting for a reply.
+
 ## Thinking
 
-Open a task, pick a session, and open Thinking under Recent output to read that session's thinking. It refreshes about every 2 seconds while the session runs. Copy thinking copies the full text. Empty means nothing was recorded.
+Open a task and open Thinking in its Conversation, or pick a session in Agents and open Thinking under Recent output. It refreshes about every 2 seconds while the session runs. Copy thinking copies the full text. Empty means nothing was recorded.
 
 The panel shows everything the provider exposes. Newer Claude and GitHub Copilot models return summarized thinking. Codex returns raw reasoning only on models that support it. Sessions from before this feature have no thinking.
 

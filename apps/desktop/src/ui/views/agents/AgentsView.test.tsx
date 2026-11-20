@@ -134,12 +134,35 @@ describe("Agents & Sessions, live mode", () => {
     expect(screen.queryByRole("list", { name: "failed tasks without a session" })).not.toBeInTheDocument();
   });
 
+  it("lists a Waiting task in the Waiting tab and counts it in the header and the total", async () => {
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-wait", REPO, { state: "Waiting", contract: { objective: "Find the root cause" } }));
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Waiting (1)" }));
+    const list = within(screen.getByRole("list", { name: "waiting tasks" }));
+    expect(list.getByRole("button", { name: /t-wait/ })).toBeInTheDocument();
+    expect(screen.getByText("1 tasks waiting for a reply")).toBeInTheDocument();
+    expect(screen.getByText("1 running task(s), 1 running session(s)")).toBeInTheDocument();
+    expect(screen.getByText(/Counts cover 5 task\(s\)/)).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Active (1)" })).toBeInTheDocument();
+  });
+
+  it("lists succeeded and canceled tasks in the Finished tab", async () => {
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-cancel", REPO, { state: "Cancelled" }));
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Finished (2)" }));
+    const list = within(screen.getByRole("list", { name: "finished tasks" }));
+    expect(list.getByRole("button", { name: /t-done/ })).toBeInTheDocument();
+    expect(list.getByRole("button", { name: /t-cancel/ })).toBeInTheDocument();
+  });
+
   it("moves between tabs with the arrow keys, Home and End", async () => {
     const { user } = await liveView();
     screen.getByRole("tab", { name: "Active (1)" }).focus();
     await user.keyboard("{ArrowRight}");
-    expect(screen.getByRole("tab", { name: "Available / idle" })).toHaveFocus();
-    expect(screen.getByRole("tab", { name: "Available / idle" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Waiting (0)" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Waiting (0)" })).toHaveAttribute("aria-selected", "true");
     await user.keyboard("{End}");
     expect(screen.getByRole("tab", { name: "Disconnected (not available)" })).toHaveFocus();
     await user.keyboard("{Home}");

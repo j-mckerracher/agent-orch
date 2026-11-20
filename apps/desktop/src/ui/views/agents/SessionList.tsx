@@ -1,6 +1,6 @@
 /**
  * "Assigned work and sessions": tabs over the derived lists, with local filters. Counts in tab labels
- * state what they count: tasks for Active and Queued, sessions for Failed. Unavailable data is never a number.
+ * state what they count: tasks for every tab except Failed, which counts sessions. Unavailable data is never a number.
  */
 import { useId, useRef, useState, type KeyboardEvent } from "react";
 import type { QueueWait } from "../../../sources/surfaces/types";
@@ -22,10 +22,12 @@ failedSessions,
 } from "./model";
 import type { Load } from "./useAgentsData";
 
-const EMPTY_TEXT: Record<"active" | "queued", string> = {
+const EMPTY_TEXT = {
   active: "No active tasks.",
+  waiting: "No tasks are waiting for a reply.",
   queued: "No queued tasks.",
-};
+  finished: "No finished tasks.",
+} as const;
 
 /** Local filter over task id, objective and agent. Nothing is sent to the daemon. */
 function matchesQuery(row: WorkRow, query: string): boolean {
@@ -182,7 +184,7 @@ function TaskRows({
   selectedId,
   onSelect,
 }: {
-  tab: "active" | "queued";
+  tab: keyof typeof EMPTY_TEXT;
   rows: WorkRow[];
   live: boolean;
   query: string;
