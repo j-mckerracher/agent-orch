@@ -36,7 +36,7 @@ export function SaveButton({
   const id = reasonId ?? ownId;
   return (
     <>
-      <Button type="submit" variant="primary" className="ui-btn-save" aria-busy={saving} aria-describedby={reason === null ? undefined : id}>
+      <Button type="submit" variant="primary" className="ui-btn-save" pending={saving} aria-describedby={reason === null ? undefined : id}>
         {label}
       </Button>
       {reason !== null && (

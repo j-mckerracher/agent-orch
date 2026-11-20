@@ -413,6 +413,22 @@ describe("Settings page, live", () => {
     });
   });
 
+  it("settings_page_save_shows_pending_on_the_button_while_the_daemon_answers", async () => {
+    const { services } = await connected(OPEN, (daemon) => {
+      daemon.stub("settings.set", () => OPEN);
+      daemon.delayNext("settings.set", 200);
+    });
+    const user = userEvent.setup();
+    page(services);
+    await field(CPU);
+    const save = screen.getByRole("button", { name: SAVE });
+    await user.click(save);
+    expect(save).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+    expect(await screen.findByText(SAVED_TEXT)).toBeInTheDocument();
+    expect(save).not.toHaveAttribute("aria-busy");
+  });
+
   it("settings_page_saves_every_valid_limit_and_announces_the_new_values", async () => {
     const { fake, services } = await connected(OPEN, (daemon) =>
       daemon.stub("settings.set", () => ({ ...OPEN, load: { ...OPEN.load, cpu_percent: 85 } })),
