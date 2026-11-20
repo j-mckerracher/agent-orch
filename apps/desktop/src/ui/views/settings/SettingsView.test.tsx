@@ -81,7 +81,8 @@ const DISPATCH_CATALOG: ModelCatalog = {
   })),
 };
 
-// Shaped like the real daemon: Codex and Claude Code list models; Pi lists empty lists; Copilot reports none (DPES-1105).
+// Covers the shapes a provider can have: models and efforts (Codex, Claude Code), an ok-but-empty list (Pi), and facets the
+// daemon reports as unsupported (Copilot) (DPES-1105).
 const NOW = { observedAt: "2026-11-17T00:00:00Z", ageMs: 0 };
 const REAL_SHAPED_CATALOG: ModelCatalog = {
   providers: [
@@ -181,7 +182,10 @@ describe("Agent dispatch defaults", () => {
 
   it("keeps every override usable after saving the default, saves the picks, and clears one with Provider default", async () => {
     const { fake, services } = await dispatchPage(
-      { ...OPEN, dispatch_defaults: { default_agent: "codex", providers: { pi: { model: "old" } } } },
+      {
+        ...OPEN,
+        dispatch_defaults: { default_agent: "codex", providers: { pi: { model: "old" }, "github-copilot": { model: "old" } } },
+      },
       REAL_SHAPED_CATALOG,
     );
     const user = userEvent.setup();
@@ -191,27 +195,32 @@ describe("Agent dispatch defaults", () => {
     await user.click(screen.getByRole("button", { name: SAVE }));
     expect(await screen.findByText("Saved. New tasks use these defaults.")).toBeInTheDocument();
     expect(fake.callsTo("settings.set")[0]?.params).toMatchObject({
-      dispatch_defaults: { default_agent: "codex", providers: { codex: { model: "m1", effort: "high" }, pi: { model: "old" } } },
+      dispatch_defaults: {
+        default_agent: "codex",
+        providers: { codex: { model: "m1", effort: "high" }, pi: { model: "old" }, "github-copilot": { model: "old" } },
+      },
     });
 
     const overrides = screen.getByText("Per-provider overrides").closest("details")!;
-    expect(within(overrides).getByText("1 set")).toBeInTheDocument();
+    expect(within(overrides).getByText("2 set")).toBeInTheDocument();
+    // A saved choice keeps its picker usable; the picker with nothing saved is disabled and says why.
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toBeEnabled();
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toBeDisabled();
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription(/own default effort/);
     await user.selectOptions(within(overrides).getByLabelText("Claude Code model"), "sonnet");
     await user.selectOptions(within(overrides).getByLabelText("Claude Code effort"), "low");
-    expect(within(overrides).getByText("2 set")).toBeInTheDocument();
     expect(within(overrides).getByLabelText("Claude Code model")).toHaveValue("sonnet");
     expect(within(overrides).getByLabelText("Claude Code effort")).toHaveValue("low");
+    expect(within(overrides).getByText("3 set")).toBeInTheDocument();
     await user.selectOptions(within(overrides).getByLabelText("Pi model"), "");
+    await user.selectOptions(within(overrides).getByLabelText("GitHub Copilot model"), "");
     expect(within(overrides).getByLabelText("Pi model")).toHaveValue("");
+    expect(within(overrides).getByLabelText("GitHub Copilot model")).toHaveValue("");
     expect(within(overrides).getByText("1 set")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: SAVE }));
     await until(() => fake.callsTo("settings.set").length === 2, "second save");
-    expect(fake.callsTo("settings.set")[1]?.params).toMatchObject({
-      dispatch_defaults: { default_agent: "codex", providers: { codex: { model: "m1", effort: "high" }, "claude-code": { model: "sonnet", effort: "low" } } },
-    });
-    expect(
-      (fake.callsTo("settings.set")[1]?.params as { dispatch_defaults: { providers: object } }).dispatch_defaults.providers,
-    ).not.toHaveProperty("pi");
+    const second = (fake.callsTo("settings.set")[1]?.params as { dispatch_defaults: { providers: object } }).dispatch_defaults;
+    expect(second.providers).toEqual({ codex: { model: "m1", effort: "high" }, "claude-code": { model: "sonnet", effort: "low" } });
   });
 
   it("says in place why a provider's model or effort list cannot be chosen from", async () => {
@@ -228,7 +237,9 @@ describe("Agent dispatch defaults", () => {
     expect(within(overrides).getByLabelText("GitHub Copilot model")).toHaveAccessibleDescription(
       "Copilot cannot list models without a billable call.",
     );
-    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription("This provider exposes no effort setting.");
+    expect(within(overrides).getByLabelText("GitHub Copilot effort")).toHaveAccessibleDescription(
+      "This provider exposes no effort setting. It runs with its own default effort.",
+    );
     // A provider with a list stays usable and carries no explanation.
     expect(within(overrides).getByLabelText("Claude Code model")).toBeEnabled();
     expect(within(overrides).getByLabelText("Claude Code model")).not.toHaveAccessibleDescription();
@@ -244,6 +255,8 @@ describe("Agent dispatch defaults", () => {
     await until(() => services.connection.getSnapshot().status === "connected", "connected");
     page(services, "agents");
     expect(await screen.findByLabelText("Default provider")).toBeDisabled();
+    // The reason is in the section beside the disabled controls, as well as at the Save button.
+    expect(screen.getAllByText(APPROVER_REQUIRED_NOTICE).length).toBeGreaterThan(1);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect(fake.callsTo("settings.set")).toHaveLength(0);
   });

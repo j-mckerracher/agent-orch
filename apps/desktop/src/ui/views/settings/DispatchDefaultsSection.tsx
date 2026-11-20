@@ -17,7 +17,8 @@ export function DispatchDefaultsSection({ model }: { model: SettingsModel }) {
 type Selection = { model?: string; effort?: string };
 
 const NO_MODELS = "This provider lists no models to choose from. It runs with its own default model.";
-const NO_EFFORTS = "No effort levels to choose from. It runs with its own default effort.";
+const OWN_EFFORT = "It runs with its own default effort.";
+const NO_EFFORTS = `No effort levels to choose from. ${OWN_EFFORT}`;
 
 /** One provider's model and effort pickers. `names` are the two labels. */
 function PairRows({
@@ -42,7 +43,14 @@ function PairRows({
   const noModels = models.length === 0 && !selection.model;
   const noEfforts = efforts.length === 0 && !selection.effort;
   const modelHint = provider.models.status !== "ok" ? provider.models.reason : noModels ? NO_MODELS : null;
-  const effortHint = !noEfforts ? null : provider.efforts.status === "ok" ? NO_EFFORTS : provider.efforts.reason;
+  // With models to pick from, an unsupported effort list is the per-model case: choosing a model fills it in.
+  const effortHint = !noEfforts
+    ? null
+    : provider.efforts.status === "ok"
+      ? NO_EFFORTS
+      : models.length > 0
+        ? provider.efforts.reason
+        : `${provider.efforts.reason} ${OWN_EFFORT}`;
   return (
     <>
       <div className="settings-row">
@@ -142,6 +150,7 @@ function DefaultsForm({ model, saved }: { model: SettingsModel; saved: DispatchD
   return (
     <section aria-label="Defaults for new tasks" className="settings-section">
       <p className="settings-intro">Applies to new tasks only. Chat, queued tasks and running tasks are unchanged.</p>
+      {reason && <p className="settings-hint">{reason}</p>}
       {catalog.status === "loading" && <p role="status">Loading the model catalog...</p>}
       {catalog.status !== "loading" && catalog.status !== "ok" && <Notice tone="warn">{catalog.reason}</Notice>}
       <div className="settings-row">
