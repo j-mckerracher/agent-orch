@@ -1,8 +1,10 @@
 import { useEffect, useId, useRef, useState } from "react";
+import { asDaemonError, presentError, type DaemonError } from "../../../daemon/errors";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import type { Brief } from "../../../sources/surfaces/types";
 import { useGate, useServices, useSurface } from "../../services";
 import { Button } from "../../theme";
+import { Notice } from "../../widgets";
 import {
   BRIEF_ACK_FAILED_TEXT,
   BRIEF_ACK_TEXT,
@@ -41,6 +43,7 @@ export function ReturnBrief() {
   const [hiddenSoFar, setHiddenSoFar] = useState<number | null>(null);
   const [message, setMessage] = useState<{ text: string; quiet: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<DaemonError | null>(null);
   const working = useRef(false);
   const announced = useRef<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -79,6 +82,7 @@ export function ReturnBrief() {
     if (working.current || key === null) return;
     working.current = true;
     setBusy(true);
+    setFailure(null);
     try {
       const receipt = await source.briefAck();
       setDismissed(key);
@@ -86,8 +90,8 @@ export function ReturnBrief() {
       setNonce((value) => value + 1);
       // The panel is gone, so focus moves to the region that says what happened.
       rootRef.current?.focus();
-    } catch {
-      setMessage({ text: BRIEF_ACK_FAILED_TEXT, quiet: false });
+    } catch (error) {
+      setFailure(asDaemonError(error));
     } finally {
       working.current = false;
       setBusy(false);
@@ -99,6 +103,14 @@ export function ReturnBrief() {
       <p role="status" className={message?.quiet ? "ws-brief-quiet" : "ws-small"}>
         {message?.text ?? ""}
       </p>
+      {failure !== null && (
+        <Notice tone="bad" role="alert">
+          {BRIEF_ACK_FAILED_TEXT} {presentError(failure).reason}{" "}
+          <Button variant="quiet" onClick={() => void dismiss()}>
+            Retry
+          </Button>
+        </Notice>
+      )}
       {shown && brief && (
         <section aria-labelledby={headingId} className="ws-brief">
           <div className="ws-brief-line">
@@ -107,7 +119,7 @@ export function ReturnBrief() {
             <Button variant="quiet" aria-expanded={expanded} aria-controls={detailId} onClick={() => setExpanded((open) => !open)}>
               {expanded ? "Hide" : "Show"}
             </Button>
-            <Button variant="quiet" disabled={busy} onClick={() => void dismiss()}>
+            <Button variant="quiet" pending={busy} onClick={() => void dismiss()}>
               {BRIEF_ACK_TEXT}
             </Button>
           </div>
