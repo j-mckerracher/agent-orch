@@ -167,7 +167,7 @@ function QueueRow({ entry, stop, isNext }: { entry: QueueEntry; stop: StopContro
               <Button
                 id={confirmId}
                 variant="danger"
-                disabled={busy}
+                pending={busy}
                 onClick={async () => {
                   setBusy(true);
                   const noticeTookFocus = await stop.onStop(entry.taskId);

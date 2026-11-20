@@ -118,6 +118,7 @@ describe("daemon-backed D1-D6 screens", () => {
     expect(screen.queryByText(/conversation service is unavailable/)).not.toBeInTheDocument();
     await user.type(await screen.findByLabelText("Message or proposal JSON"), "plan the work");
     await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(screen.getByText("Sending the message…")).toBeInTheDocument();
     expect(await screen.findByText("Message recorded. Nothing acts on it automatically.")).toBeInTheDocument();
     expect(await screen.findByText(/plan the work/, { selector: "li" })).toBeInTheDocument();
     expect(fake.callsTo("coordinator.send_message")).toHaveLength(1);
@@ -130,7 +131,7 @@ describe("daemon-backed D1-D6 screens", () => {
     const { user } = await mount(fake, { route: { name: "coordinator", projectId: REPO }, daemonSources: true });
     await user.type(await screen.findByLabelText("Message or proposal JSON"), "{{}");
     await user.click(screen.getByRole("button", { name: "Validate proposal" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/Contacting the coordinator failed/);
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Validating the proposal failed/);
   });
 
   it("shows the journal identity from the real Welcome epoch", async () => {

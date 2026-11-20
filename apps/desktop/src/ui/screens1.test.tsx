@@ -134,8 +134,10 @@ describe("S1 project list", () => {
     const fake = new FakeDaemon();
     const { user } = await mount(fake);
     fake.failNext("projects.register", { code: -32602, message: "not a git repository" });
+    fake.delayNext("projects.register", 150);
     await user.type(screen.getByLabelText(/Register repository/), "/work/not-a-repo");
     await user.click(screen.getByRole("button", { name: "Register" }));
+    expect(screen.getByRole("button", { name: "Register" })).toHaveAttribute("aria-busy", "true");
     const alert = await screen.findByText(/Registering the repository failed/);
     expect(alert.parentElement).toHaveTextContent(/rejected the request as invalid/);
     expect(alert.parentElement).toHaveTextContent("not a git repository");
@@ -370,9 +372,11 @@ describe("S2 project page and new task", () => {
     const { user } = await mount(fake, { route });
     await openDialog(user);
     fake.failNext("tasks.submit", { code: -32010, message: "project is not registered" });
+    fake.delayNext("tasks.submit", 150);
     await user.type(screen.getByLabelText("Objective"), "x");
     await user.type(screen.getByLabelText("Agent"), "codex");
     await user.click(screen.getByRole("button", { name: "Create task" }));
+    expect(screen.getByRole("button", { name: "Create task" })).toHaveAttribute("aria-busy", "true");
     expect(await screen.findByText(/Submitting the task failed/)).toBeInTheDocument();
     expect(screen.getByLabelText("Objective")).toHaveValue("x");
   });
