@@ -61,8 +61,8 @@ The Windows list is the published runbook
 | `cli-command-line-tests` | `cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective` (Windows 2, macOS 1: the 65,000-character test is `cfg(windows)`) | both |
 | `clippy-scoped` | `cargo clippy --locked -p orchestrator-ipc -p orchestrator-daemon --all-targets` (baseline: two `single_match` warnings in `supervisor.rs`) | both |
 | `workspace-tests` | `cargo test --locked --workspace` (981 passed, 2 ignored) | macOS |
-| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (51 files, 1105 tests) | both |
-| `desktop-e2e` | `npm run test:e2e` (8 files, 44 tests, real daemon over a Unix socket) | macOS |
+| `desktop-npm-ci`, `desktop-tsc`, `desktop-build`, `desktop-vitest` | in `apps/desktop`: `npm ci`, `npx tsc -b`, `npm run build`, `npx vitest run` (every file and test must pass; totals not pinned) | both |
+| `desktop-e2e` | `npm run test:e2e` (every file and test must pass; real daemon over a Unix socket) | macOS |
 | `desktop-geometry` | `npx playwright test` in `apps/desktop`: browser layout checks in `e2e/geometry.spec.ts` and `e2e/topbar-usage-viewport.spec.ts` (installed Chrome, Vite dev server) | macOS |
 | `tauri-build`, `tauri-tests`, `tauri-clippy-clean`, `tauri-clippy` | in `apps/desktop/src-tauri`: `cargo build --locked`, `cargo test --locked` (Windows 14, macOS 16), `cargo clean -p agent-orch-desktop`, `cargo clippy --locked --all-targets --verbose` | both |
 | `desktop-package-win` / `desktop-package-mac` | `npm run package:win` (NSIS installer) / `npm run package:mac` (`.app`) | Windows / macOS |
@@ -720,8 +720,8 @@ measured on the merged branch; Windows is derived from `cfg` gates, not measured
 | `store-tests` | 157 + 1 ignored `[65,9,2,13,11,8,11,3,4,3,11,5,1,12,0]` | 153 + 1 ignored `[63,9,2,13,11,8,11,3,3,3,11,4,1,12,0]` |
 | `lock-takeover-test` | 1 (64 filtered out) | 1 (62 filtered out) |
 | `workspace-tests` | 981 + 2 ignored | not a Windows gate |
-| `desktop-vitest` | 51 files, 1105 tests | same |
-| `desktop-e2e` | 8 files, 44 tests | not a Windows gate |
+| `desktop-vitest` | every file and test passes, totals not pinned | same |
+| `desktop-e2e` | every file and test passes, totals not pinned | not a Windows gate |
 | `desktop-geometry` | 35 tests: 34 in `e2e/geometry.spec.ts`, 1 in `e2e/topbar-usage-viewport.spec.ts` (run as `playwright test`) | not a Windows gate |
 
 On Windows the daemon library excludes `executor::tests`, `conversation_orphans`, `conversation_agent::launch` and
