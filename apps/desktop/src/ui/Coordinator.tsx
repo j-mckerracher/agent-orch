@@ -1,12 +1,11 @@
-/** S5: coordinator view. The conversation is D5 placeholder data; related tasks and approvals are real. */
+/** S5: the project's Coordinator tab. The conversation first; related tasks and decisions one click deeper. */
 import { useState } from "react";
 import { asDaemonError, type DaemonError } from "../daemon/errors";
 import type { CoordinatorMessage, ProposedTask, SimulatedReceipt } from "../sources/types";
-import { Crumbs } from "./ConnectionStrip";
-import { basename, pendingApprovals } from "./format";
+import { pendingApprovals } from "./format";
 import { QueueWaitNote, useQueueWaits } from "./QueueWaitNote";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { Button } from "./theme";
+import { Button, Disclosure } from "./theme";
 import { ErrorNotice, LoadableRegion, Notice, SimulatedReceipts, SourceSection, StateText } from "./widgets";
 
 export function Coordinator({ projectId }: { projectId: string }) {
@@ -55,18 +54,10 @@ export function Coordinator({ projectId }: { projectId: string }) {
   const pending = pendingApprovals(approvals.data ?? []).filter((a) => ownIds.has(a.action.task_id));
 
   return (
-    <main className="ps-page">
-      <Crumbs
-        items={[
-          { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
-          { label: basename(projectId), onClick: () => router.navigate({ name: "project", projectId }) },
-          { label: "Coordinator" },
-        ]}
-      />
-      <h1>Coordinator</h1>
+    <div>
       {!real && (
         <Notice tone="warn" role="status">
-          The coordinator conversation service is unavailable (D5). Everything below it is a preview.
+          The coordinator conversation service is unavailable. This is a preview.
         </Notice>
       )}
       <SourceSection
@@ -84,17 +75,20 @@ export function Coordinator({ projectId }: { projectId: string }) {
                 </li>
               ))}
             </ul>
-            <h4>Structured proposals</h4>
-            <ul aria-label="Proposals" className="ps-list">
-              {[...convo.proposals, ...proposals].map((proposal, index) => (
-                <li key={`${index}:${proposal.id}`}>
-                  {proposal.objective} — validation {proposal.validation}
-                  {proposal.validationErrors.length > 0 && `: ${proposal.validationErrors.join("; ")}`}
-                  {proposal.dependencies.length > 0 && ` (depends on ${proposal.dependencies.join(", ")})`}; suggested
-                  delivery {proposal.suggestedDelivery}
-                </li>
-              ))}
-            </ul>
+            {[...convo.proposals, ...proposals].length > 0 && (
+              <Disclosure summary="Structured proposals" count={[...convo.proposals, ...proposals].length}>
+                <ul aria-label="Proposals" className="ps-list">
+                  {[...convo.proposals, ...proposals].map((proposal, index) => (
+                    <li key={`${index}:${proposal.id}`}>
+                      {proposal.objective} — validation {proposal.validation}
+                      {proposal.validationErrors.length > 0 && `: ${proposal.validationErrors.join("; ")}`}
+                      {proposal.dependencies.length > 0 && ` (depends on ${proposal.dependencies.join(", ")})`}; suggested
+                      delivery {proposal.suggestedDelivery}
+                    </li>
+                  ))}
+                </ul>
+              </Disclosure>
+            )}
             {convo.outstandingDecisions.length > 0 && (
               <ul aria-label="Outstanding decisions" className="ps-steps">
                 {convo.outstandingDecisions.map((text) => (
@@ -162,8 +156,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
         )}
       </section>
 
-      <section aria-label="Related live work" className="ps-section">
-        <h2>Related live tasks and decisions</h2>
+      <Disclosure summary="Related tasks and decisions" count={`${own.length} tasks, ${pending.length} pending`}>
         <LoadableRegion
           what="tasks"
           loadable={tasks}
@@ -177,7 +170,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
               <ul aria-label="Related tasks" className="ps-list">
                 {own.map((task) => (
                   <li key={task.contract.id} className="ps-project-row ps-task-row">
-                    <code>{task.contract.id}</code> <span className="ps-row-main">{task.contract.objective}</span> <StateText state={task.state} />{" "}
+                    <span className="ps-row-main">{task.contract.objective}</span> <StateText state={task.state} />{" "}
                     <QueueWaitNote state={task.state} wait={waits.get(task.contract.id)} />
                     <Button onClick={() => router.navigate({ name: "task", projectId, taskId: task.contract.id })}>
                       Open task
@@ -200,7 +193,7 @@ export function Coordinator({ projectId }: { projectId: string }) {
             </div>
           )}
         </LoadableRegion>
-      </section>
-    </main>
+      </Disclosure>
+    </div>
   );
 }

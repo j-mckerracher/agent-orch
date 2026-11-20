@@ -1,16 +1,16 @@
-/** S3: task list with local filters and the separate D2 execution preview. */
-import { Crumbs } from "./ConnectionStrip";
-import { FILTER_LABELS, basename, latestSession, matchesFilter, stateLabel } from "./format";
+/** S3: a project's task list: three filters, and Task | State | Agent. Id and session are in the task page. */
+import { FILTER_LABELS, taskBucket } from "./format";
 import type { TaskFilter } from "./router";
 import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { QueueWaitNote, useQueueWaits } from "./QueueWaitNote";
 import { useGate, useServices, useSource, useStore } from "./services";
-import { Button } from "./theme";
+import { NavLink } from "./shell/NavLink";
+import { Button, Disclosure, Pill } from "./theme";
 import { LoadableRegion, SourceSection, StateText, TableWrap } from "./widgets";
 
 export function TaskList({ projectId, filter }: { projectId: string; filter: TaskFilter }) {
   const { data, router, sources } = useServices();
-  const { tasks, sessions, approvals } = useStore(data);
+  const { tasks, approvals } = useStore(data);
   const gate = useGate();
   const preview = useSource(() => sources.execution.listPreviewTasks(), "preview", sources.execution.provenance);
   const go = (next: TaskFilter) => router.navigate({ name: "tasks", projectId, filter: next });
@@ -20,42 +20,23 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
   const unread = (status: string): string => (status !== "error" && (gate.connected || gate.settling) ? "…" : "unknown");
   const unreadCount = tasks.data === null ? unread(tasks.status) : null;
   const approvalsUnread = approvals.data === null ? unread(approvals.status) : null;
-  // Without approvals, review membership is unknown: the review filter does not narrow the rows.
-  const unfiltered = filter === "review" && approvals.data === null;
-  const rows = unfiltered ? own : own.filter((task) => matchesFilter(task, filter, own, approvalList));
+  // Without approvals, review membership is unknown: no filter narrows the rows by it.
+  const unfiltered = approvals.data === null && filter === "review";
+  const rows = unfiltered ? own : own.filter((task) => taskBucket(task, approvalList) === filter);
   const waits = useQueueWaits(rows.some((task) => task.state === "Queued"));
 
   return (
-    <main className="ps-page">
-      <Crumbs
-        items={[
-          { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
-          { label: basename(projectId), onClick: () => router.navigate({ name: "project", projectId }) },
-          { label: "Tasks" },
-        ]}
-      />
-      <h1>Tasks</h1>
-      <div className="ps-actions">
-        <Button onClick={() => router.navigate({ name: "project", projectId })}>Back to project</Button>
-        <Button variant="primary" onClick={() => router.navigate({ name: "project", projectId })}>
-          New task
-        </Button>
-      </div>
+    <div>
       <div role="group" aria-label="Task filters" className="ps-filters">
         {FILTER_LABELS.map(({ filter: value, label }) => {
-          const count = own.filter((task) => matchesFilter(task, value, own, approvalList)).length;
-          const shown = unreadCount ?? (value === "review" ? approvalsUnread : null) ?? `${count}/${own.length}`;
+          const shown =
+            unreadCount ?? (value === "review" ? approvalsUnread : null) ?? own.filter((task) => taskBucket(task, approvalList) === value).length;
           return (
             <Button key={value} aria-pressed={filter === value} onClick={() => go(value)}>
-              {label} ({shown})
+              {label} {shown}
             </Button>
           );
         })}
-        {filter.startsWith("state:") && (
-          <Button aria-pressed onClick={() => go("all")}>
-            {filter.slice("state:".length)} (clear)
-          </Button>
-        )}
       </div>
       {unfiltered && (
         <p role="status" className="muted">
@@ -77,39 +58,24 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
               <table aria-label="Tasks">
                 <thead>
                   <tr>
-                    <th>Task ID</th>
-                    <th>Objective</th>
+                    <th>Task</th>
                     <th>State</th>
                     <th>Agent</th>
-                    <th>Recorded session</th>
-                    <th />
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((task) => {
-                    const session = latestSession(task, sessions.data);
-                    return (
-                      <tr key={task.contract.id}>
-                        <td>
-                          <code>{task.contract.id}</code>
-                        </td>
-                        <td>{task.contract.objective}</td>
-                        <td>
-                          <StateText state={task.state} />
-                          <QueueWaitNote state={task.state} wait={waits.get(task.contract.id)} />
-                        </td>
-                        <td>{agentDisplayName(task.contract.agent)}</td>
-                        <td>{session ? `${session.id} (${stateLabel(session.state)})` : "none recorded"}</td>
-                        <td>
-                          <Button
-                            onClick={() => router.navigate({ name: "task", projectId, taskId: task.contract.id })}
-                          >
-                            Open
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {rows.map((task) => (
+                    <tr key={task.contract.id}>
+                      <td>
+                        <NavLink to={{ name: "task", projectId, taskId: task.contract.id }}>{task.contract.objective}</NavLink>
+                      </td>
+                      <td>
+                        {taskBucket(task, approvalList) === "review" ? <Pill tone="warn">Awaiting review</Pill> : <StateText state={task.state} />}
+                        <QueueWaitNote state={task.state} wait={waits.get(task.contract.id)} />
+                      </td>
+                      <td>{agentDisplayName(task.contract.agent)}</td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </TableWrap>
@@ -118,6 +84,7 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
       </LoadableRegion>
 
       {sources.execution.provenance.kind === "fixture" && (
+        <Disclosure summary="Execution preview" count="sample data">
       <SourceSection
         title="Execution preview"
         provenance={sources.execution.provenance}
@@ -157,7 +124,8 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
           </TableWrap>
         )}
       </SourceSection>
+        </Disclosure>
       )}
-    </main>
+    </div>
   );
 }

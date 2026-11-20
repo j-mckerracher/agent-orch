@@ -47,10 +47,11 @@ describe("task failure details", () => {
       daemonSources: true,
     });
 
+    await user.click(screen.getByRole("button", { name: "New task" }));
     await user.type(screen.getByLabelText("Objective"), "A child task");
     await user.type(screen.getByLabelText("Agent"), "Codex");
     await user.type(screen.getByLabelText("Parent task ID (optional)"), "not-a-task");
-    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
 
     const alert = await screen.findByRole("alert");
     expect(alert).toHaveTextContent("The parent task does not exist.");

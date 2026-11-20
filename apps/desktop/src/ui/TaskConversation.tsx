@@ -48,7 +48,6 @@ export function TaskConversation({ taskId, state, sessionId, running, agent }: P
   const label = `Conversation with ${agent}`;
   return (
     <section aria-label="Agent conversation" className="ps-section task-chat">
-      <h2>Conversation</h2>
       {sessionId === null ? (
         <ChatLog label={label} scrollKey={scrollKey}>
           <EmptyState title="No messages yet" description="No session is recorded for this task, so the agent has not said anything." />

@@ -2,6 +2,9 @@ import type { Approval, Session, SessionEntry, TaskRecord, TaskState } from "../
 import { NO_HELD, type HeldSets } from "../sources/surfaces/holds";
 import type { TaskFilter } from "./router";
 
+/** Local-only match for the top bar, the Agents view and the project list: not the project list's three filters. */
+export type TaskMatch = "all" | "queued" | "running" | "blocked" | "review" | "terminal" | `state:${string}`;
+
 /** Display name only; the full project id (canonical path) is always shown too. */
 export function basename(path: string): string {
   const parts = path.split(/[\\/]+/).filter(Boolean);
@@ -62,13 +65,19 @@ export function canArchive(state: TaskState): boolean {
 }
 
 export const FILTER_LABELS: Array<{ filter: TaskFilter; label: string }> = [
-  { filter: "all", label: "All" },
-  { filter: "queued", label: "Queued" },
-  { filter: "running", label: "Running" },
-  { filter: "blocked", label: "Blocked" },
+  { filter: "open", label: "Open" },
   { filter: "review", label: "Awaiting review" },
-  { filter: "terminal", label: "Terminal" },
+  { filter: "done", label: "Done" },
 ];
+
+/**
+ * The project list's three filters partition its tasks: a task with a requested approval is awaiting review
+ * whatever its state, any other finished task is done, and the rest are open.
+ */
+export function taskBucket(task: TaskRecord, approvals: readonly Approval[]): TaskFilter {
+  if (pendingApprovals(approvals).some((approval) => approval.action.task_id === task.contract.id)) return "review";
+  return TERMINAL_STATES.has(task.state) ? "done" : "open";
+}
 
 export function pendingApprovals(approvals: readonly Approval[]): Approval[] {
   return approvals.filter((approval) => approval.state.state === "requested");
@@ -109,7 +118,7 @@ export function decisionCountText(count: number, more: boolean): string {
  */
 export function matchesFilter(
   task: TaskRecord,
-  filter: TaskFilter,
+  filter: TaskMatch,
   all: readonly TaskRecord[],
   approvals: readonly Approval[],
 ): boolean {

@@ -149,10 +149,10 @@ test("System Usage and agent slots stay reachable and unclipped on the Settings 
 
 const censusRoutes = [
   "#/workspace", "#/workstreams", "#/agents", "#/review", "#/projects",
-  "#/project/fixture%3Aproject-alpha", "#/project/fixture%3Aproject-alpha/tasks/all",
+  "#/project/fixture%3Aproject-alpha", "#/project/fixture%3Aproject-alpha/tasks/open",
   "#/project/fixture%3Aproject-alpha/task/fixture%3Atask-auth-1",
   "#/project/fixture%3Aproject-alpha/preview/fixture%3Atask-auth-1",
-  "#/project/fixture%3Aproject-alpha/coordinator",
+  "#/project/fixture%3Aproject-alpha/coordinator", "#/project/fixture%3Aproject-alpha/defaults",
   "#/project/fixture%3Aproject-alpha/review/fixture%3Atask-auth-1",
 ];
 
@@ -199,6 +199,14 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
     }
   });
 }
+
+test("old task filter links land on the three filters", async ({ page }) => {
+  for (const [old, filter] of [["all", "open"], ["blocked", "open"], ["terminal", "done"], ["state%3ASucceeded", "done"], ["review", "review"]]) {
+    await page.goto(`/?fixture=1#/project/fixture%3Aproject-alpha/tasks/${old}`);
+    await expect(page).toHaveURL(new RegExp(`#/project/fixture%3Aproject-alpha/tasks/${filter}$`));
+    await expect(page.getByRole("group", { name: "Task filters" }).locator('[aria-pressed="true"]')).toHaveCount(1);
+  }
+});
 
 test("Back and Forward traverse canonical and non-canonical routes", async ({ page }) => {
   await page.goto("/?fixture=1#/agents");

@@ -31,6 +31,7 @@ import {
 import { SaveButton, useSaveGuard } from "./SaveBar";
 import { AppearanceSection } from "./AppearanceSection";
 import { AgentsInventorySection } from "./AgentsInventorySection";
+import { AgentDetectionSection } from "./AgentDetectionSection";
 import { AutonomousActionsSection } from "./AutonomousActionsSection";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
@@ -205,6 +206,7 @@ export function SettingsView() {
       </header>
       <DispatchDefaultsSection model={model} />
       <AgentsInventorySection />
+      <AgentDetectionSection />
       <section aria-labelledby={headingId} className="settings-section">
         <h2 id={headingId}>Machine load limits</h2>
         <p className="settings-intro">{INTRO_TEXT}</p>

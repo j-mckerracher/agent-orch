@@ -5,9 +5,10 @@ import { ALL_CAPABILITIES } from "../daemon/types";
 import { createFixtureSources } from "../sources/fixtures";
 import { FakeDaemon, mkApproval, mkEvent, mkSession, mkTask } from "../test/fakeDaemon";
 import { REPO, mount } from "../test/render";
+import { UNDELIVERED_TEXT } from "./TaskDetail";
 import { fakeQueueSnapshot } from "../test/queueSnapshot";
 
-const tasksRoute = (filter: "all" | "queued" | "running" | "blocked" | "review" | "terminal" = "all") =>
+const tasksRoute = (filter: "open" | "review" | "done" = "open") =>
   ({ name: "tasks", projectId: REPO, filter }) as const;
 const taskRoute = (taskId: string) => ({ name: "task", projectId: REPO, taskId }) as const;
 const replyBox = (name = "Message to the agent") => screen.findByRole("textbox", { name });
@@ -44,13 +45,25 @@ describe("S3 task list", () => {
   it("lists only this project's tasks with filter counts including Awaiting review", async () => {
     await mount(seeded(), { route: tasksRoute() });
     const table = await screen.findByRole("table", { name: "Tasks" });
-    expect(within(table).getAllByRole("row")).toHaveLength(5);
-    expect(within(table).queryByText("t-other")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "All (4/4)" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Queued (2/4)" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Blocked (1/4)" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Awaiting review (1/4)" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Terminal (1/4)" })).toBeInTheDocument();
+    expect(within(table).getAllByRole("row")).toHaveLength(3);
+    expect(within(table).queryByText("objective of t-other")).not.toBeInTheDocument();
+    const filters = within(screen.getByRole("group", { name: "Task filters" })).getAllByRole("button");
+    expect(filters.map((button) => button.textContent)).toEqual(["Open 2", "Awaiting review 1", "Done 1"]);
+    expect(screen.getByRole("button", { name: "Open 2" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows Task, State and Agent columns, with the task id and session left to the task page", async () => {
+    await mount(seeded(), { route: tasksRoute() });
+    const table = await screen.findByRole("table", { name: "Tasks" });
+    expect(within(table).getAllByRole("columnheader").map((cell) => cell.textContent)).toEqual(["Task", "State", "Agent"]);
+    expect(within(table).queryByText("t-q")).not.toBeInTheDocument();
+    expect(within(table).queryByText(/none recorded/)).not.toBeInTheDocument();
+  });
+
+  it("marks a task with a pending approval as Awaiting review", async () => {
+    await mount(seeded(), { route: tasksRoute("review") });
+    const table = await screen.findByRole("table", { name: "Tasks" });
+    expect(within(within(table).getByText("objective of t-r").closest("tr")!).getByText("Awaiting review")).toBeInTheDocument();
   });
 
   it("filters locally without another daemon call", async () => {
@@ -58,10 +71,10 @@ describe("S3 task list", () => {
     const { user } = await mount(fake, { route: tasksRoute() });
     await screen.findByRole("table", { name: "Tasks" });
     const before = fake.callsTo("tasks.list").length;
-    await user.click(screen.getByRole("button", { name: "Awaiting review (1/4)" }));
+    await user.click(screen.getByRole("button", { name: "Awaiting review 1" }));
     const table = await screen.findByRole("table", { name: "Tasks" });
-    expect(within(table).getByText("t-r")).toBeInTheDocument();
-    expect(within(table).queryByText("t-q")).not.toBeInTheDocument();
+    expect(within(table).getByText("objective of t-r")).toBeInTheDocument();
+    expect(within(table).queryByText("objective of t-q")).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.list").length).toBe(before);
   });
 
@@ -75,18 +88,8 @@ describe("S3 task list", () => {
   it("opens a real task", async () => {
     const { user } = await mount(seeded(), { route: tasksRoute() });
     const table = await screen.findByRole("table", { name: "Tasks" });
-    const row = within(table).getByText("t-b").closest("tr")!;
-    await user.click(within(row).getByRole("button", { name: "Open" }));
+    await user.click(within(table).getByRole("link", { name: "objective of t-b" }));
     expect(await screen.findByTestId("task-state")).toHaveTextContent("Queued");
-  });
-
-  it("derives the Blocked filter from unmet dependencies", async () => {
-    const { user } = await mount(seeded(), { route: tasksRoute() });
-    await screen.findByRole("table", { name: "Tasks" });
-    await user.click(screen.getByRole("button", { name: "Blocked (1/4)" }));
-    const table = await screen.findByRole("table", { name: "Tasks" });
-    expect(within(table).getAllByRole("row")).toHaveLength(2);
-    expect(within(table).getByText("t-b")).toBeInTheDocument();
   });
 
   it("keeps the execution preview separate and labeled as placeholder data", async () => {
@@ -95,6 +98,7 @@ describe("S3 task list", () => {
     expect(within(section).getByTestId("badge-D2")).toHaveTextContent("PLACEHOLDER DATA");
     expect(within(section).getByRole("table", { name: "Execution preview" })).toBeInTheDocument();
     expect(within(screen.getByRole("table", { name: "Tasks" })).queryByText(/fixture:/)).not.toBeInTheDocument();
+    expect(section.closest("details")).not.toHaveAttribute("open");
   });
 
   it("opens a preview task in the fixture-only view and never sends its id to the daemon", async () => {
@@ -127,8 +131,8 @@ describe("S3 task list", () => {
     const { services } = await mount(fake, { route: tasksRoute() });
     await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("error"));
     const filters = screen.getByRole("group", { name: "Task filters" });
-    expect(within(filters).getByRole("button", { name: "All (unknown)" })).toBeInTheDocument();
-    expect(within(filters).getByRole("button", { name: "Awaiting review (unknown)" })).toBeInTheDocument();
+    expect(within(filters).getByRole("button", { name: "Open unknown" })).toBeInTheDocument();
+    expect(within(filters).getByRole("button", { name: "Awaiting review unknown" })).toBeInTheDocument();
     expect(filters).not.toHaveTextContent("…");
   });
 
@@ -137,7 +141,7 @@ describe("S3 task list", () => {
     fake.failNext("approvals.list", { code: -32603, message: "boom" }, 5);
     const { services } = await mount(fake, { route: tasksRoute("review") });
     await waitFor(() => expect(services.data.getSnapshot().approvals.status).toBe("error"));
-    expect(screen.getByRole("button", { name: "Awaiting review (unknown)" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Awaiting review unknown" })).toBeInTheDocument();
     expect(screen.getByText(/Awaiting review is unknown/)).toBeInTheDocument();
     const table = await screen.findByRole("table", { name: "Tasks" });
     expect(within(table).getAllByRole("row")).toHaveLength(5);
@@ -170,26 +174,24 @@ describe("S3 task list", () => {
     }));
     await mount(fake, { route: tasksRoute() });
     const table = await screen.findByRole("table", { name: "Tasks" });
-    const row = (id: string) => within(table).getByText(id).closest("tr")!;
+    const row = (id: string) => within(table).getByText(`objective of ${id}`).closest("tr")!;
     expect(await within(row("t-q")).findByTestId("queue-wait")).toHaveTextContent("Waiting for disk space (89% used)");
     expect(within(row("t-b")).getByTestId("queue-wait")).toHaveTextContent("Waiting for t-q");
-    expect(within(row("t-r")).queryByTestId("queue-wait")).not.toBeInTheDocument();
-    expect(within(row("t-d")).queryByTestId("queue-wait")).not.toBeInTheDocument();
   });
 
   it("reads queue diagnostics only while a queued row is shown", async () => {
     const fake = seeded();
-    const { user } = await mount(fake, { route: tasksRoute("terminal") });
-    expect(within(await screen.findByRole("table", { name: "Tasks" })).getByText("t-d")).toBeInTheDocument();
+    const { user } = await mount(fake, { route: tasksRoute("done") });
+    expect(within(await screen.findByRole("table", { name: "Tasks" })).getByText("objective of t-d")).toBeInTheDocument();
     expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Queued (2/4)" }));
+    await user.click(screen.getByRole("button", { name: "Open 2" }));
     expect(await screen.findAllByTestId("queue-wait")).toHaveLength(2);
     expect(fake.callsTo("queue.snapshot").length).toBeGreaterThan(0);
   });
 
   it("removes wait reasons when a re-read fails and restores them on the next check", async () => {
     const fake = seeded();
-    await mount(fake, { route: tasksRoute("queued") });
+    await mount(fake, { route: tasksRoute("open") });
     expect(await screen.findAllByTestId("queue-wait")).toHaveLength(2);
     fake.failNext("queue.snapshot", { code: -32603, message: "boom" }, 1);
     act(() => void window.dispatchEvent(new Event("focus")));
@@ -202,10 +204,10 @@ describe("S3 task list", () => {
     const fake = seeded();
     vi.useFakeTimers();
     try {
-      await mount(fake, { route: tasksRoute("queued"), waitConnected: false });
+      await mount(fake, { route: tasksRoute("open"), waitConnected: false });
       await act(() => vi.advanceTimersByTimeAsync(100));
       const note = () =>
-        within(within(screen.getByRole("table", { name: "Tasks" })).getByText("t-q").closest("tr")!).getByTestId("queue-wait");
+        within(within(screen.getByRole("table", { name: "Tasks" })).getByText("objective of t-q").closest("tr")!).getByTestId("queue-wait");
       expect(note()).toHaveTextContent("All 2 worker slots in use");
       expect(fake.callsTo("events.subscribe")).toHaveLength(1);
       const reads = fake.callsTo("queue.snapshot").length;
@@ -225,7 +227,7 @@ describe("S3 task list", () => {
   it("says the wait reason is unavailable when the daemon has no queue diagnostics", async () => {
     const fake = seeded();
     fake.unknownCapabilities = ["queue"];
-    await mount(fake, { route: tasksRoute("queued") });
+    await mount(fake, { route: tasksRoute("open") });
     const notes = await screen.findAllByTestId("queue-wait");
     expect(notes.map((note) => note.textContent)).toEqual(["Wait reason unavailable", "Wait reason unavailable"]);
   });
@@ -388,18 +390,19 @@ describe("S4 task and session detail", () => {
   });
 
   it("explains that a Queued task with no session has had no agent launched", async () => {
-    await mount(seeded(), { route: taskRoute("t-q") });
+    const { user } = await mount(seeded(), { route: taskRoute("t-q") });
     expect(await screen.findByTestId("task-state")).toHaveTextContent("Queued");
     expect(screen.getByText(/no agent has been launched and no session is recorded/)).toBeInTheDocument();
     expect(screen.getByText("No recorded session.")).toBeInTheDocument();
+    await user.click(screen.getByRole("tab", { name: "Timeline" }));
     expect(screen.getByText(/No session events: no session is recorded/)).toBeInTheDocument();
-    expect(screen.getByText("No pending approval for this task.")).toBeInTheDocument();
   });
 
   it("shows the recorded session and its timeline with sequence numbers and reported kinds", async () => {
     const fake = seeded();
     fake.events = [mkEvent(1, "t-r", "s1", "SessionOutput"), mkEvent(2, "t-r", "s1", "SessionExited")];
-    await mount(fake, { route: taskRoute("t-r") });
+    const { user } = await mount(fake, { route: taskRoute("t-r") });
+    await user.click(await screen.findByRole("tab", { name: "Timeline" }));
     const table = await screen.findByRole("table", { name: "Session events" });
     expect(within(table).getByText("SessionOutput")).toBeInTheDocument();
     expect(within(table).getByText("SessionExited")).toBeInTheDocument();
@@ -411,6 +414,7 @@ describe("S4 task and session detail", () => {
     fake.pageSize = 2;
     fake.events = [1, 2, 3, 4, 5].map((n) => mkEvent(n, "t-r", "s1"));
     const { user } = await mount(fake, { route: taskRoute("t-r") });
+    await user.click(await screen.findByRole("tab", { name: "Timeline" }));
     const table = await screen.findByRole("table", { name: "Session events" });
     expect(within(table).getAllByRole("row")).toHaveLength(3);
     await user.click(screen.getByRole("button", { name: "Load more session events" }));
@@ -420,10 +424,69 @@ describe("S4 task and session detail", () => {
     expect(within(screen.getByRole("table", { name: "Session events" })).getAllByRole("row")).toHaveLength(6);
   });
 
-  it("offers Review candidate only when an approval is pending for the task and routes to S6", async () => {
+  it("offers Review changes only when an approval is pending for the task and routes to the Review view", async () => {
     const { user, services } = await mount(seeded(), { route: taskRoute("t-r") });
-    await user.click(await screen.findByRole("button", { name: "Review candidate" }));
+    expect(await screen.findByTestId("task-state")).toHaveTextContent("Awaiting review");
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("button", { name: "Review changes" }));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review", taskId: "t-r" });
+  });
+
+  it("shows no Review changes button for a task without a pending approval", async () => {
+    await mount(seeded(), { route: taskRoute("t-q") });
+    await screen.findByTestId("task-state");
+    expect(screen.queryByRole("button", { name: "Review changes" })).not.toBeInTheDocument();
+  });
+
+  it("has a title, a state chip, the three tabs and a collapsed Technical details section", async () => {
+    await mount(seeded(), { route: taskRoute("t-q") });
+    expect(await screen.findByRole("heading", { level: 1, name: "objective of t-q" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "repo" })).toBeInTheDocument();
+    const tabs = within(screen.getByRole("tablist", { name: "Task views" })).getAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Conversation", "Attempts 0", "Timeline"]);
+    expect(screen.getByRole("tab", { name: "Conversation" })).toHaveAttribute("aria-selected", "true");
+    const technical = screen.getByText("Technical details").closest("details")!;
+    expect(technical).not.toHaveAttribute("open");
+    for (const name of ["Task summary", "Sessions", "Audit transitions"]) {
+      expect(technical).toContainElement(screen.getByRole("region", { name }));
+    }
+    expect(technical).toHaveTextContent("t-q");
+    // The task id is not part of the default view.
+    expect(within(screen.getByRole("tablist", { name: "Task views" }).parentElement!).queryByText("t-q")).not.toBeInTheDocument();
+  });
+
+  it("shows the Retry primary action for a failed task and no Cancel", async () => {
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-f", REPO, { state: "Failed" }));
+    fake.stub("tasks.retry", (params: Record<string, unknown>) => mkTask(String(params.task_id), REPO));
+    const { user } = await mount(fake, { route: taskRoute("t-f"), daemonSources: true });
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("The retry request was accepted by the daemon.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
+    expect(fake.callsTo("tasks.retry")).toHaveLength(1);
+  });
+
+  it("has no primary action for a finished task and keeps Archive in the actions menu", async () => {
+    const { user } = await mount(seeded(), { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    expect(screen.queryByRole("button", { name: /^(Review changes|Retry|Cancel)$/ })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    expect(within(screen.getByRole("menu", { name: "Task actions" })).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Discard changes",
+      "Archive",
+    ]);
+  });
+
+  it("hides Archive when the daemon does not support it", async () => {
+    const fake = seeded();
+    fake.failNext("tasks.archive", { code: -32601, message: "method not found" });
+    const { user } = await mount(fake, { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Archive" }));
+    await screen.findByText(/Archiving the task failed/);
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).not.toBeInTheDocument();
   });
 
   it("links dependencies that are known and flags those that are not", async () => {
@@ -440,9 +503,9 @@ describe("S4 task and session detail", () => {
     const fake = seeded();
     const { user } = await mount(fake, { route: taskRoute("t-q") });
     await screen.findByTestId("task-state");
-    await user.click(screen.getByRole("button", { name: "Request cancel" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Canceled\. This is not proof that any process has stopped\./)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument());
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
     expect((fake.callsTo("tasks.cancel")[0]!.params as { idempotency_key?: string }).idempotency_key).toEqual(
       expect.any(String),
@@ -454,10 +517,10 @@ describe("S4 task and session detail", () => {
     fake.tasks.push(mkTask("t-v", REPO, { state: "Verifying" }));
     const { user } = await mount(fake, { route: taskRoute("t-v") });
     await screen.findByTestId("task-state");
-    expect(screen.getByRole("button", { name: "Request cancel" })).toBeEnabled();
-    await user.click(screen.getByRole("button", { name: "Request cancel" }));
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByText(/Cancel request acknowledged; the daemon now records the task as Canceled/)).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument());
     expect(fake.callsTo("tasks.cancel")).toHaveLength(1);
     expect(fake.callsTo("tasks.cancel")[0]!.params).toMatchObject({ task_id: "t-v" });
   });
@@ -467,29 +530,34 @@ describe("S4 task and session detail", () => {
     const { user } = await mount(fake, { route: taskRoute("t-q") });
     await screen.findByTestId("task-state");
     fake.failNext("tasks.cancel", { code: -32011, message: "task already terminal" });
-    await user.click(screen.getByRole("button", { name: "Request cancel" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(await screen.findByText(/Canceling the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Cancel request acknowledged/)).not.toBeInTheDocument();
   });
 
-  it("archives a finished task from its detail, once, and says what archive keeps", async () => {
+  const archiveFromMenu = async (user: Awaited<ReturnType<typeof mount>>["user"]) => {
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Archive" }));
+  };
+
+  it("archives a finished task from the actions menu, once, and says what archive keeps", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route: taskRoute("t-d") });
     await screen.findByTestId("task-state");
-    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    await archiveFromMenu(user);
     expect(await screen.findByText(/Archived\. The task leaves the task lists; its history is kept\./)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Archive task" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Archive" })).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.archive")).toHaveLength(1);
     expect(fake.callsTo("tasks.archive")[0]!.params).toMatchObject({ task_ids: ["t-d"], idempotency_key: expect.any(String) });
   });
 
-  it("disables archive on a running task and says why", async () => {
+  it("offers no Archive or actions menu on a task that is not finished", async () => {
     const fake = seeded();
-    await mount(fake, { route: taskRoute("t-r") });
+    await mount(fake, { route: taskRoute("t-q") });
     await screen.findByTestId("task-state");
-    const button = screen.getByRole("button", { name: "Archive task" });
-    expect(button).toBeDisabled();
-    expect(button.parentElement).toHaveTextContent("Only finished tasks can be archived; this task is Running.");
+    expect(screen.queryByRole("button", { name: "Task actions" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Only finished tasks can be archived/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.archive")).toHaveLength(0);
   });
 
@@ -498,7 +566,7 @@ describe("S4 task and session detail", () => {
     const { user } = await mount(fake, { route: taskRoute("t-d") });
     await screen.findByTestId("task-state");
     fake.failNext("tasks.archive", { code: -32603, message: "store error" });
-    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    await archiveFromMenu(user);
     expect(await screen.findByText(/Archiving the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Archived\. The task leaves/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
@@ -509,48 +577,62 @@ describe("S4 task and session detail", () => {
     fake.undelivered.add("t-d");
     const { user } = await mount(fake, { route: taskRoute("t-d") });
     await screen.findByTestId("task-state");
-    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    await archiveFromMenu(user);
     expect(await screen.findByText("This task has changes that were not delivered. Deliver them, or discard them first.")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
-    expect(screen.getByText(/Discard this task's changes\? The branch stays in the repository/)).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: "Discard changes?" });
+    expect(within(dialog).getByText(/Discard this task's changes\? The branch stays in the repository/)).toBeInTheDocument();
     expect(fake.callsTo("tasks.discard")).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Keep changes" }));
+    await user.click(within(dialog).getByRole("button", { name: "Keep changes" }));
     expect(fake.callsTo("tasks.discard")).toHaveLength(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Discard changes" }));
     await user.click(screen.getByRole("button", { name: "Confirm discard" }));
     expect(await screen.findByText("Changes discarded. You can archive the task now.")).toBeInTheDocument();
     expect(fake.callsTo("tasks.discard")[0]!.params).toEqual({ task_id: "t-d", idempotency_key: expect.any(String) });
     expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Archive task" }));
+    await archiveFromMenu(user);
     expect(await screen.findByText(/Archived\. The task leaves the task lists; its history is kept\./)).toBeInTheDocument();
   });
 
-  it("locks discard for a session that is not the approver", async () => {
+  it("offers Discard changes from the actions menu for a finished task, behind a confirmation", async () => {
+    const fake = seeded();
+    const { user } = await mount(fake, { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Discard changes" }));
+    expect(screen.getByRole("dialog", { name: "Discard changes?" })).toBeInTheDocument();
+    expect(fake.callsTo("tasks.discard")).toHaveLength(0);
+  });
+
+  it("hides discard for a session that is not the approver and names the reason after a refused archive", async () => {
     const fake = seeded();
     fake.approver = false;
     fake.undelivered.add("t-d");
     const { user } = await mount(fake, { route: taskRoute("t-d") });
     await screen.findByTestId("task-state");
-    await user.click(screen.getByRole("button", { name: "Archive task" }));
-    expect(await screen.findByRole("button", { name: "Discard changes" })).toBeDisabled();
+    await archiveFromMenu(user);
+    expect(await screen.findByText(UNDELIVERED_TEXT)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    expect(screen.queryByRole("menuitem", { name: "Discard changes" })).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.discard")).toHaveLength(0);
   });
 
-  it("disables cancel for terminal tasks", async () => {
+  it("offers no Cancel for terminal tasks", async () => {
     const fake = seeded();
     await mount(fake, { route: taskRoute("t-d") });
     await screen.findByTestId("task-state");
-    expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
-  it("disables cancel and says so when the connection is lost", async () => {
+  it("hides Cancel when the connection is lost and keeps the last known state", async () => {
     const fake = seeded();
     await mount(fake, { route: taskRoute("t-q") });
     await screen.findByTestId("task-state");
     fake.openError = new DaemonError("disconnected", "down");
     fake.drop();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Request cancel" })).toBeDisabled());
-    expect(screen.getByText(/Unavailable while offline/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument());
     expect(screen.getByTestId("task-state")).toHaveTextContent("Queued");
   });
 
@@ -559,27 +641,22 @@ describe("S4 task and session detail", () => {
     expect(await screen.findByText(/Loading task failed/)).toBeInTheDocument();
   });
 
-  it("labels retry, outcome and recovery panels as placeholder data", async () => {
+  it("labels outcome and recovery panels in Technical details as placeholder data", async () => {
     await mount(seeded(), { route: taskRoute("t-b") });
     await screen.findByTestId("task-state");
-    for (const id of ["D2", "D3", "D4"]) {
+    for (const id of ["D2", "D3"]) {
       await waitFor(() => expect(screen.getAllByTestId(`badge-${id}`).length).toBeGreaterThan(0));
     }
     expect(screen.getByRole("region", { name: "Recovery classification (placeholder)" })).toBeInTheDocument();
   });
 
-  it("previews a retry of a failed task as a simulated receipt that creates nothing", async () => {
+  it("offers no retry for a failed task without daemon retry support", async () => {
     const fake = seeded();
     fake.tasks.push(mkTask("t-f", REPO, { state: "Failed" }));
-    const { user } = await mount(fake, { route: taskRoute("t-f") });
+    await mount(fake, { route: taskRoute("t-f") });
     await screen.findByTestId("task-state");
-    await user.click(await screen.findByRole("button", { name: "Preview retry" }));
-    const receipt = await screen.findByTestId("simulated-receipt");
-    expect(receipt).toHaveTextContent("SIMULATED");
-    expect(receipt).toHaveTextContent("PLACEHOLDER DATA");
-    expect(receipt).toHaveTextContent("Simulated retry of t-f. No new attempt was created.");
-    expect(receipt).toHaveTextContent("(new attempt fixture:attempt-simulated)");
-    expect(fake.callsTo("tasks.submit")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /Retry/ })).not.toBeInTheDocument();
+    expect(fake.callsTo("tasks.retry")).toHaveLength(0);
   });
 
   it("renders a D2 unavailable state without hiding the real task", async () => {
@@ -829,10 +906,18 @@ describe("S5 coordinator", () => {
 
   it("states the conversation service is unavailable and labels the conversation as placeholder", async () => {
     await mount(seeded(), { route });
-    expect(await screen.findByText(/coordinator conversation service is unavailable \(D5\)/)).toBeInTheDocument();
+    expect(await screen.findByText(/coordinator conversation service is unavailable/)).toBeInTheDocument();
     expect(screen.getByTestId("badge-D5")).toHaveTextContent("PLACEHOLDER DATA");
     expect(await screen.findByRole("list", { name: "Messages" })).toHaveTextContent("Preview:");
-    expect(screen.getByRole("list", { name: "Proposals" })).toBeInTheDocument();
+  });
+
+  it("opens on the conversation and composer, with related tasks and decisions collapsed", async () => {
+    await mount(seeded(), { route });
+    expect(await screen.findByRole("tab", { name: "Coordinator" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("list", { name: "Messages" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Draft objective")).toBeInTheDocument();
+    expect(screen.getByText("Related tasks and decisions").closest("details")).not.toHaveAttribute("open");
+    expect(screen.queryByRole("heading", { name: "Coordinator" })).not.toBeInTheDocument();
   });
 
   it("previews a reply and proposal as SIMULATED and never submits a task", async () => {
@@ -869,7 +954,7 @@ describe("S5 coordinator", () => {
     const { user, services } = await mount(seeded(), { route });
     const related = await screen.findByRole("list", { name: "Related tasks" });
     expect(within(related).getAllByRole("listitem")).toHaveLength(4);
-    expect(within(related).queryByText("t-other")).not.toBeInTheDocument();
+    expect(within(related).queryByText("objective of t-other")).not.toBeInTheDocument();
     await user.click(within(screen.getByRole("list", { name: "Pending decisions" })).getByRole("button", { name: "Open review" }));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review", taskId: "t-r" });
   });
@@ -877,7 +962,7 @@ describe("S5 coordinator", () => {
   it("shows why related queued tasks have not started", async () => {
     await mount(seeded(), { route });
     const related = await screen.findByRole("list", { name: "Related tasks" });
-    const item = (id: string) => within(related).getByText(id).closest("li")!;
+    const item = (id: string) => within(related).getByText(`objective of ${id}`).closest("li")!;
     expect(await within(item("t-q")).findByTestId("queue-wait")).toHaveTextContent("All 2 worker slots in use");
     expect(within(item("t-b")).getByTestId("queue-wait")).toHaveTextContent("Waiting for t-q");
     expect(within(item("t-r")).queryByTestId("queue-wait")).not.toBeInTheDocument();
@@ -886,9 +971,9 @@ describe("S5 coordinator", () => {
   it("keeps the draft objective across navigation", async () => {
     const { user } = await mount(seeded(), { route });
     await user.type(await screen.findByLabelText("Draft objective"), "remember");
-    await user.click(screen.getByRole("link", { name: "repo" }));
-    await screen.findByLabelText("Objective");
-    await user.click(screen.getByRole("button", { name: "Coordinator" }));
+    await user.click(screen.getByRole("tab", { name: "Tasks" }));
+    await screen.findByRole("table", { name: "Tasks" });
+    await user.click(screen.getByRole("tab", { name: "Coordinator" }));
     expect(await screen.findByLabelText("Draft objective")).toHaveValue("remember");
   });
 });

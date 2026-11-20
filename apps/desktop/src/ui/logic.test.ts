@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptySubmitDraft, type SubmitDraft } from "./drafts";
-import { TASK_STATES, canArchive, canCancel, decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals } from "./format";
+import { TASK_STATES, canArchive, canCancel, decisionCountText, matchesFilter, pendingDecisionCount, pendingProposals, taskBucket } from "./format";
 import { RouterStore, formatRoute, parseRoute, type Route } from "./router";
 import { buildSubmission } from "./submission";
 import { NO_HELD } from "../sources/surfaces/holds";
@@ -82,7 +82,7 @@ describe("router", () => {
   const routes: Route[] = [
     { name: "projects" },
     { name: "project", projectId: "/a b/repo" },
-    { name: "tasks", projectId: "/repo", filter: "state:Queued" },
+    { name: "tasks", projectId: "/repo", filter: "done" },
     { name: "task", projectId: "/repo", taskId: "task-1" },
     { name: "fixture-task", projectId: "/repo", id: "fixture:task-queued" },
     { name: "coordinator", projectId: "/repo" },
@@ -133,6 +133,19 @@ describe("matchesFilter", () => {
     expect(ids("review")).toEqual(["ok"]);
     expect(ids("state:Succeeded")).toEqual(["done"]);
     expect(ids("all")).toHaveLength(5);
+  });
+});
+
+describe("taskBucket", () => {
+  const approvals = [mkApproval("a1", "review-me"), mkApproval("a2", "done-one", "approved")];
+  it("splits tasks into Open, Awaiting review and Done with no overlap", () => {
+    const bucket = (id: string, state: Parameters<typeof mkTask>[2] extends infer O ? O : never) =>
+      taskBucket(mkTask(id, "/r", state), approvals);
+    expect(bucket("run", { state: "Running" })).toBe("open");
+    expect(bucket("wait", { state: "Waiting" })).toBe("open");
+    expect(bucket("review-me", { state: "Running" })).toBe("review");
+    expect(bucket("done-one", { state: "Succeeded" })).toBe("done");
+    expect(bucket("failed", { state: "Failed" })).toBe("done");
   });
 });
 
