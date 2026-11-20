@@ -1,7 +1,8 @@
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../../../daemon/errors";
 import type { DispatchDefaults, ModelProvider } from "../../../sources/surfaces/types";
 import { useGate, useServices, useSurface } from "../../services";
+import { ActionStatus, useAction } from "../../action";
 import { Button, Disclosure } from "../../theme";
 import { Notice } from "../../widgets";
 import { effortsFor } from "../workspace/ModelPicker";
@@ -126,6 +127,40 @@ function DefaultsForm({ model, saved }: { model: SettingsModel; saved: DispatchD
     change({ ...value, providers: next });
   };
 
+  // Refresh models settles when the catalog read it asked for finishes; the action waits on that answer.
+  const refresh = useAction();
+  const refreshDone = useRef<((outcome: Outcome) => void) | null>(null);
+  useEffect(() => {
+    const done = refreshDone.current;
+    if (done === null || catalog.status === "loading") return;
+    refreshDone.current = null;
+    done(
+      catalog.status === "ok"
+        ? { kind: "saved", text: "Model list refreshed." }
+        : { kind: "failed", text: `The model list could not be refreshed. ${catalog.reason}` },
+    );
+  }, [catalog]);
+  const refreshModels = () =>
+    void refresh.run(
+      "Refreshing the model list…",
+      () =>
+        new Promise<Outcome>((resolve) => {
+          refreshDone.current = resolve;
+          setReloads((n) => n + 1);
+        }),
+    );
+
+  // Clearing edits the form only; Save changes sends it. One status line serves both Clear buttons.
+  const clear = useAction();
+  const [clearing, setClearing] = useState<string | null>(null);
+  const clearChoice = (target: string, edit: () => void) => {
+    setClearing(target);
+    void clear.run("Clearing…", async () => {
+      edit();
+      return { kind: "saved", text: "Cleared. Save changes to apply." };
+    });
+  };
+
   usePageSave(reason, async (): Promise<Outcome> => {
     try {
       if (model.live && surfaces.models.validate) {
@@ -209,16 +244,20 @@ function DefaultsForm({ model, saved }: { model: SettingsModel; saved: DispatchD
         .map((agent) => (
           <Notice key={agent} tone="warn">
             Saved provider {agent} is unavailable.{" "}
-            <Button disabled={locked} onClick={() => choose(agent, {})}>
+            <Button disabled={locked} pending={clear.pending && clearing === agent} onClick={() => clearChoice(agent, () => choose(agent, {}))}>
               Clear {agent} choice
             </Button>
           </Notice>
         ))}
       <div className="settings-inline-actions">
-        <Button onClick={() => setReloads((n) => n + 1)}>Refresh models</Button>
-        <Button disabled={locked} onClick={() => change({ defaultAgent: null, providers: {} })}>
+        <Button pending={refresh.pending} onClick={refreshModels}>
+          Refresh models
+        </Button>
+        <ActionStatus action={refresh} />
+        <Button disabled={locked} pending={clear.pending && clearing === "defaults"} onClick={() => clearChoice("defaults", () => change({ defaultAgent: null, providers: {} }))}>
           Clear defaults
         </Button>
+        <ActionStatus action={clear} />
       </div>
     </section>
   );

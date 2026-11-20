@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import { ALL_CAPABILITIES, type LoadHoldWire, type LoadMeterWire, type SettingsWire } from "../../../daemon/types";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
-import { observation, okResult } from "../../../sources/surfaces/result";
+import { notOk, observation, okResult } from "../../../sources/surfaces/result";
 import type { LoadReading, ModelCatalog, ModelProvider, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
@@ -260,6 +260,52 @@ describe("Agent dispatch defaults", () => {
     // A provider with a list stays usable and carries no explanation.
     expect(within(overrides).getByLabelText("Claude Code model")).toBeEnabled();
     expect(within(overrides).getByLabelText("Claude Code model")).not.toHaveAccessibleDescription();
+  });
+
+  it("Refresh models shows pending, then says the list was refreshed", async () => {
+    const { services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: null, providers: {} } });
+    const catalog = vi.mocked(services.surfaces.models.catalog);
+    const user = userEvent.setup();
+    page(services, "agents");
+    await screen.findByLabelText("Default provider");
+    let finish: (() => void) | undefined;
+    catalog.mockImplementationOnce(
+      () => new Promise((resolve) => { finish = () => resolve(okResult(services.surfaces.models.provenance, DISPATCH_CATALOG, observation(Date.now()))); }),
+    );
+    await user.click(screen.getByRole("button", { name: "Refresh models" }));
+    expect(screen.getByRole("button", { name: "Refresh models" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Refreshing the model list…")).toBeInTheDocument();
+    await act(async () => finish?.());
+    expect(await screen.findByText("Model list refreshed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh models" })).not.toHaveAttribute("aria-busy");
+  });
+
+  it("Refresh models says why the list was not refreshed in an alert, and Retry reads it again", async () => {
+    const { services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: null, providers: {} } });
+    const catalog = vi.mocked(services.surfaces.models.catalog);
+    const user = userEvent.setup();
+    page(services, "agents");
+    await screen.findByLabelText("Default provider");
+    catalog.mockResolvedValueOnce(notOk<ModelCatalog>(services.surfaces.models.provenance, "unavailable", "The daemon did not answer.", observation(Date.now())));
+    await user.click(screen.getByRole("button", { name: "Refresh models" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The model list could not be refreshed. The daemon did not answer.");
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Model list refreshed.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("Clear defaults and Clear choice say the change is not saved until Save changes", async () => {
+    const { fake, services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: "codex", providers: { retired: { model: "m" } } } });
+    const user = userEvent.setup();
+    page(services, "agents");
+    await user.click(await screen.findByRole("button", { name: "Clear retired choice" }));
+    expect(await screen.findByText("Cleared. Save changes to apply.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear retired choice" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear defaults" }));
+    expect(screen.getByText("Clearing…")).toBeInTheDocument();
+    expect(await screen.findByText("Cleared. Save changes to apply.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")).toHaveLength(0);
   });
 
   it("does not allow a token-only session to save dispatch defaults", async () => {
