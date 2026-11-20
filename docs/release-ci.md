@@ -357,9 +357,10 @@ Windows the list of rows this CI cannot prove. The workflow uploads the director
 
 ## Release builds and signing
 
-`scripts/release/package.mjs <macos|windows> --out DIR` runs the same `npm run package:*` as the
-CI gate, verifies the result, and writes the artifact, `SHA256SUMS` and `release-info.json`. The
-artifact name ends in `signed` or `unsigned`.
+`scripts/release/package.mjs <macos|windows> --out DIR` runs `apps/desktop/scripts/package.mjs`, the script behind
+the CI gate's `npm run package:*`, verifies the result, and writes the artifact, `SHA256SUMS` and `release-info.json`.
+The artifact name ends in `signed` or `unsigned`. It runs that script with `node`, not `npm`, so the one Tauri
+`--config <JSON>` argument it passes is not mangled by the Windows shell.
 
 `scripts/release/signing.mjs` decides from variable names only. No secret value is ever read into
 a message.
@@ -397,11 +398,11 @@ variables are dropped before Tauri runs, because Tauri treats a variable that is
 configured. On macOS Tauri imports the certificate into a temporary keychain and, with the
 notarization variables, notarizes; afterwards `codesign --verify --deep --strict` (and `stapler
 validate` plus `spctl` when notarized) must pass. On Windows the certificate is imported into the
-current-user store, passed to Tauri as `certificateThumbprint` through `TAURI_CONFIG`, checked with
+current-user store, passed to Tauri as `certificateThumbprint` in the `--config` JSON, checked with
 `Get-AuthenticodeSignature` (status `Valid`), and removed afterwards. `package.mjs` removes
 `WINDOWS_CERTIFICATE` and `WINDOWS_CERTIFICATE_PASSWORD` from its own environment before it spawns
 anything: only the PowerShell call that imports the certificate receives the password, so the
-`npm run package:win` build, Tauri and cargo build scripts never see either value. The macOS
+`package:win` build, Tauri and cargo build scripts never see either value. The macOS
 `APPLE_*` variables must reach the build, because Tauri signs and notarizes itself.
 
 `apps/desktop/scripts/prepare-treehouse-sidecar.mjs` runs in `package.mjs` after the codeburn staging and
@@ -418,7 +419,7 @@ treehouse is unsigned, so its SHA-256 pin is enforced at staging only: Tauri re-
 The `publish` job runs for a `v*` tag, and only after both platform builds passed, signed or unsigned.
 It runs for a tag push, or for a `release.yml` run on a tag that set `publish`. A run on a branch never
 reaches it, and neither does a manual run without `publish`. The job uses the `release` environment (see
-[Release builds and signing](#release-builds-and-signing)) and holds no signing secrets.
+[Release builds and signing](#release-builds-and-signing)) and holds no signing secrets and no updater private key.
 
 A release starts in one of two ways:
 
@@ -440,13 +441,21 @@ The job then does the following:
    must match the sha256 its build recorded.
 3. Write `SHA256SUMS` and the release notes (`scripts/release/publish.mjs`, unit-tested by
    `scripts/release/publish.test.mjs`). The notes carry the version's section of `docs/changelog.md`.
-   The script fails if that file has no section for the version.
-4. In the `Publish the GitHub release` step, the only step that sees the token: create the release as a
-   draft if none exists (`--verify-tag`), upload the installers and `SHA256SUMS`, then publish it with
-   `gh release edit --draft=false --verify-tag`. The installers are attached before the release is public.
+   The script fails if that file has no section for the version. With in-app updates enabled it also
+   requires and stages the updater files (see [In-app updates](#in-app-updates)).
+4. With updates enabled, install `minisign` and run `scripts/release/verify-updater.mjs` on the staged assets.
+5. In the `Publish the GitHub release` step, the only step that sees the token: ask
+   `scripts/release/release-state.mjs` what exists for the tag. No release: create a draft
+   (`--verify-tag`). A draft: keep it, but fail if it holds an asset this build does not have. A published
+   release: if its asset names and SHA-256 digests (from the GitHub API) equal the staged files exactly, stop
+   and leave it untouched; if a byte, a name or a digest differs, fail. Then upload the assets, replacing only
+   names that already exist, and publish with `gh release edit --draft=false --verify-tag`. The assets are
+   attached before the release is public.
 
 The release is named after the tag. Its assets are the two installers and `SHA256SUMS`, named
 `MCAO-X.Y.Z-macos-arm64-<signed|unsigned>.zip` and `MCAO-X.Y.Z-windows-x64-<signed|unsigned>-setup.exe`.
+With updates enabled it also holds the macOS updater archive, the two `.sig` files and `latest.json` (below).
+`SHA256SUMS` and the notes still list the two installers only.
 
 While releases are unsigned (the current mode), every release is a prerelease. Its notes open with the
 unsigned warning, then the version's changes, then the installers, the commit and how to check a
@@ -457,6 +466,64 @@ A failed check stops the job before anything is published, and a draft stays unp
 after a fix to the workflow, re-run the job from the run page. If a release was published by mistake
 and nobody has downloaded it, delete it with `gh release delete <tag> --yes` (the tag is kept), then
 re-run the job.
+
+## In-app updates
+
+The desktop app can offer a newer release and install it in place. The release side is off until the repository
+variable `MCAO_UPDATES_ENABLED` is exactly `true`. Blank or `false` keeps the manual-only release: the build jobs
+need no updater key and produce no updater files, and a build that carries updater data is refused at publish.
+Any other value fails the build and publish jobs. The variable only takes effect on a `v*` tag run that
+publishes; a branch or a manual run without `publish` never sees the key.
+
+| Name | Kind | Where | Seen by |
+| --- | --- | --- | --- |
+| `MCAO_UPDATES_ENABLED` | variable | repository | both build jobs (`Package` step), publish job |
+| `MCAO_UPDATER_PUBLIC_KEY` | variable | repository | both build jobs (embedded in the app), publish job (verification) |
+| `TAURI_SIGNING_PRIVATE_KEY` | secret | `release` environment | the `Package` step of both build jobs only |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | secret | `release` environment | the `Package` step of both build jobs only |
+
+The updater key is separate from the Apple and Windows code-signing identities. `package.mjs` takes the key and password
+out of its environment and hands them to the Tauri build only, not to the sidecar staging scripts, the install smoke,
+the artifact upload or the publish job. It passes the public key and `createUpdaterArtifacts` to Tauri in the same
+`--config` JSON as the Windows signing fields. `signed` and `unsigned` in the file names still describe the OS
+code signature only.
+
+An enabled build adds an `updater` record (`platformKey`, `payload`, `signature`, each with a file name and SHA-256)
+to `release-info.json` and these files next to the installer: on macOS `MCAO-X.Y.Z-macos-arm64-<signed|unsigned>.app.tar.gz`
+and its `.sig`; on Windows the installer itself is the payload, plus `<installer>.sig`. The install smoke and
+`SHA256SUMS` keep seeing the one manual artifact. The publish job requires both records with the exact platform keys
+`darwin-aarch64` and `windows-x86_64`, the expected names, matching digests and a Windows payload equal to the validated
+installer. It writes `latest.json` as `{version, platforms: {<key>: {url, signature}}}` with the bare version,
+the trimmed `.sig` text, and URLs of the form
+`https://github.com/mc-innersource/motif-mcao/releases/download/v<version>/<asset-name>`.
+
+Before anything is uploaded, `node scripts/release/verify-updater.mjs <assets-dir>` decodes the base64 public key and each
+signature to temporary files, runs `minisign -V -Q` on both payloads, and requires `version:<manifest version>` in the verified
+trusted comment. This catches the Tauri CLI warning (not an error) when the key that signed does not match
+`MCAO_UPDATER_PUBLIC_KEY`. The publish job installs `minisign` with `sudo apt-get update && sudo apt-get install -y minisign`
+and fails if it is unavailable. The unit tests use the real `minisign` binary when it is on `PATH` and otherwise skip
+those cases and run a stand-in binary for the same scenarios.
+
+A published release is never changed. A re-run on a tag whose release is published and identical does nothing; one
+with different bytes or a different asset set fails. This is also why `latest.json` is never added to an existing
+published tag such as `v0.1.28`. A draft is uploaded over, and fails if it holds an asset this build does not.
+
+### Rollout, pause and key loss
+
+- **Do not enable it until the two-host qualification passes.** Qualification keys never become production secrets.
+  The release owner generates the production key on a secure workstation with
+  `npm --prefix apps/desktop run tauri -- signer generate -w <owner-only-path-outside-repo>`, enters a passphrase
+  interactively, and stores the private key and password in the approved team vault. Then add `MCAO_UPDATER_PUBLIC_KEY`
+  (a repository variable), add the two secrets to the `release` environment (which allows `v*` tags only), and set
+  `MCAO_UPDATES_ENABLED=true`.
+- **Use the next two normal release-please tags.** The first enabled release is installed by hand by existing users.
+  The release after it is the first one an installed app discovers and installs on its own.
+- **Pause.** Set `MCAO_UPDATES_ENABLED=false`. New releases then carry no updater files. Releases already published keep
+  their `latest.json` and stay offered; they are immutable.
+- **A bad published release.** Publish a fixed release with a higher version; installed apps and manual installs move to
+  it. Never publish a lower version to roll back, and do not enable a downgrade check.
+- **Lost or exposed private key.** Stop publishing with updates enabled. Ship a build with a new public key through the
+  manual installers. Do not assume an installed app can safely take a new key through the old feed.
 
 ## Unsigned releases
 

@@ -8,15 +8,29 @@
 //
 // --downloads  the downloaded `release-*` artifacts: one directory per platform build, each with release-info.json.
 // --out        a new directory: assets/ (installers and SHA256SUMS) and release-notes.md.
-// GITHUB_OUTPUT gets prerelease=true|false: a release with any unsigned installer is a prerelease.
+// MCAO_UPDATES_ENABLED=true (with MCAO_UPDATER_PUBLIC_KEY) also requires each build's `updater` record and adds the
+// updater payloads, their signatures and latest.json to assets/; any other value of the variable must see no
+// updater data. SHA256SUMS and the notes cover the two manual installers only.
+// GITHUB_OUTPUT gets prerelease=true|false (a release with any unsigned installer is a prerelease) and
+// updater=true|false.
 import { createHash } from "node:crypto";
 import { appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { updaterDecision } from "./env.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const PLATFORMS = ["macos", "windows"];
 const PLATFORM_NAMES = { macos: "macOS", windows: "Windows" };
+// Tauri updater platform keys; the platform builds are macOS arm64 and Windows x64 only.
+const UPDATER_KEYS = { macos: "darwin-aarch64", windows: "windows-x86_64" };
+const UPDATER_PAYLOADS = {
+  macos: (version, label) => `MCAO-${version}-macos-arm64-${label}.app.tar.gz`,
+  windows: (version, label) => `MCAO-${version}-windows-x64-${label}-setup.exe`,
+};
+const RESERVED_NAMES = ["SHA256SUMS", "latest.json", "release-info.json"];
+const SHA256_PATTERN = /^[0-9a-f]{64}$/;
+export const DOWNLOAD_BASE = "https://github.com/mc-innersource/motif-mcao/releases/download";
 // The workarounds apply because the app is unsigned and internal. On macOS 15 and later, Control-click Open
 // no longer bypasses Gatekeeper, so the Privacy & Security step is the one that works.
 const UNSIGNED_WARNING = {
@@ -47,10 +61,46 @@ export function checkTagVersions(tag, sources) {
   }
 }
 
+const sameKeys = (value, keys) =>
+  value !== null && typeof value === "object" && JSON.stringify(Object.keys(value).sort()) === JSON.stringify(keys);
+
+// The validated updater record of one platform build, or null when updater releases are off. When on, the
+// record must be complete and its names and digests must match the build's own manual installer.
+function checkUpdater(build, version, enabled) {
+  const { platform, updater } = build;
+  if (!enabled) {
+    if (updater !== undefined) throw new Error(`the ${platform} build carries updater data but MCAO_UPDATES_ENABLED is not true`);
+    return null;
+  }
+  if (updater === undefined) throw new Error(`the ${platform} build has no updater record`);
+  const bad = (why) => new Error(`the ${platform} updater record ${why}`);
+  if (!sameKeys(updater, ["payload", "platformKey", "signature"])) throw bad("must have exactly platformKey, payload and signature");
+  if (updater.platformKey !== UPDATER_KEYS[platform]) throw bad(`has platformKey ${updater.platformKey}, expected ${UPDATER_KEYS[platform]}`);
+  const { payload, signature } = updater;
+  for (const [what, entry] of [["payload", payload], ["signature", signature]]) {
+    if (!sameKeys(entry, ["file", "sha256"])) throw bad(`${what} must have exactly file and sha256`);
+    if (typeof entry.file !== "string" || basename(entry.file) !== entry.file || entry.file === "") {
+      throw bad(`${what} name is not a bare file name: ${entry.file}`);
+    }
+    if (!SHA256_PATTERN.test(entry.sha256)) throw bad(`${what} sha256 is not a lowercase hex digest`);
+  }
+  const label = build.signed ? "signed" : "unsigned";
+  const expected = UPDATER_PAYLOADS[platform](version, label);
+  if (payload.file !== expected) throw bad(`payload is ${payload.file}, expected ${expected}`);
+  if (signature.file !== `${payload.file}.sig`) throw bad(`signature is ${signature.file}, expected ${payload.file}.sig`);
+  const [manual] = build.artifacts;
+  if (platform === "windows" && (payload.file !== manual.file || payload.sha256 !== manual.sha256)) {
+    throw bad("payload is not the manual installer");
+  }
+  return { platform, platformKey: updater.platformKey, payload, signature };
+}
+
 // `infos` are the parsed release-info.json documents of the platform builds. Returns the commit they were
-// built from and one asset per platform, in PLATFORMS order. Throws unless the set is exactly one macOS and
-// one Windows build of `version`, from one commit, each with one installer whose name is a bare file name.
-export function releaseAssets(infos, version) {
+// built from, one asset per platform in PLATFORMS order, the updater records (null when `updaterEnabled` is
+// false) and `files`: every file to publish except SHA256SUMS and latest.json, as { platform, file, sha256 }.
+// Throws unless the set is exactly one macOS and one Windows build of `version`, from one commit, each with one
+// installer whose name is a bare file name, and (when enabled) a complete updater pair for it.
+export function releaseAssets(infos, version, updaterEnabled = false) {
   if (infos.length !== PLATFORMS.length) throw new Error(`expected ${PLATFORMS.length} platform builds, found ${infos.length}`);
   const builds = PLATFORMS.map((platform) => {
     const matches = infos.filter((info) => info.platform === platform);
@@ -65,6 +115,20 @@ export function releaseAssets(infos, version) {
   }
   const commits = new Set(builds.map((build) => build.commit));
   if (commits.size !== 1) throw new Error(`the platform builds come from different commits: ${[...commits].join(", ")}`);
+  const updaters = builds.map((build) => checkUpdater(build, version, updaterEnabled));
+  const files = builds.flatMap((build, index) => {
+    const { file, sha256 } = build.artifacts[0];
+    const updater = updaters[index];
+    const list = [{ platform: build.platform, file, sha256 }];
+    if (updater) {
+      if (updater.payload.file !== file) list.push({ platform: build.platform, ...updater.payload });
+      list.push({ platform: build.platform, ...updater.signature });
+    }
+    return list;
+  });
+  const names = files.map((entry) => entry.file);
+  const clash = names.find((name, index) => RESERVED_NAMES.includes(name) || names.indexOf(name) !== index);
+  if (clash) throw new Error(`conflicting release asset name: ${clash}`);
   return {
     commit: builds[0].commit,
     assets: builds.map((build) => ({
@@ -74,7 +138,21 @@ export function releaseAssets(infos, version) {
       signed: build.signed,
       notarized: build.notarized,
     })),
+    updaters: updaterEnabled ? updaters : null,
+    files,
   };
+}
+
+// The Tauri updater manifest. `entries` are { platformKey, file, signature } with `signature` the .sig file's
+// contents. No notes or date: the app shows neither.
+export function updaterManifest(version, entries) {
+  const platforms = {};
+  for (const { platformKey, file, signature } of entries) {
+    const trimmed = signature.trim();
+    if (!/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) throw new Error(`the ${platformKey} signature is not a single base64 line`);
+    platforms[platformKey] = { url: `${DOWNLOAD_BASE}/v${version}/${file}`, signature: trimmed };
+  }
+  return { version, platforms };
 }
 
 export const isPrerelease = (assets) => assets.some((asset) => !asset.signed);
@@ -171,32 +249,48 @@ function readBuilds(downloads) {
     });
 }
 
-function publish(argv) {
-  const { tag, downloads, out } = parseArgs(argv);
+// Writes `out/assets` and `out/release-notes.md` for `tag` and returns the assets and the prerelease flag. Throws,
+// leaving nothing to publish, on any mismatch between the tag, the version sources and the builds.
+// `sources` are the version sources, `changelogText` is docs/changelog.md and `updater` is the updaterDecision.
+export function assemble({ tag, downloads, out, sources, changelogText, updater }) {
   if (existsSync(out)) throw new Error(`output directory exists, refusing to reuse it: ${out}`);
-  const sources = readVersions();
   checkTagVersions(tag, sources);
   const builds = readBuilds(downloads);
   // The check above makes every source equal the tag, so the first one is the app version.
-  const { commit, assets } = releaseAssets(builds.map(({ info }) => info), sources[0].version);
+  const version = sources[0].version;
+  const { commit, assets, updaters, files } = releaseAssets(builds.map(({ info }) => info), version, updater.enabled);
 
   const assetsDir = join(out, "assets");
   mkdirSync(assetsDir, { recursive: true });
-  for (const { dir, info } of builds) {
-    for (const artifact of info.artifacts) {
-      const path = join(dir, artifact.file);
-      if (sha256(path) !== artifact.sha256) throw new Error(`${artifact.file} does not match the sha256 its build recorded`);
-      copyFileSync(path, join(assetsDir, artifact.file));
-    }
+  for (const { platform, file, sha256: recorded } of files) {
+    const path = join(builds.find(({ info }) => info.platform === platform).dir, file);
+    if (!existsSync(path)) throw new Error(`${file} is missing from the ${platform} build`);
+    if (sha256(path) !== recorded) throw new Error(`${file} does not match the sha256 its build recorded`);
+    copyFileSync(path, join(assetsDir, file));
   }
   writeFileSync(join(assetsDir, "SHA256SUMS"), sha256Sums(assets));
-  const changelog = changelogSection(readFileSync(join(repo, "docs", "changelog.md"), "utf8"), sources[0].version);
+  if (updaters) {
+    const entries = updaters.map(({ platformKey, payload, signature }) => ({
+      platformKey, file: payload.file, signature: readFileSync(join(assetsDir, signature.file), "utf8"),
+    }));
+    writeFileSync(join(assetsDir, "latest.json"), `${JSON.stringify(updaterManifest(version, entries), null, 2)}\n`);
+  }
+  const changelog = changelogSection(changelogText, version);
   writeFileSync(join(out, "release-notes.md"), releaseNotes({ tag, commit, assets, changelog }));
+  return { assets, prerelease: isPrerelease(assets) };
+}
 
-  const prerelease = isPrerelease(assets);
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${prerelease}\n`);
+function publish(argv) {
+  const { tag, downloads, out } = parseArgs(argv);
+  const updater = updaterDecision(process.env, "publish");
+  const { assets, prerelease } = assemble({
+    tag, downloads, out, updater,
+    sources: readVersions(),
+    changelogText: readFileSync(join(repo, "docs", "changelog.md"), "utf8"),
+  });
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `prerelease=${prerelease}\nupdater=${updater.enabled}\n`);
   const listing = assets.map((asset) => `${asset.file} (${asset.platform}, ${asset.signed ? "signed" : "UNSIGNED"})`);
-  console.log(`${tag}: ${listing.join("; ")}; prerelease=${prerelease}`);
+  console.log(`${tag}: ${listing.join("; ")}; prerelease=${prerelease}; updater=${updater.enabled}`);
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? "").href) {

@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { test } from "node:test";
 import { pathToFileURL } from "node:url";
-import { buildChildEnv, resolveTargetDir, takeWindowsSecrets } from "./env.mjs";
+import { buildChildEnv, resolveTargetDir, takeUpdaterSecrets, takeWindowsSecrets, tauriConfigOverride, updaterDecision } from "./env.mjs";
 
 const signed = { sign: true, notarize: false };
 const unsigned = { sign: false, notarize: false };
@@ -62,4 +62,48 @@ test("a process that took the secrets cannot pass them to a child it spawns afte
   const r = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8", env: { ...process.env, ...winSecrets } });
   assert.equal(r.status, 0, r.stderr);
   assert.equal(r.stdout.trim(), "[]");
+});
+
+const updaterSecrets = { TAURI_SIGNING_PRIVATE_KEY: "key-value", TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "pw-value" };
+
+test("MCAO_UPDATES_ENABLED is blank, false or true and nothing else", () => {
+  assert.deepEqual(updaterDecision({}, "package"), { enabled: false });
+  assert.deepEqual(updaterDecision({ MCAO_UPDATES_ENABLED: "" }, "publish"), { enabled: false });
+  assert.deepEqual(updaterDecision({ MCAO_UPDATES_ENABLED: "false", ...updaterSecrets }, "package"), { enabled: false });
+  for (const bad of ["TRUE", "1", "yes", "True"]) {
+    assert.throws(() => updaterDecision({ MCAO_UPDATES_ENABLED: bad }, "package"), /must be blank, false or true/, bad);
+  }
+});
+
+test("enabled updates need the public key, and packaging also the private key and password", () => {
+  const env = { MCAO_UPDATES_ENABLED: "true", MCAO_UPDATER_PUBLIC_KEY: " pub \n", ...updaterSecrets };
+  assert.deepEqual(updaterDecision(env, "package"), { enabled: true, publicKey: "pub" });
+  assert.deepEqual(updaterDecision({ MCAO_UPDATES_ENABLED: "true", MCAO_UPDATER_PUBLIC_KEY: "pub" }, "publish"), { enabled: true, publicKey: "pub" });
+  assert.throws(() => updaterDecision({ ...env, MCAO_UPDATER_PUBLIC_KEY: "" }, "publish"), /requires MCAO_UPDATER_PUBLIC_KEY$/);
+  assert.throws(
+    () => updaterDecision({ MCAO_UPDATES_ENABLED: "true", MCAO_UPDATER_PUBLIC_KEY: "pub", TAURI_SIGNING_PRIVATE_KEY: "  " }, "package"),
+    /requires TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD$/,
+  );
+});
+
+test("no packaging child inherits the updater key or password, on either platform", () => {
+  const env = { PATH: "p", MCAO_UPDATER_PUBLIC_KEY: "pub", ...updaterSecrets };
+  for (const platform of ["macos", "windows"]) {
+    assert.deepEqual(buildChildEnv(platform, env, unsigned), { PATH: "p", MCAO_UPDATER_PUBLIC_KEY: "pub", CI: "true" }, platform);
+  }
+  assert.equal(env.TAURI_SIGNING_PRIVATE_KEY, "key-value", "the input is not modified");
+  assert.deepEqual(takeUpdaterSecrets(env), updaterSecrets);
+  assert.deepEqual(env, { PATH: "p", MCAO_UPDATER_PUBLIC_KEY: "pub" });
+});
+
+test("one Tauri config merges the Windows signing fields and the updater switch, and is absent when neither applies", () => {
+  const windows = { certificateThumbprint: "A".repeat(40), digestAlgorithm: "sha256", timestampUrl: "http://t" };
+  assert.equal(tauriConfigOverride({}), null);
+  assert.deepEqual(JSON.parse(tauriConfigOverride({ windows })), { bundle: { windows } });
+  assert.deepEqual(JSON.parse(tauriConfigOverride({ updaterPublicKey: "pub" })), {
+    bundle: { createUpdaterArtifacts: true }, plugins: { updater: { pubkey: "pub" } },
+  });
+  assert.deepEqual(JSON.parse(tauriConfigOverride({ windows, updaterPublicKey: "pub" })), {
+    bundle: { windows, createUpdaterArtifacts: true }, plugins: { updater: { pubkey: "pub" } },
+  });
 });
