@@ -573,6 +573,18 @@ describe("Agents, the Actions menu", () => {
     expect(fake.callsTo("tasks.force_start")[0]!.params).toEqual({ task_id: "t-queued", idempotency_key: expect.any(String) });
   });
 
+  it("answers a refused force start with an alert that says why and offers Retry", async () => {
+    const { fake, user } = await liveView();
+    fake.failNext("tasks.force_start", { code: -32011, message: "task is not queued" });
+    await user.click(screen.getByRole("tab", { name: "Queued 1" }));
+    const detail = within(await openTask(user, "t-queued"));
+    await user.click(menu(detail));
+    await user.click(detail.getByRole("menuitem", { name: "Force start" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(/Forcing the task to start failed/);
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
   it("offers no Force start to a session that cannot send user-only methods", async () => {
     const fake = seeded();
     fake.approver = false;
