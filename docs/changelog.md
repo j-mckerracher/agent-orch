@@ -5,6 +5,21 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.34](https://github.com/mc-innersource/motif-mcao/compare/v0.1.33...v0.1.34) (2026-11-20)
+
+
+### Bug Fixes
+
+* **desktop:** DPES-1044 - Make text fields wide enough to use ([e1d9b16](https://github.com/mc-innersource/motif-mcao/commit/e1d9b1664b0f8e166be6e2344a3cac73e5ad715e))
+* **desktop:** DPES-1044 - Make text fields wide enough to use ([46246d7](https://github.com/mc-innersource/motif-mcao/commit/46246d7e5c381e020ca536b553f863257e8ecbf9))
+* **desktop:** DPES-856 - Allow event listen so Notifications settings load ([7aee239](https://github.com/mc-innersource/motif-mcao/commit/7aee2391e54ff30010b08cd678ecaa104a5e2657))
+* **desktop:** DPES-856 - Allow event listen so Notifications settings load ([83ec19a](https://github.com/mc-innersource/motif-mcao/commit/83ec19acba1440064f9861ecd3a14ebad0a4e8ed))
+
+
+### Documentation
+
+* **manual-tests:** DPES-1044 - Refresh the manual UI tests for the new layout and cover every setting ([7177f91](https://github.com/mc-innersource/motif-mcao/commit/7177f91fbe30fe8cd11145db9ca3ffdfcf13c20c))
+
 ## [0.1.33](https://github.com/mc-innersource/motif-mcao/compare/v0.1.32...v0.1.33) (2026-11-20)
 
 
