@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import App, { type AppProps } from "../../App";
@@ -87,7 +87,24 @@ describe("global routes in the shell", () => {
     expect(current[0]).toHaveTextContent(label);
   });
 
-  it("defaults to the workspace and has no activity column", async () => {
+  it("puts a supplied activity slot in its own column on the Workspace route only", async () => {
+    const shellSlots = { activity: <p data-testid="slot-activity">Activity</p> };
+    const { view } = await mount(daemon(), { shellSlots });
+    const column = screen.getByTestId("shell-activity");
+    expect(within(column).getByTestId("slot-activity")).toBeInTheDocument();
+    expect(document.querySelector(".shell-content")).toHaveClass("has-activity");
+    // A control group, not a landmark.
+    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
+    view.unmount();
+    for (const view of ["agents", "review", "settings"] as const) {
+      await mount(daemon(), { route: { name: "global", view }, shellSlots });
+      expect(screen.queryByTestId("shell-activity"), view).not.toBeInTheDocument();
+      expect(document.querySelector(".shell-content")).not.toHaveClass("has-activity");
+      cleanup();
+    }
+  });
+
+  it("defaults to the workspace and has no activity column without an activity slot", async () => {
     await mount(daemon());
     expect(screen.getByRole("heading", { level: 1, name: "Orchestrator Workspace" })).toBeInTheDocument();
     expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
@@ -365,7 +382,6 @@ describe("responsive behavior", () => {
     expect(screen.getByTestId("shell-connection")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Workspace summary" })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
-    expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
     expect(screen.getByTestId("shell-sidebar")).toBeInTheDocument();
   });
 

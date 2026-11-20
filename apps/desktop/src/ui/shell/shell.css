@@ -281,7 +281,37 @@ body:has(.shell) {
   scroll-margin-top: var(--shell-strip-height, 0px);
 }
 
+/* The workspace activity column (DPES-1105): a fixed reserve beside main so the panel never covers the conversation.
+   Its own row is the same one as main (minmax(0, 1fr)), so the percentage cap below resolves against the visible
+   height under the top bar. */
+.shell-activity {
+  grid-area: activity;
+  display: flex;
+  flex-direction: column;
+  align-self: start;
+  justify-self: end;
+  min-width: 0;
+  min-height: 0;
+  /* No scrollbar until the panel needs more than 90% of the column; past that the card scrolls inside itself. */
+  max-height: 90%;
+  margin: 10px 24px 0 0;
+}
+
+@media (min-width: 961px) {
+  .shell-content.has-activity {
+    --shell-activity-reserve: 324px;
+    grid-template-columns: minmax(0, 1fr) var(--shell-activity-reserve);
+    grid-template-areas:
+      "top top"
+      "main activity";
+  }
+}
+
 @media (max-width: 1150px) {
+  .shell-activity {
+    margin-right: 22px;
+  }
+
   .shell-body {
     --shell-sidebar-default: 185px;
   }
@@ -309,6 +339,20 @@ body:has(.shell) {
       "top"
       "main";
     overflow: auto;
+  }
+
+  .shell-content.has-activity {
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "top"
+      "activity"
+      "main";
+  }
+
+  .shell-activity {
+    margin: 8px 22px 0 auto;
+    /* The row is `auto` here, so a percentage would resolve against the panel's own content; use the viewport. */
+    max-height: 90dvh;
   }
 
   .shell-main {
@@ -362,6 +406,10 @@ body:has(.shell) {
 
   .shell-content {
     overflow: visible;
+  }
+
+  .shell-activity {
+    margin: 0 18px 12px auto;
   }
 
   .shell-topbar {
