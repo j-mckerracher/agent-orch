@@ -34,6 +34,25 @@ pub fn bundled_treehouse(data_dir: &Path) -> Treehouse {
     Treehouse::new(program, data_dir).expect("treehouse private home")
 }
 
+/// A launch is refused before the agent starts unless the home holds the pstack plugin (DPES-1126).
+pub fn install_pstack_plugin(home: &Path) {
+    let plugin = home.join("pstack");
+    std::fs::create_dir_all(plugin.join("agents")).expect("plugin dir");
+    std::fs::create_dir_all(plugin.join("workflow-router")).expect("plugin dir");
+    std::fs::write(
+        plugin.join("agents/workflow-agent.md"),
+        "---\nname: workflow-agent\n---\n\nRead the workflow-router skill first.\n",
+    )
+    .expect("write");
+    std::fs::write(plugin.join("workflow-router/SKILL.md"), "# Router\n").expect("write");
+    let registry = home.join(".claude/plugins/installed_plugins.json");
+    std::fs::create_dir_all(registry.parent().unwrap()).expect("registry dir");
+    let installed = json!({
+        "plugins": { "pstack@mayo-skills": [{ "installPath": plugin.display().to_string() }] }
+    });
+    std::fs::write(registry, installed.to_string()).expect("write");
+}
+
 /// Runs git with identity, signing and line-ending config pinned so a host's
 /// global or system config (Git for Windows defaults to `core.autocrlf=true`)
 /// cannot change what is committed.
