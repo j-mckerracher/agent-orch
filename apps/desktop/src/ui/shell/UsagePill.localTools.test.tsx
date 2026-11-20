@@ -110,10 +110,25 @@ describe("usage pill: other AI tools", () => {
     expect(screen.getByRole("checkbox", { name: OPT_IN_LABEL })).not.toBeChecked();
   });
 
-  it("disables refresh while a refresh is running", async () => {
+  it("shows refresh as pending, and says so, while a refresh is running", async () => {
     const { user } = renderPill(withSnapshot(fixtureSource("ok"), (snapshot) => ({ ...snapshot, refreshing: true })));
     await openPopover(user);
-    expect(await screen.findByRole("button", { name: "Refreshing…" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "Refresh now" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Refreshing…")).toBeInTheDocument();
+  });
+
+  it("says Updated just now once a refresh is accepted", async () => {
+    const { user } = renderPill(fixtureSource("ok"));
+    await openPopover(user);
+    await user.click(await screen.findByRole("button", { name: "Refresh now" }));
+    expect(await screen.findByText("Updated just now.")).toBeInTheDocument();
+  });
+
+  it("says the tools are on once the opt-in is accepted", async () => {
+    const { user } = renderPill(fixtureSource("off"));
+    await openPopover(user);
+    await user.click(await screen.findByRole("checkbox", { name: OPT_IN_LABEL }));
+    expect(await screen.findByText("Other AI tools are on. Their figures are estimates.")).toBeInTheDocument();
   });
 
   it("shows no control on a daemon without the method, and says so", async () => {
