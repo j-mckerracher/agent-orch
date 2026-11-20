@@ -1,11 +1,13 @@
 /** S4: a task's page: state, one next action, then Conversation, Attempts and Timeline; the rest under Technical details. */
 import { useEffect, useState } from "react";
 import { timelineKey } from "../daemon/appData";
-import { APPROVER_REQUIRED_NOTICE, asDaemonError, type DaemonError } from "../daemon/errors";
+import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../daemon/errors";
 import type { TaskRecord } from "../daemon/types";
 import type { SimulatedReceipt, TaskRef } from "../sources/types";
+import { ActionStatus, useAction } from "./action";
 import { Crumbs } from "./ConnectionStrip";
 import { Dialog } from "./Dialog";
+import { useLastingAction } from "./lastingAction";
 import { basename, canArchive, canCancel, pendingApprovals, stateLabel } from "./format";
 import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { useGate, useServices, useSource, useStore } from "./services";
@@ -16,7 +18,7 @@ import { TaskPermissionBadge, ToolsNotice } from "./TaskPermission";
 import { taskPermissionLevel } from "./views/workspace/permissionLevel";
 import { ActionMenu, type MenuItem } from "./views/workstreams/ActionMenu";
 import { WsTabs } from "./views/workstreams/WsTabs";
-import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
+import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap, failureText } from "./widgets";
 import "./projectScreens.css";
 
 /** Outcome and recovery, plus (fixture preview only) a simulated retry. A real task's retry is the page's own action. */
@@ -157,19 +159,16 @@ function TaskView({ projectId, taskId, record }: { projectId: string; taskId: st
   const { taskSessions, sessionDetails, timelines, tasks, approvals, archiveUnsupported } = useStore(data);
   const gate = useGate();
   const [chosen, setChosen] = useState<string | null>(null);
-  const [cancelError, setCancelError] = useState<DaemonError | null>(null);
-  const [cancelNote, setCancelNote] = useState<string | null>(null);
-  const [cancelling, setCancelling] = useState(false);
-  const [retryNote, setRetryNote] = useState<string | null>(null);
-  const [retryError, setRetryError] = useState<DaemonError | null>(null);
-  const [retrying, setRetrying] = useState(false);
-  const [archiveError, setArchiveError] = useState<DaemonError | null>(null);
-  const [archived, setArchived] = useState(false);
-  const [archiving, setArchiving] = useState(false);
   const [discardAsked, setDiscardAsked] = useState(false);
-  const [discarding, setDiscarding] = useState(false);
-  const [discarded, setDiscarded] = useState(false);
-  const [discardError, setDiscardError] = useState<DaemonError | null>(null);
+  const [archiveConflict, setArchiveConflict] = useState(false);
+  // Retry is minor (a new attempt, nothing lost): its result clears itself. Cancel, archive and discard are
+  // destructive, so their results stay until the next run.
+  const retryAction = useAction();
+  const cancelAction = useLastingAction();
+  const archiveAction = useLastingAction();
+  const discardAction = useLastingAction();
+  const archived = archiveAction.state.phase === "done" && archiveAction.state.outcome.kind === "saved";
+  const discarded = discardAction.state.phase === "done" && discardAction.state.outcome.kind === "saved";
 
   const taskRef: TaskRef = { origin: "real", taskId, state: record.state };
   const retry = useSource(
@@ -197,63 +196,56 @@ function TaskView({ projectId, taskId, record }: { projectId: string; taskId: st
   const awaitingReview = pendingApprovals(approvals.data ?? []).some((a) => a.action.task_id === taskId);
   const dependencyKnown = (id: string) => tasks.data?.some((t) => t.contract.id === id) ?? false;
 
-  const retryTask = async () => {
+  const retryTask = () => {
     if (!realRetry) return;
-    setRetryNote(null);
-    setRetryError(null);
-    setRetrying(true);
-    try {
-      await realRetry.call(sources.retry, taskRef);
-      setRetryNote("The retry request was accepted by the daemon.");
+    void retryAction.run("Retrying the task…", async () => {
+      try {
+        await realRetry.call(sources.retry, taskRef);
+      } catch (error) {
+        return { kind: "failed", text: failureText("Retrying the task", asDaemonError(error)) };
+      }
       void data.watchTask(taskId);
       void data.refreshAll();
-    } catch (error) {
-      setRetryError(asDaemonError(error));
-    } finally {
-      setRetrying(false);
-    }
+      return { kind: "saved", text: "The retry request was accepted by the daemon." };
+    });
   };
 
-  const archive = async () => {
-    setArchiveError(null);
-    setArchiving(true);
-    const result = await data.archiveTasks([taskId]);
-    setArchiving(false);
-    if (result.ok) setArchived(true);
-    else setArchiveError(result.error);
-  };
+  const archiveTask = () =>
+    void archiveAction.run("Archiving the task…", async () => {
+      setArchiveConflict(false);
+      const result = await data.archiveTasks([taskId]);
+      if (result.ok) return { kind: "saved", text: "Archived. The task leaves the task lists; its history is kept." };
+      if (result.error.kind === "conflict") {
+        setArchiveConflict(true);
+        return { kind: "failed", text: UNDELIVERED_TEXT };
+      }
+      return { kind: "failed", text: failureText("Archiving the task", result.error) };
+    });
 
   // `tasks.discard` is user-only, like the settings.
   const discardLocked = !(gate.connected && gate.connection.approver);
-  const discard = async () => {
-    setDiscardError(null);
-    setDiscarding(true);
-    const result = await data.discardTask(taskId);
-    setDiscarding(false);
-    if (result.ok) {
-      setDiscarded(true);
-      setDiscardAsked(false);
-      setArchiveError(null);
-    } else {
-      setDiscardError(result.error);
-    }
-  };
+  // The dialog closes once the discard settles, so a failure is shown beside the header control, not behind the dialog.
+  const discardChanges = () =>
+    void discardAction
+      .run("Discarding the changes…", async () => {
+        const result = await data.discardTask(taskId);
+        if (!result.ok) return { kind: "failed", text: failureText("Discarding the changes", result.error) };
+        archiveAction.clear();
+        setArchiveConflict(false);
+        return { kind: "saved", text: "Changes discarded. You can archive the task now." };
+      })
+      .then(() => setDiscardAsked(false));
 
-  const cancel = async () => {
-    setCancelError(null);
-    setCancelNote(null);
-    setCancelling(true);
-    const result = await data.cancelTask(taskId);
-    setCancelling(false);
-    if (result.ok) {
-      setCancelNote(
-        `Cancel request acknowledged; the daemon now records the task as ${stateLabel(result.value.state)}. This is not proof that any process has stopped.`,
-      );
+  const cancelTask = () =>
+    void cancelAction.run("Canceling the task…", async () => {
+      const result = await data.cancelTask(taskId);
+      if (!result.ok) return { kind: "failed", text: failureText("Canceling the task", result.error) };
       void data.watchTask(taskId);
-    } else {
-      setCancelError(result.error);
-    }
-  };
+      return {
+        kind: "saved",
+        text: `Cancel request acknowledged; the daemon now records the task as ${stateLabel(result.value.state)}. This is not proof that any process has stopped.`,
+      };
+    });
 
   // One primary action by state; an action the task or the daemon cannot take is not shown.
   const failed = record.state === "Failed" || record.state === "VerificationFailed";
@@ -262,23 +254,21 @@ function TaskView({ projectId, taskId, record }: { projectId: string; taskId: st
       Review changes
     </Button>
   ) : failed && canRetry ? (
-    <Button variant="primary" disabled={retrying} onClick={() => void retryTask()}>
+    <Button variant="primary" pending={retryAction.pending} onClick={retryTask}>
       Retry
     </Button>
   ) : canCancel(record.state) && gate.can("tasks") ? (
-    <Button variant="danger" disabled={cancelling} onClick={() => void cancel()}>
+    <Button variant="danger" pending={cancelAction.pending} onClick={cancelTask}>
       Cancel
     </Button>
   ) : null;
   const finished = canArchive(record.state);
   const items: MenuItem[] = [
-    ...(canRetry && !(failed && !awaitingReview) ? [{ label: "Retry", onSelect: () => void retryTask() }] : []),
+    ...(canRetry && !(failed && !awaitingReview) ? [{ label: "Retry", onSelect: retryTask }] : []),
     ...(finished && !discardLocked && !discarded ? [{ label: "Discard changes", onSelect: () => setDiscardAsked(true) }] : []),
-    ...(!archiveUnsupported && finished && gate.can("tasks") && !archived && !archiving
-      ? [{ label: "Archive", onSelect: () => void archive() }]
-      : []),
+    ...(!archiveUnsupported && finished && gate.can("tasks") && !archived ? [{ label: "Archive", onSelect: archiveTask }] : []),
   ];
-  const conflict = archiveError?.kind === "conflict" && finished;
+  const conflict = archiveConflict && finished;
 
   return (
     <div>
@@ -298,19 +288,12 @@ function TaskView({ projectId, taskId, record }: { projectId: string; taskId: st
           {agentDisplayName(record.contract.agent)} · {DELIVERY_PHRASE[record.contract.delivery]}
         </p>
       </header>
-      <div aria-live="polite">
-        {retryNote && <p role="status">{retryNote}</p>}
-        {cancelNote && <p role="status">{cancelNote}</p>}
-        {archived && <p role="status">Archived. The task leaves the task lists; its history is kept.</p>}
-        {discarded && !archived && <p role="status">Changes discarded. You can archive the task now.</p>}
-      </div>
-      {retryError && <ErrorNotice error={retryError} action="Retrying the task" />}
-      {retryError?.indeterminate && <p role="status">The outcome is unknown. Retrying again reuses the same request key.</p>}
-      {cancelError && <ErrorNotice error={cancelError} action="Canceling the task" />}
-      {cancelError?.indeterminate && <p role="status">The outcome is unknown. Requesting again reuses the same request key.</p>}
-      {conflict ? (
+      {/* Outside any conditional: a live update must not take a finished action's result with it. */}
+      <ActionStatus action={retryAction} />
+      <ActionStatus action={cancelAction} />
+      <ActionStatus action={archiveAction} />
+      {conflict && (
         <div>
-          <p role="alert">{UNDELIVERED_TEXT}</p>
           {discardLocked ? (
             <p className="muted">{APPROVER_REQUIRED_NOTICE}</p>
           ) : (
@@ -319,20 +302,18 @@ function TaskView({ projectId, taskId, record }: { projectId: string; taskId: st
             </Button>
           )}
         </div>
-      ) : (
-        archiveError && <ErrorNotice error={archiveError} action="Archiving the task" />
       )}
-      {discardError && <ErrorNotice error={discardError} action="Discarding the changes" />}
+      <ActionStatus action={discardAction} />
       {discardAsked && (
         <Dialog
           title="Discard changes?"
           onClose={() => setDiscardAsked(false)}
           footer={
             <>
-              <Button disabled={discarding} onClick={() => setDiscardAsked(false)}>
+              <Button disabled={discardAction.pending} onClick={() => setDiscardAsked(false)}>
                 Keep changes
               </Button>
-              <Button variant="danger" disabled={discarding} onClick={() => void discard()}>
+              <Button variant="danger" pending={discardAction.pending} onClick={discardChanges}>
                 Confirm discard
               </Button>
             </>

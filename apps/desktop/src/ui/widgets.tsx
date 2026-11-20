@@ -147,6 +147,13 @@ export function SimulatedReceipts({
 }
 
 /** Inline error: reason, affected action, safe next step. */
+/** The reason and next step ErrorNotice shows, as plain text for an action's Outcome or thrown Error (DPES-1170). */
+export function failureText(action: string, error: DaemonError): string {
+  const { reason, nextStep } = presentError(error);
+  const unknown = error.indeterminate ? " The outcome is unknown; trying again reuses the same request key." : "";
+  return `${action} failed. ${reason} ${nextStep}${unknown}`;
+}
+
 export function ErrorNotice({ error, action }: { error: DaemonError; action: string }) {
   const { reason, nextStep } = presentError(error);
   return (

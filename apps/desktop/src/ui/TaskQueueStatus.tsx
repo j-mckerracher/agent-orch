@@ -18,6 +18,8 @@ export function TaskQueueStatus({ taskId, agent }: { taskId: string; agent: stri
     : null;
   let detail: string;
   let nextStep: string | undefined;
+  // A failed read is an error, not a status line: it must be announced as an alert.
+  const failed = !gate.connected || (live && activity.status !== "ok");
   if (!gate.connected) {
     detail = "Queue status unavailable while disconnected. The task's current launch status is unknown.";
     nextStep = "Reconnect to the daemon to check why this task is waiting.";
@@ -39,7 +41,7 @@ export function TaskQueueStatus({ taskId, agent }: { taskId: string; agent: stri
   return (
     <section aria-label="Queue status" className="ps-section">
       <h2>Waiting to start</h2>
-      <Notice tone={activity.status === "loading" && gate.connected ? "info" : "warn"} role="status">
+      <Notice tone={activity.status === "loading" && gate.connected ? "info" : "warn"} role={failed ? "alert" : "status"}>
         {detail}
       </Notice>
       {nextStep && <p><strong>Next step:</strong> {nextStep}</p>}
@@ -47,8 +49,10 @@ export function TaskQueueStatus({ taskId, agent }: { taskId: string; agent: stri
         Selected agent: {agentDisplayName(agent)}. No provider quota check is available from queue status.
       </p>
       <div className="ps-actions">
+        {/* Pending while the read runs; the Last checked time below confirms when it finished. */}
         <Button
-          disabled={!gate.connected || activity.status === "loading"}
+          disabled={!gate.connected}
+          pending={activity.status === "loading"}
           onClick={() => {
             setRevision((value) => value + 1);
             void data.watchTask(taskId);
