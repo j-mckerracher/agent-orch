@@ -5,11 +5,11 @@
 import { useEffect, useId, useState } from "react";
 import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../../../daemon/errors";
 import type { GroupsPatch, SettingsSnapshot } from "../../../sources/surfaces/types";
+import { ActionStatus, useAction } from "../../action";
 import { useGate, useServices } from "../../services";
 import { Disclosure } from "../../theme";
-import { Notice } from "../../widgets";
 import { FIXTURE_SAVE_TEXT, NOT_CONNECTED_REASON, saveFailureText } from "./settingsModel";
-import type { SaveResult, SettingsModel } from "./useSettings";
+import type { SettingsModel } from "./useSettings";
 
 export const AUTONOMOUS_LABEL = "Let the orchestrator act on its own";
 export const AUTONOMOUS_CONSEQUENCE =
@@ -47,7 +47,8 @@ function SwitchRow({ model, snapshot, spec }: { model: SettingsModel; snapshot: 
   // The value being saved, shown at once; and what the daemon answered, until the page reads a newer snapshot.
   const [pending, setPending] = useState<boolean | null>(null);
   const [fresh, setFresh] = useState<boolean | null>(null);
-  const [result, setResult] = useState<SaveResult | null>(null);
+  const [refused, setRefused] = useState(false);
+  const action = useAction();
   useEffect(() => setFresh(null), [snapshot]);
   if (saved === undefined) return null;
 
@@ -55,24 +56,28 @@ function SwitchRow({ model, snapshot, spec }: { model: SettingsModel; snapshot: 
   const locked = model.live && !(gate.connected && gate.connection.approver);
   const blocked = model.live && !gate.connected ? NOT_CONNECTED_REASON : locked ? APPROVER_REQUIRED_NOTICE : null;
 
-  const change = async (next: boolean) => {
-    if (pending !== null) return;
-    setPending(next);
-    setResult(null);
-    try {
-      const receipt = await surfaces.settings.setGroups({ [spec.key]: next } as GroupsPatch);
-      if (receipt.simulated) {
-        setResult({ kind: "fixture" });
-      } else {
-        setFresh(receipt.snapshot[spec.key] ?? next);
-        setResult({ kind: "saved" });
-        model.reload();
-      }
-    } catch (error) {
-      setResult({ kind: "failed", message: saveFailureText(asDaemonError(error)) });
-    } finally {
-      setPending(null);
+  // A flip while one is saving is refused and says so; the switch keeps its focus, so it is aria-disabled, not disabled.
+  const change = (next: boolean) => {
+    if (action.pending) {
+      setRefused(true);
+      return;
     }
+    setRefused(false);
+    // Inside the run, so a Retry shows the value being saved too, not the old one.
+    void action.run("Saving…", async () => {
+      setPending(next);
+      try {
+        const receipt = await surfaces.settings.setGroups({ [spec.key]: next } as GroupsPatch);
+        if (receipt.simulated) return { kind: "fixture", text: FIXTURE_SAVE_TEXT };
+        setFresh(receipt.snapshot[spec.key] ?? next);
+        model.reload();
+        return { kind: "saved", text: spec.savedText };
+      } catch (error) {
+        throw new Error(saveFailureText(asDaemonError(error)));
+      } finally {
+        setPending(null);
+      }
+    });
   };
 
   return (
@@ -84,9 +89,10 @@ function SwitchRow({ model, snapshot, spec }: { model: SettingsModel; snapshot: 
           role="switch"
           checked={checked}
           disabled={locked}
-          aria-busy={pending !== null}
+          aria-disabled={action.pending || undefined}
+          aria-busy={action.pending || undefined}
           aria-describedby={`${id}-hint`}
-          onChange={(event) => void change(event.target.checked)}
+          onChange={(event) => change(event.target.checked)}
         />
         <label htmlFor={id}>{spec.label}</label>
       </div>
@@ -97,11 +103,8 @@ function SwitchRow({ model, snapshot, spec }: { model: SettingsModel; snapshot: 
       <Disclosure summary="Details">
         <p className="settings-hint">{spec.detail}</p>
       </Disclosure>
-      <div role="status" aria-live="polite" aria-label={`${spec.label} result`} className="settings-result">
-        {result?.kind === "saved" && <p>{spec.savedText}</p>}
-        {result?.kind === "fixture" && <p>{FIXTURE_SAVE_TEXT}</p>}
-        {result?.kind === "failed" && <Notice tone="bad">{result.message}</Notice>}
-      </div>
+      <ActionStatus action={action} />
+      {refused && action.pending && <p className="settings-hint">Still saving the last change. Change it again when this finishes.</p>}
     </div>
   );
 }
