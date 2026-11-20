@@ -328,7 +328,7 @@ Purpose: a choice for a provider other than the default is counted, saved, and r
 
 **Known limitations:**
 
-- The **Clear <provider> choice** button appears only for a saved provider id that is not in the catalog. No control creates that state. It is not tested here.
+- The **Clear `<provider>` choice** button appears only for a saved provider id that is not in the catalog. No control creates that state. It is not tested here.
 - The provider names, models and efforts come from the catalog on the test machine. They are recorded in the reply, not written here. UNVERIFIED.
 - Opening **Agents** reads the model catalog, which runs local `codex` status commands (`crates/orchestrator-agents/src/catalog.rs`). These are probes, not task runs. `RUNNER.md` says Codex is used only by TC-D-03. The lead must decide whether this page is allowed.
 
@@ -395,7 +395,7 @@ Purpose: each limit accepts a whole number from 50 to 100. Anything else shows a
 - Step 9: the field holds what the browser allowed. Record it. No expected value.
 - Step 10: the result reads "Saved. The new limits apply from the next measurement."
 - Step 11: **CPU limit (percent)** reads `85`. This is the daemon's value.
-- Step 12: the heading **Current machine load** shows. When the daemon reports its agent slots, the line "<used> of <limit> agent slots in use · <n> available" shows above the readings. The readings (CPU, memory, GPU and disk) show open. Record them. They change with the machine, so there is no expected value.
+- Step 12: the heading **Current machine load** shows. When the daemon reports its agent slots, the line "`<used>` of `<limit>` agent slots in use · `<n>` available" shows above the readings. The readings (CPU, memory, GPU and disk) show open. Record them. They change with the machine, so there is no expected value.
 - Throughout: under **Disk limit (percent)** the note "Measured on the disk that holds the app's data" shows.
 
 **Persistence:** step 11 shows the value the page reads after the save. Restart check: TC-ST-05, steps 8 and 9.
@@ -791,14 +791,14 @@ Purpose: the reminder interval takes one of the preset values or a number from 5
 
 **Expected:**
 
-- Step 1: the status line reads "Notifications: disabled · Permission: <value> · Decisions needing attention: <number>". The permission value depends on macOS. Record it in `ENVIRONMENT.md`. **Reminder interval** shows `240 minutes`. **Enable notifications** is shown. The group **Local reminder actions** is not shown.
+- Step 1: the status line reads "Notifications: disabled · Permission: `<value>` · Decisions needing attention: `<number>`". The permission value depends on macOS. Record it in `ENVIRONMENT.md`. **Reminder interval** shows `240 minutes`. **Enable notifications** is shown. The group **Local reminder actions** is not shown.
 - Step 2: no message shows after the save. See Known limitations. After the page is opened again, **Reminder interval** shows `60 minutes`. The value is read back from the native notifications state.
 - Step 3: after each save, the select shows the chosen value. After `Off` is saved and the page is opened again, the select shows `Off` and the custom field is not shown.
 - Step 4: the alert "Enter a whole number from 5 to 1440 minutes." shows. The typed `4` stays in the field. The setting does not change.
 - Step 5: the same alert shows for `1441`.
 - Step 6: `5` and `1440` save with no alert.
 - Step 7: after the restart, **Reminder interval** shows `60 minutes`.
-- Step 8: after **Enable notifications** and an allow, the status line reads "Notifications: enabled · Permission: granted · Decisions needing attention: <number>". The button now reads **Disable notifications**. After the click, the status line reads "Notifications: disabled" again.
+- Step 8: after **Enable notifications** and an allow, the status line reads "Notifications: enabled · Permission: granted · Decisions needing attention: `<number>`". The button now reads **Disable notifications**. After the click, the status line reads "Notifications: disabled" again.
 
 **Reset:** Choose `240 minutes`. Click **Save reminder interval**. If notifications are enabled, click **Disable notifications**. Expected: the select shows `240 minutes`. The status line reads "Notifications: disabled".
 

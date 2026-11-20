@@ -2,7 +2,7 @@
 
 Setup: [00-setup.md](00-setup.md), sections 6 and 8. **Let the orchestrator act on its own** is on.
 
-A question is raised by a `decision.ask` action (this file) or by a worker that stops to ask (`06-workers.md`). It is listed in the **Needs you** tab of the **Review** page. Each row shows the question, the project and "Task: <title>", one button per option, the box "Your answer" with **Send answer**, and a **Defer** disclosure with the "Defer until" date box. Deferring moves the row to the **Held** tab, with the pill "Held until <date>".
+A question is raised by a `decision.ask` action (this file) or by a worker that stops to ask (`06-workers.md`). It is listed in the **Needs you** tab of the **Review** page. Each row shows the question, the project and "Task: `<title>`", one button per option, the box "Your answer" with **Send answer**, and a **Defer** disclosure with the "Defer until" date box. Deferring moves the row to the **Held** tab, with the pill "Held until `<date>`".
 
 Sources: `docs/tasks.md` "Task states"; `docs/design/firstmate-behavior-decisions.md` "Phase 3: user decisions (DPES-1108, branch `feat/DPES-1108_user-decisions`)".
 
@@ -163,4 +163,4 @@ Purpose: answers are the user's, so other sessions cannot read or send them.
 
 1. Open **Review**.
 
-**Expected:** The Review page shows the alert "Questions are not available: <reason>" and no question rows in the **Needs you** tab.
+**Expected:** The Review page shows the alert "Questions are not available: `<reason>`" and no question rows in the **Needs you** tab.
