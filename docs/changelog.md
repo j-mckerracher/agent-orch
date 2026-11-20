@@ -5,6 +5,62 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.33](https://github.com/mc-innersource/motif-mcao/compare/v0.1.32...v0.1.33) (2026-11-20)
+
+
+### Features
+
+* **desktop:** DPES-1044 - Turn the task Activity tab into a Chat tab ([bae6a39](https://github.com/mc-innersource/motif-mcao/commit/bae6a39bb6290e9143f5af9d3e688ce8a5066a6a))
+* **desktop:** DPES-1044 - Turn the task Activity tab into a Chat tab ([3282c7d](https://github.com/mc-innersource/motif-mcao/commit/3282c7d0d3fc3302f35725398fe308718bf793c9))
+* **desktop:** DPES-1105 - Restore the Workspace activity box as its own column ([a455d6d](https://github.com/mc-innersource/motif-mcao/commit/a455d6dbeb9ecf85fd868ed2a590a7689265518c))
+* **desktop:** DPES-1105 - Restore the Workspace activity box as its own column ([850233d](https://github.com/mc-innersource/motif-mcao/commit/850233deb08cde7e15b366e1930932928f351224))
+
+
+### Bug Fixes
+
+* **chat:** DPES-1044 - Show chat message times in the device timezone ([9ef88f3](https://github.com/mc-innersource/motif-mcao/commit/9ef88f3ee2c6180daae2c1f476a5bcad92dc2490))
+* **ci:** DPES-1108 - Remove the merge markers left in expected.mjs ([d61ffad](https://github.com/mc-innersource/motif-mcao/commit/d61ffad017c0bc257962643c7d5bd5623a288f2d))
+* **daemon:** DPES-1105 - List Copilot models and explain disabled override pickers ([69e46e8](https://github.com/mc-innersource/motif-mcao/commit/69e46e8afc5ebc063021f95cc809c0996c5116c3))
+* **daemon:** DPES-1105 - List GitHub Copilot models and pass the chosen model to the CLI ([7a7d823](https://github.com/mc-innersource/motif-mcao/commit/7a7d8233aede4c90f39f0f5ce6e5b4f9594f0527))
+* **desktop:** DPES-1044 - Keep the usage popover inside the window ([2cb4059](https://github.com/mc-innersource/motif-mcao/commit/2cb40596386508fa5231c526891ed4d260bf4c9f))
+* **desktop:** DPES-1044 - Keep the usage popover inside the window ([d609715](https://github.com/mc-innersource/motif-mcao/commit/d60971536333995fb37ba6913e3ebcf6a58c59a1))
+* **desktop:** DPES-1044 - Read daemon times strictly and show them in the device zone ([65bed7b](https://github.com/mc-innersource/motif-mcao/commit/65bed7bf39366108860394dbbb0277447f085af3))
+* **desktop:** DPES-1105 - Explain disabled provider override pickers in Settings ([42e44ae](https://github.com/mc-innersource/motif-mcao/commit/42e44ae4e88f63bfdc1587dae8e61912c1803e3e))
+* **desktop:** DPES-1105 - Say why locked and empty override pickers are disabled ([04de485](https://github.com/mc-innersource/motif-mcao/commit/04de4851894cba1620e6f20c0598e285d5bfab52))
+* **store:** DPES-1044 - Return stored times as RFC 3339 UTC ([df9b0b3](https://github.com/mc-innersource/motif-mcao/commit/df9b0b3639f2f5b41d5419a8de422419182694c4))
+
+
+### Performance
+
+* **ci:** DPES-1108 - Shard the Windows vitest gate and skip Defender scanning ([5700b7f](https://github.com/mc-innersource/motif-mcao/commit/5700b7f7ea84a691d8f9bede30c5313ae1efdb4b))
+* **ci:** DPES-1108 - Shard Windows vitest and stop pinning test totals ([51c1818](https://github.com/mc-innersource/motif-mcao/commit/51c181899326ff7429fb401020d7e0bba74a9022))
+
+
+### Refactoring
+
+* **desktop:** DPES-1105 - Drop the N running link now the activity column shows the queue ([cf8aa54](https://github.com/mc-innersource/motif-mcao/commit/cf8aa549c854c2a856c370ba42e3ff952f4434ef))
+
+
+### Documentation
+
+* **desktop:** DPES-1044 - Add task Chat tab screenshots ([f77b228](https://github.com/mc-innersource/motif-mcao/commit/f77b228eb069ddc58f7b4be6f6d7d4b3fcc67c8d))
+* **desktop:** DPES-1105 - Add before and after screenshots of the Workspace activity column ([65eb5d7](https://github.com/mc-innersource/motif-mcao/commit/65eb5d77707b743201b28f9b9ce8cf527c39ecde))
+
+
+### Tests
+
+* **agents:** DPES-1105 - Update the Copilot catalog tests for listed models ([b24516e](https://github.com/mc-innersource/motif-mcao/commit/b24516ef5274ff3d97ef7545ee791cb0e99a025d))
+* **ci:** DPES-1105 - Pin the two new Settings tests in the desktop test count ([36630d3](https://github.com/mc-innersource/motif-mcao/commit/36630d339f80e62bcb9b285e8ba0cff647f48095))
+* **ci:** DPES-1105 - Pin the vitest count after restoring the activity panel tests ([9c15563](https://github.com/mc-innersource/motif-mcao/commit/9c15563fbf6a69b33501116ac2d8c0d8b482c70a))
+* **desktop:** DPES-1044 - Allow the disabled Chat Send button in the finished-task actions test ([e93eeab](https://github.com/mc-innersource/motif-mcao/commit/e93eeab7a09ab84e6f4df8ee13b951d12569d621))
+* **desktop:** DPES-1105 - Assert the activity column layout, default-open state and 90% height cap ([1638bea](https://github.com/mc-innersource/motif-mcao/commit/1638bea24f3fe2c54d22710ed276c1d7d50f5ccf))
+* **store:** DPES-1044 - Expect conversation times as RFC 3339 UTC ([5e6bc5c](https://github.com/mc-innersource/motif-mcao/commit/5e6bc5cb29c874d49877825f42b44e137c416481))
+
+
+### CI
+
+* **gates:** DPES-1108 - Stop pinning the vitest file and test totals ([481c3dd](https://github.com/mc-innersource/motif-mcao/commit/481c3dd8205534291b68c8e971df1965a179420e))
+
 ## [0.1.32](https://github.com/mc-innersource/motif-mcao/compare/v0.1.31...v0.1.32) (2026-11-20)
 
 
