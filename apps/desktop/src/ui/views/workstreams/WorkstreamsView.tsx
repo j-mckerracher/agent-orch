@@ -1,12 +1,14 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { basename } from "../../format";
+import { ActionStatus, useAction, type Outcome } from "../../action";
+import { useLastingAction } from "../../lastingAction";
 import { useServices, useStore } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Disclosure, EmptyState, Pill } from "../../theme";
 import { PlaceholderBadge } from "../../widgets";
 import { WorkstreamDetail } from "./WorkstreamDetail";
-import { ARCHIVED_REASON, ListMenu, OutcomeNotice, useMutationRunner, type Controls } from "./Manage";
+import { ARCHIVED_REASON, ListMenu, useGroupRunner } from "./Manage";
 import {
   progressOf,
   reloadWorkstreams,
@@ -87,7 +89,10 @@ export function WorkstreamsView() {
   const model = useWorkstreamModel();
   const { surfaces, router } = useServices();
   const headingId = useId();
-  const mutations = useMutationRunner();
+  // One action per control group: the list's Archive finished and Refresh each keep their own result up here.
+  const archiveAction = useLastingAction();
+  const runArchive = useGroupRunner(archiveAction);
+  const refreshAction = useAction();
   const now = useNow();
   // A route that names a workstream opens it on first render and whenever navigation names one (DPES-1105).
   const route = useStore(router);
@@ -99,15 +104,18 @@ export function WorkstreamsView() {
   const [filter, setFilter] = useState("");
   const live = surfaces.workstreams.provenance.kind !== "fixture";
 
+  // Refresh reads the daemon itself, so its result is real: a failed read is an alert, not a silent reload.
+  const refreshRead = async (): Promise<Outcome> => {
+    const read = await surfaces.workstreams.workstreams();
+    reloadWorkstreams();
+    if (read.status !== "ok") throw new Error(`Refresh failed. ${read.reason}`);
+    return { kind: "saved", text: "Workstreams refreshed." };
+  };
   const menu = (
     <ListMenu
-      run={mutations.run}
-      busy={mutations.busy}
+      controls={{ run: runArchive, busy: archiveAction.pending || refreshAction.pending, locked: null }}
       live={live}
-      onRefresh={() => {
-        mutations.clear();
-        reloadWorkstreams();
-      }}
+      onRefresh={() => void refreshAction.run("Refreshing workstreams…", refreshRead)}
     />
   );
   const heading = (count: number | null, marker: ReactNode) => (
@@ -125,6 +133,8 @@ export function WorkstreamsView() {
           + New workstream
         </NavLink>
         {menu}
+        <ActionStatus action={archiveAction} />
+        <ActionStatus action={refreshAction} />
       </div>
     </header>
   );
@@ -190,19 +200,15 @@ export function WorkstreamsView() {
           ))}
         </ul>
       );
-    const controls: Controls | null = current
-      ? {
-          run: mutations.run,
-          busy: mutations.busy,
-          locked: stale
-            ? STALE_REASON
-            : current.unreadReason !== null
-              ? UNREAD_REASON
-              : current.state === "archived"
-                ? ARCHIVED_REASON
-                : null,
-        }
-      : null;
+    const locked = !current
+      ? null
+      : stale
+        ? STALE_REASON
+        : current.unreadReason !== null
+          ? UNREAD_REASON
+          : current.state === "archived"
+            ? ARCHIVED_REASON
+            : null;
     const freshest = groups
       .map(updatedAt)
       .reduce<{ observedAt: string; ageMs: number } | null>(
@@ -218,8 +224,7 @@ export function WorkstreamsView() {
             {taskListNotice(taskList)}
           </p>
         )}
-        {live && <OutcomeNotice outcome={mutations.outcome} />}
-        {current && controls ? (
+        {current ? (
           <WorkstreamDetail
             key={current.id}
             group={current}
@@ -228,7 +233,7 @@ export function WorkstreamsView() {
             marker={marker}
             unlinked={unlinked}
             unlinkedKnown={unlinkedKnown}
-            controls={controls}
+            locked={locked}
             taskList={taskList}
             stale={stale}
             onBack={() => setSelected(null)}

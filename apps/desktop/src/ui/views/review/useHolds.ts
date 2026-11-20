@@ -4,12 +4,17 @@ import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../../../daemon/errors"
 import { FIXTURE_HOLD_NOTICE, heldSets, type HeldSets } from "../../../sources/surfaces/holds";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import type { HoldItem, HoldReceipt, HoldSubjectKind } from "../../../sources/surfaces/types";
+import { type Action, type Outcome, useAction } from "../../action";
 import { useGate, useServices, useSurface } from "../../services";
 import { useRetained } from "../workspace/useRetained";
 import { formatHoldDay, holdErrorText } from "./holdDates";
 
 /** A hold ends on its date with no push from the daemon, so the list is read again on this interval. */
 export const HOLDS_POLL_MS = 60_000;
+
+/** The `busy` value while a hold or a release runs: each control compares with its own, for its spinner. */
+export const holdBusyKey = (kind: HoldSubjectKind, subjectId: string) => `hold:${kind}:${subjectId}`;
+export const releaseBusyKey = (holdId: string) => `release:${holdId}`;
 
 const NO_HOLDS: HoldItem[] = [];
 
@@ -25,10 +30,10 @@ export interface HoldsModel {
   fixture: boolean;
   /** The visible reason the hold and release controls are off; null when they work. */
   blocked: string | null;
-  /** What is being changed now (`hold:...` or `release:...`); null when idle. */
+  /** What is being changed now (see holdBusyKey and releaseBusyKey); null when idle. */
   busy: string | null;
-  /** What the polite region says: the last result, or why it failed. Empty before the first change. */
-  announcement: string;
+  /** The last hold or release: pending, then what happened. Render it with ActionStatus beside the controls. */
+  action: Action;
   /** Holds every pending approval of a task until `until` (`YYYY-MM-DD`). Resolves true when the daemon confirmed it. */
   hold: (kind: HoldSubjectKind, subjectId: string, until: string, label: string) => Promise<boolean>;
   /** Ends a hold early. Resolves true when the daemon confirmed it. */
@@ -44,7 +49,7 @@ export function useHolds(): HoldsModel {
   const supported = !live || gate.connection.capabilities.includes("holds");
   const [nonce, setNonce] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const action = useAction();
   const [local, setLocal] = useState<{ base: unknown; items: HoldItem[] } | null>(null);
 
   const loaded = useSurface(
@@ -70,6 +75,7 @@ export function useHolds(): HoldsModel {
         ? APPROVER_REQUIRED_NOTICE
         : null;
 
+  // Busy is set inside the action, so it clears with it: a change that the action refuses never leaves it set.
   const change = useCallback(
     async (
       key: string,
@@ -79,29 +85,32 @@ export function useHolds(): HoldsModel {
       done: string,
     ): Promise<boolean> => {
       if (busy !== null) return false;
-      setBusy(key);
-      try {
-        const receipt = await send();
-        setLocal({ base: result, items: apply(receipt) });
-        setAnnouncement(receipt.simulated ? `${done} ${FIXTURE_HOLD_NOTICE}` : done);
-        setNonce((value) => value + 1);
-        return true;
-      } catch (error) {
-        setAnnouncement(holdErrorText(asDaemonError(error), operation));
-        return false;
-      } finally {
-        setBusy(null);
-        // The nav count leaves out held decisions: read the holds now rather than at the next 30 second tick.
-        void data.refreshHolds();
-      }
+      let confirmed = false;
+      await action.run(operation === "hold" ? "Holding…" : "Releasing…", async (): Promise<Outcome> => {
+        setBusy(key);
+        try {
+          const receipt = await send();
+          setLocal({ base: result, items: apply(receipt) });
+          setNonce((value) => value + 1);
+          confirmed = true;
+          return receipt.simulated ? { kind: "fixture", text: `${done} ${FIXTURE_HOLD_NOTICE}` } : { kind: "saved", text: done };
+        } catch (error) {
+          throw new Error(holdErrorText(asDaemonError(error), operation));
+        } finally {
+          setBusy(null);
+          // The nav count leaves out held decisions: read the holds now rather than at the next 30 second tick.
+          void data.refreshHolds();
+        }
+      });
+      return confirmed;
     },
-    [busy, data, result],
+    [action.run, busy, data, result],
   );
 
   const hold = useCallback(
     (kind: HoldSubjectKind, subjectId: string, until: string, label: string) =>
       change(
-        `hold:${kind}:${subjectId}`,
+        holdBusyKey(kind, subjectId),
         "hold",
         () => source.set(kind, subjectId, until),
         (receipt) => [...items.filter((item) => !(item.subjectKind === kind && item.subjectId === subjectId)), receipt.hold],
@@ -113,7 +122,7 @@ export function useHolds(): HoldsModel {
   const release = useCallback(
     (target: HoldItem, label: string) =>
       change(
-        `release:${target.id}`,
+        releaseBusyKey(target.id),
         "release",
         () => source.release(target.id),
         () => items.filter((item) => item.id !== target.id),
@@ -131,7 +140,7 @@ export function useHolds(): HoldsModel {
     fixture: !live,
     blocked,
     busy,
-    announcement,
+    action,
     hold,
     release,
   };

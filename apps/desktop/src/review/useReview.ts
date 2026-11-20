@@ -179,8 +179,9 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
     [client, evidenceSource],
   );
 
+  /** Resolves false when the pending decisions could not be read; a read that a newer refresh replaced counts as read. */
   const refresh = useCallback(
-    async (preferId?: string | null) => {
+    async (preferId?: string | null): Promise<boolean> => {
       const seq = ++loadSeq.current;
       loading.current = true;
       dirtyDuringLoad.current = false;
@@ -190,13 +191,13 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
         try {
           all = await client.call<Approval[]>("approvals.list", {});
         } catch (error) {
-          if (seq !== loadSeq.current) return;
+          if (seq !== loadSeq.current) return true;
           const e = asDaemonError(error);
           setListError({ kind: e.kind, message: e.message });
           setListState("error");
-          return;
+          return false;
         }
-        if (seq !== loadSeq.current) return;
+        if (seq !== loadSeq.current) return true;
         const scoped = scope.taskId ? all.filter((a) => a.action.task_id === scope.taskId) : all;
         const reviewable = scoped.filter((a) => a.action.kind.type === "delivery");
         setPending(reviewable);
@@ -243,9 +244,10 @@ export function useReview({ client, evidenceSource, scope, newKey = defaultNewKe
           setDiff({ status: "loading" });
           setEvidence(null);
         }
-        if (seq !== loadSeq.current) return;
+        if (seq !== loadSeq.current) return true;
         setStale(dirtyDuringLoad.current);
         setRefreshEpoch((e) => e + 1);
+        return true;
       } finally {
         if (seq === loadSeq.current) {
           loading.current = false;

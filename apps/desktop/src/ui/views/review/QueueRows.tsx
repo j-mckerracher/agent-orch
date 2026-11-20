@@ -5,6 +5,7 @@ import type { ActionProposal } from "../../../sources/surfaces/types";
 import { basename } from "../../format";
 import { Button, Disclosure, Pill } from "../../theme";
 import { Notice } from "../../widgets";
+import { releaseBusyKey } from "./useHolds";
 import type { ActionDecisions } from "../workspace/useActionDecisions";
 import {
   actionPhrase,
@@ -69,11 +70,13 @@ function Release({ item, env, label }: { item: QueueItem; env: RowEnv; label: st
   const { holds } = env;
   if (item.hold === null) return null;
   const hold = item.hold;
+  const pending = holds.busy === releaseBusyKey(hold.id);
   return (
     <Button
       aria-label={`Release: ${label}`}
       aria-describedby={holds.blocked !== null ? HOLD_REASON_ID : undefined}
-      disabled={holds.blocked !== null || holds.busy !== null}
+      pending={pending}
+      disabled={(holds.blocked !== null || holds.busy !== null) && !pending}
       onClick={() => {
         env.start(item.key);
         void holds.release(hold, label);
@@ -118,6 +121,9 @@ function ProposalRow({ item, env }: { item: Extract<QueueItem, { source: "propos
   const listed = item.proposal.proposal;
   const proposal = newerRecord(listed, decisions.confirmed.get(listed.id));
   const deciding = decisions.inFlight.has(proposal.id);
+  // Which button the person pressed: useActionDecisions tracks the proposal, not the button, so the row keeps that.
+  const [chosen, setChosen] = useState<"approve" | "reject" | null>(null);
+  const sending = deciding ? chosen : null;
   const view = viewOf(proposal, null, {
     canDecide: env.canDecide,
     connected: env.connected,
@@ -132,6 +138,8 @@ function ProposalRow({ item, env }: { item: Extract<QueueItem, { source: "propos
   const error = decisions.errors.get(proposal.id) ?? null;
   const approvedBy = approvedByText(proposal);
   const pending = view.state === "pending";
+  // Approve and Reject are destructive: a refused decision stays here until the person decides again, and an accepted one
+  // moves the row to Resolved, where it stays for the session.
   return (
     <Row
       item={item}
@@ -145,8 +153,12 @@ function ProposalRow({ item, env }: { item: Extract<QueueItem, { source: "propos
               variant={view.approve.variant === "danger" ? "danger" : "primary"}
               aria-label={`Approve: ${phrase}`}
               aria-describedby={view.approve.enabled ? undefined : messageId}
-              disabled={!view.approve.enabled}
-              onClick={() => void decisions.decide(proposal, "approve", null, env.names)}
+              pending={sending === "approve"}
+              disabled={!view.approve.enabled && sending !== "approve"}
+              onClick={() => {
+                setChosen("approve");
+                void decisions.decide(proposal, "approve", null, env.names);
+              }}
             >
               Approve
             </Button>
@@ -154,8 +166,12 @@ function ProposalRow({ item, env }: { item: Extract<QueueItem, { source: "propos
               variant="quiet"
               aria-label={`Reject: ${phrase}`}
               aria-describedby={view.reject.enabled ? undefined : messageId}
-              disabled={!view.reject.enabled}
-              onClick={() => void decisions.decide(proposal, "reject", null, env.names)}
+              pending={sending === "reject"}
+              disabled={!view.reject.enabled && sending !== "reject"}
+              onClick={() => {
+                setChosen("reject");
+                void decisions.decide(proposal, "reject", null, env.names);
+              }}
             >
               Reject
             </Button>
@@ -177,8 +193,12 @@ function ProposalRow({ item, env }: { item: Extract<QueueItem, { source: "propos
           {line}
         </p>
       ))}
-      {notice !== null && <Notice tone="info">{notice}</Notice>}
-      {error !== null && <Notice tone="bad">{requestErrorText(error, null)}</Notice>}
+      {notice !== null && <Notice tone="info" role="status">{notice}</Notice>}
+      {error !== null && (
+        <Notice tone="bad" role="alert">
+          {requestErrorText(error, null)}
+        </Notice>
+      )}
       <Disclosure summary="Details">
         <FieldList proposal={proposal} names={env.names} />
       </Disclosure>
@@ -191,11 +211,16 @@ function QuestionRow({ item, env }: { item: Extract<QueueItem, { type: "question
   const { questions } = env;
   const [text, setText] = useState("");
   const [day, setDay] = useState("");
+  // Which of the two the person sent: questions.busy names the question, not the button.
+  const [sent, setSent] = useState<"answer" | "defer">("answer");
   const answerId = useId();
   const deferId = useId();
   const reasonId = useId();
   const range = useMemo(() => holdRange(new Date()), []);
   const off = questions.blocked !== null || questions.busy !== null;
+  const ours = questions.busy === question.id;
+  const answering = ours && sent === "answer";
+  const deferring = ours && sent === "defer";
   const reason = questions.blocked !== null ? reasonId : undefined;
   const label = question.taskTitle || question.taskId;
   return (
@@ -218,8 +243,9 @@ function QuestionRow({ item, env }: { item: Extract<QueueItem, { type: "question
         className="rq-answer"
         onSubmit={(event) => {
           event.preventDefault();
-          void questions.answer(question, text).then((sent) => {
-            if (sent) setText("");
+          setSent("answer");
+          void questions.answer(question, text).then((done) => {
+            if (done) setText("");
           });
         }}
       >
@@ -232,7 +258,7 @@ function QuestionRow({ item, env }: { item: Extract<QueueItem, { type: "question
           value={text}
           onChange={(event) => setText(event.target.value)}
         />
-        <Button type="submit" disabled={off || text.trim() === ""} aria-describedby={reason}>
+        <Button type="submit" pending={answering} disabled={(off && !answering) || text.trim() === ""} aria-describedby={reason}>
           Send answer
         </Button>
       </form>
@@ -242,12 +268,13 @@ function QuestionRow({ item, env }: { item: Extract<QueueItem, { type: "question
             className="rq-answer"
             onSubmit={(event) => {
               event.preventDefault();
+              setSent("defer");
               void questions.defer(question, day);
             }}
           >
             <label htmlFor={deferId}>Defer until</label>
             <input id={deferId} type="date" required min={range.min} max={range.max} value={day} onChange={(event) => setDay(event.target.value)} />
-            <Button type="submit" disabled={off || day === ""} aria-describedby={reason}>
+            <Button type="submit" pending={deferring} disabled={(off && !deferring) || day === ""} aria-describedby={reason}>
               Defer
             </Button>
             <span className="rd-reason">The task stays blocked until you answer. Up to {MAX_HOLD_DAYS} days.</span>
@@ -333,7 +360,8 @@ function PrRow({ item, env }: { item: Extract<QueueItem, { type: "pr" }>; env: R
               variant="quiet"
               aria-label={`Refresh pull request ${pull.number}`}
               aria-describedby={cooling ? reasonId : undefined}
-              disabled={cooling || pulls.busy !== null}
+              pending={pulls.busy === pull.taskId}
+              disabled={pulls.busy !== pull.taskId && (cooling || pulls.busy !== null)}
               onClick={() => void pulls.refresh(pull)}
             >
               Refresh

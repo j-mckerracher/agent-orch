@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { APPROVER_REQUIRED_NOTICE } from "../../../daemon/errors";
 import type { QuestionWire } from "../../../daemon/types";
-import { approval, makeClient, taskRecord } from "../../../review/testing";
+import { approval, fail, makeClient, taskRecord } from "../../../review/testing";
 import { populate } from "../../../sources/surfaces/testkit";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
@@ -29,6 +29,7 @@ function mount(services: Services) {
       <ReviewDecisionsView client={client} />
     </ServicesProvider>,
   );
+  return client;
 }
 
 async function connected(setup: (fake: FakeDaemon) => void = () => undefined, base: (fake: FakeDaemon) => FakeDaemon = (fake) => fake) {
@@ -78,7 +79,38 @@ describe("Review queue in fixture mode", () => {
     mount(createServices());
     const row = await screen.findByText("Create workstream: Post-MVP work").then((el) => el.closest("li")!);
     await userEvent.click(within(row).getByRole("button", { name: /^Approve:/ }));
-    await waitFor(() => expect(status()).toHaveTextContent("Fixture data: nothing was created."));
+    // The row says it, not the top of the view: the decision's own receipt is in the row.
+    await waitFor(() => expect(within(row).getByRole("status")).toHaveTextContent("Fixture data: nothing was created."));
+  });
+
+  it("refresh_is_busy_while_it_reads_and_then_says_the_pending_decisions_were_refreshed", async () => {
+    mount(createServices());
+    await screen.findByText(/Pull request 42/);
+    const refresh = screen.getByRole("button", { name: "Refresh" });
+    await userEvent.click(refresh);
+    expect(refresh).toHaveAttribute("aria-busy", "true");
+    expect(await screen.findByText("Pending decisions refreshed.")).toBeTruthy();
+  });
+
+  it("refresh_that_the_daemon_refuses_says_why_beside_the_button_and_offers_retry", async () => {
+    const client = mount(createServices());
+    await screen.findByText(/Pull request 42/);
+    client.setHandler("approvals.list", () => fail("timeout"));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    const header = screen.getByRole("heading", { level: 1, name: "Review" }).parentElement!;
+    const alert = await within(header).findByRole("alert");
+    expect(alert).toHaveTextContent("Pending decisions were not refreshed.");
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("a_hold_is_busy_while_it_is_sent_and_then_says_what_it_held", async () => {
+    mount(createServices());
+    await userEvent.click(await screen.findByRole("button", { name: /^Hold until… decisions for task task-1/ }));
+    fireEvent.change(screen.getByLabelText("Hold until"), { target: { value: holdRange(new Date()).max } });
+    const submit = screen.getByRole("button", { name: "Hold decision" });
+    await userEvent.click(submit);
+    expect(submit).toHaveAttribute("aria-busy", "true");
+    await waitFor(() => expect(status()).toHaveTextContent(/Held: task task-1 until/));
   });
 
   it("answers_a_question_in_its_row", async () => {
@@ -168,6 +200,7 @@ describe("Review queue against a daemon", () => {
     await userEvent.click(within(row).getByRole("button", { name: "Defer" }));
     await waitFor(() => expect(fake.callsTo("decisions.defer")).toHaveLength(1));
     expect(fake.callsTo("decisions.defer")[0]!.params).toMatchObject({ question_id: "q1", until: day });
+    await waitFor(() => expect(status()).toHaveTextContent(/Deferred: Task for q1 until/));
   });
 
   it("keeps_the_typed_answer_when_the_daemon_refuses", async () => {
@@ -178,7 +211,9 @@ describe("Review queue against a daemon", () => {
     const row = (await screen.findByText("Which database?")).closest("li")!;
     await userEvent.type(within(row).getByRole("textbox"), "Postgres");
     await userEvent.click(within(row).getByRole("button", { name: "Send answer" }));
-    await waitFor(() => expect(status()).toHaveTextContent("That question is already closed. Nothing was changed."));
+    expect(within(row).getByRole("button", { name: "Send answer" })).toHaveAttribute("aria-busy", "true");
+    await waitFor(() => expect(within(status()).getByRole("alert")).toHaveTextContent("That question is already closed. Nothing was changed."));
+    expect(within(status()).getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(within(row).getByRole("textbox")).toHaveValue("Postgres");
   });
 
@@ -225,8 +260,11 @@ describe("Review queue against a daemon", () => {
     const { fake } = await connected(holds);
     fake.failNext("holds.release", { code: -32010, message: "not found" });
     await userEvent.click(await screen.findByRole("tab", { name: /^Held/ }));
-    await userEvent.click(await screen.findByRole("button", { name: "Release: task task-1" }));
-    await waitFor(() => expect(status()).toHaveTextContent("That hold has already ended. Nothing was changed."));
+    const release = await screen.findByRole("button", { name: "Release: task task-1" });
+    await userEvent.click(release);
+    expect(release).toHaveAttribute("aria-busy", "true");
+    await waitFor(() => expect(within(status()).getByRole("alert")).toHaveTextContent("That hold has already ended. Nothing was changed."));
+    expect(within(status()).getByRole("button", { name: "Retry" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Release: task task-1" })).toBeTruthy();
   });
 
@@ -294,6 +332,7 @@ describe("Review queue against a daemon", () => {
     });
     await waitFor(() => pullRow(42));
     await userEvent.click(screen.getByRole("button", { name: "Refresh pull request 42" }));
+    expect(screen.getByRole("button", { name: "Refresh pull request 42" })).toHaveAttribute("aria-busy", "true");
     await waitFor(() => expect(status()).toHaveTextContent("Read pull request 42 again: Required checks 3 of 3 passed."));
     expect(fake.callsTo("pulls.refresh")).toHaveLength(1);
     const again = screen.getByRole("button", { name: "Refresh pull request 42" });

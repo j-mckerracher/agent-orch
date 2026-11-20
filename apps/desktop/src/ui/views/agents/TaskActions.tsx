@@ -1,20 +1,30 @@
 /** The task's Actions menu: Cancel attempt, Force start and Reassign. An action the daemon cannot take now is not offered. */
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { isFixtureId } from "../../../daemon/api";
-import { asDaemonError, type DaemonError } from "../../../daemon/errors";
+import { asDaemonError } from "../../../daemon/errors";
 import type { SourceResult } from "../../../sources/types";
 import { canCancel, stateLabel } from "../../format";
+import { ActionStatus, useAction, type Action, type Outcome } from "../../action";
+import { useLastingAction } from "../../lastingAction";
 import { useGate, useServices, useSource } from "../../services";
-import { ErrorNotice } from "../../widgets";
+import { failureText } from "../../widgets";
 import type { MenuItem } from "../workstreams/ActionMenu";
 import { taskRef, type WorkRow } from "./model";
 
-export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]; notices: ReactNode } {
+const BUSY_REASON = "Another action is still running for this task.";
+
+/**
+ * `items` feeds the menu; `statuses` must render beside the menu trigger, outside the menu, because the menu
+ * closes when an item is chosen and can disappear once the task's state no longer offers any item.
+ */
+export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]; statuses: ReactNode } {
   const { data, sources } = useServices();
   const gate = useGate();
-  const [note, setNote] = useState<string | null>(null);
-  const [failure, setFailure] = useState<{ error: DaemonError; action: string } | null>(null);
-  const [busy, setBusy] = useState(false);
+  // Cancel and force start end or move work that may be running, so their result stays until the next one.
+  const stop = useLastingAction();
+  // Reassign starts one more attempt and removes nothing, so its result clears itself.
+  const reassign = useAction();
+  const reason = stop.pending || reassign.pending ? BUSY_REASON : null;
   // Fixture ids can never reach a mutation: only a real task in live mode is sent.
   const real = live && row.origin === "real" && !isFixtureId(row.id);
   const linked = real && gate.can("tasks");
@@ -25,26 +35,23 @@ export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]
     sources.retry.provenance,
   );
 
-  const run = async (action: string, request: () => Promise<string>) => {
-    if (busy) return;
-    setNote(null);
-    setFailure(null);
-    setBusy(true);
-    try {
-      setNote(await request());
-    } catch (error) {
-      setFailure({ error: asDaemonError(error), action });
-    } finally {
-      setBusy(false);
-    }
-  };
+  const write = (action: Action, text: string, request: () => Promise<string>) =>
+    action.run(`${text}…`, async (): Promise<Outcome> => {
+      try {
+        return { kind: "saved", text: await request() };
+      } catch (error) {
+        const failure = asDaemonError(error);
+        throw new Error(`${failureText(text, failure)}${failure.message ? ` (${failure.message})` : ""}`);
+      }
+    });
 
   const items: MenuItem[] = [];
   if (linked && canCancel(row.state)) {
     items.push({
       label: "Cancel attempt",
+      reason,
       onSelect: () =>
-        void run("Canceling the task", async () => {
+        void write(stop, "Canceling the task", async () => {
           const result = await data.cancelTask(row.id);
           if (!result.ok) throw result.error;
           return `Cancel request acknowledged; the daemon now records the task as ${stateLabel(result.value.state)}. The cancel applied to the whole task, not only this attempt. This is not proof that any process has stopped.`;
@@ -55,8 +62,9 @@ export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]
   if (linked && row.state === "Queued" && gate.connected && gate.connection.approver) {
     items.push({
       label: "Force start",
+      reason,
       onSelect: () =>
-        void run("Forcing the task to start", async () => {
+        void write(stop, "Forcing the task to start", async () => {
           const result = await data.forceStartTask(row.id);
           if (!result.ok) throw result.error;
           void data.watchTask(row.id);
@@ -68,8 +76,9 @@ export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]
     const retry = sources.retry.retry.bind(sources.retry);
     items.push({
       label: "Reassign",
+      reason,
       onSelect: () =>
-        void run("Reassigning the task", async () => {
+        void write(reassign, "Reassigning the task", async () => {
           await retry(ref);
           void data.watchTask(row.id);
           void data.refreshAll();
@@ -78,12 +87,11 @@ export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]
     });
   }
 
-  const notices = (
+  const statuses = (
     <>
-      {note && <p role="status">{note}</p>}
-      {failure && <ErrorNotice error={failure.error} action={failure.action} />}
-      {failure?.error.indeterminate && <p role="status">The outcome is unknown. Trying again reuses the same request key.</p>}
+      <ActionStatus action={stop} />
+      <ActionStatus action={reassign} />
     </>
   );
-  return { items, notices };
+  return { items, statuses };
 }

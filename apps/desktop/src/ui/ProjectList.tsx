@@ -21,6 +21,7 @@ export function ProjectList() {
   const [busy, setBusy] = useState(false);
 
   const register = async () => {
+    if (busy) return;
     const path = registerPath.trim();
     setError(null);
     if (!isAbsolutePath(path)) {
@@ -58,7 +59,7 @@ export function ProjectList() {
             placeholder="/path/to/repository"
           />
         </label>
-        <Button type="submit" variant="primary" disabled={!gate.can("projects") || busy || registerPath.trim() === ""}>
+        <Button type="submit" variant="primary" pending={busy} disabled={!gate.can("projects") || registerPath.trim() === ""}>
           Register
         </Button>
         {!gate.connected && (

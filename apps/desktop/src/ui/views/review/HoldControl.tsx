@@ -3,11 +3,15 @@
 import { useId, useMemo, useState } from "react";
 import { Button } from "../../theme";
 import { MAX_HOLD_DAYS, holdRange } from "./holdDates";
-import type { HoldsModel } from "./useHolds";
+import { holdBusyKey, type HoldsModel } from "./useHolds";
 
 /** The one element that gives the reason a hold control is off; the queue renders it once. */
 export const HOLD_REASON_ID = "rd-hold-reason";
 
+/**
+ * The hold form for one task. Its result is `holds.action`, rendered by the view that holds the control: a successful hold
+ * moves the row to Held, so the form cannot carry the result itself.
+ */
 export function HoldControl({ taskId, holds, onStart }: { taskId: string; holds: HoldsModel; onStart: () => void }) {
   const [open, setOpen] = useState(false);
   const [day, setDay] = useState("");
@@ -15,7 +19,8 @@ export function HoldControl({ taskId, holds, onStart }: { taskId: string; holds:
   const hintId = useId();
   // Read once per opening, so the picker does not move while a person is choosing.
   const range = useMemo(() => (open ? holdRange(new Date()) : null), [open]);
-  const off = holds.blocked !== null || holds.busy !== null;
+  const pending = holds.busy === holdBusyKey("approval", taskId);
+  const off = holds.blocked !== null || (holds.busy !== null && !pending);
   const reason = holds.blocked !== null ? HOLD_REASON_ID : undefined;
 
   if (!open || range === null) {
@@ -58,7 +63,7 @@ export function HoldControl({ taskId, holds, onStart }: { taskId: string; holds:
         Pick a day from today to {MAX_HOLD_DAYS} days from today. Every pending decision of this task returns to Actionable on that
         day. Holding does not approve or reject anything.
       </span>
-      <Button type="submit" variant="primary" disabled={off || day === ""} aria-describedby={reason}>
+      <Button type="submit" variant="primary" pending={pending} disabled={off || day === ""} aria-describedby={reason}>
         Hold decision
       </Button>
       <Button variant="quiet" disabled={holds.busy !== null} onClick={() => setOpen(false)}>

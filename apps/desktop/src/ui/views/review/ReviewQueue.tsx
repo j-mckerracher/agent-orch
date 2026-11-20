@@ -6,9 +6,11 @@ import type { ReviewClient } from "../../../review/client";
 import type { ReviewSession } from "../../../review/reviewSession";
 import { heldSets } from "../../../sources/surfaces/holds";
 import type { ProposalItem } from "../../../sources/surfaces/types";
+import { ActionStatus, useAction } from "../../action";
 import { basename, decisionCountText, pendingDecisionCount } from "../../format";
 import { useGate, useServices, useStore, useSurface } from "../../services";
 import { Button, EmptyState } from "../../theme";
+import { asDaemonError, presentError } from "../../../daemon/errors";
 import { useActionDecisions } from "../workspace/useActionDecisions";
 import { useRetained } from "../workspace/useRetained";
 import { WsTabs } from "../workstreams/WsTabs";
@@ -35,6 +37,12 @@ export function useWaitingCount(): string | null {
   return decisionCountText(pendingDecisionCount(approvals.data, proposals.data, heldSets(holds.data ?? [])), proposals.more);
 }
 
+/**
+ * A decision's own result is shown by its row (ProposalRow): a decided row moves to Resolved, so nothing is written to a
+ * shared region for it.
+ */
+const noAnnounce = () => undefined;
+
 const EMPTY: Record<QueueTab, { title: string; description: string }> = {
   needs: { title: "Nothing needs you", description: "Approvals, questions, candidates and pull requests that wait for you appear here." },
   held: { title: "Nothing is held", description: "Hold a decision and it waits here until its day." },
@@ -46,11 +54,11 @@ export function ReviewQueue({ client, session, projectId }: { client: ReviewClie
   const gate = useGate();
   const [project, setProject] = useState<string | null>(projectId ?? null);
   const [type, setType] = useState<ItemType | null>(null);
-  const [decisionStatus, setDecisionStatus] = useState("");
   const holds = useHolds();
   const questions = useQuestions();
   const pulls = usePulls();
   const waiting = useWaitingCount();
+  const refreshList = useAction();
 
   // The shell's lists refresh on their own. This view reads again when the pending ids in them change, and keeps
   // the last answer on screen meanwhile, so the list and the count do not stay apart.
@@ -67,7 +75,7 @@ export function ReviewQueue({ client, session, projectId }: { client: ReviewClie
   const decided = useActionDecisions({
     scope: "review",
     resolve: surfaces.conversation.resolve,
-    announce: setDecisionStatus,
+    announce: noAnnounce,
     reload: () => undefined,
   });
 
@@ -148,7 +156,18 @@ export function ReviewQueue({ client, session, projectId }: { client: ReviewClie
     pulls.unavailable !== null ? `Pull requests are not available: ${pulls.unavailable}` : null,
     decisions.status !== "ok" && decisions.status !== "loading" ? `Proposed actions are not available: ${decisions.reason}` : null,
   ].filter((text): text is string => text !== null);
-  const statuses = [holds.announcement, questions.announcement, pulls.announcement, decisionStatus].filter((text) => text !== "");
+
+  /** Refresh reads the pending decisions again; a refusal says so beside the button, and names the next step. */
+  const refreshPending = () =>
+    void refreshList.run("Refreshing…", async () => {
+      try {
+        await refresh();
+      } catch (error) {
+        const { reason, nextStep } = presentError(asDaemonError(error));
+        throw new Error(`Pending decisions were not refreshed. ${reason} ${nextStep}`);
+      }
+      return { kind: "saved", text: "Pending decisions refreshed." };
+    });
 
   return (
     <section className="rq" aria-label="Review" data-testid="review-queue">
@@ -156,9 +175,10 @@ export function ReviewQueue({ client, session, projectId }: { client: ReviewClie
         <h1>Review</h1>
         {waiting !== null && <span className="rq-waiting">{waiting} waiting</span>}
         <span className="rq-spacer" />
-        <Button variant="quiet" onClick={refresh}>
+        <Button variant="quiet" pending={refreshList.pending} onClick={refreshPending}>
           Refresh
         </Button>
+        <ActionStatus action={refreshList} />
       </header>
       {notices.map((text) => (
         <p key={text} role="alert">
@@ -170,12 +190,13 @@ export function ReviewQueue({ client, session, projectId }: { client: ReviewClie
           {holds.blocked}
         </p>
       )}
-      <div role="status" aria-live="polite" data-testid="queue-status" className="rq-status">
-        {statuses.map((text) => (
-          <p key={text}>{text}</p>
-        ))}
-      </div>
       <div ref={panelRef} tabIndex={-1} className="rq-panel">
+        {/* Outside the tabs, so a result stays on screen when the row it came from moves to another tab. */}
+        <div className="rq-outcomes" data-testid="queue-status">
+          <ActionStatus action={holds.action} />
+          <ActionStatus action={questions.action} />
+          <ActionStatus action={pulls.action} />
+        </div>
         <WsTabs
           label="Review queue"
           actions={

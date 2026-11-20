@@ -269,7 +269,9 @@ describe("live mode", () => {
     expect(fake.callsTo("tasks.cancel")).toHaveLength(0);
     expect(within(panel).getByRole("button", { name: /Stop objective of t1/ })).toHaveFocus();
     await user.click(within(panel).getByRole("button", { name: /Stop objective of t1/ }));
+    fake.delayNext("tasks.cancel", 150);
     await user.click(within(panel).getByRole("button", { name: "Confirm stop" }));
+    expect(within(panel).getByRole("button", { name: "Confirm stop" })).toHaveAttribute("aria-busy", "true");
     await waitFor(() => expect(fake.callsTo("tasks.cancel")).toHaveLength(1));
     expect(fake.callsTo("tasks.cancel")[0].params).toMatchObject({ task_id: "t1" });
     expect(await within(panel).findByTestId("activity-notice")).toHaveTextContent("not proof");
