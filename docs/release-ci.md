@@ -488,6 +488,12 @@ the artifact upload or the publish job. It passes the public key and `createUpda
 `--config` JSON as the Windows signing fields. `signed` and `unsigned` in the file names still describe the OS
 code signature only.
 
+The private key reaches the `Package` step as an environment variable, and that step runs scripts from the tagged
+commit, so anyone who can create a `v*` tag or run the workflow on one can read it. Before enabling updates, require
+reviewers on the `release` environment and add a tag ruleset that limits who can create `v*` tags. `tauri build` also
+runs the app's build scripts and dependencies with the key in its environment, so dependency changes on a release
+path need the same review as the workflow.
+
 An enabled build adds an `updater` record (`platformKey`, `payload`, `signature`, each with a file name and SHA-256)
 to `release-info.json` and these files next to the installer: on macOS `MCAO-X.Y.Z-macos-arm64-<signed|unsigned>.app.tar.gz`
 and its `.sig`; on Windows the installer itself is the payload, plus `<installer>.sig`. The install smoke and

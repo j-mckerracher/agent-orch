@@ -951,6 +951,21 @@ fn update_idle_is_refused_while_a_request_or_pass_holds_the_gate_then_accepted()
 }
 
 #[test]
+fn update_idle_recovers_a_poisoned_gate_and_accepts_when_idle() {
+    let (_directory, api) = new_api();
+    let gate = api.stop_gate.clone();
+    let poisoner = std::thread::spawn(move || {
+        let _held = gate.write().unwrap();
+        panic!("poison the gate");
+    });
+    assert!(poisoner.join().is_err());
+    assert!(api.stop_gate.is_poisoned());
+
+    assert!(api.try_begin_idle_shutdown());
+    assert!(serving(&api.stop_gate).is_none());
+}
+
+#[test]
 fn update_idle_is_refused_while_a_conversation_turn_runs() {
     use crate::api::conversation_runtime::{
         ConversationRuntime, ConversationService, ReplySink, RuntimeFailure, RuntimeIdentity,

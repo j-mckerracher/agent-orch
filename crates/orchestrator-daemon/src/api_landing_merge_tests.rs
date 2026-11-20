@@ -1802,3 +1802,64 @@ fn merge_grant_two_callers_on_one_proposal_merge_once() {
     assert_eq!(l.github.merge_count(), 1);
     assert!(!l.api.store.issue_pull_request_merge(&id).unwrap());
 }
+
+/// Runs `pass` on a thread that parks inside its first pull request read, and calls `during`
+/// while it is parked. Returns what `pass` returned.
+fn while_first_read_is_in_flight<T: Send>(
+    l: Landing,
+    pass: impl FnOnce(&Landing) -> T + Send,
+    during: impl FnOnce(&Landing),
+) -> (Landing, T) {
+    let (entered_tx, entered_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+    let host = Arc::new(RevokingHost {
+        inner: l.github.clone(),
+        hook: std::sync::Mutex::new(Some(Box::new(move || {
+            entered_tx.send(()).unwrap();
+            release_rx.recv().unwrap();
+        }))),
+    });
+    let l = restart_over(l, host as Arc<dyn GitHub>);
+    let passed = std::thread::scope(|scope| {
+        let running = scope.spawn(|| pass(&l));
+        entered_rx.recv().unwrap();
+        during(&l);
+        release_tx.send(()).unwrap();
+        running.join().unwrap()
+    });
+    (l, passed)
+}
+
+#[test]
+fn update_idle_is_not_refused_by_a_landing_poll_that_only_reads_and_stops_its_writes() {
+    let l = landing();
+
+    let (l, report) = while_first_read_is_in_flight(
+        l,
+        |l| l.tick(now()),
+        |l| assert!(l.api.try_begin_idle_shutdown()),
+    );
+
+    // The gate closed mid-read: nothing was stored and the tick ended there.
+    assert_eq!(report.polled, 0);
+    assert!(l.api.store.pull_request(&l.task).unwrap().is_none());
+}
+
+#[test]
+fn update_idle_is_refused_while_a_merge_runs_and_no_merge_starts_after_it_is_accepted() {
+    let l = landing();
+    let id = card(&l);
+    approve(&l, &id, "k-1");
+
+    let (l, looked_at) = while_first_read_is_in_flight(
+        l,
+        |l| l.api.merge_pending(now()),
+        |l| assert!(!l.api.try_begin_idle_shutdown()),
+    );
+
+    assert_eq!(looked_at, 1);
+    assert_eq!(l.github.merge_count(), 1);
+    assert!(l.api.try_begin_idle_shutdown());
+    assert_eq!(l.api.merge_pending(now() + 1_000), 0);
+    assert_eq!(l.github.merge_count(), 1);
+}

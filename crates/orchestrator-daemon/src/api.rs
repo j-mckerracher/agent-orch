@@ -5,7 +5,7 @@
 //! Updated: 2026-11-08T12:21:37-07:00.
 
 use std::path::{Component, Path};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, TryLockError};
 use std::time::{Duration, Instant};
 
 use orchestrator_agents::{
@@ -573,10 +573,13 @@ impl RpcHandler for DaemonApi {
     }
 
     /// Closes the admission gate when nothing runs or can start. `try_write` fails while any
-    /// request or background pass holds a read guard, which counts as busy.
+    /// request or acting background pass holds a read guard, which counts as busy; a poisoned
+    /// gate is recovered as `serving` does.
     fn try_begin_idle_shutdown(&self) -> bool {
-        let Ok(mut closed) = self.stop_gate.try_write() else {
-            return false;
+        let mut closed = match self.stop_gate.try_write() {
+            Ok(closed) => closed,
+            Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+            Err(TryLockError::WouldBlock) => return false,
         };
         if *closed {
             return true;
