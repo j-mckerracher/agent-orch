@@ -130,14 +130,14 @@ describe("M7-15 restyled project screens: behavior is unchanged", () => {
     expect(screen.getByText(/Registration is unavailable while offline/)).toBeInTheDocument();
   });
 
-  it("shows task state with a mark in the task list and keeps the Open action keyboard-operable", async () => {
+  it("shows task state with a mark in the task list and keeps the task link keyboard-operable", async () => {
     const fake = new FakeDaemon();
     fake.projects = [{ id: REPO }];
     fake.tasks = [mkTask("task-1", REPO, { state: "Failed" })];
-    const { user } = await mount(fake, { route: { name: "tasks", projectId: REPO, filter: "all" } });
+    const { user } = await mount(fake, { route: { name: "tasks", projectId: REPO, filter: "done" } });
     const table = await screen.findByRole("table", { name: "Tasks" });
     expect(table.querySelector(".ui-pill.ui-tone-bad")).toHaveTextContent("Failed");
-    const open = screen.getByRole("button", { name: "Open" });
+    const open = screen.getByRole("link", { name: "objective of task-1" });
     open.focus();
     expect(open).toHaveFocus();
     await user.keyboard("{Enter}");
@@ -148,7 +148,7 @@ describe("M7-15 restyled project screens: behavior is unchanged", () => {
     const fake = new FakeDaemon();
     fake.projects = [{ id: REPO }];
     fake.tasks = [mkTask("task-1", REPO)];
-    await mount(fake, { route: { name: "tasks", projectId: REPO, filter: "all" } });
+    await mount(fake, { route: { name: "tasks", projectId: REPO, filter: "open" } });
     const group = await screen.findByRole("group", { name: "Task filters" });
     expect(group.querySelectorAll("button[aria-pressed='true']")).toHaveLength(1);
   });

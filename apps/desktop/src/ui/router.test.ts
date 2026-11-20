@@ -4,11 +4,13 @@ import { DEFAULT_ROUTE, GLOBAL_VIEWS, RouterStore, formatRoute, parseRoute, sync
 const legacy: Route[] = [
   { name: "projects" },
   { name: "project", projectId: "/a b/repo" },
-  { name: "tasks", projectId: "/repo", filter: "all" },
-  { name: "tasks", projectId: "/repo", filter: "state:Queued" },
+  { name: "tasks", projectId: "/repo", filter: "open" },
+  { name: "tasks", projectId: "/repo", filter: "review" },
+  { name: "tasks", projectId: "/repo", filter: "done" },
   { name: "task", projectId: "/repo", taskId: "task-1" },
   { name: "fixture-task", projectId: "/repo", id: "fixture:task-queued" },
   { name: "coordinator", projectId: "/repo" },
+  { name: "defaults", projectId: "/repo" },
 ];
 
 describe("global routes", () => {
@@ -77,9 +79,7 @@ describe("legacy routes are unchanged", () => {
   it("keeps the exact legacy hash formats", () => {
     expect(formatRoute({ name: "projects" })).toBe("#/projects");
     expect(formatRoute({ name: "project", projectId: "/a b/repo" })).toBe("#/project/%2Fa%20b%2Frepo");
-    expect(formatRoute({ name: "tasks", projectId: "/repo", filter: "state:Queued" })).toBe(
-      "#/project/%2Frepo/tasks/state%3AQueued",
-    );
+    expect(formatRoute({ name: "tasks", projectId: "/repo", filter: "done" })).toBe("#/project/%2Frepo/tasks/done");
     expect(formatRoute({ name: "task", projectId: "/repo", taskId: "t" })).toBe("#/project/%2Frepo/task/t");
     expect(formatRoute({ name: "fixture-task", projectId: "/repo", id: "fixture:x" })).toBe(
       "#/project/%2Frepo/preview/fixture%3Ax",
@@ -112,9 +112,9 @@ describe("hash synchronization", () => {
     router.navigate({ name: "global", view: "review" });
     expect(target.location.hash).toBe("#/review");
 
-    target.location.hash = "#/project/%2Frepo/tasks/running";
+    target.location.hash = "#/project/%2Frepo/tasks/done";
     target.dispatchEvent(new Event("hashchange"));
-    expect(router.getSnapshot()).toEqual({ name: "tasks", projectId: "/repo", filter: "running" });
+    expect(router.getSnapshot()).toEqual({ name: "tasks", projectId: "/repo", filter: "done" });
 
     target.location.hash = "#/workstreams";
     target.dispatchEvent(new Event("hashchange"));

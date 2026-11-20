@@ -22,17 +22,14 @@ function seeded() {
 }
 
 describe("daemon-backed D1-D6 screens", () => {
-  it("shows project detection without placeholder or simulated wording", async () => {
+  it("no longer shows agent detection on the project page", async () => {
     await mount(seeded(), { route: { name: "project", projectId: REPO }, daemonSources: true });
-    expect(await screen.findByText(/Codex: installed/)).toBeInTheDocument();
-    expect(screen.getByRole("region", { name: "Agent detection" })).toBeInTheDocument();
-    const screens = within(screen.getByRole("main"));
-    expect(screens.queryByText(/placeholder/i)).not.toBeInTheDocument();
-    expect(screens.queryByText(/simulated/i)).not.toBeInTheDocument();
+    await screen.findByRole("table", { name: "Tasks" });
+    expect(screen.queryByText(/Agent detection/)).not.toBeInTheDocument();
   });
 
   it("hides the fixture-only execution preview", async () => {
-    await mount(seeded(), { route: { name: "tasks", projectId: REPO, filter: "all" }, daemonSources: true });
+    await mount(seeded(), { route: { name: "tasks", projectId: REPO, filter: "open" }, daemonSources: true });
     await screen.findByRole("table", { name: "Tasks" });
     expect(screen.queryByRole("region", { name: /Execution preview/ })).not.toBeInTheDocument();
   });
@@ -43,12 +40,12 @@ describe("daemon-backed D1-D6 screens", () => {
       route: { name: "task", projectId: REPO, taskId: "t-failed" },
       daemonSources: true,
     });
-    const button = await screen.findByRole("button", { name: "Retry task" });
-    await waitFor(() => expect(button).toBeEnabled());
+    const button = await screen.findByRole("button", { name: "Retry" });
     expect(screen.queryByRole("button", { name: "Preview retry" })).not.toBeInTheDocument();
     await user.click(button);
     expect(await screen.findByText("The retry request was accepted by the daemon.")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("task-state")).toHaveTextContent("Queued"));
+    await user.click(screen.getByRole("tab", { name: /Attempts/ }));
     const attempts = within(screen.getByRole("region", { name: "Attempts" }));
     expect(attempts.getAllByRole("listitem")[0]).toHaveTextContent("#1 attempt-1: Pending");
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
@@ -80,12 +77,11 @@ describe("daemon-backed D1-D6 screens", () => {
       route: { name: "task", projectId: REPO, taskId: "t-failed" },
       daemonSources: true,
     });
-    const button = await screen.findByRole("button", { name: "Retry task" });
-    await waitFor(() => expect(button).toBeEnabled());
-    await user.click(button);
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
 
     expect(await screen.findByText("The retry request was accepted by the daemon.")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByTestId("task-state")).toHaveTextContent("Failed"));
+    await user.click(screen.getByRole("tab", { name: /Attempts/ }));
     const attempts = within(screen.getByRole("region", { name: "Attempts" }));
     expect(attempts.getAllByRole("listitem")).toHaveLength(2);
     expect(attempts.getAllByRole("listitem")[0]).toHaveTextContent("#1 attempt-1: Failed");
@@ -93,10 +89,11 @@ describe("daemon-backed D1-D6 screens", () => {
     expect(screen.queryByText(/daemon now records the task as Queued with 1 attempt/)).not.toBeInTheDocument();
   });
 
-  it("disables retry for a task the daemon would refuse", async () => {
+  it("hides retry for a task the daemon would refuse", async () => {
     await mount(seeded(), { route: { name: "task", projectId: REPO, taskId: "t-q" }, daemonSources: true });
-    expect(await screen.findByText(/only Failed or VerificationFailed tasks can be retried/)).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Retry task" })).toBeDisabled();
+    await screen.findByTestId("task-state");
+    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry task" })).not.toBeInTheDocument();
   });
 
   it("sends a coordinator message and validates a proposal without any simulated receipt", async () => {

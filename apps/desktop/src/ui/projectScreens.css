@@ -706,3 +706,68 @@
     margin-left: 0;
   }
 }
+
+/* Project and task page heads and tabs (DPES-1044) ---------------------------------------- */
+.pt-head {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  margin: 0 0 12px;
+}
+
+.pt-head h1 {
+  margin: 0;
+  min-width: 0;
+  font: 600 24px/1.2 var(--font-display);
+  overflow-wrap: anywhere;
+}
+
+.pt-head p {
+  margin: 0;
+}
+
+.pt-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.pt-spacer {
+  flex: 1;
+}
+
+.pt-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 0 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.pt-tab {
+  margin-bottom: -1px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: none;
+  color: var(--subtle);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.pt-tab[aria-selected="true"] {
+  border-bottom-color: var(--green);
+  color: var(--ink);
+}
+
+.pt-tab:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+/* The dialog is narrow: two columns keep More options short enough to leave the footer in view. */
+.ui-dialog .ps-form {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}

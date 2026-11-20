@@ -7,14 +7,19 @@
  */
 import { Store } from "../daemon/store";
 
-export type TaskFilter =
-  | "all"
-  | "queued"
-  | "running"
-  | "blocked"
-  | "review"
-  | "terminal"
-  | `state:${string}`;
+/** The project task list's three filters. */
+export type TaskFilter = "open" | "review" | "done";
+
+/**
+ * Hash values from before the three-filter list: queued, running, blocked and a non-final state are Open,
+ * `terminal` and a final state are Done. Anything unknown opens the default.
+ */
+export function normalizeFilter(value: string): TaskFilter {
+  if (value === "review" || value === "done") return value;
+  if (value === "terminal") return "done";
+  const state = value.startsWith("state:") ? value.slice("state:".length) : "";
+  return ["Succeeded", "Failed", "VerificationFailed", "Cancelled"].includes(state) ? "done" : "open";
+}
 
 /** Global (not project-scoped) views of the app shell, in navigation order. Hash form: `#/<view>`. */
 export const GLOBAL_VIEWS = ["workspace", "workstreams", "agents", "review", "settings"] as const;
@@ -30,7 +35,8 @@ export type Route =
   | { name: "tasks"; projectId: string; filter: TaskFilter }
   | { name: "task"; projectId: string; taskId: string }
   | { name: "fixture-task"; projectId: string; id: string }
-  | { name: "coordinator"; projectId: string };
+  | { name: "coordinator"; projectId: string }
+  | { name: "defaults"; projectId: string };
 
 const enc = encodeURIComponent;
 
@@ -57,6 +63,8 @@ export function formatRoute(route: Route): string {
       return `#/project/${enc(route.projectId)}/preview/${enc(route.id)}`;
     case "coordinator":
       return `#/project/${enc(route.projectId)}/coordinator`;
+    case "defaults":
+      return `#/project/${enc(route.projectId)}/defaults`;
   }
 }
 
@@ -88,13 +96,15 @@ export function parseRoute(hash: string): Route {
   const projectId = parts[1];
   switch (parts[2]) {
     case "tasks":
-      return { name: "tasks", projectId, filter: (parts[3] || "all") as TaskFilter };
+      return { name: "tasks", projectId, filter: normalizeFilter(parts[3] ?? "") };
     case "task":
       return parts[3] ? { name: "task", projectId, taskId: parts[3] } : { name: "project", projectId };
     case "preview":
       return parts[3] ? { name: "fixture-task", projectId, id: parts[3] } : { name: "project", projectId };
     case "coordinator":
       return { name: "coordinator", projectId };
+    case "defaults":
+      return { name: "defaults", projectId };
     case "review":
       // The project-scoped review page moved into the Review view.
       return parts[3] ? { name: "global", view: "review", taskId: parts[3] } : { name: "global", view: "review", projectId };

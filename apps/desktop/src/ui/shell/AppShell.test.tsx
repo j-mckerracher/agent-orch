@@ -62,9 +62,10 @@ const GLOBAL_ROUTES: Array<[string, Route, string, string]> = [
 const LEGACY_ROUTES: Array<[string, Route]> = [
   ["projects", { name: "projects" }],
   ["project", { name: "project", projectId: REPO }],
-  ["tasks", { name: "tasks", projectId: REPO, filter: "all" }],
+  ["tasks", { name: "tasks", projectId: REPO, filter: "open" }],
   ["task", { name: "task", projectId: REPO, taskId: "t1" }],
   ["coordinator", { name: "coordinator", projectId: REPO }],
+  ["defaults", { name: "defaults", projectId: REPO }],
 ];
 
 function daemon() {

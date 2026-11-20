@@ -47,7 +47,7 @@ async function page(projectDefaults: ProjectDefaultsSource, approver: boolean | 
   await until(() => services.connection.getSnapshot().status === "connected", "connected");
   render(
     <ServicesProvider services={services}>
-      <ProjectDetail projectId={PROJECT} />
+      <ProjectDetail projectId={PROJECT} tab="defaults" />
     </ServicesProvider>,
   );
   return userEvent.setup();
@@ -59,7 +59,8 @@ describe("project defaults section", () => {
   it("project_detail_defaults_shows_the_modes_with_consequences_and_the_hints", async () => {
     await page(source(answering(SAVED), vi.fn()));
     const region = await screen.findByRole("region", { name: SECTION });
-    expect(within(region).getByRole("heading", { level: 2, name: SECTION })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Defaults" })).toHaveAttribute("aria-selected", "true");
+    expect(within(region).queryByRole("heading", { level: 2 })).not.toBeInTheDocument();
     const radios = within(region).getAllByRole("radio");
     expect(radios.map((radio) => radio.getAttribute("value"))).toEqual(["local-only", "direct-pr", "no-mistakes"]);
     expect(within(region).getByRole("radio", { name: "Review only (local-only)" })).toBeChecked();
@@ -71,7 +72,8 @@ describe("project defaults section", () => {
 
   it("project_detail_defaults_hides_the_section_quietly_for_a_daemon_without_the_method", async () => {
     await page(source(() => Promise.resolve(notOk(DAEMON, "unsupported", "no such method")), vi.fn()));
-    await screen.findByRole("heading", { level: 2, name: "New task" });
+    await screen.findByRole("tab", { name: "Tasks" });
+    expect(screen.queryByRole("tab", { name: "Defaults" })).not.toBeInTheDocument();
     expect(screen.queryByRole("region", { name: SECTION })).not.toBeInTheDocument();
     expect(screen.queryByText(/could not be read/)).not.toBeInTheDocument();
   });
@@ -152,7 +154,7 @@ describe("project defaults section", () => {
     const services = createServices({ surfaces: createFixtureSurfaces() });
     render(
       <ServicesProvider services={services}>
-        <ProjectDetail projectId="fixture:project-beta" />
+        <ProjectDetail projectId="fixture:project-beta" tab="defaults" />
       </ServicesProvider>,
     );
     await user.selectOptions(await screen.findByRole("combobox", { name: "Merge method" }), "rebase");

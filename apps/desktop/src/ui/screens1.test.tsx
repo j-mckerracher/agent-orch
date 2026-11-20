@@ -2,11 +2,8 @@ import { screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { DaemonError } from "../daemon/errors";
 import { createFixtureSources } from "../sources/fixtures";
-import type { AgentCapabilitiesSource, Sources } from "../sources/types";
 import { FakeDaemon, mkApproval, mkEvent, mkTask, until } from "../test/fakeDaemon";
 import { REPO, mount } from "../test/render";
-
-const fixture = createFixtureSources();
 
 /** An incomplete history keeps the connection strip on screen over a healthy connection, so its notes can be read. */
 const stripOpen = (fake: FakeDaemon) => {
@@ -166,7 +163,7 @@ describe("S1 project list", () => {
   });
 });
 
-describe("S2 project detail and submission", () => {
+describe("S2 project page and new task", () => {
   const route = { name: "project", projectId: REPO } as const;
 
   function seeded() {
@@ -175,61 +172,94 @@ describe("S2 project detail and submission", () => {
     fake.tasks = [
       mkTask("t-q", REPO),
       mkTask("t-r", REPO, { state: "Running" }),
+      mkTask("t-d", REPO, { state: "Succeeded" }),
       mkTask("t-other", "/other", { state: "Running" }),
     ];
     fake.approvals = [mkApproval("a1", "t-r"), mkApproval("a2", "t-other")];
     return fake;
   }
 
-  it("reads pending review as unknown, never 0, while the daemon is unreachable", async () => {
+  const openDialog = async (user: Awaited<ReturnType<typeof mount>>["user"]) => {
+    await user.click(await screen.findByRole("button", { name: "New task" }));
+    return screen.findByRole("dialog", { name: "New task" });
+  };
+
+  it("opens on the task list with one primary New task button and sub-navigation tabs", async () => {
+    await mount(seeded(), { route });
+    expect(await screen.findByRole("table", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "repo" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Global tasks" })).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "New task" })).toHaveLength(1);
+    const tabs = within(screen.getByRole("tablist", { name: "Project pages" })).getAllByRole("tab");
+    // Defaults appears only when the daemon can read project defaults (see ProjectDetailDefaults.test).
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Tasks", "Coordinator"]);
+    expect(screen.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
+    // No always-open form and none of the removed panels.
+    expect(screen.queryByLabelText("Objective")).not.toBeInTheDocument();
+    expect(screen.queryByText("Task counts")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Agent detection/)).not.toBeInTheDocument();
+  });
+
+  it("summarizes this project's tasks and awaiting review in the header", async () => {
+    await mount(seeded(), { route });
+    expect(await screen.findByTestId("task-total")).toHaveTextContent("3 tasks · 1 awaiting review");
+  });
+
+  it("offers Pending review in the actions menu, counted for this project only", async () => {
+    const { user } = await mount(seeded(), { route });
+    await screen.findByRole("table", { name: "Tasks" });
+    await user.click(screen.getByRole("button", { name: "Project actions" }));
+    expect(screen.getByRole("menuitem", { name: "Pending review (1)" })).toBeInTheDocument();
+  });
+
+  it("does not read pending review as a count while the daemon is unreachable", async () => {
     const fake = seeded();
     fake.openError = new DaemonError("disconnected", "down");
-    await mount(fake, { route, waitConnected: false });
-    await waitFor(() => expect(screen.getByRole("button", { name: "Pending review (unknown)" })).toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: "Pending review (0)" })).not.toBeInTheDocument();
+    const { user } = await mount(fake, { route, waitConnected: false });
+    await user.click(await screen.findByRole("button", { name: "Project actions" }));
+    expect(screen.getByRole("menuitem", { name: "Pending review" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: /\(0\)/ })).not.toBeInTheDocument();
   });
 
   it("does not read pending review as 0 when the task list fails but approvals loaded", async () => {
     const fake = seeded();
     fake.failNext("tasks.list", { code: -32603, message: "boom" }, 5);
-    const { services } = await mount(fake, { route });
+    const { services, user } = await mount(fake, { route });
     await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("error"));
     await waitFor(() => expect(services.data.getSnapshot().approvals.status).toBe("ready"));
-    expect(screen.queryByRole("button", { name: "Pending review (0)" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Project actions" }));
+    expect(screen.queryByRole("menuitem", { name: /\(0\)/ })).not.toBeInTheDocument();
   });
 
-  it("reads pending review as unknown, not loading, when the approvals list fails while connected", async () => {
-    const fake = seeded();
-    fake.failNext("approvals.list", { code: -32603, message: "boom" }, 5);
-    const { services } = await mount(fake, { route });
-    await waitFor(() => expect(services.data.getSnapshot().approvals.status).toBe("error"));
-    expect(screen.getByRole("button", { name: "Pending review (unknown)" })).toBeInTheDocument();
-  });
-
-  it("derives per-state counts for this project only and links to a filtered list", async () => {
+  it("opens the New task form in a dialog with kind, agent and delivery up front and More options collapsed", async () => {
     const { user } = await mount(seeded(), { route });
-    expect(await screen.findByTestId("task-total")).toHaveTextContent("2 tasks in this project");
-    expect(screen.getByRole("button", { name: "Queued: 1" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "Failed: 0" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Pending review (1)" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Running: 1" }));
-    const table = await screen.findByRole("table", { name: "Tasks" });
-    expect(within(table).getByText("t-r")).toBeInTheDocument();
-    expect(within(table).queryByText("t-q")).not.toBeInTheDocument();
+    const dialog = await openDialog(user);
+    expect(within(dialog).getByLabelText("Objective")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Kind")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("Agent")).toHaveValue("");
+    expect(within(dialog).getByLabelText("Delivery")).toBeInTheDocument();
+    const more = within(dialog).getByText("More options").closest("details")!;
+    expect(more).not.toHaveAttribute("open");
+    for (const label of ["Autonomy", "Verification", "Max retries", "Max repairs"]) {
+      expect(more).toContainElement(within(dialog).getByLabelText(label));
+    }
+    // The upfront fields are not in the collapsed part.
+    for (const label of ["Objective", "Kind", "Agent", "Delivery"]) {
+      expect(more).not.toContainElement(within(dialog).getByLabelText(label));
+    }
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("submits a task, navigates to its detail and states that no agent was launched", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route });
+    await openDialog(user);
     await user.type(screen.getByLabelText("Objective"), "Add a login page");
     await user.type(screen.getByLabelText("Agent"), "codex");
-    expect(
-      screen.getByText(
-        "Submitting queues the task. Eligible queued work may start automatically when the scheduler can run it.",
-      ),
-    ).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
     expect(await screen.findByTestId("task-state")).toHaveTextContent("Queued");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByText(/no agent has been launched and no session is recorded/)).toBeInTheDocument();
     const params = fake.callsTo("tasks.submit")[0]!.params as { contract: Record<string, unknown>; idempotency_key: string };
     expect(params.contract).toMatchObject({
@@ -249,27 +279,29 @@ describe("S2 project detail and submission", () => {
     const fake = seeded();
     fake.projects = [{ id: REPO, in_place: true }];
     const { user } = await mount(fake, { route });
+    await openDialog(user);
     await user.type(screen.getByLabelText("Objective"), "List my notes");
     await user.type(screen.getByLabelText("Agent"), "codex");
-    expect(await screen.findByRole("combobox", { name: /Delivery/ })).toBeDisabled();
+    expect(screen.queryByLabelText("Delivery")).not.toBeInTheDocument();
     expect(screen.getByText(/This folder is the home directory/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
     await until(() => fake.callsTo("tasks.submit").length === 1, "submitted");
     const params = fake.callsTo("tasks.submit")[0]!.params as { contract: Record<string, unknown> };
     expect(params.contract).toMatchObject({ project_id: REPO, delivery: "ReportOnly" });
   });
 
   it("does not offer ReadOnly autonomy, which the daemon rejects", async () => {
-    await mount(seeded(), { route });
-    const autonomy = await screen.findByLabelText("Autonomy");
-    const offered = within(autonomy).getAllByRole("option").map((option) => option.textContent);
+    const { user } = await mount(seeded(), { route });
+    await openDialog(user);
+    const offered = within(screen.getByLabelText("Autonomy")).getAllByRole("option").map((option) => option.textContent);
     expect(offered).toEqual(["WorkspaceWrites", "ApprovalRequired"]);
   });
 
   it("explains local validation failures and does not call the daemon", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route });
-    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await openDialog(user);
+    await user.click(screen.getByRole("button", { name: "Create task" }));
     expect(await screen.findByText("Objective is required.")).toBeInTheDocument();
     expect(screen.queryByText(/Agent is required/)).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.submit")).toHaveLength(0);
@@ -278,10 +310,11 @@ describe("S2 project detail and submission", () => {
   it("shows the daemon's reason for a rejected submission and keeps the draft", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route });
+    await openDialog(user);
     fake.failNext("tasks.submit", { code: -32010, message: "project is not registered" });
     await user.type(screen.getByLabelText("Objective"), "x");
     await user.type(screen.getByLabelText("Agent"), "codex");
-    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
     expect(await screen.findByText(/Submitting the task failed/)).toBeInTheDocument();
     expect(screen.getByLabelText("Objective")).toHaveValue("x");
   });
@@ -289,79 +322,48 @@ describe("S2 project detail and submission", () => {
   it("reuses the request key when the previous outcome is unknown", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route, connection: { requestTimeoutMs: 40 } });
+    await openDialog(user);
     fake.failNext("tasks.submit", "hang");
     await user.type(screen.getByLabelText("Objective"), "x");
     await user.type(screen.getByLabelText("Agent"), "codex");
-    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
     expect(await screen.findByText(/The outcome is unknown/)).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Submit" }));
+    await user.click(screen.getByRole("button", { name: "Create task" }));
     await screen.findByTestId("task-state");
     const keys = fake.callsTo("tasks.submit").map((c) => (c.params as { idempotency_key: string }).idempotency_key);
     expect(keys).toHaveLength(2);
     expect(keys[0]).toBe(keys[1]);
   });
 
-  it("keeps the form draft across navigation", async () => {
+  it("keeps the form draft after closing the dialog and moving between tabs", async () => {
     const { user } = await mount(seeded(), { route });
+    await openDialog(user);
     await user.type(screen.getByLabelText("Objective"), "keep me");
-    await user.click(screen.getByRole("button", { name: "Coordinator" }));
-    await screen.findByRole("heading", { name: "Coordinator" });
-    await user.click(screen.getByRole("link", { name: "repo" }));
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("tab", { name: "Coordinator" }));
+    await screen.findByRole("tabpanel", { name: "Coordinator" });
+    await user.click(screen.getByRole("tab", { name: "Tasks" }));
+    await openDialog(user);
     expect(await screen.findByLabelText("Objective")).toHaveValue("keep me");
   });
 
-  it("disables submission while offline and says the draft is kept", async () => {
+  it("disables creating while offline and says the draft is kept", async () => {
     const fake = seeded();
     const { user } = await mount(fake, { route });
+    await openDialog(user);
     await user.type(screen.getByLabelText("Objective"), "offline work");
     fake.openError = new DaemonError("disconnected", "down");
     fake.drop();
-    await waitFor(() => expect(screen.getByRole("button", { name: "Submit" })).toBeDisabled());
-    expect(screen.getByText(/Submission is unavailable while offline; the draft is kept/)).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create task" })).toBeDisabled());
+    expect(screen.getByText(/Offline: the draft is kept/)).toBeInTheDocument();
     expect(screen.getByLabelText("Objective")).toHaveValue("offline work");
   });
 
   it("shows Commands verification inputs only when selected", async () => {
     const { user } = await mount(seeded(), { route });
+    await openDialog(user);
     expect(screen.queryByLabelText(/Verification commands/)).not.toBeInTheDocument();
     await user.selectOptions(screen.getByLabelText("Verification"), "Commands");
     expect(screen.getByLabelText(/Verification commands/)).toBeInTheDocument();
-  });
-
-  it("labels D1 and D2 as placeholder data and never auto-fills the agent from D1", async () => {
-    await mount(seeded(), { route });
-    expect(await screen.findByTestId("badge-D1")).toHaveTextContent("PLACEHOLDER DATA");
-    expect(screen.getByTestId("badge-D2")).toHaveTextContent("PLACEHOLDER DATA");
-    expect(screen.getByText(/Launch available: no\./)).toBeInTheDocument();
-    expect(screen.getByText(/Codex \(preview\): installed/)).toBeInTheDocument();
-    expect(screen.getByLabelText("Agent")).toHaveValue("");
-  });
-
-  it.each([
-    ["loading", "Loading placeholder data…"],
-    ["empty", "No agents reported."],
-    ["unavailable", /Unavailable: Agent discovery is not available/],
-    ["error", /Placeholder source error: Fixture discovery failed/],
-  ] as const)("renders the D1 %s state", async (scenario, text) => {
-    const sources: Sources = { ...fixture, agents: createFixtureSources({ scenario }).agents };
-    await mount(seeded(), { route, sources });
-    const section = screen.getByRole("region", { name: "Agent detection (placeholder)" });
-    expect(await within(section).findByText(text)).toBeInTheDocument();
-  });
-
-  it("swaps in a daemon-provenance adapter with no component change", async () => {
-    const agents: AgentCapabilitiesSource = {
-      provenance: { kind: "daemon", id: "D1" },
-      listAgents: () =>
-        Promise.resolve({
-          state: "ready",
-          data: [{ id: "real-1", name: "Real Agent", availability: "installed", features: [], discoveredAt: "now" }],
-        }),
-    };
-    await mount(seeded(), { route, sources: { ...fixture, agents } });
-    const section = screen.getByRole("region", { name: "Agent detection" });
-    expect(await within(section).findByText(/Real Agent: installed/)).toBeInTheDocument();
-    expect(within(section).getByTestId("badge-D1")).toHaveTextContent("DAEMON (D1)");
-    expect(within(section).getByTestId("badge-D1")).not.toHaveTextContent("PLACEHOLDER");
   });
 });

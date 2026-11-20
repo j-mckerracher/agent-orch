@@ -93,6 +93,6 @@ describe("Settings > Agents inventory", () => {
 
   it("labels the fixture inventory as placeholder data", async () => {
     await settings(new FakeDaemon(), { live: false });
-    expect(await screen.findByTestId("badge-D1")).toHaveTextContent("PLACEHOLDER DATA (D1)");
+    expect(await within(await screen.findByTestId("agents-inventory")).findByTestId("badge-D1")).toHaveTextContent("PLACEHOLDER DATA (D1)");
   });
 });

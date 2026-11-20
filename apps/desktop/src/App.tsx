@@ -1,11 +1,9 @@
 import { useEffect, type ReactNode } from "react";
 import { ConnectionStrip } from "./ui/ConnectionStrip";
 import { DesktopUpdates } from "./ui/DesktopUpdates";
-import { Coordinator } from "./ui/Coordinator";
 import { ProjectDetail } from "./ui/ProjectDetail";
 import { ProjectList } from "./ui/ProjectList";
 import { FixtureTaskDetail, TaskDetail } from "./ui/TaskDetail";
-import { TaskList } from "./ui/TaskList";
 import type { GlobalView, Route } from "./ui/router";
 import { ServicesProvider, useServices, useStore, type Services } from "./ui/services";
 import { AppShell } from "./ui/shell/AppShell";
@@ -43,15 +41,17 @@ function Screen({ route, globalViews }: { route: Route; globalViews: Partial<Rec
     case "projects":
       return <ProjectList />;
     case "project":
-      return <ProjectDetail key={route.projectId} projectId={route.projectId} />;
+      return <ProjectDetail key={route.projectId} projectId={route.projectId} tab="tasks" />;
     case "tasks":
-      return <TaskList projectId={route.projectId} filter={route.filter} />;
+      return <ProjectDetail key={route.projectId} projectId={route.projectId} tab="tasks" filter={route.filter} />;
     case "task":
       return <TaskDetail key={route.taskId} projectId={route.projectId} taskId={route.taskId} />;
     case "fixture-task":
       return <FixtureTaskDetail projectId={route.projectId} id={route.id} />;
     case "coordinator":
-      return <Coordinator projectId={route.projectId} />;
+      return <ProjectDetail key={route.projectId} projectId={route.projectId} tab="coordinator" />;
+    case "defaults":
+      return <ProjectDetail key={route.projectId} projectId={route.projectId} tab="defaults" />;
   }
 }
 
