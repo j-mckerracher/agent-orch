@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use orchestrator_core::permission::PermissionLevel;
+use orchestrator_core::permission::{PermissionLevel, TASK_DEFAULT_PERMISSION};
 
 use crate::executor::{
     agent_command, placeholder_status_dir, serving, submit_channel, ChannelSupport, Executor,
@@ -122,8 +122,8 @@ struct TaskSubmission {
     max_repairs: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_selection: Option<ModelSelection>,
-    /// The permission level (DPES-1105). Absent means Restricted, and an absent
-    /// field is omitted from the request, so its idempotency key is unchanged.
+    /// The permission level (DPES-1105). Absent means [`TASK_DEFAULT_PERMISSION`], and an
+    /// absent field is omitted from the request, so its idempotency key is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     permission: Option<PermissionLevel>,
     /// A work class (DPES-677) whose settings fill in the agent, model and effort the
@@ -784,7 +784,7 @@ impl DaemonApi {
         budget: Duration,
     ) -> Result<(), RpcError> {
         use orchestrator_agents::cli_compat::{CompatibilityError, Executable};
-        let permission = submission.permission.unwrap_or_default();
+        let permission = submission.permission.unwrap_or(TASK_DEFAULT_PERMISSION);
         // An agent without a daemon launcher has no CLI to check, so it is accepted before its
         // executable is looked up or read.
         let status_dir = placeholder_status_dir(&self.config);
@@ -958,10 +958,14 @@ impl DaemonApi {
         if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
             return Err(RpcError::Forbidden);
         }
-        let permission = request.contract.permission.unwrap_or_default();
+        let permission = request
+            .contract
+            .permission
+            .unwrap_or(TASK_DEFAULT_PERMISSION);
         // A level the agent has no task mapping for is refused, so no task is
-        // created for it. Restricted always takes the existing path, so an
-        // agent with no launcher still fails at launch, as before.
+        // created for it. This includes the task default for an agent with no
+        // mapping at any level, such as Pi. Restricted always takes the existing
+        // path, so an explicit Restricted task for such an agent still fails at launch.
         if permission != PermissionLevel::Restricted
             && orchestrator_agents::permission::task_profile(&request.contract.agent, permission)
                 .is_none()

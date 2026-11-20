@@ -16,7 +16,7 @@ pub const PERMISSION_REVIEW_DENIED: &str = "permission_review_denied";
 pub const PERMISSION_REVIEW_UNAVAILABLE: &str = "permission_review_unavailable";
 
 /// A request with no level means [`PermissionLevel::Restricted`], on the wire and
-/// in stored records.
+/// in stored records, except a task request, which means [`TASK_DEFAULT_PERMISSION`].
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PermissionLevel {
@@ -26,6 +26,10 @@ pub enum PermissionLevel {
     Auto,
     Full,
 }
+
+/// The level a task runs at when its request names none. Implementation work needs
+/// a shell and git, which Restricted removes (DPES-1126).
+pub const TASK_DEFAULT_PERMISSION: PermissionLevel = PermissionLevel::Auto;
 
 impl PermissionLevel {
     /// Whether this is the level a request without one means. A stored contract

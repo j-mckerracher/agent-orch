@@ -34,6 +34,7 @@ use orchestrator_core::identity::{
     plan_process_reconciliation, ProcessClassification, ProcessIdentity, ProcessObservation,
     ProcessPlatform,
 };
+use orchestrator_core::permission::TASK_DEFAULT_PERMISSION;
 use orchestrator_core::records::{Project, Workspace};
 use orchestrator_core::task::{Attempt, AttemptState, Session, SessionState, TaskEvent, TaskState};
 #[cfg(test)]
@@ -337,7 +338,7 @@ pub async fn run_task(
         max_retries: 0,
         max_repairs: 0,
         model_selection: None,
-        permission: Default::default(),
+        permission: TASK_DEFAULT_PERMISSION,
         work_item: None,
     };
     store

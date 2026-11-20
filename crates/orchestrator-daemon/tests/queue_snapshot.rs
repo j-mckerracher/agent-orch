@@ -56,7 +56,7 @@ fn main() {
 fn agent(dir: &Path) {
     use std::io::Write;
     if std::env::args().skip(1).eq(["exec", "--help"]) {
-        println!("  --json\n  --sandbox <MODE>\n  --ignore-user-config\n  -c <KEY=VALUE>");
+        println!("  --json\n  --sandbox <MODE>\n  --approve-for-me\n  --ignore-user-config\n  -c <KEY=VALUE>");
         return;
     }
     if std::env::args().any(|arg| arg == "--version") {

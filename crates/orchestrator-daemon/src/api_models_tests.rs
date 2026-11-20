@@ -288,7 +288,10 @@ fn submit_with(
         "delivery": "ReportOnly",
         "autonomy": "WorkspaceWrites",
         "max_retries": 0,
-        "max_repairs": 0
+        "max_repairs": 0,
+        // Named, so these tests keep the Restricted launch argv they assert. The task default
+        // is Auto, which the fake CLIs here do not advertise.
+        "permission": "restricted"
     });
     if !selection.is_null() {
         contract["model_selection"] = selection;

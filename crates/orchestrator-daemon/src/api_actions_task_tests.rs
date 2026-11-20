@@ -169,7 +169,7 @@ pub(super) fn chat_contract(id: &str, objective: &str) -> TaskContract {
         max_retries: 1,
         max_repairs: 1,
         model_selection: None,
-        permission: PermissionLevel::Restricted,
+        permission: PermissionLevel::Auto,
         work_item: None,
     }
 }
@@ -179,8 +179,18 @@ pub(super) fn proposed_task_id(proposal_id: &str) -> String {
     idempotency::stable_id("task", &idempotency::stable_id("action", proposal_id))
 }
 
-/// A queued task, made through the public method, as a user would.
+/// A queued task, made through the public method, as a user would, with no level named.
 pub(super) fn submit_queued(api: &DaemonApi, key: &str, objective: &str) -> String {
+    submit_queued_at(api, key, objective, None)
+}
+
+/// A queued task named at `permission` on the wire, or with no level when `None`.
+pub(super) fn submit_queued_at(
+    api: &DaemonApi,
+    key: &str,
+    objective: &str,
+    permission: Option<&str>,
+) -> String {
     let submitted = call(
         api,
         "tasks.submit",
@@ -197,12 +207,31 @@ pub(super) fn submit_queued(api: &DaemonApi, key: &str, objective: &str) -> Stri
                 "delivery": "ReportOnly",
                 "autonomy": "WorkspaceWrites",
                 "max_retries": 1,
-                "max_repairs": 1
+                "max_repairs": 1,
+                "permission": permission
             }
         }),
     )
     .unwrap();
     submitted["contract"]["id"].as_str().unwrap().to_owned()
+}
+
+/// A task submitted with no level runs at the task default, and a level the request names
+/// is kept, Restricted included.
+#[test]
+fn a_submitted_task_takes_the_task_default_unless_the_request_names_a_level() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let default = submit_queued(&api, "s-default", "Default level.");
+    let restricted = submit_queued_at(&api, "s-restricted", "Named level.", Some("restricted"));
+    assert_eq!(
+        api.store.get(&default).unwrap().contract.permission,
+        PermissionLevel::Auto
+    );
+    assert_eq!(
+        api.store.get(&restricted).unwrap().contract.permission,
+        PermissionLevel::Restricted
+    );
 }
 
 fn attempt(task_id: &str) -> Attempt {
@@ -410,7 +439,8 @@ fn approving_task_propose_creates_one_admitted_task_with_the_chat_envelope_field
     assert_eq!(approved["proposal"]["denial"], Value::Null);
 
     // Approval fixes autonomy, verification, the attempt limits and the permission; the
-    // proposal chose only the objective, kind, agent and delivery.
+    // proposal chose only the objective, kind, agent and delivery. The chat turn ran at
+    // Restricted, and the task takes the task default (Auto), not the turn's level.
     let task = api.store.get(&task_id).unwrap();
     assert_eq!(task.contract, chat_contract(&task_id, OBJECTIVE));
     assert_eq!(task.state, TaskState::Queued);
