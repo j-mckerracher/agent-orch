@@ -15,26 +15,32 @@ interface NavItem {
 const globalItem = (view: GlobalView) => (route: Route) => route.name === "global" && route.view === view;
 
 /**
- * Primary navigation: the persistent destinations other than Workstreams, which is the heading
- * link of the sidebar tree (`SidebarWorkstreams`), as in the wireframe. Projects are a scope under
- * Workstreams, not a destination; `#/projects` is reached from the Workstreams view.
+ * Primary navigation: the five persistent destinations of the wireframe. Projects are a scope under Workstreams, not a
+ * destination; `#/projects` is reached from the Workstreams view, so legacy project screens keep Workstreams selected.
  */
-export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: ReactNode }) {
+export function SidebarNav({ route, agentsCount, reviewCount }: { route: Route; agentsCount: ReactNode; reviewCount: ReactNode }) {
   const items: NavItem[] = [
     {
-      label: "Orchestrator Workspace",
+      label: "Workspace",
       icon: "▦",
       to: { name: "global", view: "workspace" },
       isCurrent: globalItem("workspace"),
     },
     {
-      label: "Agents & Sessions",
+      label: "Workstreams",
+      icon: "☰",
+      to: { name: "global", view: "workstreams" },
+      isCurrent: (current) => current.name !== "global" || current.view === "workstreams",
+    },
+    {
+      label: "Agents",
       icon: "☷",
       to: { name: "global", view: "agents" },
       isCurrent: globalItem("agents"),
+      trailing: agentsCount,
     },
     {
-      label: "Review & Decisions",
+      label: "Review",
       icon: "✓",
       to: { name: "global", view: "review" },
       isCurrent: globalItem("review"),
@@ -58,25 +64,6 @@ export function SidebarNav({ route, reviewCount }: { route: Route; reviewCount: 
           {item.trailing}
         </NavLink>
       ))}
-    </nav>
-  );
-}
-
-/**
- * Heading link to the Workstreams view plus the tree slot. Legacy project screens (S1-S6) are
- * scoped under Workstreams, so this stays selected for them too.
- */
-export function SidebarWorkstreams({ route, count, children }: { route: Route; count: ReactNode; children: ReactNode }) {
-  const current = route.name !== "global" || route.view === "workstreams";
-  return (
-    <nav aria-label="Workstreams and individual workers" className="shell-tree">
-      <h2 className="shell-tree-heading">
-        <NavLink to={{ name: "global", view: "workstreams" }} current={current}>
-          Workstreams
-          {count !== null && count !== undefined && <span className="shell-count"> · {count}</span>}
-        </NavLink>
-      </h2>
-      <div className="shell-tree-body">{children}</div>
     </nav>
   );
 }

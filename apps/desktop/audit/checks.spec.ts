@@ -51,8 +51,7 @@ test.describe("RC-01 honest states: unavailable is never loading, zero, or empty
 
   test("workstreams-20: loading state does not say workstreams are not available", async ({ page }) => {
     await openApp(page, "#/workstreams", "loading", "desktop");
-    // Two surfaces carry the text: the top bar's visually hidden count and the sidebar tree's aria-label.
-    const unavailable = /workstreams: not available/i;
+        const unavailable = /workstreams: not available/i;
     await expect(page.getByText(unavailable).or(page.getByLabel(unavailable))).toHaveCount(0);
   });
 
@@ -111,38 +110,6 @@ test.describe("RC-02 workspace activity is a top-right popover, not a docked pan
 });
 
 // ---------------------------------------------------------------------------
-// RC-03 Sidebar workstream tree overflows and blocks its own rows
-// ---------------------------------------------------------------------------
-test.describe("RC-03 sidebar workstream tree overflow and pointer targets", () => {
-  // At rest: no scrolling and no clicks. Rows 2 and 3 must sit inside the tree's own visible box, and
-  // nothing else may be topmost at their centers. Scrolling before measuring would hide the defect.
-  test("workstreams-01: sidebar workstream rows 2 and 3 are inside the tree box and uncovered at rest (desktop, tablet)", async ({ page }) => {
-    for (const bp of ["desktop", "tablet"] as const) {
-      await openApp(page, "#/workstreams", "populated", bp);
-      for (const n of [2, 3]) {
-        const row = page.getByRole("treeitem", { name: new RegExp(`Workstream ${n} of 3`) });
-        const at = await row.evaluate((el) => {
-          let scroller: HTMLElement | null = el.parentElement;
-          while (scroller && !/(auto|scroll|hidden)/.test(getComputedStyle(scroller).overflowY)) scroller = scroller.parentElement;
-          const r = el.getBoundingClientRect();
-          const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-          const tree = scroller?.getBoundingClientRect();
-          return {
-            inside: !!tree && r.top >= tree.top - 1 && r.bottom <= tree.bottom + 1,
-            hit: !!top && (el === top || el.contains(top)),
-            cover: !top ? "nothing (center is off screen)" : el.contains(top) ? "none" : `${top.tagName.toLowerCase()}.${String(top.className).split(" ")[0]}`,
-            row: `${Math.round(r.top)}-${Math.round(r.bottom)}`,
-            tree: tree ? `${Math.round(tree.top)}-${Math.round(tree.bottom)}` : "no scroll container",
-          };
-        });
-        expect.soft(at.inside, `${bp}: workstream ${n} of 3 is outside the tree box at rest (row ${at.row}, tree ${at.tree})`).toBe(true);
-        expect.soft(at.hit, `${bp}: workstream ${n} of 3 is covered at its center by ${at.cover}`).toBe(true);
-      }
-    }
-  });
-});
-
-// ---------------------------------------------------------------------------
 // RC-04 Breakpoint parity: tablet and mobile rules diverge from the wireframe media queries
 // ---------------------------------------------------------------------------
 test.describe("RC-04 breakpoint parity with wireframe media queries (960 / 760)", () => {
@@ -186,9 +153,9 @@ test.describe("RC-05 six-fact candidate record: presence and placement on review
 });
 
 // ---------------------------------------------------------------------------
-// RC-06 Sidebar dark theme and Workstreams heading box (covered by sidebar branch)
+// RC-06 Sidebar dark theme (covered by sidebar branch)
 // ---------------------------------------------------------------------------
-test.describe("RC-06 sidebar dark theme and Workstreams heading box", () => {
+test.describe("RC-06 sidebar dark theme", () => {
   test("workspace-01: sidebar paints a dark background in dark theme", async ({ page }) => {
     await openApp(page, "#/workspace", "populated", "desktop");
     const bg = await page.getByRole("region", { name: "Sidebar" }).evaluate((el) => getComputedStyle(el).backgroundColor);
@@ -196,23 +163,6 @@ test.describe("RC-06 sidebar dark theme and Workstreams heading box", () => {
     const channelScale = bg.startsWith("color(srgb ") ? 255 : 1;
     expect(a, "sidebar has no painted background (transparent)").toBeGreaterThan(0);
     expect(((r + g + b) * channelScale) / 3).toBeLessThan(128);
-  });
-
-  test("workstreams-10: sidebar 'Workstreams · N' heading is a bordered link box", async ({ page }) => {
-    await openApp(page, "#/workstreams", "populated", "desktop");
-    const link = page.getByRole("link", { name: /^Workstreams · \d+/ });
-    const bordered = await link.evaluate((el) => {
-      // Walk up to four ancestors; the heading box is the first one with all four borders drawn.
-      let node: HTMLElement | null = el.parentElement;
-      for (let i = 0; node && i < 4; i++, node = node.parentElement) {
-        const cs = getComputedStyle(node);
-        if ([cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].every((w) => parseFloat(w) > 0)) {
-          return true;
-        }
-      }
-      return false;
-    });
-    expect(bordered, "no bordered box around the Workstreams heading link").toBe(true);
   });
 });
 
@@ -494,9 +444,9 @@ test.describe("RC-19 daily usage pill window label", () => {
 });
 
 // ---------------------------------------------------------------------------
-// RC-20 Primary navigation: exactly four destinations
+// RC-20 Primary navigation: Projects is not a destination
 // ---------------------------------------------------------------------------
-test.describe("RC-20 primary navigation has exactly four destinations", () => {
+test.describe("RC-20 primary navigation has no Projects destination", () => {
   test("workspace-17: sidebar has no Projects destination", async ({ page }) => {
     await openApp(page, "#/workspace", "populated", "desktop");
     await expect(page.getByRole("link", { name: "Projects", exact: true })).toHaveCount(0);
@@ -560,27 +510,6 @@ test.describe("RC-22 shell brand and top-bar search sizing", () => {
     expect((await box(search)).width).toBeGreaterThanOrEqual(660);
     expect((await box(search)).width).toBeLessThanOrEqual(700);
     await expect(search).toHaveAttribute("placeholder", "Search projects, tasks, sessions, approvals");
-  });
-});
-
-// ---------------------------------------------------------------------------
-// RC-23 Sidebar workstream tree row markup and names
-// ---------------------------------------------------------------------------
-test.describe("RC-23 sidebar tree row markup and names", () => {
-  test("workstreams-17: sidebar tree rows show no disclosure chevron", async ({ page }) => {
-    await openApp(page, "#/workstreams", "populated", "desktop");
-    await expect(page.locator(".ws-tree-chevron")).toHaveCount(0);
-  });
-
-  test("workstreams-18: sidebar tree region is named as in the wireframe", async ({ page }) => {
-    await openApp(page, "#/workstreams", "populated", "desktop");
-    await expect(page.getByRole("navigation", { name: "Workstreams and individual workers" })).toBeVisible();
-  });
-
-  test("workstreams-19: worker rows carry the green bullet marker", async ({ page }) => {
-    await openApp(page, "#/workstreams", "populated", "desktop");
-    const content = await page.locator(".ws-tree-task-name").first().evaluate((el) => getComputedStyle(el, "::before").content);
-    expect(content).not.toBe("none");
   });
 });
 

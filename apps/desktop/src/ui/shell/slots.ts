@@ -9,24 +9,20 @@ import type { ReactNode } from "react";
  *
  * | Slot               | Region                                   | Owner item |
  * | ------------------ | ---------------------------------------- | ---------- |
- * | `reviewCount`      | count beside "Review & Decisions"        | M7-13      |
- * | `workstreamsCount` | count beside the "Workstreams" heading   | M7-11      |
- * | `workstreamsTree`  | scrollable tree under the heading        | M7-11      |
- * | `themeToggle`      | bottom of the sidebar                    | M7-01      |
+ * | `agentsCount`      | count beside "Agents" (running tasks)    | DPES-1044  |
+ * | `reviewCount`      | count beside "Review"                    | M7-13      |
  * | `topUsage`         | top bar, usage pill                      | M7-16      |
  * | `topSearch`        | top bar, search                          | M7-16      |
- * | `topCounts`        | top bar, portfolio counts                | M7-16      |
+ * | `topNeedYou`       | top bar, the one "N need you" count      | DPES-1044  |
  * | `activity`         | top-right control over main (workspace)  | M7-12      |
  * | `resources`        | last section of the activity popover     | M7-17      |
  */
 export interface ShellSlots {
+  agentsCount: ReactNode;
   reviewCount: ReactNode;
-  workstreamsCount: ReactNode;
-  workstreamsTree: ReactNode;
-  themeToggle: ReactNode;
   topUsage: ReactNode;
   topSearch: ReactNode;
-  topCounts: ReactNode;
+  topNeedYou: ReactNode;
   /** `null` removes the activity control entirely. Its popover must render `<ResourcesSlot />`. */
   activity: ReactNode;
   /** Shown as the last section of the activity popover; `null` removes System Usage. */

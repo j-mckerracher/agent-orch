@@ -93,7 +93,7 @@ describe("fixture mode", () => {
     expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("—");
     expect(within(panel).getByTestId("activity-badge")).toHaveTextContent(/sample data is not counted/);
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("—");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("— require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("— need you");
     const queue = within(panel).getByTestId("activity-queue");
     expect(within(queue).getByText("Add refresh-token expiry")).toBeInTheDocument();
     expect(within(queue).getByText("First in queue")).toBeInTheDocument();
@@ -144,7 +144,7 @@ describe("live mode", () => {
     const { panel } = await mountPanel(liveDaemon());
     await waitFor(() => expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("1"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you");
     expect(within(panel).getByTestId("activity-attention-a1")).toBeInTheDocument();
     expect(within(panel).getByText("Priority not reported")).toBeInTheDocument();
   });
@@ -255,7 +255,7 @@ describe("live mode", () => {
       expect(within(panel).getByTestId("activity-task-t4")).toBeInTheDocument();
       expect(within(panel).getByTestId("activity-attention-a3")).toBeInTheDocument();
       expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
-      expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention");
+      expect(screen.getByTestId("top-need-you")).toHaveTextContent("2 need you");
     });
   });
 
@@ -375,7 +375,7 @@ describe("workspace activity popover", () => {
     const trigger = within(panel).getByRole("button", { name: /^Workspace activity/ });
     await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you");
   });
 
   it("the_nav_the_top_bar_and_the_badge_agree_when_something_is_held", async () => {
@@ -389,7 +389,7 @@ describe("workspace activity popover", () => {
     await waitFor(() => expect(within(trigger).getByTestId("activity-badge")).toHaveTextContent("1"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending decisions: 1 approvals, 0 proposed actions");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you");
   });
 
   it("closes on Escape and returns focus to the trigger", async () => {
@@ -478,7 +478,7 @@ describe("pending decision count", () => {
     const { panel } = await mountPanel(fake);
     await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3"));
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3 pending decisions: 1 approvals, 2 proposed actions");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("3 need you");
     expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("3");
     expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAccessibleName(/3 require attention/);
     await waitFor(() => expect(within(panel).getByTestId("activity-status")).toHaveTextContent("3 require attention"));
@@ -492,7 +492,7 @@ describe("pending decision count", () => {
     await act(async () => services.data.refreshProposals());
     await waitFor(() => {
       expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
-      expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention");
+      expect(screen.getByTestId("top-need-you")).toHaveTextContent("2 need you");
       expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("2");
     });
   });
@@ -512,7 +512,7 @@ describe("pending decision count", () => {
     expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAccessibleName(/2\+ require attention/);
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2+");
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("2+ pending decisions: 0 approvals, 2+ proposed actions");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("2+ require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("2+ need you");
   });
 
   it("all_three_places_show_a_dash_while_the_proposals_list_has_not_loaded_though_approvals_have", async () => {
@@ -525,7 +525,7 @@ describe("pending decision count", () => {
     });
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("—");
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("pending decisions: not available");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("— require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("— need you");
     expect(within(panel).getByTestId("activity-badge")).toHaveTextContent("—");
   });
 

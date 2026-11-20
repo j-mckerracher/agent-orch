@@ -4,13 +4,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import App, { type AppProps } from "../../App";
 import { DaemonError } from "../../daemon/errors";
 import { createFixtureSources } from "../../sources/fixtures";
-import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
 import { REPO, connected } from "../../test/render";
 import { chooseAction } from "../../test/workstreamsUi";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE, syncRouterToHash, type Route } from "../router";
-import { workstreamsGlobalViews, workstreamsShellSlots } from "../views/workstreams/register";
+import { workstreamsGlobalViews } from "../views/workstreams/register";
 import { ResourcesSlot } from "./ResourcesSlot";
 
 /** Like the shared `mount`, but starts on the boot default route and accepts the shell props. */
@@ -52,12 +51,13 @@ afterEach(() => {
   window.location.hash = "";
 });
 
-const GLOBAL_ROUTES: Array<[string, Route, string]> = [
-  ["workspace", { name: "global", view: "workspace" }, "Orchestrator Workspace"],
-  ["workstreams", { name: "global", view: "workstreams" }, "Workstreams"],
-  ["agents", { name: "global", view: "agents" }, "Agents & Sessions"],
-  ["review", { name: "global", view: "review" }, "Review & Decisions"],
-  ["settings", { name: "global", view: "settings" }, "Settings"],
+/** Name, route, the view's h1 and the label of its nav link. */
+const GLOBAL_ROUTES: Array<[string, Route, string, string]> = [
+  ["workspace", { name: "global", view: "workspace" }, "Orchestrator Workspace", "Workspace"],
+  ["workstreams", { name: "global", view: "workstreams" }, "Workstreams", "Workstreams"],
+  ["agents", { name: "global", view: "agents" }, "Agents & Sessions", "Agents"],
+  ["review", { name: "global", view: "review" }, "Review & Decisions", "Review"],
+  ["settings", { name: "global", view: "settings" }, "Settings", "Settings"],
 ];
 
 const LEGACY_ROUTES: Array<[string, Route]> = [
@@ -78,14 +78,14 @@ function daemon() {
 }
 
 describe("global routes in the shell", () => {
-  it.each(GLOBAL_ROUTES)("renders %s inside the main landmark with aria-current on its nav item", async (_name, route, title) => {
+  it.each(GLOBAL_ROUTES)("renders %s inside the main landmark with aria-current on its nav item", async (_name, route, title, label) => {
     await mount(daemon(), { route });
     const main = screen.getByRole("main");
     expect(within(main).getByRole("heading", { level: 1, name: title })).toBeInTheDocument();
     expect(screen.getAllByRole("main")).toHaveLength(1);
     const current = document.querySelectorAll('.shell [aria-current="page"]');
     expect(current).toHaveLength(1);
-    expect(current[0]).toHaveTextContent(title);
+    expect(current[0]).toHaveTextContent(label);
   });
 
   it("defaults to the workspace and shows its activity control only there", async () => {
@@ -129,10 +129,11 @@ describe("legacy project routes in the shell", () => {
 
 describe("ConnectionStrip hosting", () => {
   it.each([...GLOBAL_ROUTES.map(([name, route]) => [`global ${name}`, route] as const), ...LEGACY_ROUTES.map(([name, route]) => [`legacy ${name}`, route] as const)])(
-    "is visible on %s in a connected native boot",
+    "is hidden on %s while the connection is healthy",
     async (_name, route) => {
       await mount(daemon(), { route });
-      expect(within(screen.getByTestId("shell-connection")).getByTestId("connection-status")).toHaveTextContent("Connected");
+      expect(screen.getByTestId("shell-connection")).toBeEmptyDOMElement();
+      expect(screen.queryByTestId("connection-status")).not.toBeInTheDocument();
     },
   );
 
@@ -152,22 +153,34 @@ describe("ConnectionStrip hosting", () => {
     );
   });
 
-  it("exposes the connection strip as a top-level named banner containing the live status", async () => {
-    await mount(daemon(), { route: { name: "global", view: "agents" } });
+  it("exposes the strip, while the connection is down, as a top-level named banner containing the live status", async () => {
+    const fake = new FakeDaemon();
+    fake.openError = new DaemonError("disconnected", "down");
+    await mount(fake, { waitConnected: false, route: { name: "global", view: "agents" } });
     const banner = screen.getByRole("banner", { name: "Connection status" });
     expect(banner).toHaveAttribute("data-testid", "shell-connection");
     expect(banner.parentElement).toHaveClass("shell-body");
     const status = within(banner).getByTestId("connection-status");
     expect(status).toHaveAttribute("role", "status");
-    expect(status).toHaveTextContent("Connected");
+    expect(status).not.toHaveTextContent("Connected");
+  });
+
+  it("keeps the skip link working while the strip is shown", async () => {
+    const fake = new FakeDaemon();
+    fake.openError = new DaemonError("disconnected", "down");
+    const { user } = await mount(fake, { waitConnected: false });
+    await user.tab();
+    expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveFocus();
+    await user.keyboard("{Enter}");
+    expect(screen.getByRole("main")).toHaveFocus();
   });
 });
 
 describe("navigation", () => {
-  it("exposes landmarks: two named navs, one main, and no nested main", async () => {
+  it("exposes landmarks: one named nav, one main, and no nested main", async () => {
     await mount(daemon());
+    expect(screen.getAllByRole("navigation")).toHaveLength(1);
     expect(screen.getByRole("navigation", { name: "Primary views" })).toBeInTheDocument();
-    expect(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).toBeInTheDocument();
     expect(screen.getAllByRole("main")).toHaveLength(1);
   });
 
@@ -187,13 +200,13 @@ describe("navigation", () => {
   it("is keyboard operable: focus a link and press Enter", async () => {
     const { user, services } = await mount(daemon());
     const nav = screen.getByRole("navigation", { name: "Primary views" });
-    const agents = within(nav).getByRole("link", { name: /Agents & Sessions/ });
+    const agents = within(nav).getByRole("link", { name: /^Agents/ });
     agents.focus();
     expect(agents).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents" });
-    expect(within(nav).getByRole("link", { name: /Agents & Sessions/ })).toHaveAttribute("aria-current", "page");
-    expect(within(nav).getByRole("link", { name: /Orchestrator Workspace/ })).not.toHaveAttribute("aria-current");
+    expect(within(nav).getByRole("link", { name: /^Agents/ })).toHaveAttribute("aria-current", "page");
+    expect(within(nav).getByRole("link", { name: /^Workspace/ })).not.toHaveAttribute("aria-current");
   });
 
   it("tabs through every primary link in order", async () => {
@@ -201,9 +214,10 @@ describe("navigation", () => {
     const nav = screen.getByRole("navigation", { name: "Primary views" });
     const links = within(nav).getAllByRole("link");
     expect(links.map((link) => link.textContent)).toEqual([
-      expect.stringContaining("Orchestrator Workspace"),
-      expect.stringContaining("Agents & Sessions"),
-      expect.stringContaining("Review & Decisions"),
+      expect.stringContaining("Workspace"),
+      expect.stringContaining("Workstreams"),
+      expect.stringContaining("Agents"),
+      expect.stringContaining("Review"),
       expect.stringContaining("Settings"),
     ]);
     links[0].focus();
@@ -213,9 +227,9 @@ describe("navigation", () => {
     }
   });
 
-  it("reaches the Workstreams heading link and, from its view, the legacy project list (S1)", async () => {
+  it("reaches the Workstreams nav link and, from its view, the legacy project list (S1)", async () => {
     const { user, services } = await mount(daemon(), { globalViews: workstreamsGlobalViews });
-    await user.click(within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getByRole("link", { name: /Workstreams/ }));
+    await user.click(within(screen.getByRole("navigation", { name: "Primary views" })).getByRole("link", { name: /^Workstreams/ }));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams" });
     await chooseAction(user, "More actions", "Manage projects");
     expect(services.router.getSnapshot()).toEqual({ name: "projects" });
@@ -225,24 +239,25 @@ describe("navigation", () => {
   it("links carry the hash form so deep links and new-window opens work", async () => {
     await mount(daemon());
     const nav = screen.getByRole("navigation", { name: "Primary views" });
-    expect(within(nav).getByRole("link", { name: /Review & Decisions/ })).toHaveAttribute("href", "#/review");
-    expect(within(nav).getByRole("link", { name: /Agents & Sessions/ })).toHaveAttribute("href", "#/agents");
-    expect(within(nav).getByRole("link", { name: /Settings/ })).toHaveAttribute("href", "#/settings");
-    expect(screen.getByRole("link", { name: /^Workstreams/ })).toHaveAttribute("href", "#/workstreams");
+    expect(within(nav).getByRole("link", { name: /^Review/ })).toHaveAttribute("href", "#/review");
+    expect(within(nav).getByRole("link", { name: /^Agents/ })).toHaveAttribute("href", "#/agents");
+    expect(within(nav).getByRole("link", { name: /^Settings/ })).toHaveAttribute("href", "#/settings");
+    expect(within(nav).getByRole("link", { name: /^Workstreams/ })).toHaveAttribute("href", "#/workstreams");
   });
 
-  it("has exactly five persistent destinations: four primary views and the Workstreams tree heading", async () => {
+  it("has exactly five persistent destinations, with no workstream tree", async () => {
     await mount(daemon());
-    const primary = within(screen.getByRole("navigation", { name: "Primary views" })).getAllByRole("link");
-    const tree = within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getAllByRole("link", { name: /^Workstreams/ });
-    expect([...primary, ...tree].map((link) => link.textContent?.trim())).toEqual([
-      expect.stringContaining("Orchestrator Workspace"),
-      expect.stringContaining("Agents & Sessions"),
-      expect.stringContaining("Review & Decisions"),
-      expect.stringContaining("Settings"),
+    const links = within(screen.getByRole("navigation", { name: "Primary views" })).getAllByRole("link");
+    expect(links.map((link) => link.textContent?.trim())).toEqual([
+      expect.stringContaining("Workspace"),
       expect.stringContaining("Workstreams"),
+      expect.stringContaining("Agents"),
+      expect.stringContaining("Review"),
+      expect.stringContaining("Settings"),
     ]);
     expect(screen.queryByRole("link", { name: "Projects" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tree")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("workstream-tree")).not.toBeInTheDocument();
   });
 
   it("keeps projects reachable from the Workstreams view and not from any primary destination", async () => {
@@ -258,7 +273,7 @@ describe("navigation", () => {
     const off = syncRouterToHash(services.router);
     try {
       expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents" });
-      await user.click(within(screen.getByRole("navigation", { name: "Primary views" })).getByRole("link", { name: /Review & Decisions/ }));
+      await user.click(within(screen.getByRole("navigation", { name: "Primary views" })).getByRole("link", { name: /^Review/ }));
       expect(window.location.hash).toBe("#/review");
       await act(async () => {
         window.history.back();
@@ -276,57 +291,47 @@ describe("navigation", () => {
   });
 });
 
-describe("persistent WorkstreamTree task freshness", () => {
-  it("shows retained AppData task state warnings after navigating away from Workstreams", async () => {
-    const fake = daemon();
-    installFakeWorkstreams(fake, {
-      workstreams: [{ id: "ws-1", title: "Sessions", summary: "", state: "active", revision: 1 }],
-      links: [{ task_id: "t1", workstream_id: "ws-1", objective_id: null }],
-    });
-    const { user, services } = await mount(fake, {
-      route: { name: "global", view: "workstreams" },
-      shellSlots: workstreamsShellSlots,
-      globalViews: workstreamsGlobalViews,
-    });
-    const tree = await screen.findByTestId("workstream-tree");
-    await within(tree).findByRole("treeitem", { name: /objective of t1/ });
-    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
-    const retained = services.data.getSnapshot().tasks.data;
-    expect(retained?.find((task) => task.contract.id === "t1")?.state).toBe("Running");
-
-    fake.tasks = fake.tasks.map((task) => (task.contract.id === "t1" ? { ...task, state: "Failed" } : task));
-    fake.failNext("tasks.list", { code: -32603, message: "task refresh failed" });
-    await act(async () => services.data.refreshAll());
-    expect(services.data.getSnapshot().tasks).toMatchObject({ status: "error", data: retained });
-
-    await user.click(within(screen.getByRole("navigation", { name: "Primary views" })).getByRole("link", { name: /Agents & Sessions/ }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Agents & Sessions" })).toBeInTheDocument();
-    const persistentTree = screen.getByTestId("workstream-tree");
-    expect(within(persistentTree).getByRole("treeitem", { name: /objective of t1/ })).toHaveTextContent("Running");
-    expect(within(persistentTree).getByTestId("workstream-tree-task-list-status")).toHaveAttribute("role", "alert");
-    expect(within(persistentTree).getByTestId("workstream-tree-task-list-status")).toHaveTextContent(/retained data that may be stale/);
-  });
-});
 describe("counts and placeholders", () => {
-  it("derives the review count and top-bar counts from the same lists", async () => {
+  it("derives the nav badges and the one need-you count from the same lists", async () => {
     await mount(daemon(), { route: { name: "global", view: "agents" } });
     await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1"));
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("1 pending decisions: 1 approvals, 0 proposed actions");
-    const counts = screen.getByTestId("top-counts");
-    expect(counts).toHaveTextContent("2 tasks");
-    expect(counts).toHaveTextContent("1 running");
-    expect(counts).toHaveTextContent("1 require attention");
+    expect(screen.getByTestId("nav-agents-count")).toHaveTextContent("1");
+    expect(screen.getByTestId("nav-agents-count")).toHaveAccessibleName("1 running");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you");
   });
 
-  it("shows a placeholder, never 0, where no list has loaded", async () => {
+  it("shows one need-you count linking to Review and no four-count line", async () => {
+    const { user, services } = await mount(daemon(), { route: { name: "global", view: "agents" } });
+    expect(screen.queryByTestId("top-counts")).not.toBeInTheDocument();
+    expect(screen.queryByText(/require attention/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("top-counts-placeholder")).not.toBeInTheDocument();
+    const top = screen.getByRole("region", { name: "Workspace summary" });
+    await waitFor(() => expect(within(top).getByTestId("top-need-you")).toHaveTextContent("1 need you"));
+    expect(within(top).getAllByRole("link")).toHaveLength(1);
+    await user.click(within(top).getByRole("link", { name: /need you/ }));
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review" });
+  });
+
+  it("shows a placeholder, never 0, where no list has loaded; the running badge stays hidden", async () => {
     const fake = new FakeDaemon();
     fake.openError = new DaemonError("disconnected", "down");
     await mount(fake, { waitConnected: false });
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("—");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("— tasks");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("— need you");
+    expect(screen.getByTestId("top-need-you")).not.toHaveTextContent(/\b0\b/);
+    expect(screen.queryByTestId("nav-agents-count")).not.toBeInTheDocument();
     expect(screen.getByTestId("slot-top-usage")).toHaveTextContent("Usage: not available");
     expect(screen.getByTestId("slot-resources")).toHaveTextContent("not available");
     expect(screen.getByTestId("slot-resources").closest('[data-testid="shell-activity"]')).not.toBeNull();
+  });
+
+  it("hides the running badge when no task runs", async () => {
+    const fake = daemon();
+    fake.tasks = [mkTask("t2", REPO, { state: "Queued" })];
+    await mount(fake, { route: { name: "global", view: "agents" } });
+    await waitFor(() => expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1"));
+    expect(screen.queryByTestId("nav-agents-count")).not.toBeInTheDocument();
   });
 });
 
@@ -334,13 +339,11 @@ describe("slots", () => {
   it("places supplied slot content in the matching regions", async () => {
     await mount(daemon(), {
       shellSlots: {
+        agentsCount: <span data-testid="s-agents">G</span>,
         reviewCount: <span data-testid="s-review">R</span>,
-        workstreamsCount: <span data-testid="s-wcount">W</span>,
-        workstreamsTree: <ul data-testid="s-tree" />,
-        themeToggle: <button type="button">Dark mode</button>,
         topUsage: <span data-testid="s-usage">U</span>,
         topSearch: <span data-testid="s-search">S</span>,
-        topCounts: <span data-testid="s-counts">C</span>,
+        topNeedYou: <span data-testid="s-need">C</span>,
         activity: (
           <div data-testid="s-activity">
             A<ResourcesSlot />
@@ -351,28 +354,18 @@ describe("slots", () => {
     });
     const primary = screen.getByRole("navigation", { name: "Primary views" });
     expect(within(primary).getByTestId("s-review")).toBeInTheDocument();
-    const tree = screen.getByRole("navigation", { name: "Workstreams and individual workers" });
-    expect(within(tree).getByTestId("s-wcount")).toBeInTheDocument();
-    expect(within(tree).getByTestId("s-tree")).toBeInTheDocument();
-    expect(within(screen.getByTestId("slot-theme-toggle")).getByRole("button", { name: "Dark mode" })).toBeInTheDocument();
+    expect(within(primary).getByTestId("s-agents")).toBeInTheDocument();
     const top = screen.getByRole("region", { name: "Workspace summary" });
-    for (const id of ["s-usage", "s-search", "s-counts"]) expect(within(top).getByTestId(id)).toBeInTheDocument();
+    for (const id of ["s-usage", "s-search", "s-need"]) expect(within(top).getByTestId(id)).toBeInTheDocument();
     const activity = within(screen.getByTestId("shell-activity")).getByTestId("s-activity");
     expect(within(activity).getByTestId("s-resources")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
   });
 
-  it("renders the M7-01 theme toggle in the shell by default and switches the theme", async () => {
-    window.localStorage.clear();
-    document.documentElement.removeAttribute("data-theme");
-    const { user } = await mount(daemon());
-    const toggle = within(screen.getByTestId("slot-theme-toggle")).getByRole("button", { name: /dark mode/i });
-    expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute("aria-pressed", "true");
-    expect(document.documentElement.getAttribute("data-theme")).toBe("dark");
-    window.localStorage.clear();
-    document.documentElement.removeAttribute("data-theme");
+  it("has no theme toggle in the shell: it lives in Settings > Appearance", async () => {
+    await mount(daemon());
+    expect(screen.queryByRole("button", { name: /dark mode/i })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("slot-theme-toggle")).not.toBeInTheDocument();
   });
 
   it("removes the activity control and System Usage when their slots are null", async () => {
@@ -433,10 +426,9 @@ describe("responsive behavior", () => {
     const nav = screen.getByRole("navigation", { name: "Primary views" });
     expect(nav).toBeVisible();
     expect(screen.queryByRole("button", { name: "Menu" })).not.toBeInTheDocument();
-    expect(within(nav).getAllByRole("link")).toHaveLength(4);
-    expect(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).toBeVisible();
+    expect(within(nav).getAllByRole("link")).toHaveLength(5);
 
-    const agents = within(nav).getByRole("link", { name: /Agents & Sessions/ });
+    const agents = within(nav).getByRole("link", { name: /^Agents/ });
     agents.focus();
     await user.keyboard("{Enter}");
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents" });

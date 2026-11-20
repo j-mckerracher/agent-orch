@@ -10,7 +10,7 @@ export {
   type AmbientOptions,
   type AmbientStats,
 } from "./engine";
-export { ambientBackgroundRegistration, withAmbientBackground } from "./register";
+export { ambientBackgroundRegistration } from "./register";
 export {
   AMBIENT_STORAGE_KEY,
   ambientSettings,

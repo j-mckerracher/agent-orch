@@ -1,10 +1,9 @@
-import { decisionCountText, matchesFilter, openTaskCount, pendingDecisionCount } from "../format";
+import { decisionCountText, matchesFilter, pendingDecisionCount } from "../format";
 import { heldSets } from "../../sources/surfaces/holds";
 import { useServices, useStore } from "../services";
-import { ThemeToggle } from "../theme";
-import { NavLink } from "./NavLink";
 import { ResourcesSlot } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
+import { NeedYouCount } from "./TopBar";
 
 /**
  * Pending approvals plus pending proposed actions (`approvals.list`, `actions.pending`); "—" (not 0) until both have
@@ -36,26 +35,20 @@ export function ReviewCount() {
   );
 }
 
-/** Counts derived from `tasks.list`, `approvals.list` and `actions.pending`; "—" where the list has not loaded. */
-export function TopBarCounts() {
+/**
+ * Running tasks from `tasks.list`, the same rule the Agents view's running filter uses. Hidden while the list has not
+ * loaded and when none run, so an unknown count is never shown as 0.
+ */
+export function RunningCount() {
   const { data } = useServices();
-  const { tasks, approvals, proposals, holds } = useStore(data);
-  const taskList = tasks.data;
-  const running = taskList?.filter((task) => matchesFilter(task, "running", taskList, approvals.data ?? [])).length;
-  const attention =
-    approvals.data && proposals.data ? decisionCountText(pendingDecisionCount(approvals.data, proposals.data, heldSets(holds.data ?? [])), proposals.more)
-      : undefined;
-  const text = (value: number | string | undefined) => (value === undefined ? "—" : String(value));
+  const { tasks, approvals } = useStore(data);
+  const list = tasks.data;
+  const running = list?.filter((task) => matchesFilter(task, "running", list, approvals.data ?? [])).length;
+  if (!running) return null;
   return (
-    <p className="shell-counts" data-testid="top-counts">
-      <NavLink to={{ name: "global", view: "workstreams" }}>— workstreams</NavLink>
-      <span aria-hidden="true"> · </span>
-      <NavLink to={{ name: "global", view: "agents" }}>{text(taskList ? openTaskCount(taskList) : undefined)} tasks</NavLink>
-      <span aria-hidden="true"> · </span>
-      <NavLink to={{ name: "global", view: "agents" }}>{text(running)} running</NavLink>
-      <span aria-hidden="true"> · </span>
-      <NavLink to={{ name: "global", view: "review" }}>{text(attention)} require attention</NavLink>
-    </p>
+    <span className="shell-count" aria-label={`${running} running`} data-testid="nav-agents-count">
+      {running}
+    </span>
   );
 }
 
@@ -66,17 +59,15 @@ const placeholder = (testId: string, text: string) => (
 );
 
 export const defaultShellSlots: ShellSlots = {
+  agentsCount: <RunningCount />,
   reviewCount: <ReviewCount />,
-  workstreamsCount: null,
-  workstreamsTree: placeholder("slot-workstreams-tree", "The workstream list is not available yet."),
-  themeToggle: <ThemeToggle />,
   topUsage: <span data-testid="slot-top-usage">Usage: not available</span>,
   topSearch: (
     <div role="search" data-testid="slot-top-search">
       <input type="search" disabled aria-label="Search" placeholder="Search is not available yet" />
     </div>
   ),
-  topCounts: <TopBarCounts />,
+  topNeedYou: <NeedYouCount />,
   activity: (
     <div data-testid="slot-activity">
       <h2>Workspace activity</h2>

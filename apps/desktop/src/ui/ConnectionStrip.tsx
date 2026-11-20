@@ -50,9 +50,10 @@ export interface ConnectionStripProps {
 }
 
 /**
- * The connection strip. The status row, the Refresh / reconnect control, every live region and every problem
- * notice are always rendered. Only the healthy-state explanatory notes (connected note, recovery, journal
- * continuity) sit in the folding region, and the region is open whenever the connection needs attention.
+ * The connection strip. It renders only while the connection needs attention (or in fixture demo mode, for the banner).
+ * Then the status row, the Refresh / reconnect control, every live region and every problem notice are always
+ * rendered. Only the explanatory notes (connected note, recovery, journal continuity) sit in the folding region, and
+ * the region is open whenever the connection needs attention.
  */
 export function ConnectionStrip({ layout }: ConnectionStripProps = {}) {
   const { connection, sources, bridgeBound } = useServices();
@@ -63,6 +64,10 @@ export function ConnectionStrip({ layout }: ConnectionStripProps = {}) {
   const attention = connectionAttention({ bridgeBound, connection: snap, journal });
   // The saved choice applies only while the connection is healthy; it is restored when health returns.
   const expanded = attention !== null || connectionStripExpanded;
+
+  // The strip appears only when something needs the user (not connected, an error, incomplete history). A healthy
+  // connection leaves the shell calm; fixture demo mode (no bridge) keeps it, because it carries the demo banner.
+  if (bridgeBound && attention === null) return null;
 
   const detail = snap.error ? presentError(snap.error) : null;
   // The host's launch-failure message carries the redacted end of the daemon

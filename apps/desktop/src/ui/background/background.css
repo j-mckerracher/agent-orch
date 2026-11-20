@@ -94,8 +94,8 @@
   white-space: pre-wrap;
 }
 
-/* Sidebar theme row: Dark mode and the Background icon share one row the height of the Dark mode toggle, so the
-   workstream tree keeps its height. The Dark mode label is kept whole and the switch takes the leftover width. */
+/* Settings > Appearance row: Dark mode and the Background icon share one row the height of the Dark mode toggle.
+   The Dark mode label is kept whole and the switch takes the leftover width. */
 .ambient-row {
   position: relative;
   display: flex;
@@ -139,12 +139,12 @@
   background: var(--blue-bg, var(--panel));
 }
 
-/* The disclosure opens upward over the tree, inside the sidebar's own box, and is as wide as the row. */
+/* The disclosure opens below the row and is as wide as the row. */
 .ambient-panel {
   position: absolute;
   left: 0;
   right: 0;
-  bottom: calc(100% + 6px);
+  top: calc(100% + 6px);
   z-index: 4;
   display: grid;
   gap: 4px;

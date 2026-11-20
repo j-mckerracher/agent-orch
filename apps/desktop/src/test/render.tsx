@@ -42,4 +42,5 @@ export async function mount(
 
 export const connectionStatus = () => screen.getByTestId("connection-status");
 
-export const connected = () => waitFor(() => expect(connectionStatus()).toHaveTextContent("Connected"));
+/** The connection strip renders only while the connection is not healthy, so a connected app has no status pill. */
+export const connected = () => waitFor(() => expect(screen.queryByTestId("connection-status")).toBeNull());

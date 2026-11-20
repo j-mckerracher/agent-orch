@@ -65,11 +65,15 @@ describe("M7-15 restyled project screens: widgets", () => {
 
 describe("M7-15 restyled project screens: connection strip", () => {
   it("preserves connection-status semantics", async () => {
-    await mount(new FakeDaemon());
-    const status = screen.getByTestId("connection-status");
+    const fake = new FakeDaemon();
+    await mount(fake);
+    expect(screen.queryByTestId("connection-status")).toBeNull();
+    fake.openError = new DaemonError("disconnected", "down");
+    fake.drop();
+    const status = await screen.findByTestId("connection-status");
     expect(status).toHaveAttribute("role", "status");
-    expect(status).toHaveTextContent("Connected");
-    expect(glyphOf("connection-status")).toBe("✓");
+    await waitFor(() => expect(status).toHaveTextContent("Reconnecting..."));
+    expect(glyphOf("connection-status")).toBe("↻");
   });
 
   it("gives offline, auth-failed and incompatible states distinct text and distinct glyphs", async () => {

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import App from "../../../App";
@@ -8,7 +8,7 @@ import { installFakeWorkstreams } from "../../../test/fakeWorkstreams";
 import { connected } from "../../../test/render";
 import { backToList, chooseAction, openWorkstream } from "../../../test/workstreamsUi";
 import { createServices } from "../../createServices";
-import { workstreamsGlobalViews, workstreamsShellSlots } from "./register";
+import { workstreamsGlobalViews } from "./register";
 
 const CONFIRM = /Confirm archive \(cannot be undone\)/;
 
@@ -30,19 +30,18 @@ async function mountTwoStreams() {
     sources: createFixtureSources(),
   });
   const user = userEvent.setup();
-  render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+  render(<App services={services} globalViews={workstreamsGlobalViews} />);
   await connected();
   await openWorkstream(user, "Alpha stream");
   await chooseAction(user, "Workstream actions", "Archive workstream");
   expect(screen.getByRole("button", { name: CONFIRM })).toBeInTheDocument();
-  return { user };
+  return { user, services };
 }
 
 describe("a pending archive confirmation", () => {
-  it("is dropped when another workstream is selected from the sidebar tree", async () => {
-    const { user } = await mountTwoStreams();
-    const tree = screen.getByRole("tree", { name: "Workstreams" });
-    await user.click(await within(tree).findByRole("treeitem", { name: /Workstream 2 of 2/ }));
+  it("is dropped when another workstream is selected by a link (the chat's Open workstream)", async () => {
+    const { services } = await mountTwoStreams();
+    await act(async () => services.router.navigate({ name: "global", view: "workstreams", workstreamId: "ws-b" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
     expect(screen.queryByRole("button", { name: CONFIRM })).not.toBeInTheDocument();
   });

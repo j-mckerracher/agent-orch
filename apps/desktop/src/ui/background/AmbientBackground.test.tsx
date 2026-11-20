@@ -2,7 +2,6 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AmbientBackground, AmbientBackgroundControl } from "./AmbientBackground";
-import { withAmbientBackground } from "./register";
 import { AMBIENT_STORAGE_KEY, createAmbientSettings, type AmbientStorage } from "./settings";
 
 const originalMatchMedia = window.matchMedia;
@@ -183,11 +182,5 @@ describe("layer and control", () => {
       render(<AmbientBackgroundControl settings={createAmbientSettings(null)} />);
     });
     expect(screen.getByText(/reduced motion is on/i)).toBeInTheDocument();
-  });
-
-  it("wires the control and layer next to an existing theme toggle", () => {
-    render(<>{withAmbientBackground(<button type="button">Dark mode</button>)}</>);
-    expect(screen.getByRole("button", { name: "Dark mode" })).toBeInTheDocument();
-    expect(screen.getByTestId("ambient-control")).toBeInTheDocument();
   });
 });

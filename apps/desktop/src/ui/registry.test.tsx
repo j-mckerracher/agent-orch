@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor, within } from "@testing-library/react
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "../App";
 import { createServices } from "./createServices";
-import { appGlobalViews, appShellSlots } from "./registry";
+import { ambientBackgroundRegistration, appGlobalViews, appShellSlots } from "./registry";
 import type { GlobalView, Route } from "./router";
 
 beforeEach(() => {
@@ -22,7 +22,7 @@ const route = (view: GlobalView): Route => ({ name: "global", view });
 describe("M7 wiring", () => {
   it("registers a view for every global route and fills every shell slot", () => {
     expect(Object.keys(appGlobalViews).sort()).toEqual([...VIEWS].sort());
-    for (const slot of ["activity", "resources", "topUsage", "topSearch", "topCounts", "themeToggle", "workstreamsTree", "workstreamsCount"] as const) {
+    for (const slot of ["activity", "resources", "topUsage", "topSearch", "topNeedYou"] as const) {
       expect(appShellSlots[slot], slot).toBeTruthy();
     }
   });
@@ -40,12 +40,18 @@ describe("M7 wiring", () => {
     expect(screen.queryByRole("button", { name: /^Workspace activity/ }) !== null).toBe(view === "workspace");
   });
 
-  it("turns the ambient background on by default, with the switch beside the theme toggle", async () => {
-    const services = createServices({ initialRoute: route("workspace") });
-    render(<App services={services} shellSlots={appShellSlots} globalViews={appGlobalViews} />);
-    const slot = screen.getByTestId("slot-theme-toggle");
-    const control = await within(slot).findByRole("button", { name: /^background/i });
+  it("turns the ambient background on by default, with the switch beside the theme toggle in Settings > Appearance", async () => {
+    const services = createServices({ initialRoute: route("settings") });
+    render(
+      <>
+        <App services={services} shellSlots={appShellSlots} globalViews={appGlobalViews} />
+        {ambientBackgroundRegistration.layer}
+      </>,
+    );
+    const section = await screen.findByTestId("settings-appearance");
+    const control = within(section).getByRole("button", { name: /^background/i });
     expect(control).toHaveAttribute("aria-pressed", "true");
+    expect(within(section).getByRole("button", { name: /dark mode/i })).toBeInTheDocument();
     expect(document.querySelector('[data-testid="ambient-background"]')).not.toBeNull();
     await waitFor(() => expect(window.localStorage.length).toBe(0));
   });

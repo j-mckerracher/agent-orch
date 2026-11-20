@@ -2,7 +2,7 @@ import type { CSSProperties, ReactNode } from "react";
 import { useLayoutSettings, type LayoutSettings } from "../layout/layoutSettings";
 import type { Route } from "../router";
 import { SidebarSplitter } from "./SidebarSplitter";
-import { SidebarNav, SidebarWorkstreams } from "./SidebarNav";
+import { SidebarNav } from "./SidebarNav";
 import { ResourcesSlotProvider } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 import { useShellTier } from "./useShellTier";
@@ -10,7 +10,7 @@ import "./shell.css";
 
 export interface AppShellProps {
   route: Route;
-  /** The persistent connection strip (C1); rendered above every route in every boot mode. */
+  /** The connection strip (C1) and update notice; the strip region is empty (and hidden by CSS) while the connection is healthy. */
   connection: ReactNode;
   slots: ShellSlots;
   /**
@@ -89,13 +89,7 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
             </div>
           </header>
           <div className="shell-sidebar-body">
-            <SidebarNav route={route} reviewCount={slots.reviewCount} />
-            <SidebarWorkstreams route={route} count={slots.workstreamsCount}>
-              {slots.workstreamsTree}
-            </SidebarWorkstreams>
-            <section className="shell-bottom" aria-label="Appearance" data-testid="slot-theme-toggle">
-              {slots.themeToggle}
-            </section>
+            <SidebarNav route={route} agentsCount={slots.agentsCount} reviewCount={slots.reviewCount} />
           </div>
         </section>
         {resizable && (
@@ -110,9 +104,9 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
         )}
         <div className={`shell-content${hasActivity ? " has-activity" : ""}`}>
           <section className="shell-topbar" aria-label="Workspace summary">
-            <div className="shell-topbar-usage">{slots.topUsage}</div>
             <div className="shell-topbar-search">{slots.topSearch}</div>
-            <div className="shell-topbar-counts">{slots.topCounts}</div>
+            <div className="shell-topbar-need">{slots.topNeedYou}</div>
+            <div className="shell-topbar-usage">{slots.topUsage}</div>
           </section>
           {/* A control, not a region: it sits in the activity column beside main (see shell.css). */}
           {hasActivity && (

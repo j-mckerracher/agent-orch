@@ -28,6 +28,6 @@ export async function mountAgents(fake: FakeDaemon, options: HarnessOptions = {}
   });
   const user = userEvent.setup();
   const view = render(<App services={services} globalViews={agentsGlobalViews} />);
-  if (bridge) await waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Connected"));
+  if (bridge) await waitFor(() => expect(screen.queryByTestId("connection-status")).toBeNull());
   return { services, user, view };
 }

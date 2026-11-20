@@ -59,7 +59,7 @@ function matchMediaOrNull(): MediaQueryList | null {
 }
 
 /**
- * On/off switch for the sidebar theme row. The row is 38 px, the Dark mode toggle's height, so the switch is a compact
+ * On/off switch for the Settings > Appearance row. The row is 38 px, the Dark mode toggle's height, so the switch is a compact
  * icon. Its name, state, the "decorative only" note and the MIT attribution the bundled renderer requires sit in a
  * disclosure on that icon: the summary is keyboard-operable and the content is in the DOM for screen readers.
  */

@@ -7,11 +7,9 @@ import { DaemonError } from "../../daemon/errors";
 import { FakeDaemon, mkApproval, mkEvent, mkSession, mkTask } from "../../test/fakeDaemon";
 import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { REPO, connected } from "../../test/render";
-import { chooseAction, openWorkstream } from "../../test/workstreamsUi";
 import { createServices } from "../createServices";
 import type { Route } from "../router";
 import { ActivityPanel } from "./ActivityPanel";
-import { workstreamsGlobalViews, workstreamsShellSlots } from "../views/workstreams/register";
 import { topBarSlots } from "./TopBar";
 
 const WORKSPACE: Route = { name: "global", view: "workspace" };
@@ -81,111 +79,54 @@ function setViewport(width: number) {
   };
 }
 
-describe("top bar counts", () => {
-  it("fixture mode shows the PLACEHOLDER D9/D11 numbers with a badge", async () => {
+describe("top bar need-you count", () => {
+  it("fixture mode shows a dash, no placeholder badge and no four-count line", async () => {
     await mount(null);
-    const counts = screen.getByTestId("top-counts");
-    await waitFor(() => expect(counts).toHaveTextContent("3 workstreams"));
-    expect(counts).toHaveTextContent("6 tasks");
-    expect(counts).toHaveTextContent("2 running");
-    expect(counts).toHaveTextContent("2 require attention");
-    expect(screen.getByTestId("top-counts-placeholder")).toHaveTextContent("PLACEHOLDER DATA");
-  });
-
-  it("live mode counts equal the loaded lists and the Review nav count", async () => {
-    await mount(daemon());
-    const counts = screen.getByTestId("top-counts");
-    await waitFor(() => expect(counts).toHaveTextContent("2 workstreams"));
-    expect(counts).toHaveTextContent("3 tasks");
-    expect(counts).toHaveTextContent("2 running");
-    expect(counts).toHaveTextContent("1 require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("— need you");
+    expect(screen.queryByTestId("top-counts")).toBeNull();
     expect(screen.queryByTestId("top-counts-placeholder")).toBeNull();
-    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
   });
 
-  it("counts only active or waiting tasks, not finished ones", async () => {
-    const fake = daemon();
-    fake.tasks.push(mkTask("t4", REPO, { state: "Succeeded" }), mkTask("t5", REPO, { state: "Failed" }));
-    await mount(fake);
-    const counts = screen.getByTestId("top-counts");
-    await waitFor(() => expect(counts).toHaveTextContent("3 tasks"));
+  it("live mode shows one count that equals the Review nav count, and no four-count line", async () => {
+    await mount(daemon());
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you"));
+    expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
+    expect(screen.queryByTestId("top-counts")).toBeNull();
+    for (const word of ["workstreams", "tasks", "running", "require attention"]) {
+      expect(screen.getByRole("region", { name: "Workspace summary" })).not.toHaveTextContent(new RegExp(`\\b${word}\\b`));
+    }
+  });
+
+  it("links to Review", async () => {
+    const { user, services } = await mount(daemon());
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you"));
+    const link = within(screen.getByTestId("top-need-you")).getByRole("link");
+    expect(link).toHaveAttribute("href", "#/review");
+    await user.click(link);
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "review" });
   });
 
   it("updates when events change the lists", async () => {
     const fake = daemon();
     await mount(fake);
-    const counts = screen.getByTestId("top-counts");
-    await waitFor(() => expect(counts).toHaveTextContent("3 tasks"));
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you"));
     fake.tasks.push(mkTask("t4", "/work/third", { state: "Running" }));
-    fake.projects.push({ id: "/work/third" });
     fake.approvals.push(mkApproval("a3", "t4"));
-    const state = streams.get(fake)!;
-    state.workstreams.push({ id: "ws-c", title: "Third stream", summary: "", state: "active", revision: 1 });
-    state.links.push({ task_id: "t4", workstream_id: "ws-c", objective_id: null });
     await act(async () => fake.emit(mkEvent(1, "t4", null, "TaskAdmitted")));
-    await waitFor(() => expect(counts).toHaveTextContent("4 tasks"));
-    expect(counts).toHaveTextContent("3 running");
-    expect(counts).toHaveTextContent("2 require attention");
-    expect(counts).toHaveTextContent("3 workstreams");
-  });
-
-  it("does not count archived workstreams", async () => {
-    const fake = daemon();
-    streams.get(fake)!.workstreams[1]!.state = "archived";
-    await mount(fake);
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("1 workstreams"));
-  });
-
-  it("drops the count when a workstream is archived from the Workstreams view", async () => {
-    const fake = daemon();
-    const services = createServices({
-      connector: fake,
-      initialRoute: { name: "global", view: "workstreams" },
-      connection: { backoffMs: [5], requestTimeoutMs: 250 },
-      data: { coalesceMs: 10 },
-      sources: createFixtureSources(),
-    });
-    const user = userEvent.setup();
-    render(
-      <App
-        services={services}
-        shellSlots={{ ...topBarSlots, ...workstreamsShellSlots }}
-        globalViews={workstreamsGlobalViews}
-      />,
-    );
-    await connected();
-    const counts = screen.getByTestId("top-counts");
-    await waitFor(() => expect(counts).toHaveTextContent("2 workstreams"));
-    await openWorkstream(user, "Alpha stream");
-    await chooseAction(user, "Workstream actions", "Archive workstream");
-    await user.click(screen.getByRole("button", { name: /Confirm archive \(cannot be undone\)/ }));
-    await waitFor(() => expect(counts).toHaveTextContent("1 workstreams"));
-    expect(screen.getByTestId("workstreams-count")).toHaveTextContent("1");
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("2 need you"));
   });
 
   it("shows a dash, never 0, when the daemon is unreachable", async () => {
     const fake = new FakeDaemon();
     fake.openError = new DaemonError("disconnected", "down");
     await mount(fake, { waitConnected: false });
-    const counts = screen.getByTestId("top-counts");
-    // First connection attempt is still loading; once it fails, the counts must read unavailable, not loading.
-    await waitFor(() => expect(counts).toHaveTextContent("tasks: not available"));
-    expect(counts).toHaveTextContent("— tasks");
-    expect(counts.textContent).not.toMatch(/\b0\b/);
-    expect(counts.textContent).not.toMatch(/loading/);
+    const count = screen.getByTestId("top-need-you");
+    // First connection attempt is still loading; once it fails, the count must read unavailable, not loading.
+    await waitFor(() => expect(count).toHaveTextContent("need you: not available"));
+    expect(count).toHaveTextContent("— need you");
+    expect(count.textContent).not.toMatch(/\b0\b/);
+    expect(count.textContent).not.toMatch(/loading/);
   });
-
-  it("is a link set to the matching global views", async () => {
-    await mount(null);
-    const counts = screen.getByTestId("top-counts");
-    await waitFor(() => expect(counts).toHaveTextContent("3 workstreams"));
-    const hrefs = within(counts)
-      .getAllByRole("link")
-      .map((link) => link.getAttribute("href"));
-    expect(new Set(hrefs).size).toBe(3);
-    expect(hrefs).toHaveLength(4);
-  });
-
 });
 
 describe("usage pill", () => {
@@ -249,19 +190,19 @@ describe("usage pill", () => {
 });
 
 describe("narrow top bar keyboard order", () => {
-  it("keeps usage, search, and counts in DOM order at 760 px", async () => {
+  it("keeps search, the need-you count and usage in DOM order at 760 px", async () => {
     setViewport(760);
     const { user } = await mount(daemon());
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you"));
     const usage = screen.getByRole("group", { name: "Daily usage" }).querySelector<HTMLElement>("summary");
     if (!usage) throw new Error("usage disclosure is missing");
-    const firstCount = within(screen.getByTestId("top-counts")).getAllByRole("link")[0];
+    const needYou = within(screen.getByTestId("top-need-you")).getByRole("link");
 
-    usage.focus();
+    screen.getByRole("combobox", { name: "Search" }).focus();
     await user.tab();
-    expect(screen.getByRole("combobox", { name: "Search" })).toHaveFocus();
+    expect(needYou).toHaveFocus();
     await user.tab();
-    expect(firstCount).toHaveFocus();
+    expect(usage).toHaveFocus();
   });
 });
 
@@ -279,7 +220,7 @@ describe("local search", () => {
 
   it("groups results, announces the count and navigates with the keyboard", async () => {
     const { user, services } = await mount(daemon());
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     await user.click(search());
     await user.type(search(), "release");
     await waitFor(() => expect(status()).toHaveTextContent("1 result for “release”."));
@@ -296,7 +237,7 @@ describe("local search", () => {
 
   it("opens the first result on Enter without an active option", async () => {
     const { user, services } = await mount(daemon());
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     await user.type(search(), "t3");
     await waitFor(() => expect(screen.getAllByRole("option").length).toBeGreaterThan(0));
     await user.keyboard("{Enter}");
@@ -305,7 +246,7 @@ describe("local search", () => {
 
   it("finds projects, sessions and approvals and routes each to its record", async () => {
     const { user, services } = await mount(daemon());
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     await user.type(search(), "sess-alpha");
     const session = await screen.findByRole("option", { name: /sess-alpha/ });
     expect(screen.getByRole("group", { name: /Sessions \(1\)/ })).toBeInTheDocument();
@@ -324,7 +265,7 @@ describe("local search", () => {
 
   it("announces empty and unavailable results, then closes with Escape and clears", async () => {
     const { user, services } = await mount(daemon());
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     await user.type(search(), "zzzz");
     await waitFor(() => expect(status()).toHaveTextContent("No loaded records match “zzzz”."));
     await user.keyboard("{Escape}");
@@ -358,8 +299,8 @@ describe("local search", () => {
   });
 
   it("gives options whitespace-free ids and keeps aria-expanded true while the panel is open", async () => {
-    const { user } = await mount(daemon());
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    const { user, services } = await mount(daemon());
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     await user.type(search(), "zzzz");
     await waitFor(() => expect(status()).toHaveTextContent("No loaded records match"));
     expect(search()).toHaveAttribute("aria-expanded", "true");
@@ -372,8 +313,8 @@ describe("local search", () => {
 
   it("searching and navigating issue only read RPCs", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    const { user, services } = await mount(fake);
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     const before = fake.calls.length;
     await user.type(search(), "release");
     await screen.findByRole("option", { name: /release/ });
@@ -384,8 +325,8 @@ describe("local search", () => {
 
   it("reports skipped inputs instead of implying absence", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 tasks"));
+    const { user, services } = await mount(fake);
+    await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     fake.failNext("approvals.list", { code: -32000, message: "boom" }, 5);
     await user.type(search(), "release");
     await screen.findByRole("option", { name: /release/ });
@@ -426,7 +367,7 @@ describe("top bar pending decisions", () => {
     });
     render(<App services={services} shellSlots={{ ...topBarSlots, activity: <ActivityPanel /> }} />);
     await connected();
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention"));
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("3 need you"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3");
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3 pending decisions: 1 approvals, 2 proposed actions");
     expect(screen.getByTestId("activity-badge")).toHaveTextContent("3");
@@ -445,7 +386,7 @@ describe("top bar pending decisions", () => {
     });
     render(<App services={services} shellSlots={{ ...topBarSlots, activity: <ActivityPanel /> }} />);
     await connected();
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3+ require attention"));
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("3+ need you"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3+");
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3+ pending decisions: 1 approvals, 2+ proposed actions");
     expect(screen.getByTestId("activity-badge")).toHaveTextContent("3+");
@@ -453,9 +394,9 @@ describe("top bar pending decisions", () => {
 
   it("top_bar_reads_a_daemon_without_actions_pending_as_the_approvals_alone_not_as_unavailable", async () => {
     await mount(daemon());
-    const counts = screen.getByTestId("top-counts");
-    await waitFor(() => expect(counts).toHaveTextContent("1 require attention"));
-    expect(counts).not.toHaveTextContent("attention: not available");
+    const counts = screen.getByTestId("top-need-you");
+    await waitFor(() => expect(counts).toHaveTextContent("1 need you"));
+    expect(counts).not.toHaveTextContent("need you: not available");
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("1");
   });
 
@@ -464,11 +405,10 @@ describe("top bar pending decisions", () => {
     fake.failNext("actions.pending", { code: -32603, message: "store busy" }, 20);
     const { services } = await mount(fake);
     await waitFor(() => expect(services.data.getSnapshot().proposals.status).toBe("error"));
-    const counts = screen.getByTestId("top-counts");
-    expect(counts).toHaveTextContent("3 tasks");
-    expect(counts).toHaveTextContent("— require attention");
-    expect(counts).toHaveTextContent("require attention: not available");
-    expect(counts.textContent).not.toMatch(/\b1 require attention/);
+    const counts = screen.getByTestId("top-need-you");
+    expect(counts).toHaveTextContent("— need you");
+    expect(counts).toHaveTextContent("need you: not available");
+    expect(counts.textContent).not.toMatch(/\b1 need you/);
   });
 
   it("top_bar_attention_drops_when_a_proposal_is_decided_and_the_pending_list_is_read_again", async () => {
@@ -476,10 +416,10 @@ describe("top bar pending decisions", () => {
     let ids = ["proposal-1", "proposal-2"];
     fake.stub("actions.pending", () => ({ proposals: ids.map(pendingWire), more: false }));
     const { services } = await mount(fake);
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("3 require attention"));
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("3 need you"));
     ids = ["proposal-1"];
     await act(async () => services.data.refreshProposals());
-    await waitFor(() => expect(screen.getByTestId("top-counts")).toHaveTextContent("2 require attention"));
+    await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("2 need you"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("2");
   });
 });

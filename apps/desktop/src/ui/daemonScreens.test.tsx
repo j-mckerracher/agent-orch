@@ -137,7 +137,10 @@ describe("daemon-backed D1-D6 screens", () => {
   });
 
   it("shows the journal identity from the real Welcome epoch", async () => {
-    await mount(seeded(), { route: { name: "project", projectId: REPO }, daemonSources: true });
+    const fake = seeded();
+    await mount(fake, { route: { name: "project", projectId: REPO }, daemonSources: true });
+    // A healthy connection hides the strip; an incomplete history brings it back with the continuity note.
+    fake.pushStreamError(-32015, "slow");
     const continuity = await screen.findByTestId("journal-continuity");
     await waitFor(() => expect(continuity).toHaveTextContent("never proof that history is complete"));
     expect(continuity).not.toHaveTextContent(/placeholder/i);
