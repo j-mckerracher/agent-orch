@@ -448,6 +448,7 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const block = body.closest("details") as HTMLDetailsElement;
     expect(block).toHaveTextContent("Thinking");
     expect(block).toHaveTextContent("Streaming");
+    expect(block.querySelector("time")).toHaveAttribute("datetime", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
     expect(block.open).toBe(true);
     expect(block.closest("article")).toBeNull();
 

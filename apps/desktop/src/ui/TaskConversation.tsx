@@ -2,6 +2,7 @@
 import { useState, type ReactNode } from "react";
 import type { OutputLine, TaskState } from "../daemon/types";
 import { ChatLog } from "./chat/ChatLog";
+import { Timestamp } from "./chat/Timestamp";
 import { useGate } from "./services";
 import { Bubble, CopyButton, EmptyState, Markdown } from "./theme";
 import { type Turn, TaskReply, useTaskReply } from "./TaskReply";
@@ -34,7 +35,7 @@ export function TaskConversation({ taskId, state, sessionId, running, agent }: P
         <TurnBubble key={turn.key} turn={turn} agent={agent} />
       ))}
       {open && (
-        <Bubble from="coordinator" author={agent} actions={<CopyButton text={open.question} />}>
+        <Bubble from="coordinator" author={agent} time={<Timestamp at={open.askedAt} />} actions={<CopyButton text={open.question} />}>
           <Markdown text={open.question} />
         </Bubble>
       )}
@@ -67,7 +68,12 @@ export function TaskConversation({ taskId, state, sessionId, running, agent }: P
 
 function TurnBubble({ turn, agent }: { turn: Turn; agent: string }) {
   return (
-    <Bubble from={turn.from === "you" ? "human" : "coordinator"} author={turn.from === "you" ? "You" : agent} actions={<CopyButton text={turn.text} />}>
+    <Bubble
+      from={turn.from === "you" ? "human" : "coordinator"}
+      author={turn.from === "you" ? "You" : agent}
+      time={<Timestamp at={turn.at} />}
+      actions={<CopyButton text={turn.text} />}
+    >
       <Markdown text={turn.text} />
     </Bubble>
   );
@@ -128,7 +134,13 @@ function Output({ tail, running, agent }: { tail: OutputTailState; running: bool
       ) : tail.lines.length === 0 ? (
         <EmptyState title="No messages yet" description={tail.ended ? "The session ended without producing output." : "The agent has not produced output yet."} />
       ) : (
-        <Bubble from="coordinator" author={agent} actions={<CopyButton text={tail.lines.map((line) => line.text).join("\n")} label="Copy output" />}>
+        <Bubble
+          from="coordinator"
+          author={agent}
+          // Output lines carry no times, so the bubble says when the app last read them.
+          time={tail.readAt && <>as of <Timestamp at={tail.readAt} /></>}
+          actions={<CopyButton text={tail.lines.map((line) => line.text).join("\n")} label="Copy output" />}
+        >
           {tail.olderDropped && <p className="ws-small">Older lines were dropped and are not shown.</p>}
           <div className="ws-output">
             {tail.lines.map((line) => (
