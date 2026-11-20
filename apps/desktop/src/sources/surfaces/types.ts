@@ -1062,6 +1062,8 @@ export interface QuestionItem {
   /** `YYYY-MM-DD` while a deferral is in the future, else null. A deferred question stays open. */
   deferredUntil: string | null;
   state: string;
+  /** When the daemon recorded the question (ISO instant). */
+  askedAt: string;
 }
 
 export interface QuestionReceipt {

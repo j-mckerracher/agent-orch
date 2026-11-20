@@ -3,6 +3,7 @@ import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import type { WakeRecord } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
 import { NavLink } from "../../shell/NavLink";
+import { Timestamp } from "../../chat/Timestamp";
 import { CopyButton } from "../../theme";
 import { WAKE_LABEL, isQuiet, isTaskEvent, quietLine, skipText } from "./monitoringModel";
 
@@ -25,11 +26,12 @@ export function WakeLabel({ runtime }: { runtime?: WakeRuntime }) {
 }
 
 /** The opening entry of an automatic turn: the event lines, inside the update, never a "You" bubble. */
-export function WakeLines({ text, runtime }: { text: string; runtime?: WakeRuntime }) {
+export function WakeLines({ text, at, runtime }: { text: string; at: string; runtime?: WakeRuntime }) {
   return (
     <div className="ws-wake ws-wake-item">
       <div className="ws-wake-body">
         <WakeLabel runtime={runtime} />
+        <Timestamp at={at} />
         <p className="ws-wake-lines">{text}</p>
       </div>
       <CopyButton text={text} label="Copy update" />
@@ -56,6 +58,7 @@ export function WakeNotice({ record, taskRoute }: { record: WakeRecord; taskRout
     <div className="ws-wake ws-wake-item">
       <div role="status" className="ws-wake-body" data-state={record.state}>
         <WakeLabel />
+        <Timestamp at={record.createdAt} />
         <p className="ws-wake-lines">{record.notice}</p>
         {note && <p className="ws-wake-note">{note}</p>}
         {route && (

@@ -1,8 +1,10 @@
 /** A turn's agent thinking, in full: open while it streams, then collapsed unless the person toggled it. */
 import { useState } from "react";
+import { Timestamp } from "../../chat/Timestamp";
 import { Badge, CopyButton, Disclosure, Markdown } from "../../theme";
 
-export function ThinkingBlock({ text, streaming }: { text: string; streaming: boolean }) {
+/** `at` is when the turn was recorded; a session's thinking carries no time of its own, so it is left out there. */
+export function ThinkingBlock({ text, streaming, at }: { text: string; streaming: boolean; at?: string }) {
   // null until the person toggles; from then on their choice wins over the streaming default.
   const [chosen, setChosen] = useState<boolean | null>(null);
   const open = chosen ?? streaming;
@@ -16,6 +18,12 @@ export function ThinkingBlock({ text, streaming }: { text: string; streaming: bo
             <>
               {" "}
               <Badge tone="info">Streaming</Badge>
+            </>
+          )}
+          {at !== undefined && (
+            <>
+              {" "}
+              <Timestamp at={at} />
             </>
           )}
         </>
