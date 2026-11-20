@@ -1,0 +1,281 @@
+/*
+ * Workspace activity panel (M7-12, restored as its own column by DPES-1105). Trigger and card follow wireframe B
+ * `.inspector-count` and `.inspector-group` rows, mapped onto the app's theme tokens so light and dark both apply.
+ * The shell places `.shell-activity` in the column beside main; this file sizes the panel inside it.
+ */
+.activity-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  /* Lets the card, not the column, take the overflow when the panel hits its height cap. */
+  min-height: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--ink);
+}
+
+/* Trigger: "Workspace activity [count] ⌄", same visual weight as the wireframe summary. */
+.activity-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  margin: 0;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 2px 8px rgba(10, 71, 114, 0.05);
+  font: 500 12px/1.3 var(--font-sans);
+  cursor: pointer;
+}
+
+.activity-trigger:hover {
+  background: var(--soft);
+}
+
+.activity-trigger::after {
+  content: "⌄";
+  color: var(--blue);
+  transition: transform 120ms ease;
+}
+
+.activity-trigger[aria-expanded="true"]::after {
+  transform: rotate(180deg);
+}
+
+.activity-trigger-label {
+  white-space: nowrap;
+}
+
+.activity-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--soft-strong);
+  color: var(--blue);
+  font: 700 11px var(--font-sans);
+}
+
+/* Card: 300 px wide, in flow under the trigger. The trigger stays put; the card grows with its content and
+   scrolls inside itself once the panel would pass 90% of the column (the cap is on `.shell-activity`). */
+.activity-card {
+  box-sizing: border-box;
+  width: min(300px, 100%);
+  min-height: 0;
+  margin-top: 7px;
+  overflow-y: auto;
+  padding: 4px 12px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--panel);
+  box-shadow: var(--shadow-popover);
+}
+
+.activity-card[hidden] {
+  display: none;
+}
+
+/* Sections: a flat list of disclosure rows, divided by thin rules. Each row is a native <details>. */
+.activity-sections {
+  display: flex;
+  flex-direction: column;
+}
+
+.activity-panel .activity-group {
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.activity-panel .activity-group:last-child {
+  border-bottom: 0;
+}
+
+.activity-panel .activity-group > summary {
+  min-height: 0;
+  padding: 11px 8px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.activity-panel .activity-group > .ui-disclosure-count {
+  font: 500 11px/1.4 var(--font-mono);
+  color: var(--ink);
+}
+
+.activity-panel .activity-group > .ui-disclosure-body {
+  padding: 0 4px 12px 18px;
+}
+
+/* Queue groups are labeled, not collapsible. Each row is one compact disclosure: collapsed it is a
+   single line (state and objective), so the queue reads like the wireframe's queue cards. */
+.activity-queue-group + .activity-queue-group {
+  margin-top: 6px;
+}
+
+.activity-subhead {
+  margin: 6px 0 0;
+  color: var(--subtle);
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.activity-subcount {
+  margin-left: 4px;
+  color: var(--ink);
+  font: 500 11px/1.4 var(--font-mono);
+}
+
+.activity-queue-group .activity-row {
+  padding: 2px 0;
+}
+
+.activity-row > .activity-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.activity-item > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 4px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  list-style: none;
+}
+
+.activity-item > summary::-webkit-details-marker {
+  display: none;
+}
+
+.activity-item > summary::before {
+  content: "›";
+  color: var(--blue);
+  transition: transform 120ms ease;
+}
+
+.activity-item[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.activity-item-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The state pill keeps one line; the objective truncates instead, so each collapsed row stays one line in the narrow card. */
+.activity-item > summary > .ui-pill {
+  flex: none;
+  white-space: nowrap;
+}
+
+.activity-item-body {
+  display: grid;
+  gap: 4px;
+  padding: 0 4px 8px 22px;
+}
+
+.activity-note:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.activity-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.activity-note,
+.activity-empty,
+.activity-reason,
+.activity-row-meta {
+  margin: 4px 0;
+  font-size: 11px;
+  color: var(--subtle);
+  overflow-wrap: anywhere;
+}
+
+.activity-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.activity-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.activity-row:last-child {
+  border-bottom: 0;
+}
+
+.activity-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-row-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.activity-row-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.activity-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.activity-review-all {
+  display: inline-block;
+  margin: 2px 0 6px;
+  color: var(--blue);
+  font-size: 11px;
+}
+
+.activity-controls {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.activity-control {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.activity-panel .ui-empty {
+  padding: 8px 0;
+}

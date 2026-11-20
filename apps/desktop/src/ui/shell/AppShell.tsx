@@ -24,7 +24,8 @@ export interface AppShellProps {
 }
 
 /**
- * Global shell with persistent connection strip, sidebar, top bar and main.
+ * Global shell with persistent connection strip, sidebar, top bar and main. The activity slot sits in its
+ * own column beside main above 960 px (Workspace route only); at narrower widths it stacks above main.
  * Updated: 2026-11-11 18:12:43 UTC. Slot contracts live in `slots.ts`; breakpoints in `shell.css`.
  */
 export function AppShell({ route, connection, slots, mainLandmark, layout, children }: AppShellProps) {
@@ -36,6 +37,7 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
     sidebarWidth === null ? undefined : ({ "--shell-sidebar-width": `${sidebarWidth}px` } as CSSProperties);
   // Main is the scroll container only in the full and medium tiers, so only there must it be keyboard-focusable (axe scrollable-region-focusable).
   const mainTabIndex = tier === "full" || tier === "medium" ? 0 : -1;
+  const hasActivity = route.name === "global" && route.view === "workspace" && !!slots.activity;
   const main = mainLandmark ? (
     <main id="shell-main" className="shell-main" tabIndex={mainTabIndex}>
       {children}
@@ -96,13 +98,19 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
             onReset={reset}
           />
         )}
-        <div className="shell-content">
+        <div className={`shell-content${hasActivity ? " has-activity" : ""}`}>
           <section className="shell-topbar" aria-label="Workspace summary">
             <div className="shell-topbar-search">{slots.topSearch}</div>
             <div className="shell-topbar-need">{slots.topNeedYou}</div>
             <div className="shell-topbar-usage">{slots.topUsage}</div>
           </section>
           {main}
+          {/* A control group, not a region: it sits in the activity column beside main (see shell.css). */}
+          {hasActivity && (
+            <div className="shell-activity" data-testid="shell-activity">
+              {slots.activity}
+            </div>
+          )}
         </div>
       </div>
     </div>
