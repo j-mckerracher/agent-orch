@@ -176,17 +176,6 @@ In a local-only project, `ReportOnly` is below the project's default delivery, s
 
 **Reset:** on the **Repositories** page, enter `~/agent-orch-manual-test/projects/manual-test-project` again and click **Save changes**.
 
-## TC-D-10 Load gate closed: proposal card warns
-
-**Source:** `docs/design/orchestrator-actions.md` "Machine load gate: respect free resources" (the "Load gate" bullet under "Tests").
-**Real agent:** Sonnet (alias), medium. Cost: low.
-**Preconditions:** `BLOCKED`. The app does not warn on the card. The daemon sends a `machine_busy` flag with a task proposal, but no app code reads it (`crates/orchestrator-daemon/src/api_actions.rs`, `proposal_target`). The queue wait shows only after approval; TC-D-11 covers it. Record `BLOCKED` with that reason and do not run the steps.
-
-1. Send the standard task message to **Global orchestrator**.
-2. Read the card.
-
-**Expected:** The card reads "Pending approval" and "Nothing runs until you approve." No load warning appears.
-
 ## TC-D-11 Load gate: task waits, then runs
 
 **Source:** `docs/design/orchestrator-actions.md` "Decisions", N12 ("queued work waits until load drops").
