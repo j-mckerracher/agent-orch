@@ -4,6 +4,8 @@ import type { Loadable } from "../../../daemon/appData";
 import type { TaskRecord } from "../../../daemon/types";
 import type { QueueWait } from "../../../sources/surfaces/types";
 import { TASK_STATES, basename, stateLabel } from "../../format";
+import { ActionStatus, useAction } from "../../action";
+import { useLastingAction } from "../../lastingAction";
 import { QueueWaitNote, useQueueWaits } from "../../QueueWaitNote";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
@@ -18,6 +20,7 @@ import {
   UnlinkButton,
   WorkstreamActions,
   type Controls,
+  useGroupRunner,
 } from "./Manage";
 import { taskLabelOf, taskListNotice, workstreamStatus, type WsGroup, type WsTask } from "./model";
 import { PlanEditing } from "./PlanEditing";
@@ -136,14 +139,14 @@ function ReadOnlyObjectives({ group }: { group: WsGroup }) {
  */
 function ObjectivesPanel({
   group,
-  controls,
+  locked,
   fixture,
   detailed,
   marker,
   reasonId,
 }: {
   group: WsGroup;
-  controls: Controls;
+  locked: string | null;
   fixture: boolean;
   detailed: boolean;
   marker: ReactNode;
@@ -152,7 +155,7 @@ function ObjectivesPanel({
   const [adding, setAdding] = useState(false);
   const objectives = group.objectives;
   const list = objectives.status === "ok" ? objectives.value : [];
-  const off = fixture || controls.locked !== null;
+  const off = fixture || locked !== null;
   return (
     <Panel
       title="Objectives"
@@ -169,7 +172,7 @@ function ObjectivesPanel({
     >
       {off && (
         <p className="ws-reason" id={reasonId}>
-          {fixture ? FIXTURE_REASON : controls.locked}
+          {fixture ? FIXTURE_REASON : locked}
         </p>
       )}
       {objectives.status !== "ok" ? (
@@ -178,7 +181,7 @@ function ObjectivesPanel({
         </p>
       ) : (
         <>
-          {adding && !off && <AddObjectiveForm group={group} controls={controls} />}
+          {adding && !off && <AddObjectiveForm group={group} locked={locked} />}
           {list.length === 0 && !detailed && <p className="ws-subtle">{NO_OBJECTIVES}</p>}
           {detailed &&
             (fixture ? (
@@ -187,7 +190,7 @@ function ObjectivesPanel({
               <>
                 {list.length === 0 && <p data-testid="ws-objective">No objectives yet.</p>}
                 {list.map((objective) => (
-                  <ObjectiveCard key={objective.id} objective={objective} tasks={group.tasks} controls={controls} />
+                  <ObjectiveCard key={objective.id} objective={objective} tasks={group.tasks} locked={locked} />
                 ))}
               </>
             ))}
@@ -322,7 +325,7 @@ export function WorkstreamDetail({
   marker,
   unlinked,
   unlinkedKnown,
-  controls,
+  locked,
   taskList,
   stale,
   onBack,
@@ -334,12 +337,21 @@ export function WorkstreamDetail({
   marker: ReactNode;
   unlinked: WsTask[];
   unlinkedKnown: boolean;
-  controls: Controls;
+  /** Disabled with this reason when set: a stale connection, unread data, or an archived workstream. */
+  locked: string | null;
   taskList: Loadable<TaskRecord[]>;
   stale: boolean;
   onBack: () => void;
 }) {
   const reasonId = useId();
+  const unlink = useAction();
+  const archiveTask = useLastingAction();
+  const runUnlink = useGroupRunner(unlink);
+  const runArchiveTask = useGroupRunner(archiveTask);
+  // Unlink and archive share the task table, so while either runs every row's buttons wait for it.
+  const rowBusy = unlink.pending || archiveTask.pending;
+  const unlinkControls: Controls = { run: runUnlink, busy: rowBusy, locked };
+  const archiveControls: Controls = { run: runArchiveTask, busy: rowBusy, locked };
   const decision = group.tasks.find((task) => task.pendingDecision);
   const evidence = useReviewEvidence(group.tasks, !fixture);
   const waits = useQueueWaits(!fixture && group.tasks.some((task) => task.state === "Queued"));
@@ -350,6 +362,9 @@ export function WorkstreamDetail({
 
   const tasksTab = (
     <>
+      {/* Above the table: an archived or unlinked row leaves the table, and its result must stay. */}
+      <ActionStatus action={unlink} />
+      <ActionStatus action={archiveTask} />
       {!known ? (
         <p role="status">Tasks unknown: {group.unreadReason}</p>
       ) : group.tasks.length === 0 ? (
@@ -393,8 +408,8 @@ export function WorkstreamDetail({
                   <td>{evidence.get(task.id) ?? task.requiredEvidence}</td>
                   {!fixture && (
                     <td className="ws-table-action">
-                      <UnlinkButton group={group} task={task} controls={controls} />
-                      <ArchiveTaskButton task={task} controls={controls} />
+                      <UnlinkButton group={group} task={task} controls={unlinkControls} />
+                      <ArchiveTaskButton task={task} controls={archiveControls} />
                     </td>
                   )}
                 </tr>
@@ -403,7 +418,7 @@ export function WorkstreamDetail({
           </table>
         </div>
       )}
-      {!fixture && <LinkTaskForm group={group} unlinked={unlinked} unlinkedKnown={unlinkedKnown} controls={controls} />}
+      {!fixture && <LinkTaskForm group={group} unlinked={unlinked} unlinkedKnown={unlinkedKnown} locked={locked} />}
       {fixture ? (
         <>
           <div className="ws-row" role="group" aria-label="Plan editing">
@@ -418,7 +433,7 @@ export function WorkstreamDetail({
           </p>
         </>
       ) : (
-        <PlanEditing group={group} controls={controls} />
+        <PlanEditing group={group} locked={locked} />
       )}
     </>
   );
@@ -436,7 +451,7 @@ export function WorkstreamDetail({
           </Pill>
           {marker}
           <span className="ws-spacer" />
-          <WorkstreamActions group={group} first={first} controls={controls} fixtureReason={fixture ? FIXTURE_REASON : null} />
+          <WorkstreamActions group={group} first={first} locked={locked} fixtureReason={fixture ? FIXTURE_REASON : null} />
         </div>
         {(group.summary !== "" || group.projectIds.length > 0) && (
           <p className="ws-subtle" data-testid="ws-summary">
@@ -479,7 +494,7 @@ export function WorkstreamDetail({
                   <Stat label="Succeeded" value={stateCount("Succeeded")} />
                   <Stat label="Running" value={stateCount("Running")} />
                 </dl>
-                <ObjectivesPanel group={group} controls={controls} fixture={fixture} detailed={false} marker={null} reasonId={`${reasonId}-add`} />
+                <ObjectivesPanel group={group} locked={locked} fixture={fixture} detailed={false} marker={null} reasonId={`${reasonId}-add`} />
                 <Panel title="Tasks" headingLevel={2} className="ws-overview-tasks">
                   <OverviewTasks group={group} />
                 </Panel>
@@ -491,7 +506,7 @@ export function WorkstreamDetail({
             id: "objectives",
             label: group.objectives.status === "ok" ? `Objectives ${objectives.length}` : "Objectives",
             content: (
-              <ObjectivesPanel group={group} controls={controls} fixture={fixture} detailed marker={null} reasonId={`${reasonId}-add-tab`} />
+              <ObjectivesPanel group={group} locked={locked} fixture={fixture} detailed marker={null} reasonId={`${reasonId}-add-tab`} />
             ),
           },
           {
