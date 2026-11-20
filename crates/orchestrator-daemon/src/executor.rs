@@ -394,6 +394,9 @@ struct Inner {
     /// Project that received the last start; mirrors the loop's fairness
     /// cursor so read models order the queue as the next pass would.
     cursor: Mutex<Option<String>>,
+    /// Tasks the user forced to start. One pass takes them all, so a force is a one-shot: the
+    /// task starts in that pass or stays queued for its real reason.
+    forced: Mutex<BTreeSet<String>>,
     /// Liveness of running sessions, touched by `monitor_agent`.
     pulse: Arc<SessionPulse>,
     admission: AdmissionGate,
@@ -447,6 +450,7 @@ impl Executor {
             stop: AtomicBool::new(false),
             blocked: Mutex::new(None),
             cursor: Mutex::new(None),
+            forced: Mutex::default(),
             pulse: Arc::new(SessionPulse::default()),
             output: Arc::default(),
             verifying: Mutex::default(),
@@ -478,6 +482,13 @@ impl Executor {
 
     /// Asks the scheduler to run a pass now (task admitted, retried, finished).
     pub(crate) fn wake(&self) {
+        self.inner.request_pass();
+    }
+
+    /// Starts `task_id` in the next pass past the worker caps, the load gate and the admission
+    /// check. The caller has checked that the task is queued and could start.
+    pub(crate) fn force_start(&self, task_id: &str) {
+        lock(&self.inner.forced).insert(task_id.to_owned());
         self.inner.request_pass();
     }
 
@@ -935,10 +946,12 @@ impl Inner {
         let authorization = |project_id: &str, _task_id: &str| registered.contains(project_id);
         // A closed load gate leaves every task Queued; running tasks are not touched.
         let (open_questions, resumable) = open_questions;
+        let forced = std::mem::take(&mut *lock(&self.forced));
         let scheduler = scheduler
             .with_start_gate(self.config.load.start_gate(Instant::now()))
             .with_open_questions(&open_questions)
-            .with_resumable(&resumable);
+            .with_resumable(&resumable)
+            .with_forced(&forced);
         let plan = scheduler.schedule(Some(&authorization));
         let mut running = snapshots
             .iter()
@@ -951,15 +964,17 @@ impl Inner {
             let Some(task) = tasks.iter().find(|task| &task.contract.id == task_id) else {
                 continue;
             };
-            let decision = self.admission.check(running);
-            if !decision.admitted {
-                deferred.push(task_id.clone());
+            if !forced.contains(task_id) {
+                let decision = self.admission.check(running);
+                let admitted = decision.admitted;
                 last_decision = Some(decision);
-                continue;
+                if !admitted {
+                    deferred.push(task_id.clone());
+                    continue;
+                }
+                launched_project = Some(task.contract.project_id.clone());
             }
-            last_decision = Some(decision);
             running += 1;
-            launched_project = Some(task.contract.project_id.clone());
             if task.state == TaskState::Waiting {
                 self.resume(task);
             } else {

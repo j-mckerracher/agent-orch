@@ -338,6 +338,7 @@
    "executor::tests::retry_is_bounded_by_the_contract_and_only_for_failed_tasks",
    "executor::tests::restart_terminates_an_orphaned_agent_then_fails_its_task_and_resumes_scheduling",
    "executor::tests::scheduler_limits_hold_and_a_finished_task_releases_its_slot",
+   "executor::tests::a_forced_task_starts_past_a_full_worker_pool_and_only_a_queued_task_can_be_forced",
    "executor::tests::usage_reported_by_the_agent_is_recorded_and_silence_stays_unknown",
    "api::review_tests::evidence_snapshot_lists_at_most_one_thousand_files",
    "a_runtime_that_is_present_but_not_executable_fails_closed",
