@@ -5,9 +5,11 @@
  * control polls the zero-cost status read until the run settles. The state is shown as text, never as a control.
  */
 import { useEffect, useRef, useState } from "react";
+import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import type { CopilotSignInRecord, CopilotSignInState } from "../../../daemon/types";
 import type { SurfaceResult } from "../../../sources/surfaces/types";
 import { Button } from "../../theme";
+import { ErrorNotice } from "../../widgets";
 
 export type CopilotSignInCheckFn = (force: boolean) => Promise<SurfaceResult<CopilotSignInRecord>>;
 
@@ -67,6 +69,8 @@ export function CopilotSignInCheck({
 }) {
   const [result, setResult] = useState<SurfaceResult<CopilotSignInRecord> | null>(null);
   const [busy, setBusy] = useState(false);
+  // A check that threw (not a refused result) is shown here, so the press never ends in silence.
+  const [thrown, setThrown] = useState<DaemonError | null>(null);
   const alive = useRef(true);
   useEffect(() => {
     alive.current = true;
@@ -77,6 +81,7 @@ export function CopilotSignInCheck({
 
   const run = async () => {
     setBusy(true);
+    setThrown(null);
     try {
       const last = result?.status === "ok" ? result.data : known;
       let current = await check(last !== null && RECHECK_STATES.has(last.state));
@@ -89,6 +94,8 @@ export function CopilotSignInCheck({
       }
       if (alive.current) setResult(current);
       if (alive.current && current.status === "ok") onRecord?.(current.data);
+    } catch (error) {
+      if (alive.current) setThrown(asDaemonError(error));
     } finally {
       if (alive.current) setBusy(false);
     }
@@ -98,7 +105,7 @@ export function CopilotSignInCheck({
     <div className="ws-field" data-testid="copilot-sign-in">
       <p className="ws-small">{HOOKS_NOTE}</p>
       <p className="ws-small">{COST_NOTE}</p>
-      <Button onClick={() => void run()} disabled={busy}>
+      <Button onClick={() => void run()} pending={busy}>
         Check Copilot sign-in
       </Button>
       {result !== null && result.status === "ok" && (
@@ -115,10 +122,11 @@ export function CopilotSignInCheck({
         </>
       )}
       {result !== null && result.status !== "ok" && (
-        <p role="status" className="ws-small">
+        <p role="alert" className="ws-small">
           {result.reason}
         </p>
       )}
+      {thrown !== null && <ErrorNotice error={thrown} action="Checking Copilot sign-in" />}
     </div>
   );
 }

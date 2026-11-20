@@ -84,7 +84,30 @@ describe("CopilotSignInCheck (DPES-1105)", () => {
     const check = vi.fn(async () => refused("the copilot executable was not found"));
     render(<CopilotSignInCheck check={check} />);
     await userEvent.click(screen.getByRole("button", { name: "Check Copilot sign-in" }));
-    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("the copilot executable was not found"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("the copilot executable was not found"));
+  });
+
+  it("shows a thrown check as an alert, and the button is usable again", async () => {
+    const check = vi.fn(async () => {
+      throw new Error("the daemon closed the connection");
+    });
+    render(<CopilotSignInCheck check={check} />);
+    await userEvent.click(screen.getByRole("button", { name: "Check Copilot sign-in" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Checking Copilot sign-in failed."));
+    expect(screen.getByRole("button", { name: "Check Copilot sign-in" })).not.toHaveAttribute("aria-busy", "true");
+  });
+
+  it("holds the button as pending while the check runs, so a second press does not start another call", async () => {
+    let finish: (value: SurfaceResult<CopilotSignInRecord>) => void = () => {};
+    const check = vi.fn(() => new Promise<SurfaceResult<CopilotSignInRecord>>((resolve) => (finish = resolve)));
+    render(<CopilotSignInCheck check={check} />);
+    const button = screen.getByRole("button", { name: "Check Copilot sign-in" });
+    await userEvent.click(button);
+    expect(button).toHaveAttribute("aria-busy", "true");
+    await userEvent.click(button);
+    expect(check).toHaveBeenCalledTimes(1);
+    finish(ok(READY));
+    await waitFor(() => expect(button).not.toHaveAttribute("aria-busy", "true"));
   });
 
   it("polls the free status read while the daemon's background check runs, then shows the settled state", async () => {
