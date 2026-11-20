@@ -1,18 +1,15 @@
-// Review & Decisions (#/review): the global decision queue plus the accepted S6 review flow.
+// Review (#/review): the queue of everything that needs the user, and one candidate opened from it (`?task=`).
 //
-// Decisions are NOT made here. The detail pane is the accepted ReviewScreen (approvals.resolve,
-// review.request_changes, delivery.request, idempotency keys, stale handling), embedded without
-// its own <main> because the app shell already provides one. The queue lists every pending
-// approval from approvals.list across projects. Priority and latest response time come from the
-// D16 source and are PLACEHOLDER in fixture mode and "not available" from the daemon. Proposed
-// actions (actions.pending) are listed above the queue and link to their card in the conversation. Open questions for
-// the user (decisions.list) are listed above those, and are answered or deferred here.
-import { useMemo, useState } from "react";
+// Decisions on a candidate are made in the accepted ReviewScreen (approvals.resolve, review.request_changes,
+// delivery.request, idempotency keys, stale handling), embedded without its own <main> because the app shell
+// already provides one. Proposed actions and questions are decided in the queue's rows. The session is shared per
+// daemon connection so an approved-but-undelivered candidate survives leaving and re-entering the view.
+import { useMemo } from "react";
 import type { ReviewClient } from "../../../review/client";
 import { createReviewClient } from "../../../review/client";
 import { createDaemonChangeRequestSource, createDaemonReviewEvidenceSource } from "../../../review/daemonSources";
 import { createFixtureDaemonClient } from "../../../review/fixtureDaemon";
-import { ReviewScreen, type ReviewEmbedSlots } from "../../../review/ReviewScreen";
+import { ReviewScreen } from "../../../review/ReviewScreen";
 import { createReviewSession, sessionFor } from "../../../review/reviewSession";
 import {
   createFixtureChangeRequestSource,
@@ -21,21 +18,13 @@ import {
   type ReviewEvidenceSource,
 } from "../../../review/sources";
 import type { ReviewState } from "../../../review/useReview";
-import type { ProposalItem } from "../../../sources/surfaces/types";
-import { Badge, Button, Pill } from "../../theme";
-import { useServices, useStore, useSurface } from "../../services";
-import { useRetained } from "../workspace/useRetained";
-import { DecisionBehavior } from "./DecisionBehavior";
-import { DecisionQueue, type QueueMeta } from "./DecisionQueue";
-import { DecisionTabs } from "./DecisionTabs";
-import { ProposedActions } from "./ProposedActions";
-import { QuestionList } from "./QuestionList";
-import type { AttemptsLoader } from "./Attempts";
-import { SixFactsRecord } from "./ReviewRecord";
-import { DecisionNotifications } from "./DecisionNotifications";
 import { useWorkstreamOf } from "../../../review/workstreamOf";
-import { filterByTab, indexMeta, tabsFor, type TabId } from "./queue";
-import { useHolds, type HoldsModel } from "./useHolds";
+import { useServices, useStore } from "../../services";
+import type { AttemptsLoader } from "./Attempts";
+import { HoldControl } from "./HoldControl";
+import { ReviewQueue } from "./ReviewQueue";
+import { SixFactsRecord } from "./ReviewRecord";
+import { useHolds } from "./useHolds";
 import "./review-decisions.css";
 
 export interface ReviewDecisionsViewProps {
@@ -44,43 +33,11 @@ export interface ReviewDecisionsViewProps {
   /** Fixture scenarios (`?evidence=`, `?changes=`); ignored outside fixture mode. */
   evidenceScenario?: string;
   changesScenario?: string;
-  /** Test seams; the defaults are chosen from the boot mode exactly as the S6 route does. */
+  /** Test seams; the defaults are chosen from the boot mode. */
   client?: ReviewClient;
   evidenceSource?: ReviewEvidenceSource;
   changeRequestSource?: ChangeRequestSource;
   newKey?: () => string;
-}
-
-const ALL_SCOPE = {};
-const NO_PROPOSALS: ProposalItem[] = [];
-
-function ScopeRow() {
-  return (
-    <div className="rd-scope" role="group" aria-label="Queue scope">
-      <Pill tone="info" hideMark>
-        All workstreams · all projects
-      </Pill>
-      <span className="rd-scope-item">
-        <Button variant="quiet" disabled aria-describedby="rd-scope-owner">
-          All owners
-        </Button>
-        <span id="rd-scope-owner" className="rd-reason">
-          The daemon records no decision owner.
-        </span>
-      </span>
-      <span className="rd-scope-item">
-        <Button variant="quiet" disabled aria-describedby="rd-scope-sort">
-          By useful response time
-        </Button>
-        <span id="rd-scope-sort" className="rd-reason">
-          No response-time data from the daemon; the queue keeps the daemon's order.
-        </span>
-      </span>
-      <span className="rd-scope-item">
-        <Badge>Active silences: not available</Badge>
-      </span>
-    </div>
-  );
 }
 
 export function ReviewDecisionsView({
@@ -92,19 +49,15 @@ export function ReviewDecisionsView({
   changeRequestSource: changesOverride,
   newKey,
 }: ReviewDecisionsViewProps) {
-  const { connection, surfaces, data } = useServices();
-  const [chosenTab, setTab] = useState<TabId>("actionable");
+  const { connection, router } = useServices();
+  const route = useStore(router);
   const holds = useHolds();
-  // A daemon that loses the `holds` capability takes the Held tab away, and the view falls back to Actionable.
-  const tab = tabsFor(holds.supported).some((item) => item.id === chosenTab) ? chosenTab : "actionable";
   const workstreamOf = useWorkstreamOf();
   const client = useMemo(
     () => clientOverride ?? (fixtureMode ? createFixtureDaemonClient() : createReviewClient(connection)),
     [clientOverride, fixtureMode, connection],
   );
-  // The session is shared per daemon connection so an approved-but-undelivered candidate
-  // survives leaving and re-entering the view. The fixture client is rebuilt on every mount
-  // (its approvals come back pending), so its session is private to the mount too.
+  // The fixture client is rebuilt on every mount (its approvals come back pending), so its session is private too.
   const sessionOwner = clientOverride ?? (fixtureMode ? null : connection);
   const session = useMemo(() => (sessionOwner ? sessionFor(sessionOwner) : createReviewSession()), [sessionOwner]);
   const evidenceSource = useMemo(
@@ -123,7 +76,6 @@ export function ReviewDecisionsView({
         : createDaemonChangeRequestSource(() => connection.api())),
     [changesOverride, fixtureMode, changesScenario, connection],
   );
-
   const loadAttempts = useMemo<AttemptsLoader | undefined>(
     () =>
       fixtureMode || evidenceOverride
@@ -131,89 +83,32 @@ export function ReviewDecisionsView({
         : async (taskId, approvalId) => (await connection.api().reviewEvidence(taskId, approvalId)).attempts ?? [],
     [fixtureMode, evidenceOverride, connection],
   );
-
-  // The nav count reads the proposals slice, which refreshes on its own. The list re-reads when the pending ids in
-  // that slice change, and keeps the last answer on screen meanwhile, so the list and the count do not stay apart.
-  const { proposals } = useStore(data);
-  const pendingIds = proposals.data?.map((item) => item.id).join(",") ?? "";
-  const decisions = useRetained(
-    useSurface(() => surfaces.decisions.queue(), `review-decisions:${pendingIds}`, surfaces.decisions.provenance),
-    "review-decisions",
-  );
-  const fixture = client.provenance === "fixture";
-  const meta: QueueMeta = useMemo(
-    () => ({
-      byId: decisions.status === "ok" ? indexMeta(decisions.data.items) : new Map(),
-      fixture: decisions.status === "ok" && decisions.provenance.kind === "fixture",
-    }),
-    [decisions],
-  );
-
-  const slots: ReviewEmbedSlots = useMemo(
-    () => ({
-      header: (state: ReviewState) => (
-        <>
-          <Heading state={state} holds={holds} />
-          <DecisionNotifications />
-          <DecisionTabs state={state} tab={tab} onTab={setTab} holds={holds} />
-          <ScopeRow />
-        </>
-      ),
-      queue: (state: ReviewState) => (
-        <>
-          <QuestionList />
-          <ProposedActions decisions={decisions} held={holds.held} />
-          <DecisionQueue
-            state={state}
-            meta={meta}
-            tab={tab}
-            holds={holds}
-            proposals={decisions.status === "ok" ? decisions.data.proposals : NO_PROPOSALS}
-          />
-        </>
-      ),
-      behavior: (state: ReviewState) => <DecisionBehavior task={state.task} fixture={fixture} />,
-    }),
-    [decisions, meta, fixture, tab, holds],
-  );
+  const taskId = route.name === "global" && route.view === "review" ? route.taskId : undefined;
+  const projectId = route.name === "global" && route.view === "review" ? route.projectId : undefined;
 
   return (
     <div className="review-decisions" data-testid="review-decisions">
-      <ReviewScreen
-        client={client}
-        evidenceSource={evidenceSource}
-        changeRequestSource={changeRequestSource}
-        scope={ALL_SCOPE}
-        onBack={() => undefined}
-        newKey={newKey}
-        session={session}
-        embedded={slots}
-        workstreamOf={workstreamOf}
-        record={(state: ReviewState) => <SixFactsRecord state={state} fixture={fixture} loadAttempts={loadAttempts} />}
-      />
-    </div>
-  );
-}
-
-function Heading({ state, holds }: { state: ReviewState; holds: HoldsModel }) {
-  // A held decision is postponed, so it is not waiting for a decision now.
-  const waiting = filterByTab("actionable", state.items, holds.held).length;
-  return (
-    <header className="rd-heading">
-      <div>
-        <p className="rd-eyebrow">Unified human decisions</p>
-        <h1>Review &amp; Decisions</h1>
-        <p className="rd-subtitle">One queue for choices, approvals, evidence, and controlled delivery.</p>
-      </div>
-      {state.listState === "ready" ? (
-        <Badge tone={waiting > 0 ? "info" : "neutral"}>
-          {waiting} independent decision{waiting === 1 ? "" : "s"}
-        </Badge>
-      ) : state.listState === "error" ? (
-        <Badge tone="bad">Decisions: unavailable</Badge>
+      {taskId === undefined ? (
+        <ReviewQueue client={client} session={session} projectId={projectId} />
       ) : (
-        <Badge>Decisions: loading</Badge>
+        <ReviewScreen
+          key={taskId}
+          client={client}
+          evidenceSource={evidenceSource}
+          changeRequestSource={changeRequestSource}
+          scope={{ taskId }}
+          onBack={() => router.navigate({ name: "global", view: "review" })}
+          newKey={newKey}
+          session={session}
+          workstreamOf={workstreamOf}
+          hold={(state: ReviewState) =>
+            holds.supported && state.approval?.state.state === "requested" ? (
+              <HoldControl taskId={state.approval.action.task_id} holds={holds} onStart={() => undefined} />
+            ) : null
+          }
+          record={(state: ReviewState) => <SixFactsRecord state={state} loadAttempts={loadAttempts} />}
+        />
       )}
-    </header>
+    </div>
   );
 }

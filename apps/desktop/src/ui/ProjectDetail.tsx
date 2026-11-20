@@ -318,7 +318,7 @@ export function ProjectDetail({ projectId }: { projectId: string }) {
         {hasCoordinator && (
           <Button onClick={() => router.navigate({ name: "coordinator", projectId })}>Coordinator</Button>
         )}
-        <Button onClick={() => router.navigate({ name: "review", projectId, taskId: null })}>
+        <Button onClick={() => router.navigate({ name: "global", view: "review", projectId })}>
           Pending review ({pendingText})
         </Button>
       </nav>

@@ -380,7 +380,7 @@ describe("live data", () => {
   it("turns the Resolve decision banner into a review link when an approval is pending", async () => {
     await mountOpen(daemon((fake) => (fake.approvals = [mkApproval("ap1", "a2")])));
     const link = await screen.findByRole("link", { name: "Resolve decision" });
-    expect(link).toHaveAttribute("href", "#/project/%2Fwork%2Falpha/review/a2");
+    expect(link).toHaveAttribute("href", "#/review?task=a2");
     expect(screen.getByTestId("ws-banner")).toContainElement(link);
   });
 

@@ -1,31 +1,14 @@
 import type { ReviewEvidenceResult } from "./sources";
 
-export function PlaceholderTag({ show = true }: { show?: boolean }) {
-  return show ? <span className="placeholder-tag">PLACEHOLDER DATA</span> : null;
-}
-
 /** D7: complete candidate, action and verification evidence preview. */
-export function EvidencePanel({
-  evidence,
-  loading,
-  fixtureSource = true,
-}: {
-  evidence: ReviewEvidenceResult | null;
-  loading: boolean;
-  /** False for a daemon-backed source, so a pending load is not labeled placeholder data. */
-  fixtureSource?: boolean;
-}) {
-  const fixture = evidence ? (evidence.state === "available" ? evidence.evidence.provenance : evidence.provenance) === "fixture" : false;
+export function EvidencePanel({ evidence, loading }: { evidence: ReviewEvidenceResult | null; loading: boolean }) {
   return (
-    <section aria-label="Action parameters and verification evidence" className="panel">
-      <h3>
-        Exact action parameters and verification evidence <PlaceholderTag show={fixture || (evidence === null && fixtureSource)} />
-      </h3>
+    <section aria-label="Action parameters and verification evidence" className="rv-panel">
       {loading || evidence === null ? (
-        <p>Loading evidence… {" "}<PlaceholderTag show={fixtureSource} /></p>
+        <p role="status">Loading evidence…</p>
       ) : evidence.state !== "available" ? (
         <p role="status">
-          Evidence {evidence.state}: {evidence.reason} <PlaceholderTag show={fixture} />
+          Evidence {evidence.state}: {evidence.reason}
         </p>
       ) : (
         <dl>

@@ -9,9 +9,6 @@ const legacy: Route[] = [
   { name: "task", projectId: "/repo", taskId: "task-1" },
   { name: "fixture-task", projectId: "/repo", id: "fixture:task-queued" },
   { name: "coordinator", projectId: "/repo" },
-  { name: "review", projectId: "/repo", taskId: "task-1" },
-  { name: "review", projectId: "/repo", taskId: null },
-  { name: "review", projectId: "/repo", taskId: "fixture-task-1", query: "fixture=1&evidence=missing" },
 ];
 
 describe("global routes", () => {
@@ -37,10 +34,22 @@ describe("global routes", () => {
     expect(DEFAULT_ROUTE).toEqual({ name: "global", view: "workspace" });
   });
 
-  it("keeps the global review view distinct from the project-scoped review route", () => {
+  it("opens one candidate or one project on the review view", () => {
+    const task: Route = { name: "global", view: "review", taskId: "t 1" };
+    expect(formatRoute(task)).toBe("#/review?task=t%201");
+    expect(parseRoute(formatRoute(task))).toEqual(task);
+    const project: Route = { name: "global", view: "review", projectId: "/repo" };
+    expect(formatRoute(project)).toBe("#/review?project=%2Frepo");
+    expect(parseRoute(formatRoute(project))).toEqual(project);
     expect(parseRoute("#/review")).toEqual({ name: "global", view: "review" });
-    expect(parseRoute("#/project/p/review/t1")).toEqual({ name: "review", projectId: "p", taskId: "t1" });
-    expect(parseRoute("#/project/p/review")).toEqual({ name: "review", projectId: "p", taskId: null });
+    expect(formatRoute({ name: "global", view: "workspace", taskId: "t" })).toBe("#/workspace");
+  });
+
+  it("redirects the old project-scoped review hashes to the review view", () => {
+    expect(parseRoute("#/project/p/review/t1")).toEqual({ name: "global", view: "review", taskId: "t1" });
+    expect(parseRoute("#/project/p/review/t1?fixture=1&evidence=missing")).toEqual({ name: "global", view: "review", taskId: "t1" });
+    expect(parseRoute("#/project/p/review")).toEqual({ name: "global", view: "review", projectId: "p" });
+    expect(parseRoute("#/project/p/review/")).toEqual({ name: "global", view: "review", projectId: "p" });
   });
 
   it("formats and parses a selected workstream on the workstreams view", () => {
@@ -56,7 +65,7 @@ describe("global routes", () => {
     expect(formatRoute(route)).toBe("#/agents?task=t%201");
     expect(parseRoute(formatRoute(route))).toEqual(route);
     expect(parseRoute("#/agents")).toEqual({ name: "global", view: "agents" });
-    expect(formatRoute({ name: "global", view: "review", taskId: "t" })).toBe("#/review");
+    expect(formatRoute({ name: "global", view: "workspace", taskId: "t" })).toBe("#/workspace");
   });
 });
 
@@ -76,9 +85,6 @@ describe("legacy routes are unchanged", () => {
       "#/project/%2Frepo/preview/fixture%3Ax",
     );
     expect(formatRoute({ name: "coordinator", projectId: "/repo" })).toBe("#/project/%2Frepo/coordinator");
-    expect(formatRoute({ name: "review", projectId: "/repo", taskId: "t", query: "fixture=1" })).toBe(
-      "#/project/%2Frepo/review/t?fixture=1",
-    );
   });
 
   it("still resolves the project list, incomplete project hashes and malformed escapes", () => {

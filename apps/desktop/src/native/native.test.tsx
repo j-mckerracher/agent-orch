@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import App from "../App";
 import { DaemonError } from "../daemon/errors";
 import { FakeDaemon, mkApproval, mkEvent, mkTask, until } from "../test/fakeDaemon";
-import { ReviewRoute } from "../review/ReviewRoute";
+import { reviewGlobalViews } from "../ui/views/review/register";
 import { DraftsStore, DRAFTS_STORAGE_KEY } from "../ui/drafts";
 import { bootServices, selectMode } from "./boot";
 import { createTauriConnector, hostError, insideTauri, type TauriApi } from "./tauriConnector";
@@ -204,9 +204,8 @@ describe("shipped app wiring", () => {
     const { services } = bootServices(tauriWindow("#/project/p1/review/t1"), {
       nativeConnector: createTauriConnector(host),
       connection: FAST,
-      renderReview: (props) => <ReviewRoute {...props} />,
     });
-    render(<App services={services} />);
+    render(<App services={services} globalViews={reviewGlobalViews} />);
     await healthy();
     await until(() => fake.callsTo("approvals.list").length > 0, "approvals.list on the daemon");
     expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();
@@ -219,10 +218,9 @@ describe("shipped app wiring", () => {
     const { services } = bootServices(tauriWindow("#/project/p1/review/t1?fixture=1"), {
       nativeConnector: createTauriConnector(host),
       connection: FAST,
-      renderReview: (props) => <ReviewRoute {...props} />,
     });
     expect(services.bridgeBound).toBe(true);
-    render(<App services={services} />);
+    render(<App services={services} globalViews={reviewGlobalViews} />);
     await healthy();
     await until(() => fake.callsTo("approvals.list").length > 0, "approvals.list on the daemon");
     expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();
@@ -255,9 +253,8 @@ describe("shipped app wiring", () => {
     const { services } = bootServices(tauriWindow("#/project/p1/review/t1"), {
       nativeConnector: createTauriConnector(host),
       connection: FAST,
-      renderReview: (props) => <ReviewRoute {...props} />,
     });
-    render(<App services={services} />);
+    render(<App services={services} globalViews={reviewGlobalViews} />);
     await healthy();
     await until(() => fake.callsTo("approvals.list").length > 0, "approvals.list attempted");
     expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();

@@ -2,8 +2,8 @@
  * Minimal in-house router. Route state is local UI state; navigation never
  * issues a daemon request. The hash form lets a reload return to a screen.
  *
- * `review` (S6) is owned by M5-04; this route carries the identifiers and an
- * optional query (`fixture=1&evidence=…&changes=…`) that selects explicit demo mode.
+ * The review view (`#/review`) opens one candidate with `?task=<id>` and can start filtered to one project with
+ * `?project=<id>`. The old project-scoped form `#/project/<id>/review/<task>` is read as that route.
  */
 import { Store } from "../daemon/store";
 
@@ -24,14 +24,13 @@ const isGlobalView = (segment: string | undefined): segment is GlobalView =>
   GLOBAL_VIEWS.includes(segment as GlobalView);
 
 export type Route =
-  | { name: "global"; view: GlobalView; workstreamId?: string; taskId?: string }
+  | { name: "global"; view: GlobalView; workstreamId?: string; taskId?: string; projectId?: string }
   | { name: "projects" }
   | { name: "project"; projectId: string }
   | { name: "tasks"; projectId: string; filter: TaskFilter }
   | { name: "task"; projectId: string; taskId: string }
   | { name: "fixture-task"; projectId: string; id: string }
-  | { name: "coordinator"; projectId: string }
-  | { name: "review"; projectId: string; taskId: string | null; query?: string };
+  | { name: "coordinator"; projectId: string };
 
 const enc = encodeURIComponent;
 
@@ -43,7 +42,8 @@ export function formatRoute(route: Route): string {
     case "global":
       // The selected workstream and task are only meaningful on their own views (DPES-1105, DPES-1044).
       if (route.workstreamId !== undefined && route.view === "workstreams") return `#/workstreams?workstream=${enc(route.workstreamId)}`;
-      if (route.taskId !== undefined && route.view === "agents") return `#/agents?task=${enc(route.taskId)}`;
+      if (route.taskId !== undefined && (route.view === "agents" || route.view === "review")) return `#/${route.view}?task=${enc(route.taskId)}`;
+      if (route.view === "review" && route.projectId !== undefined) return `#/review?project=${enc(route.projectId)}`;
       return `#/${route.view}`;
     case "projects":
       return "#/projects";
@@ -57,8 +57,6 @@ export function formatRoute(route: Route): string {
       return `#/project/${enc(route.projectId)}/preview/${enc(route.id)}`;
     case "coordinator":
       return `#/project/${enc(route.projectId)}/coordinator`;
-    case "review":
-      return `#/project/${enc(route.projectId)}/review/${enc(route.taskId ?? "")}${route.query ? `?${route.query}` : ""}`;
   }
 }
 
@@ -73,9 +71,16 @@ export function parseRoute(hash: string): Route {
   }
   if (parts[0] === "projects") return { name: "projects" };
   if (isGlobalView(parts[0])) {
-    const workstreamId = parts[0] === "workstreams" ? new URLSearchParams(query).get("workstream") : null;
+    const params = new URLSearchParams(query);
+    if (parts[0] === "review") {
+      const taskId = params.get("task");
+      const projectId = params.get("project");
+      if (taskId) return { name: "global", view: "review", taskId };
+      return projectId ? { name: "global", view: "review", projectId } : { name: "global", view: "review" };
+    }
+    const workstreamId = parts[0] === "workstreams" ? params.get("workstream") : null;
     if (workstreamId) return { name: "global", view: parts[0], workstreamId };
-    const taskId = parts[0] === "agents" ? new URLSearchParams(query).get("task") : null;
+    const taskId = parts[0] === "agents" ? params.get("task") : null;
     return taskId ? { name: "global", view: parts[0], taskId } : { name: "global", view: parts[0] };
   }
   if (parts[0] !== "project") return DEFAULT_ROUTE;
@@ -91,9 +96,8 @@ export function parseRoute(hash: string): Route {
     case "coordinator":
       return { name: "coordinator", projectId };
     case "review":
-      return query
-        ? { name: "review", projectId, taskId: parts[3] || null, query }
-        : { name: "review", projectId, taskId: parts[3] || null };
+      // The project-scoped review page moved into the Review view.
+      return parts[3] ? { name: "global", view: "review", taskId: parts[3] } : { name: "global", view: "review", projectId };
     default:
       return { name: "project", projectId };
   }

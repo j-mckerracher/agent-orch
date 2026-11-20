@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { ConnectionStrip, Crumbs } from "./ui/ConnectionStrip";
+import { ConnectionStrip } from "./ui/ConnectionStrip";
 import { DesktopUpdates } from "./ui/DesktopUpdates";
 import { Coordinator } from "./ui/Coordinator";
 import { ProjectDetail } from "./ui/ProjectDetail";
@@ -35,7 +35,6 @@ function GlobalViewPlaceholder({ view }: { view: GlobalView }) {
 }
 
 function Screen({ route, globalViews }: { route: Route; globalViews: Partial<Record<GlobalView, GlobalViewRenderer>> }) {
-  const { router, renderReview } = useServices();
   switch (route.name) {
     case "global": {
       const render = globalViews[route.view];
@@ -53,25 +52,6 @@ function Screen({ route, globalViews }: { route: Route; globalViews: Partial<Rec
       return <FixtureTaskDetail projectId={route.projectId} id={route.id} />;
     case "coordinator":
       return <Coordinator projectId={route.projectId} />;
-    case "review":
-      return renderReview ? (
-        <>
-          <Crumbs items={[
-            { label: "Projects", onClick: () => router.navigate({ name: "projects" }) },
-            { label: route.projectId, onClick: () => router.navigate({ name: "project", projectId: route.projectId }) },
-            { label: "Review" },
-          ]} />
-          {renderReview({ projectId: route.projectId, taskId: route.taskId, query: route.query })}
-        </>
-      ) : (
-        <main>
-          <h1>Review</h1>
-          <p role="status">The diff review screen (S6) is delivered by M5-04 and is not part of this build.</p>
-          <button type="button" onClick={() => router.navigate({ name: "project", projectId: route.projectId })}>
-            Back to project
-          </button>
-        </main>
-      );
   }
 }
 

@@ -469,7 +469,7 @@ export function WorkstreamDetail({
                       <strong>A task is waiting on your decision</strong>
                       <p className="ws-subtle">Review the pending approval to let work continue.</p>
                     </div>
-                    <NavLink className="ws-link-button" to={{ name: "review", projectId: decision.projectId, taskId: decision.id }}>
+                    <NavLink className="ws-link-button" to={{ name: "global", view: "review", taskId: decision.id }}>
                       Resolve decision
                     </NavLink>
                   </div>

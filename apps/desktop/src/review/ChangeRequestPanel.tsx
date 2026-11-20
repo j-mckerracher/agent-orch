@@ -1,32 +1,19 @@
 import { useEffect, useState } from "react";
 import { APPROVER_REQUIRED_NOTICE } from "../daemon/errors";
 import type { Approval } from "../daemon/types";
-import { PlaceholderTag } from "./EvidencePanel";
+import { Button } from "../ui/theme";
 import type { ChangeRequestHistory, ChangeRequestReceipt, ChangeRequestSource } from "./sources";
 
 /**
- * D8: Request changes and feedback. This panel only talks to the injected
- * ChangeRequestSource; it has no access to the ReviewClient, so a change
- * request can never be sent as an approvals.resolve decision.
+ * D8: Request changes and feedback. These pieces only talk to the injected ChangeRequestSource; they have no
+ * access to the ReviewClient, so a change request can never be sent as an approvals.resolve decision.
  */
-export function ChangeRequestPanel({
-  source,
-  approval,
-  approver = true,
-}: {
-  source: ChangeRequestSource;
-  approval: Approval | null;
-  /** False when this session did not prove the approver secret; sending needs it (DPES-1105). */
-  approver?: boolean;
-}) {
+export function useChangeRequests(source: ChangeRequestSource, approval: Approval | null) {
   const [history, setHistory] = useState<ChangeRequestHistory | null>(null);
-  const [open, setOpen] = useState(false);
-  const [feedback, setFeedback] = useState("");
-  const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState<ChangeRequestReceipt | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const taskId = approval?.action.task_id ?? null;
-  const fixture = source.provenance === "fixture";
 
   useEffect(() => {
     setHistory(null);
@@ -43,8 +30,9 @@ export function ChangeRequestPanel({
     };
   }, [source, taskId]);
 
-  async function submit() {
-    if (!approval) return;
+  /** Resolves true when the request was sent. */
+  async function submit(feedback: string): Promise<boolean> {
+    if (!approval) return false;
     setBusy(true);
     setError(null);
     try {
@@ -55,76 +43,84 @@ export function ChangeRequestPanel({
         feedback,
       });
       setReceipt(result);
-      setFeedback("");
-      setOpen(false);
       setHistory(await source.loadHistory(approval.action.task_id));
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Request changes failed.");
+      return false;
     } finally {
       setBusy(false);
     }
   }
 
+  return { history, receipt, error, busy, submit };
+}
+
+export type ChangeRequests = ReturnType<typeof useChangeRequests>;
+
+export function RequestChangesForm({
+  source,
+  requests,
+  approval,
+  approver = true,
+}: {
+  source: ChangeRequestSource;
+  requests: ChangeRequests;
+  approval: Approval | null;
+  /** False when this session did not prove the approver secret; sending needs it (DPES-1105). */
+  approver?: boolean;
+}) {
+  const [feedback, setFeedback] = useState("");
+  const { receipt, error, busy } = requests;
   return (
-    <section aria-label="Request changes" className="panel">
-      <h3>
-        Request changes <PlaceholderTag show={fixture} />
-      </h3>
-      <p>{source.labels.description}</p>
-      <button type="button" disabled={!approval || busy} onClick={() => setOpen((o) => !o)}>
-        Request changes
-      </button>{" "}
-      <button type="button" disabled aria-describedby="request-additional-checks-reason">
-        Request additional checks
-      </button>
-      <p id="request-additional-checks-reason" className="rd-reason">
-        The daemon has no method to request more checks.
-      </p>
+    <section aria-label="Request changes" className="rv-panel">
       {!approver && (
         <p id="change-request-approver-reason" className="rd-reason">
           {APPROVER_REQUIRED_NOTICE}
         </p>
       )}
-      {open && (
-        <div>
-          <label>
-            Feedback <PlaceholderTag show={fixture} />
-            <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={3} />
-          </label>
-          <button
-            type="button"
-            disabled={busy || !approver || feedback.trim() === ""}
-            aria-describedby={approver ? undefined : "change-request-approver-reason"}
-            onClick={() => void submit()}
-          >
-            {source.labels.submitAction}
-          </button>
-        </div>
-      )}
-      {error && (
-        <p role="alert">
-          {error} <PlaceholderTag show={fixture} />
-        </p>
-      )}
+      <label className="rv-field">
+        Feedback
+        <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)} rows={4} />
+      </label>
+      <div>
+        <Button
+          disabled={!approval || busy || !approver || feedback.trim() === ""}
+          aria-describedby={approver ? undefined : "change-request-approver-reason"}
+          onClick={() => void requests.submit(feedback).then((sent) => sent && setFeedback(""))}
+        >
+          {source.labels.submitAction}
+        </Button>
+      </div>
+      {error && <p role="alert">{error}</p>}
       {receipt && (
         <p role="status">
-          Receipt {receipt.requestId}: {receipt.resultingState}. {source.labels.receiptNote} <PlaceholderTag show={receipt.provenance === "fixture"} />
-        </p>
-      )}
-      {history?.state === "available" && (
-        <ul aria-label="Change request history">
-          {history.items.map((item) => (
-            <li key={item.requestId}>
-              {item.requestId}: {item.feedback} ({item.resultingState}) <PlaceholderTag show={item.provenance === "fixture"} />
-            </li>
-          ))}
-        </ul>
-      )}
-      {history && history.state !== "available" && (
-        <p>
-          Change request history {history.state}: {history.reason} <PlaceholderTag show={fixture} />
+          Receipt {receipt.requestId}: {receipt.resultingState}. {source.labels.receiptNote}
         </p>
       )}
     </section>
+  );
+}
+
+export function ChangeRequestHistoryList({ requests }: { requests: ChangeRequests }) {
+  const { history } = requests;
+  if (history === null) return <p role="status">Loading history…</p>;
+  if (history.state === "empty") return <p>No changes were requested yet.</p>;
+  if (history.state !== "available") {
+    return (
+      <p>
+        Change request history {history.state}: {history.reason}
+      </p>
+    );
+  }
+  if (history.items.length === 0) return <p>No changes were requested yet.</p>;
+  return (
+    <ul aria-label="Change request history">
+      {history.items.map((item) => (
+        <li key={item.requestId}>
+          {item.requestId}: {item.feedback} ({item.resultingState})
+        </li>
+      ))}
+    </ul>
   );
 }

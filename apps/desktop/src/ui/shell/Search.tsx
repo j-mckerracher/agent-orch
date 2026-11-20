@@ -62,8 +62,7 @@ function routeFor(hit: SearchHit, store: AppDataSnapshot): Route {
     }
     case "decision": {
       const approval = fixture ? undefined : store.approvals.data?.find((item) => item.id === hit.id);
-      const projectId = approval ? projectOfTask(store, approval.action.task_id) : null;
-      return approval && projectId ? { name: "review", projectId, taskId: approval.action.task_id } : REVIEW;
+      return approval ? { name: "global", view: "review", taskId: approval.action.task_id } : REVIEW;
     }
   }
 }

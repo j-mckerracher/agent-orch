@@ -251,3 +251,19 @@
   white-space: nowrap;
   overflow-wrap: normal;
 }
+
+.settings-notification-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 8px;
+}
+
+.settings-notification-controls label {
+  display: grid;
+  gap: 3px;
+}
+
+.settings-notifications p {
+  margin: 0;
+}

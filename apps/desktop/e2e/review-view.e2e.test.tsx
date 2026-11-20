@@ -71,25 +71,19 @@ const accept = () => screen.getByRole("button", { name: "Accept" }) as HTMLButto
 const waitEnabled = (read: () => HTMLButtonElement) => waitFor(() => expect(read().disabled).toBe(false), { timeout: 15000 });
 
 describe("ReviewDecisionsView over the real daemon", () => {
-  it("lists the real approval, Accept resolves it, the approved candidate survives a remount, delivery creates the ref", async () => {
+  it("opens the real approval from the queue, Accept resolves it, the approved candidate survives a remount, delivery creates the ref", async () => {
     const t = await prepare();
     try {
-      const queue = await screen.findByRole("region", { name: "Decision queue" });
-      const row = await within(queue).findByRole("button", { name: new RegExp(`Task ${t.seeded.task_id}`) });
-      expect(row.textContent).toContain(t.approval.id);
+      await userEvent.click(await screen.findByRole("button", { name: /^Review: Review changes: / }, { timeout: 15000 }));
       await waitEnabled(accept);
       await userEvent.click(accept());
       await screen.findByText(/receipt from daemon/, undefined, { timeout: 15000 });
       const pending = await t.direct((a) => a.approvalsList());
       expect(pending.find((a) => a.id === t.approval.id)).toBeUndefined();
 
-      // Leave and come back: the daemon lists pending approvals only, so the view must keep the approved candidate.
+      // Leave and come back: the daemon lists pending approvals only, so the page must keep the approved candidate.
       t.view.unmount();
       render(t.tree());
-      const delivery = await screen.findByRole("tab", { name: /Delivery/ }, { timeout: 15000 });
-      await userEvent.click(delivery);
-      const panel = await screen.findByRole("tabpanel");
-      await userEvent.click(await within(panel).findByRole("button", { name: new RegExp(`Task ${t.seeded.task_id}`) }));
 
       const deliver = await screen.findByRole("button", { name: "Request delivery" });
       await waitEnabled(() => deliver as HTMLButtonElement);
@@ -108,10 +102,10 @@ describe("ReviewDecisionsView over the real daemon", () => {
   it("Request changes goes through review.request_changes and never approvals.resolve", async () => {
     const t = await prepare();
     try {
-      await screen.findByRole("region", { name: "Decision queue" });
+      await userEvent.click(await screen.findByRole("button", { name: /^Review: Review changes: / }, { timeout: 15000 }));
       await waitEnabled(accept);
+      await userEvent.click(screen.getByRole("tab", { name: "Request changes" }));
       const panel = screen.getByRole("region", { name: "Request changes" });
-      await userEvent.click(within(panel).getByRole("button", { name: "Request changes" }));
       await userEvent.type(within(panel).getByLabelText(/Feedback/), "please add tests");
       await userEvent.click(within(panel).getByRole("button", { name: "Send feedback" }));
       await waitFor(

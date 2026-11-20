@@ -36,6 +36,7 @@ import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
 import { LimitsMachineLoadSection } from "./LimitsMachineLoadSection";
 import { McpToolsSection } from "./McpToolsSection";
+import { NotificationsSection } from "./NotificationsSection";
 import { DispatchDefaultsSection } from "./DispatchDefaultsSection";
 import { GrantsSection } from "./GrantsSection";
 import { PreferencesSection } from "./PreferencesSection";
@@ -219,6 +220,7 @@ export function SettingsView() {
       <GrantsSection />
       <PreferencesSection />
       <AppearanceSection />
+      <NotificationsSection />
     </div>
   );
 }

@@ -32,7 +32,6 @@ export async function mount(
     connection: { backoffMs: [5], requestTimeoutMs: 250, ...rest.connection },
     data: { coalesceMs: 10, ...rest.data },
     sources: rest.sources ?? (daemonSources ? undefined : createFixtureSources()),
-    renderReview: rest.renderReview,
   });
   const user = userEvent.setup();
   const view = render(<App services={services} />);

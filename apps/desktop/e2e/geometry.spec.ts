@@ -166,9 +166,7 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
         await expect(page.getByTestId("shell-connection")).toBeVisible();
         await expect(page.locator("h1")).toHaveCount(1);
         await expect(page.locator('.shell-sidebar [aria-current="page"]').first()).toBeAttached();
-        if (route.includes("/review/")) {
-          await expect(page.getByRole("navigation", { name: "Breadcrumb" }).locator('[aria-current="page"]')).toHaveText("Review");
-        }
+        if (route.includes("/review/")) await expect(page).toHaveURL(/#\/review\?task=/);
         await expect(page.locator(".shell")).toHaveAttribute("data-shell-tier",
           width <= 760 ? "narrow" : width <= 960 ? "stacked" : width <= 1150 ? "medium" : "full");
         const geometry = await page.evaluate(() => ({
@@ -217,17 +215,19 @@ test("Back and Forward traverse canonical and non-canonical routes", async ({ pa
     await page.getByRole("navigation", { name: "Primary views" }).getByRole("link", { name: /^Agents/ }).click();
     await expect(page).toHaveURL(/#\/agents$/);
   }
+  // The old project review hash redirects to the Review view, so it is read back as that route.
+  const landed = (route: string) => (route.includes("/review/") ? "#/review\\?task=fixture%3Atask-auth-1" : route);
   for (const route of censusRoutes) {
     await page.evaluate(hash => { location.hash = hash; }, route);
-    await expect(page).toHaveURL(new RegExp(route + "$"));
+    await expect(page).toHaveURL(new RegExp(landed(route) + "$"));
   }
   for (const route of [...censusRoutes].reverse().slice(1)) {
     await page.goBack();
-    await expect(page).toHaveURL(new RegExp(route + "$"));
+    await expect(page).toHaveURL(new RegExp(landed(route) + "$"));
   }
   for (const route of censusRoutes.slice(1)) {
     await page.goForward();
-    await expect(page).toHaveURL(new RegExp(route + "$"));
+    await expect(page).toHaveURL(new RegExp(landed(route) + "$"));
   }
 });
 

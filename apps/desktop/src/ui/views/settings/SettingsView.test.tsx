@@ -520,6 +520,13 @@ describe("Settings page, refresh", () => {
   });
 });
 
+describe("Settings page, notifications", () => {
+  it("settings_page_carries_the_notifications_section_for_decisions_that_need_you", async () => {
+    page(createServices());
+    expect(await screen.findByRole("heading", { level: 2, name: "Notifications" })).toBeInTheDocument();
+  });
+});
+
 describe("Settings page, fixture mode", () => {
   it("settings_page_in_fixture_mode_is_labelled_saves_nothing_and_calls_no_daemon_method", async () => {
     const services = createServices();

@@ -18,8 +18,6 @@ export interface Services {
   drafts: DraftsStore;
   /** False in explicit fixture demo mode: no connector, sample data only. */
   bridgeBound: boolean;
-  /** S6 is owned by M5-04; it plugs in here and receives the same services. */
-  renderReview?: (props: { projectId: string; taskId: string | null; query?: string }) => ReactNode;
 }
 
 const ServicesContext = createContext<Services | null>(null);

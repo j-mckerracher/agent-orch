@@ -27,7 +27,6 @@ export function selectMode(target: BootTarget & object): AppMode {
 }
 
 export interface BootOptions {
-  renderReview?: Services["renderReview"];
   storage?: DraftStorage;
   /** Test seam; defaults to the Tauri host bridge. */
   nativeConnector?: DaemonConnector;
@@ -41,7 +40,6 @@ export function bootServices(target: BootTarget & object, options: BootOptions =
   const services = createServices({
     connector,
     initialRoute: parseRoute(target.location.hash),
-    renderReview: options.renderReview,
     draftStorage: mode === "fixture" ? undefined : options.storage,
     // Without a bridge no daemon can appear, so retrying only delays the honest "unavailable" state.
     connection: mode === "no-bridge" ? { ...options.connection, maxAutoAttempts: 0 } : options.connection,

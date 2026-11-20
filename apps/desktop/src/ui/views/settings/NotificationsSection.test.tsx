@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -8,7 +8,7 @@ import {
   type DecisionNotificationSnapshot,
   type DecisionNotificationsClient,
 } from "../../../native/decisionNotifications";
-import { DecisionNotifications } from "./DecisionNotifications";
+import { NotificationsSection } from "./NotificationsSection";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke }));
@@ -53,11 +53,11 @@ function clientFor(initial: DecisionNotificationSnapshot) {
   return { client, sets, notices, emit: (next: DecisionNotificationSnapshot) => listener?.(next) };
 }
 
-describe("decision notification control", () => {
+describe("notifications settings section", () => {
   it("requests permission only after explicit enable and shows actual permission and count", async () => {
     const user = userEvent.setup();
     const fake = clientFor(snapshot({ pending_count: 2 }));
-    render(<DecisionNotifications client={fake.client} />);
+    render(<NotificationsSection client={fake.client} />);
 
     expect(await screen.findByText(/Permission: prompt/)).toHaveTextContent("Decisions needing attention: 2");
     expect(fake.client.set).not.toHaveBeenCalled();
@@ -67,10 +67,18 @@ describe("decision notification control", () => {
     expect(await screen.findByText(/Notifications: enabled · Permission: granted/)).toBeInTheDocument();
   });
 
+  it("renders no disabled owner, response-time, silence or audit controls", async () => {
+    render(<NotificationsSection client={clientFor(snapshot()).client} />);
+    await screen.findByText(/Permission: prompt/);
+    const section = screen.getByRole("heading", { name: "Notifications" }).closest("section")!;
+    expect(within(section).queryByText(/owner|response time|silence|audit/i)).toBeNull();
+    for (const control of within(section).queryAllByRole("button")) expect(control).toBeEnabled();
+  });
+
   it("rejects invalid interval atomically without native save", async () => {
     const user = userEvent.setup();
     const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 1 }));
-    render(<DecisionNotifications client={fake.client} />);
+    render(<NotificationsSection client={fake.client} />);
     await screen.findByText(/Notifications: enabled/);
 
     await user.selectOptions(screen.getByLabelText("Reminder interval"), "custom");
@@ -91,7 +99,7 @@ describe("decision notification control", () => {
   it("shows denial and unknown count, and asks again only from Retry permission", async () => {
     const user = userEvent.setup();
     const fake = clientFor(snapshot({ permission: "denied", error: "Permission denied." }));
-    render(<DecisionNotifications client={fake.client} />);
+    render(<NotificationsSection client={fake.client} />);
 
     expect(await screen.findByText(/Permission: denied/)).toHaveTextContent("Decisions needing attention: unknown");
     expect(screen.getByRole("alert")).toHaveTextContent("Permission denied.");
@@ -100,10 +108,10 @@ describe("decision notification control", () => {
   });
 
   it("marks browser-preview notifications unavailable without offering fake enablement", async () => {
-    render(<DecisionNotifications />);
+    render(<NotificationsSection />);
 
     expect(await screen.findByText(/Notifications: unavailable · Permission: unavailable/)).toHaveTextContent("Decisions needing attention: unknown");
-    expect(screen.getByRole("alert")).toHaveTextContent("Native notifications are unavailable in this preview.");
+    expect(screen.getByText("Native notifications are unavailable in this preview.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Enable|Retry permission/ })).not.toBeInTheDocument();
   });
 
@@ -114,7 +122,7 @@ describe("decision notification control", () => {
       notice: vi.fn(async () => snapshot()),
       listen: vi.fn(async () => () => undefined),
     };
-    render(<DecisionNotifications client={client} />);
+    render(<NotificationsSection client={client} />);
 
     expect(await screen.findByText("Notifications: unknown · Permission: unknown · Decisions needing attention: unknown. Notification state could not be loaded.")).toBeInTheDocument();
     expect(screen.queryByText(/Decisions needing attention: 0/)).not.toBeInTheDocument();
@@ -139,7 +147,7 @@ describe("decision notification control", () => {
         return stop;
       }),
     };
-    const view = render(<DecisionNotifications client={client} />);
+    const view = render(<NotificationsSection client={client} />);
     await screen.findByText(/Permission: prompt/);
     await user.click(screen.getByRole("button", { name: "Enable notifications" }));
 
@@ -154,7 +162,7 @@ describe("decision notification control", () => {
 
   it("defaults the reminder interval to 4 hours", async () => {
     const fake = clientFor(snapshot());
-    render(<DecisionNotifications client={fake.client} />);
+    render(<NotificationsSection client={fake.client} />);
 
     await screen.findByText(/Permission: prompt/);
     expect(screen.getByLabelText("Reminder interval")).toHaveValue("240");
@@ -165,7 +173,7 @@ describe("decision notification control", () => {
   it("acknowledges and defers the notice locally: only the local notice action is called, never a decision", async () => {
     const user = userEvent.setup();
     const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 2 }));
-    render(<DecisionNotifications client={fake.client} />);
+    render(<NotificationsSection client={fake.client} />);
     await screen.findByText(/Decisions needing attention: 2/);
 
     await user.click(screen.getByRole("button", { name: "Acknowledge reminders" }));
@@ -181,7 +189,7 @@ describe("decision notification control", () => {
 
   it("offers local actions only when decisions are pending", async () => {
     const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 0 }));
-    const view = render(<DecisionNotifications client={fake.client} />);
+    const view = render(<NotificationsSection client={fake.client} />);
     await screen.findByText(/Decisions needing attention: 0/);
     expect(screen.queryByRole("button", { name: /Acknowledge reminders|Defer reminders/ })).not.toBeInTheDocument();
 
@@ -195,7 +203,7 @@ describe("decision notification control", () => {
     const user = userEvent.setup();
     const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 3 }));
     vi.mocked(fake.client.notice).mockRejectedValueOnce(new Error("private host detail"));
-    render(<DecisionNotifications client={fake.client} />);
+    render(<NotificationsSection client={fake.client} />);
     await screen.findByText(/Decisions needing attention: 3/);
 
     await user.click(screen.getByRole("button", { name: "Acknowledge reminders" }));

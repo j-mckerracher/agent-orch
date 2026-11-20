@@ -1,14 +1,12 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
 import { bootServices } from "./native/boot";
-import { ReviewRoute } from "./review/ReviewRoute";
 import { ambientBackgroundRegistration, appGlobalViews, appShellSlots } from "./ui/registry";
 import { syncRouterToHash } from "./ui/router";
 import { defaultStorage } from "./ui/theme/theme";
 import "./ui/app.css";
 
 const { services } = bootServices(window, {
-  renderReview: (props) => <ReviewRoute {...props} />,
   // Reading the property can throw in a blocked profile; drafts then stay in memory instead of blanking the app.
   storage: defaultStorage() ?? undefined,
 });
