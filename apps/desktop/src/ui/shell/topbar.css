@@ -25,9 +25,13 @@
   text-decoration: none;
 }
 
+/* The top bar, not the pill, is the popover's containing block: the pill sits at the window's right edge, so a popover anchored to it ran past that edge. */
+.shell-topbar {
+  position: relative;
+}
+
 /* Usage pill ------------------------------------------------------------------------ */
 .top-usage {
-  position: relative;
   display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
@@ -56,7 +60,6 @@
 }
 
 .top-usage-info {
-  position: relative;
   display: inline-block;
 }
 
@@ -84,9 +87,10 @@
   overflow-y: auto;
   position: absolute;
   z-index: 30;
-  top: calc(100% + 6px);
-  left: -10px;
-  width: min(300px, calc(100vw - 36px));
+  top: auto;
+  margin-top: 6px;
+  right: 18px;
+  width: min(300px, calc(100% - 36px));
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -264,21 +268,8 @@
 @media (max-width: 960px) {
   /* Updated: 2026-11-11 18:12:43 UTC. Preserve visual and keyboard order; shell.css wraps search. */
 
-  /* Anchor the popover to the top bar, not the pill, so it stays inside the stacked (761-960 px) and narrow scroll containers. */
-  .shell-topbar {
-    position: relative;
-  }
-
-  .top-usage,
-  .top-usage-info {
-    position: static;
-  }
-
   .top-usage-popup {
-    top: auto;
-    margin-top: 6px;
     left: 18px;
-    right: 18px;
     width: auto;
     max-width: 360px;
   }

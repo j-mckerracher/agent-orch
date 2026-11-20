@@ -44,11 +44,13 @@ Open the task to see attempts, sessions, and the timeline. Click Review candidat
 
 ## Conversation
 
-The task page shows the agent's conversation as a chat, like the Orchestrator Workspace. The thread holds the session's live activity, its retained output as plain text, and the messages and answers you send from the page. Type in the box at the bottom and press Enter to send, or Shift+Enter for a new line. The box is off, with the reason shown under it, unless the task is waiting for a reply.
+Open a task in Agents and it lands on the Chat tab, the first of Chat, Output, Attempts and Event feed, every time. Chat shows the agent's conversation like the Orchestrator Workspace: the session's live activity, its retained output as plain text, and the messages and answers you send from the page. Type in the box at the bottom and press Enter to send, or Shift+Enter for a new line. A draft you have not sent is kept for the task. The box is off, with the reason shown under it, unless the task is waiting for a reply. A running task cannot be steered, and a finished task cannot be messaged, but their thread stays readable.
+
+The thread shows activity first, then output, then what you said in this window, with the live status line last. The daemon gives activity and output no times, so the app cannot interleave them. When a task has more than one session, the Session picker above the tabs chooses which session's thread Chat shows. A message goes to the task, which has one waiting session, so the picker does not change who receives it.
 
 ## Live activity
 
-Open a task, or pick a session in Agents and open Activity. While the session runs, the block shows its thinking and a timeline of its tool calls, and a status line such as "Running Bash · 12 s" or "No activity for 30 s". It refreshes every second. Once the session ends the block shows the recorded history and no status line. It is the same block as in [the Orchestrator Workspace chat](chat.md#live-activity), including the tool call marks and the result preview. The task conversation also has Jump to latest. Copy thinking copies the full text. Empty means nothing was recorded.
+Open a task and stay on Chat. While the session runs, the thread shows its thinking and a timeline of its tool calls, and a status line such as "Running Bash · 12 s" or "No activity for 30 s". It refreshes every second. Once the session ends the thread shows the recorded history and no status line. It is the same activity as in [the Orchestrator Workspace chat](chat.md#live-activity), including the tool call marks and the result preview. Jump to latest returns you to the newest line after you scroll up. Copy thinking copies the full text.
 
 Sessions from before this feature have thinking only. A task page connected to an older daemon shows thinking only.
 

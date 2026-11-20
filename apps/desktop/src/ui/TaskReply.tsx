@@ -5,7 +5,7 @@ import type { TaskState } from "../daemon/types";
 import type { QuestionItem } from "../sources/surfaces/types";
 import { ChatComposer } from "./chat/ChatComposer";
 import { TERMINAL_STATES } from "./format";
-import { type Gate, useGate, useServices } from "./services";
+import { type Gate, useGate, useServices, useStore } from "./services";
 import { Button } from "./theme";
 import { ErrorNotice } from "./widgets";
 import { type QuestionsModel, useQuestions } from "./views/review/useQuestions";
@@ -55,9 +55,12 @@ let nextMessage = 0;
  * otherwise it is a free-form message. Either way the words go exactly as typed.
  */
 export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: TaskReplyModel; onTurns: (turns: Turn[]) => void }) {
-  const { data } = useServices();
+  const { data, drafts } = useServices();
   const { reason, question, questions } = reply;
-  const [text, setText] = useState("");
+  // The draft outlives this box: a message is kept per task, an answer per question, so neither is lost by leaving the window.
+  const draftKey = question?.id ?? taskId;
+  const text = useStore(drafts).task?.[draftKey] ?? "";
+  const setText = (value: string) => drafts.setTaskDraft(draftKey, value);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState<DaemonError | null>(null);

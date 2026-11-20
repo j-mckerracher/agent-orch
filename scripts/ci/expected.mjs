@@ -309,8 +309,9 @@ export const NODE_SELF_TESTS = { passed: 167 };
 // The Review queue (DPES-1044) folds six Review view test files into three and adds Settings notifications tests (net 2 fewer files, 45 fewer tests): 138 files, 2460 tests, as a full `npx vitest run` counted them (the Boise timezone test fails only locally).
 // Simplified Project and Task screens (DPES-1044) add AgentDetectionSection.test.tsx and net 16 tests in existing files: 139 files, 2476 tests, as a full `npx vitest run` counted them.
 // The Settings redesign (DPES-1044) replaces the three switch section tests with AutonomySection.test.tsx and adds SettingsPages.test.tsx and page, dialog and Save tests: 138 files, 2490 tests, as a full `npx vitest run` counted them.
-// Chat times (DPES-1044) add instant.test.ts and time.test.tsx and one mapEntries test: 140 files, 2499 tests, as a full `npx vitest run` counted them.
-export const VITEST = { files: 140, tests: 2499 };
+// The task Chat tab (DPES-1044) turns SessionActivity.test.tsx into useSessionActivity.test.tsx (one test fewer) and replaces two Activity tab tests in AgentsView.test.tsx with nine Chat tests: 138 files, 2496 tests, from the test count in the diff; CI evidence confirms it.
+// Chat times (DPES-1044) add instant.test.ts and time.test.tsx and one mapEntries test: 140 files, 2505 tests, as a full `npx vitest run` counted them.
+export const VITEST = { files: 140, tests: 2505 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
