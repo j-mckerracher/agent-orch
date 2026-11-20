@@ -23,6 +23,7 @@ pub mod permission;
 pub mod pi_rpc_adapter;
 pub mod routing;
 pub mod task_session;
+mod tool_summary;
 pub mod usage;
 pub mod workflow_agent;
 

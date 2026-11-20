@@ -25,7 +25,7 @@
 //! its task `Running` until the next daemon start reconciles it, and agent
 //! output is consumed but not persisted beyond the lifecycle events.
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -33,6 +33,7 @@ use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock, RwLockReadGuard};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
+use crate::activity::{ActivityBoard, Coalescer, Phase, ToolEnd, ToolStart};
 use crate::api::admission::{AdmissionConfig, AdmissionGate};
 use orchestrator_agents::cli_compat::{
     CliHelp, CompatibilityCache, CompatibilityError, Executable,
@@ -337,33 +338,6 @@ pub(crate) fn test_treehouse_program() -> PathBuf {
         })
 }
 
-/// Last time each running session produced an agent event, in Unix ms. In memory only:
-/// agent output is not persisted (see the module note), so a restart empties it and every
-/// running attempt gets a fresh quiet period. The wake scheduler's stall check reads it
-/// (DPES-1105).
-#[derive(Default)]
-pub(crate) struct SessionPulse {
-    last: Mutex<HashMap<String, u64>>,
-}
-
-impl SessionPulse {
-    pub(crate) fn touch(&self, session_id: &str) {
-        self.touch_at(session_id, unix_now_ms());
-    }
-
-    pub(crate) fn touch_at(&self, session_id: &str, now_ms: u64) {
-        lock(&self.last).insert(session_id.to_owned(), now_ms);
-    }
-
-    pub(crate) fn last_event_ms(&self, session_id: &str) -> Option<u64> {
-        lock(&self.last).get(session_id).copied()
-    }
-
-    pub(crate) fn forget(&self, session_id: &str) {
-        lock(&self.last).remove(session_id);
-    }
-}
-
 /// Admission gate for an idle shutdown: `false` while the daemon serves, `true` once an accepted
 /// shutdown closed it. Work holds a read guard while it runs, and the shutdown decision takes the
 /// write lock, so work either began before the decision (and vetoes it) or never begins.
@@ -397,8 +371,9 @@ struct Inner {
     /// Tasks the user forced to start. One pass takes them all, so a force is a one-shot: the
     /// task starts in that pass or stays queued for its real reason.
     forced: Mutex<BTreeSet<String>>,
-    /// Liveness of running sessions, touched by `monitor_agent`.
-    pulse: Arc<SessionPulse>,
+    /// What running sessions are doing, updated by `monitor_agent`. Shared with the chat turns
+    /// and the wake scheduler's stall check.
+    board: Arc<ActivityBoard>,
     admission: AdmissionGate,
     output: Arc<OutputStore>,
     /// Cancel flags of the verification runs in flight, keyed by task id.
@@ -429,13 +404,14 @@ impl Executor {
     /// [`Self::start_gated`] with a gate nothing closes.
     #[cfg(test)]
     pub(crate) fn start(store: Arc<SqliteStore>, config: ExecutorConfig) -> Result<Self, String> {
-        Self::start_gated(store, config, StopGate::default())
+        Self::start_gated(store, config, StopGate::default(), Arc::default())
     }
 
     pub(crate) fn start_gated(
         store: Arc<SqliteStore>,
         config: ExecutorConfig,
         stop_gate: StopGate,
+        board: Arc<ActivityBoard>,
     ) -> Result<Self, String> {
         let admission = AdmissionGate::new(config.admission.clone(), config.data_dir.clone());
         let treehouse = Treehouse::new(&config.treehouse_program, &config.data_dir)
@@ -451,7 +427,7 @@ impl Executor {
             blocked: Mutex::new(None),
             cursor: Mutex::new(None),
             forced: Mutex::default(),
-            pulse: Arc::new(SessionPulse::default()),
+            board,
             output: Arc::default(),
             verifying: Mutex::default(),
             workers: AtomicUsize::new(0),
@@ -476,8 +452,8 @@ impl Executor {
     }
 
     /// The registry the wake scheduler's stall check reads.
-    pub(crate) fn pulse(&self) -> Arc<SessionPulse> {
-        self.inner.pulse.clone()
+    pub(crate) fn board(&self) -> Arc<ActivityBoard> {
+        self.inner.board.clone()
     }
 
     /// Asks the scheduler to run a pass now (task admitted, retried, finished).
@@ -2089,9 +2065,9 @@ async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
         after,
         known_session,
     );
-    let pulse = Some(inner.pulse.as_ref());
-    let monitored = monitor_agent_with(handle, store, &owner, job, pulse, Some(&mut tail)).await;
-    inner.pulse.forget(&job.session_id);
+    let board = Some(inner.board.as_ref());
+    let monitored = monitor_agent_with(handle, store, &owner, job, board, Some(&mut tail)).await;
+    inner.board.forget(&job.session_id);
     tail.drain(store, job);
     if let (COPILOT_AGENT, Ok(outcome)) = (job.agent.as_str(), &monitored) {
         inner.config.copilot_sign_in.record_run(&outcome.exit);
@@ -2206,14 +2182,14 @@ async fn monitor_agent(
     monitor_agent_with(handle, store, owner, job, None, None).await
 }
 
-/// `pulse`, when given, is touched at the start and on every agent event. `tail`, when given,
+/// `board`, when given, is touched at the start and updated on every agent event. `tail`, when given,
 /// reads the worker's status file about once a second and learns the agent's session id.
 async fn monitor_agent_with(
     mut handle: Box<dyn AgentHandle>,
     store: &SqliteStore,
     owner: &CancellationOwner,
     job: &Job,
-    pulse: Option<&SessionPulse>,
+    board: Option<&ActivityBoard>,
     mut tail: Option<&mut StatusTail>,
 ) -> Result<MonitorOutcome, String> {
     let requested_model = requested_codex_model(job);
@@ -2225,9 +2201,10 @@ async fn monitor_agent_with(
     let mut supervision_error = None;
     let mut request_unreadable_logged = false;
     let started_ms = unix_now_ms();
-    if let Some(pulse) = pulse {
-        pulse.touch_at(&job.session_id, started_ms);
+    if let Some(board) = board {
+        board.begin(&job.session_id);
     }
+    let mut thinking = Coalescer::default();
 
     loop {
         if !attempted {
@@ -2237,6 +2214,7 @@ async fn monitor_agent_with(
                     attempted = true;
                     job.diag
                         .info(LOG, "cancellation_requested", &job.event_fields(&[]));
+                    flush_thinking(store, job, &mut thinking);
                     match handle.cancel().await {
                         Ok(()) => {
                             let exit = handle.wait().await;
@@ -2295,6 +2273,15 @@ async fn monitor_agent_with(
             }
             tail.poll(store, job);
         }
+        if thinking.due() {
+            flush_thinking(store, job, &mut thinking);
+        }
+        if !matches!(
+            event,
+            None | Some(Ok(Some(AgentEvent::ThinkingDelta { .. })))
+        ) {
+            flush_thinking(store, job, &mut thinking);
+        }
         match event {
             None => continue,
             Some(Ok(Some(AgentEvent::SessionExited { .. }))) => {
@@ -2313,18 +2300,7 @@ async fn monitor_agent_with(
             }
             Some(Ok(Some(event))) => {
                 record_output(job, &event);
-                if let AgentEvent::ThinkingDelta { text } = &event {
-                    // Best effort: lost thinking never fails the run.
-                    if let Err(error) = store.append_session_thinking(&job.session_id, text) {
-                        eprintln!(
-                            "orchestrator-daemon: cannot record thinking for session {}: {error}",
-                            job.session_id
-                        );
-                    }
-                }
-                if let Some(pulse) = pulse {
-                    pulse.touch(&job.session_id);
-                }
+                record_activity(store, board, job, &event, &mut thinking);
                 record_usage(&mut *handle, store, owner, started_ms, requested_model)
             }
             Some(Ok(None)) => {
@@ -2341,6 +2317,7 @@ async fn monitor_agent_with(
         }
     }
 
+    flush_thinking(store, job, &mut thinking);
     if !requested
         && matches!(
             store.cancellation_request(owner),
@@ -2371,6 +2348,85 @@ async fn monitor_agent_with(
         cancellation_error: cancel_error,
         supervision_error,
     })
+}
+
+/// Writes the buffered thinking as one row. Best effort: lost thinking never fails the run.
+fn flush_thinking(store: &SqliteStore, job: &Job, thinking: &mut Coalescer) {
+    if let Some(text) = thinking.take() {
+        if let Err(error) = store.append_session_thinking(&job.session_id, &text) {
+            eprintln!(
+                "orchestrator-daemon: cannot record thinking for session {}: {error}",
+                job.session_id
+            );
+        }
+    }
+}
+
+/// Updates the board for one agent event and stores what it adds to the session's activity:
+/// tool rows at once, thinking through `thinking`. Everything is best effort.
+fn record_activity(
+    store: &SqliteStore,
+    board: Option<&ActivityBoard>,
+    job: &Job,
+    event: &AgentEvent,
+    thinking: &mut Coalescer,
+) {
+    let session = job.session_id.as_str();
+    let on_board = |update: &dyn Fn(&ActivityBoard)| {
+        if let Some(board) = board {
+            update(board);
+        }
+    };
+    match event {
+        AgentEvent::ThinkingDelta { text } => {
+            on_board(&|board| board.set_phase(session, Phase::Thinking));
+            if let Some(joined) = thinking.push(text) {
+                if let Err(error) = store.append_session_thinking(session, &joined) {
+                    eprintln!(
+                        "orchestrator-daemon: cannot record thinking for session {session}: {error}"
+                    );
+                }
+            }
+        }
+        AgentEvent::MessageDelta { .. } => {
+            on_board(&|board| board.set_phase(session, Phase::Replying))
+        }
+        AgentEvent::ToolStarted {
+            tool_id,
+            name,
+            summary,
+        } => match ToolStart::bounded(tool_id, name, summary) {
+            Some(tool) => {
+                if let Err(error) =
+                    store.append_session_tool_started(session, &tool.id, &tool.name, &tool.summary)
+                {
+                    eprintln!(
+                        "orchestrator-daemon: cannot record tool for session {session}: {error}"
+                    );
+                }
+                on_board(&|board| board.tool_started(session, tool.clone()));
+            }
+            None => on_board(&|board| board.touch(session)),
+        },
+        AgentEvent::ToolFinished {
+            tool_id,
+            success,
+            summary,
+        } => match ToolEnd::bounded(tool_id, *success, summary) {
+            Some(end) => {
+                if let Err(error) =
+                    store.append_session_tool_finished(session, &end.id, end.ok, &end.summary)
+                {
+                    eprintln!(
+                        "orchestrator-daemon: cannot record tool result for session {session}: {error}"
+                    );
+                }
+                on_board(&|board| board.tool_finished(session, &end.id));
+            }
+            None => on_board(&|board| board.touch(session)),
+        },
+        _ => on_board(&|board| board.touch(session)),
+    }
 }
 
 /// Records the session id the agent reported. Codex names its own session this way. Claude was

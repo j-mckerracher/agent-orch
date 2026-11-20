@@ -1,0 +1,165 @@
+/* Live agent activity: tool rows and the status line. Token variables only; shared by the chat and the task window. */
+.act-log {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.act-tool {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  font-size: 12px;
+}
+
+.act-tool-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.act-tool-head:focus-visible {
+  outline: var(--focus-width, 2px) solid var(--focus);
+  outline-offset: -2px;
+}
+
+.act-tool-name {
+  flex: none;
+  font-family: var(--font-mono);
+  font-weight: 600;
+}
+
+.act-tool-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.act-tool-result {
+  margin: 0;
+  padding: 6px 10px 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--ink);
+  font: 12px/1.4 var(--font-mono);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+/* The state mark is drawn here so it follows the theme; the state is also spoken by the row's hidden text. */
+.act-mark {
+  flex: none;
+  align-self: center;
+  width: 12px;
+  height: 12px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 12px;
+}
+
+.act-tool[data-state="running"] .act-mark {
+  border: 2px solid var(--line);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: act-spin 0.9s linear infinite;
+}
+
+.act-tool[data-state="ok"] .act-mark {
+  color: var(--green);
+}
+
+.act-tool[data-state="ok"] .act-mark::before {
+  content: "\2713";
+}
+
+.act-tool[data-state="failed"] .act-mark {
+  color: var(--red);
+}
+
+.act-tool[data-state="failed"] .act-mark::before {
+  content: "\2715";
+}
+
+.act-tool[data-state="stopped"] .act-mark {
+  color: var(--muted);
+}
+
+.act-tool[data-state="stopped"] .act-mark::before {
+  content: "\25A0";
+  font-size: 9px;
+}
+
+@keyframes act-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .act-tool[data-state="running"] .act-mark {
+    animation: none;
+  }
+}
+
+.act-status {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.act-status[data-stale] {
+  color: var(--amber);
+}
+
+.act-jump {
+  position: sticky;
+  bottom: 4px;
+  align-self: center;
+  padding: 4px 12px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink);
+  font: 12px var(--font-sans);
+  cursor: pointer;
+}
+
+.act-jump:focus-visible {
+  outline: var(--focus-width, 2px) solid var(--focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 960px) {
+  .act-tool-summary {
+    white-space: normal;
+  }
+}
+
+@media (forced-colors: active) {
+  .act-tool,
+  .act-jump {
+    border: 1px solid CanvasText;
+  }
+
+  .act-tool[data-state="running"] .act-mark {
+    border-color: CanvasText;
+    border-top-color: Highlight;
+  }
+}
+
+.act-live {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}

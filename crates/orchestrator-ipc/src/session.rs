@@ -494,7 +494,8 @@ pub(crate) fn method_capability(method: &str) -> Option<Capability> {
         | "sessions.get"
         | "sessions.events"
         | "sessions.output_tail"
-        | "sessions.thinking" => Some(Capability::Sessions),
+        | "sessions.thinking"
+        | "sessions.activity" => Some(Capability::Sessions),
         "approvals.list" | "approvals.resolve" => Some(Capability::Approvals),
         "workspaces.diff" => Some(Capability::Workspaces),
         "delivery.request" => Some(Capability::Delivery),
@@ -750,6 +751,7 @@ mod tests {
             "sessions.events",
             "sessions.output_tail",
             "sessions.thinking",
+            "sessions.activity",
         ] {
             assert_eq!(method_capability(method), Some(Capability::Sessions));
         }

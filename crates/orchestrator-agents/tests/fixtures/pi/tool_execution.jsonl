@@ -1,0 +1,6 @@
+{"type":"tool_execution_start","toolCallId":"call_abc123","toolName":"bash","args":{"command":"ls -la"}}
+{"type":"tool_execution_update","toolCallId":"call_abc123","toolName":"bash","args":{"command":"ls -la"},"partialResult":{"content":[{"type":"text","text":"partial output"}],"details":{}}}
+{"type":"tool_execution_end","toolCallId":"call_abc123","toolName":"bash","result":{"content":[{"type":"text","text":"complete output"}],"details":{}},"isError":false,"durationMs":12}
+{"type":"tool_execution_start","toolCallId":"call_def456","toolName":"read","args":{"path":"/tmp/scratch/missing.txt"}}
+{"type":"tool_execution_end","toolCallId":"call_def456","toolName":"read","result":{"content":[{"type":"text","text":"ENOENT: no such file"}],"details":{}},"isError":true}
+{"type":"tool_execution_end","toolCallId":"call_ghi789","toolName":"custom","isError":false}

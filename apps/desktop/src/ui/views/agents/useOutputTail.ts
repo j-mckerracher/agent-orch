@@ -18,9 +18,11 @@ export interface OutputTailState {
   /** Some older lines were never shown: dropped by the daemon ring, beyond one page, or beyond the UI cap. */
   olderDropped: boolean;
   error: DaemonError | null;
+  /** ISO instant of the last successful read. The daemon's output lines carry no times of their own. */
+  readAt: string | null;
 }
 
-const INITIAL: OutputTailState = { loaded: false, available: false, ended: false, lines: [], olderDropped: false, error: null };
+const INITIAL: OutputTailState = { loaded: false, available: false, ended: false, lines: [], olderDropped: false, error: null, readAt: null };
 
 /** `poll` keeps refreshing while true; otherwise the tail is read once (and once more when `poll` turns false). */
 export function useOutputTail(taskId: string, sessionId: string, poll: boolean): OutputTailState {
@@ -59,7 +61,7 @@ export function useOutputTail(taskId: string, sessionId: string, poll: boolean):
           cursor = 0;
           shown = [];
           olderDropped = false;
-          setState({ loaded: true, available: false, ended: result.ended, lines: [], olderDropped: false, error: null });
+          setState({ loaded: true, available: false, ended: result.ended, lines: [], olderDropped: false, error: null, readAt: new Date().toISOString() });
         } else {
           // A cursor ahead of the daemon's means its output restarted: drop what is shown.
           if (result.last_sequence < cursor) {
@@ -71,7 +73,7 @@ export function useOutputTail(taskId: string, sessionId: string, poll: boolean):
           shown = merged.slice(Math.max(0, merged.length - OUTPUT_UI_LINES));
           olderDropped = olderDropped || result.truncated_lines || shown.length < merged.length;
           cursor = result.last_sequence;
-          setState({ loaded: true, available: true, ended: result.ended, lines: shown, olderDropped, error: null });
+          setState({ loaded: true, available: true, ended: result.ended, lines: shown, olderDropped, error: null, readAt: new Date().toISOString() });
         }
       } catch (error) {
         if (cancelled) return;

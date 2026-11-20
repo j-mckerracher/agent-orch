@@ -11,8 +11,11 @@
 
 use crate::contract::{AgentEvent, TurnOutcome};
 use crate::usage::{codex_turn_usage, UsageReport};
-use serde_json::Value;
+use serde_json::{Map, Value};
+use std::collections::{HashSet, VecDeque};
 use uuid::Uuid;
+
+use crate::tool_summary::{bound, input_summary, result_summary};
 
 /// Violations of the required protocol ordering, or an unparseable line.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -49,6 +52,10 @@ pub struct Parser {
     violation: Option<ProtocolViolation>,
     turns_completed: u64,
     usage: Vec<UsageReport>,
+    /// The `ToolFinished` of a completed item that had no `item.started` before it.
+    pending: VecDeque<AgentEvent>,
+    started_tools: HashSet<String>,
+    finished_tools: HashSet<String>,
 }
 
 impl Default for Parser {
@@ -67,7 +74,15 @@ impl Parser {
             violation: None,
             turns_completed: 0,
             usage: Vec::new(),
+            pending: VecDeque::new(),
+            started_tools: HashSet::new(),
+            finished_tools: HashSet::new(),
         }
+    }
+
+    /// The event a previous `feed` held back; drain it before the next line.
+    pub fn take_pending(&mut self) -> Option<AgentEvent> {
+        self.pending.pop_front()
     }
 
     /// Drain usage reported by `turn.completed` records fed so far.
@@ -176,10 +191,11 @@ impl Parser {
                     .get("item")
                     .and_then(|i| i.as_object())
                     .ok_or(ProtocolViolation::BadField("item"))?;
-                item.get("type")
+                let item_type = item
+                    .get("type")
                     .and_then(|t| t.as_str())
                     .ok_or(ProtocolViolation::BadField("item.type"))?;
-                Ok(None)
+                Ok(self.tool_started(item_type, item))
             }
             "item.completed" => {
                 let item = r
@@ -221,7 +237,7 @@ impl Parser {
                 } else {
                     // Unknown item types are not a protocol violation; they
                     // carry no canonical event.
-                    Ok(None)
+                    Ok(self.tool_completed(item_type, item))
                 }
             }
             "turn.completed" => {
@@ -275,6 +291,97 @@ impl Parser {
                 }))
             }
             other => Err(ProtocolViolation::UnknownType(other.to_string())),
+        }
+    }
+}
+
+/// The tool name and the raw summary of the call an item describes. `None` for items that are
+/// not tool calls, or lack the fields that name one.
+fn tool_call(item_type: &str, item: &Map<String, Value>) -> Option<(String, String)> {
+    let text = |key| item.get(key).and_then(Value::as_str);
+    match item_type {
+        "command_execution" => Some(("shell".into(), bound(text("command")?))),
+        "file_change" => {
+            let paths: Vec<&str> = item
+                .get("changes")?
+                .as_array()?
+                .iter()
+                .filter_map(|change| change.get("path")?.as_str())
+                .collect();
+            Some(("apply_patch".into(), bound(&paths.join(", "))))
+        }
+        "mcp_tool_call" => Some((
+            format!("{}.{}", text("server")?, text("tool")?),
+            item.get("arguments").map(input_summary).unwrap_or_default(),
+        )),
+        "web_search" => Some(("web_search".into(), bound(text("query")?))),
+        _ => None,
+    }
+}
+
+/// Whether a completed tool item succeeded, and its short raw result text.
+fn tool_outcome(item_type: &str, item: &Map<String, Value>) -> (bool, String) {
+    let status_failed = matches!(
+        item.get("status").and_then(Value::as_str),
+        Some("failed" | "declined")
+    );
+    let error = item.get("error").filter(|error| !error.is_null());
+    let exit_failed = item
+        .get("exit_code")
+        .and_then(Value::as_i64)
+        .is_some_and(|code| code != 0);
+    let success = !(status_failed || error.is_some() || exit_failed);
+    let summary = match item_type {
+        "command_execution" => item
+            .get("aggregated_output")
+            .and_then(Value::as_str)
+            .map(bound),
+        "mcp_tool_call" => match error {
+            Some(error) => error.get("message").map(result_summary),
+            None => item
+                .get("result")
+                .and_then(|result| result.get("content"))
+                .map(result_summary),
+        },
+        _ => None,
+    };
+    (success, summary.unwrap_or_default())
+}
+
+impl Parser {
+    fn tool_started(&mut self, item_type: &str, item: &Map<String, Value>) -> Option<AgentEvent> {
+        let tool_id = item.get("id")?.as_str()?;
+        let (name, summary) = tool_call(item_type, item)?;
+        if !self.started_tools.insert(tool_id.to_owned()) {
+            return None;
+        }
+        Some(AgentEvent::ToolStarted {
+            tool_id: tool_id.to_owned(),
+            name,
+            summary,
+        })
+    }
+
+    /// Reports the finish of a tool item. Items such as `file_change` complete without a
+    /// start, so the start is reported first and the finish follows through `pending`.
+    fn tool_completed(&mut self, item_type: &str, item: &Map<String, Value>) -> Option<AgentEvent> {
+        let tool_id = item.get("id")?.as_str()?;
+        tool_call(item_type, item)?;
+        if !self.finished_tools.insert(tool_id.to_owned()) {
+            return None;
+        }
+        let (success, summary) = tool_outcome(item_type, item);
+        let finished = AgentEvent::ToolFinished {
+            tool_id: tool_id.to_owned(),
+            success,
+            summary,
+        };
+        match self.tool_started(item_type, item) {
+            Some(started) => {
+                self.pending.push_back(finished);
+                Some(started)
+            }
+            None => Some(finished),
         }
     }
 }
@@ -355,14 +462,16 @@ mod tests {
             p.feed(r#"{"type":"item.completed","item":{"id":"item_4","type":"agent_message","text":"Running the requested shell command."}}"#),
             Some(Ok(AgentEvent::MessageDelta { text })) if text == "Running the requested shell command."
         ));
-        assert_eq!(
+        assert!(matches!(
             p.feed(r#"{"type":"item.started","item":{"id":"item_5","type":"command_execution","command":"/bin/zsh -lc 'printf ok'","aggregated_output":"","exit_code":null,"status":"in_progress"}}"#),
-            None
-        );
-        assert_eq!(
+            Some(Ok(AgentEvent::ToolStarted { tool_id, name, summary }))
+                if tool_id == "item_5" && name == "shell" && summary == "/bin/zsh -lc 'printf ok'"
+        ));
+        assert!(matches!(
             p.feed(r#"{"type":"item.completed","item":{"id":"item_5","type":"command_execution","command":"/bin/zsh -lc 'printf ok'","aggregated_output":"ok","exit_code":0,"status":"completed"}}"#),
-            None
-        );
+            Some(Ok(AgentEvent::ToolFinished { tool_id, success: true, summary }))
+                if tool_id == "item_5" && summary == "ok"
+        ));
         assert!(
             matches!(p.feed(r#"{"type":"item.completed","item":{"id":"item_6","type":"agent_message","text":"PONG"}}"#), Some(Ok(AgentEvent::MessageDelta { text })) if text == "PONG")
         );

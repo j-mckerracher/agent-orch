@@ -57,6 +57,7 @@ use super::conversation_runtime::{
     TurnControl, TurnRequest, WorkstreamDirectory, UNAVAILABLE_RUNTIME_NAME,
 };
 use super::models::{CatalogCache, SharedReads, Source};
+use crate::activity::{Coalescer, Phase, ToolEnd, ToolStart};
 use crate::executor::{log_safe, ExecutorConfig, COPILOT_RUNS_DIR};
 use crate::mcp_server::McpTurnServer;
 
@@ -1707,6 +1708,21 @@ fn drain(handle: &mut dyn AgentHandle, sink: &ReplySink) {
 }
 
 async fn drive(turn: Turn, sink: &ReplySink) {
+    sink.activity_begin();
+    drive_turn(turn, sink).await;
+    sink.activity_end();
+}
+
+/// Writes the buffered thinking as one entry. A full cap closes thinking; the turn goes on.
+fn flush_thinking(co: &mut Coalescer, sink: &ReplySink, open: &mut bool) {
+    if let Some(text) = co.take() {
+        if *open {
+            *open = sink.thinking(&text);
+        }
+    }
+}
+
+async fn drive_turn(turn: Turn, sink: &ReplySink) {
     if !turn.executable.matches(&turn.launch.program) {
         sink.fail(RuntimeFailure::RuntimeChanged);
         return;
@@ -1743,24 +1759,33 @@ async fn drive(turn: Turn, sink: &ReplySink) {
     let mut messages = 0usize;
     let mut thoughts = 0usize;
     let mut thinking_open = true;
+    let mut joined = Coalescer::default();
     let mut any_text = false;
     loop {
         if turn.cancelled.load(Ordering::Acquire) {
+            flush_thinking(&mut joined, sink, &mut thinking_open);
             let _ = handle.cancel().await;
             drain(&mut *handle, sink);
             return;
         }
         if Instant::now() >= deadline {
+            flush_thinking(&mut joined, sink, &mut thinking_open);
             let _ = handle.cancel().await;
             drain(&mut *handle, sink);
             sink.fail(RuntimeFailure::Timeout);
             return;
         }
         let event = match tokio::time::timeout(POLL, handle.next_event()).await {
-            Err(_) => continue,
+            Err(_) => {
+                if joined.due() {
+                    flush_thinking(&mut joined, sink, &mut thinking_open);
+                }
+                continue;
+            }
             Ok(Ok(Some(event))) => event,
             Ok(Ok(None)) => break,
             Ok(Err(error)) => {
+                flush_thinking(&mut joined, sink, &mut thinking_open);
                 let _ = handle.cancel().await;
                 drain(&mut *handle, sink);
                 fail_turn(turn.agent, sink, Some(&error.to_string()));
@@ -1768,8 +1793,12 @@ async fn drive(turn: Turn, sink: &ReplySink) {
             }
         };
         drain(&mut *handle, sink);
+        if !matches!(event, AgentEvent::ThinkingDelta { .. }) {
+            flush_thinking(&mut joined, sink, &mut thinking_open);
+        }
         match event {
             AgentEvent::MessageDelta { text } => {
+                sink.phase(Phase::Replying);
                 let mut piece = sanitize(&text);
                 // Codex and Copilot report whole messages; Claude Code reports fragments.
                 if matches!(turn.agent, CODEX | GITHUB_COPILOT) && messages > 0 && !piece.is_empty()
@@ -1786,7 +1815,11 @@ async fn drive(turn: Turn, sink: &ReplySink) {
                     }
                 }
             }
-            AgentEvent::ThinkingDelta { text } if thinking_open => {
+            AgentEvent::ThinkingDelta { text } => {
+                sink.phase(Phase::Thinking);
+                if !thinking_open {
+                    continue;
+                }
                 let mut piece = sanitize(&text);
                 // Codex and Copilot report whole items; Claude Code reports fragments.
                 if matches!(turn.agent, CODEX | GITHUB_COPILOT) && thoughts > 0 && !piece.is_empty()
@@ -1796,9 +1829,27 @@ async fn drive(turn: Turn, sink: &ReplySink) {
                 if !piece.is_empty() {
                     thoughts += 1;
                     // The cap marker is stored; later thinking is dropped, the turn goes on.
-                    thinking_open = sink.thinking(&piece);
+                    if let Some(text) = joined.push(&piece) {
+                        thinking_open = sink.thinking(&text);
+                    }
                 }
             }
+            AgentEvent::ToolStarted {
+                tool_id,
+                name,
+                summary,
+            } => match ToolStart::bounded(&tool_id, &name, &summary) {
+                Some(tool) => sink.tool_started(tool),
+                None => sink.touch(),
+            },
+            AgentEvent::ToolFinished {
+                tool_id,
+                success,
+                summary,
+            } => match ToolEnd::bounded(&tool_id, success, &summary) {
+                Some(end) => sink.tool_finished(end),
+                None => sink.touch(),
+            },
             AgentEvent::SessionExited { .. } => break,
             AgentEvent::ProtocolError { message } => {
                 let _ = handle.cancel().await;
@@ -1808,9 +1859,10 @@ async fn drive(turn: Turn, sink: &ReplySink) {
             }
             // A failed turn's text arrives with the exit, not with this event, so the loop
             // reads on until the agent ends, still bounded by the deadline.
-            _ => {}
+            _ => sink.touch(),
         }
     }
+    flush_thinking(&mut joined, sink, &mut thinking_open);
     let exit = handle.wait().await;
     drain(&mut *handle, sink);
     if turn.agent == GITHUB_COPILOT {

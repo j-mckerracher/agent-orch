@@ -296,10 +296,10 @@ describe("Agents & Sessions, live mode", () => {
     expect(fake.callsTo("sessions.output_tail")[0]!.params).toMatchObject({ task_id: "t-run", session_id: "s-1" });
   });
 
-  it("shows the selected session's thinking in a Thinking disclosure, empty by default", async () => {
+  it("shows the selected session's activity in an Activity disclosure, empty by default", async () => {
     const { user } = await liveView(seeded());
     await user.click(screen.getByRole("button", { name: /t-run/ }));
-    expect(await screen.findByText("No thinking recorded")).toBeInTheDocument();
+    expect(await screen.findByText("No activity recorded")).toBeInTheDocument();
   });
 
   it("shows the selected session's recorded thinking and the size-limit note", async () => {
