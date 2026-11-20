@@ -272,6 +272,36 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
     }
   }, 90000);
 
+  it("shows tool calls and the running phase live, hides planted secrets, and stops open tools on cancel", async () => {
+    const t = await prepare(fakeAgentEnv());
+    try {
+      t.services.drafts.setWorkspaceTarget("global");
+      await until(async () => (await t.direct((api) => api.agentsCatalog())).some((c) => c.agent === "codex" && c.state === "available"), "catalog warm");
+      render(
+        <ServicesProvider services={t.services}>
+          <WorkspaceView />
+        </ServicesProvider>,
+      );
+      await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
+      await userEvent.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "[[fake:tool-hang] read the sources");
+      const send = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
+      await waitFor(() => expect((send() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
+      await userEvent.click(send());
+
+      expect(await screen.findByText("ls src", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(await screen.findByText("Running shell", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(document.body.textContent).toContain("[REDACTED]");
+      expect(document.body.textContent).not.toContain("ghp_PLANTED");
+      expect(document.body.textContent).not.toContain("hunter2");
+
+      await userEvent.click(screen.getByRole("button", { name: "Cancel reply" }));
+      expect(await screen.findByText(/Stopped:/, undefined, { timeout: 20000 })).toBeTruthy();
+      expect(document.body.textContent).not.toContain("hunter2");
+    } finally {
+      await t.stop();
+    }
+  }, 90000);
+
   it("sends the model and effort the picker chose to the agent for that message", async () => {
     const dir = mkdtempSync(join(tmpdir(), "mc-model-choice-"));
     const log = join(dir, "agent.log");

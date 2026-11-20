@@ -94,7 +94,7 @@ UI states.
 |---|---|---|
 | Starting | Status "Starting · N s", composer blocked with the status text | Same |
 | Thinking | Thinking block open, status "Thinking · N s" | Same |
-| Tool running | Running tool row with spinner, status "Running <tool> · N s" | Same |
+| Tool running | Running tool row with spinner, status `Running` plus the tool name and N s | Same |
 | Stale | Status "No activity for N s" | Same |
 | Approval | Status "Waiting for approval · N s" | Same |
 | Finished | Block collapsed, rows keep check or cross | Static history from the cursor reads |
