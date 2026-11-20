@@ -54,8 +54,8 @@ The Windows list is the published runbook
 | `git-lib-tests` | `cargo test --locked -p orchestrator-git --lib` (49 on both: Windows 47 portable + 2 `cfg(windows)`, macOS 47 portable + 2 `cfg(unix)`) | both |
 | `cli-cleanup-safety-tests` | `cargo test --locked -p orchestrator-cli --test cleanup_safety` (Windows 3, macOS 4: one test is `cfg(unix)`; a fifth is `cfg(all(unix, feature = "fault-injection"))` and runs nowhere by default) | both |
 | `private-fs-tests` | `cargo test --locked -p orchestrator-private-fs` (Windows `[11,0]`: 4 portable + 7 DACL; macOS `[8,0]`: 4 portable + 4 Unix; the `0` is the doc-test binary) | both |
-| `store-tests` | `cargo test --locked -p orchestrator-store` (Windows 153 passed + 1 ignored, derived; macOS 157 passed + 1 ignored, measured: 4 tests are `cfg(unix)`; the ignored test is in `data_lock`) | both |
-| `lock-takeover-test` | `cargo test --locked -p orchestrator-store --lib the_lock_file_is_owner_only_when_created_and_when_taken_over` (1 passed; 62 filtered out on Windows, 64 on macOS) | both |
+| `store-tests` | `cargo test --locked -p orchestrator-store` (Windows 153 passed + 1 ignored, derived; macOS 157 passed + 1 ignored, measured: 4 tests are `cfg(unix)`; the data-lock tests moved to `orchestrator-private-fs` in DPES-1044, so these counts are re-pinned from CI evidence) | both |
+| `lock-takeover-test` | `cargo test --locked -p orchestrator-private-fs --lib the_lock_file_is_owner_only_when_created_and_when_taken_over` (1 passed; the lock moved from the store crate in DPES-1044, so the filtered-out counts are re-pinned from CI evidence) | both |
 | `diagnostics-tests` | `cargo test --locked -p orchestrator-diagnostics` (28 on both: no test is `cfg`-gated) | both |
 | `runtime-command-line-tests` | `cargo test --locked -p orchestrator-runtime --lib command_line` (8 tests; the pure Windows rules run on every host) | both |
 | `cli-command-line-tests` | `cargo test --locked -p orchestrator-cli --lib -- os_command_line_limit 65000_character_objective` (Windows 2, macOS 1: the 65,000-character test is `cfg(windows)`) | both |
@@ -501,8 +501,8 @@ Before anything is uploaded, `node scripts/release/verify-updater.mjs <assets-di
 signature to temporary files, runs `minisign -V -Q` on both payloads, and requires `version:<manifest version>` in the verified
 trusted comment. This catches the Tauri CLI warning (not an error) when the key that signed does not match
 `MCAO_UPDATER_PUBLIC_KEY`. The publish job installs `minisign` with `sudo apt-get update && sudo apt-get install -y minisign`
-and fails if it is unavailable. The unit tests use the real `minisign` binary when it is on `PATH` and otherwise skip
-those cases and run a stand-in binary for the same scenarios.
+and fails if it is unavailable. The unit tests run a stand-in `minisign` binary, so no run exercises the real
+binary before the first enabled release.
 
 A published release is never changed. A re-run on a tag whose release is published and identical does nothing; one
 with different bytes or a different asset set fails. This is also why `latest.json` is never added to an existing

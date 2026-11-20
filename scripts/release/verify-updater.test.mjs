@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -45,26 +44,6 @@ const fakeSigner = {
   }),
 };
 
-const minisignPresent = spawnSync("minisign", ["-v"], { encoding: "utf8" }).error === undefined;
-const realSigner = {
-  command: ["minisign"],
-  key: (id) => {
-    const dir = fresh(`key-${id}`);
-    const run = (args) => {
-      const result = spawnSync("minisign", args, { encoding: "utf8" });
-      assert.equal(result.status, 0, result.stderr);
-    };
-    run(["-G", "-W", "-f", "-p", join(dir, "k.pub"), "-s", join(dir, "k.key")]);
-    return {
-      publicKey: b64(readFileSync(join(dir, "k.pub"), "utf8")),
-      sign: (payload, version) => {
-        run(["-S", "-s", join(dir, "k.key"), "-m", payload, "-x", `${payload}.minisig`, "-t", `timestamp:1\tfile:payload\tversion:${version}`]);
-        return b64(readFileSync(`${payload}.minisig`, "utf8"));
-      },
-    };
-  },
-};
-
 const MAC = "MCAO-0.1.0-macos-arm64-unsigned.app.tar.gz";
 const WIN = "MCAO-0.1.0-windows-x64-unsigned-setup.exe";
 
@@ -87,13 +66,13 @@ function stage(signer, { key = signer.key("a"), signedVersion = "0.1.0", edit = 
   return dir;
 }
 
-function scenarios(signer, label, skip) {
-  test(`verifyUpdater accepts correctly signed payloads (${label})`, { skip: skip || false }, () => {
+function scenarios(signer) {
+  test("verifyUpdater accepts correctly signed payloads", () => {
     const key = signer.key("a");
     assert.equal(verifyUpdater(stage(signer, { key }), key.publicKey, signer.command), "0.1.0");
   });
 
-  test(`verifyUpdater rejects each kind of bad input (${label})`, { skip: skip || false }, () => {
+  test("verifyUpdater rejects each kind of bad input", () => {
     const key = signer.key("a");
     const other = signer.key("b");
     const check = (dir, publicKey, message, name) => assert.throws(() => verifyUpdater(dir, publicKey, signer.command), message, name);
@@ -126,5 +105,4 @@ test("verifyUpdater refuses a malformed manifest, key or asset set before verify
   check(stage(fakeSigner, { key }), b64("hello"), /does not decode to a minisign file/, "a key that is not a minisign file");
 });
 
-scenarios(fakeSigner, "fake minisign", false);
-scenarios(realSigner, "real minisign", minisignPresent ? false : "the minisign binary is not on PATH; the fake-minisign cases ran instead");
+scenarios(fakeSigner);

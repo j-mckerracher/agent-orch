@@ -237,7 +237,7 @@ export const MACOS = {
 // Measured by `node --test "scripts/**/*.test.mjs"` on main and by the macOS node-self-tests gate in CI run 43968335824.
 // 146 = 137 + the 9 tests of sync-expected.test.mjs, counted by `node --test "scripts/**/*.test.mjs"`.
 // 149 = 147 + the macOS job coverage and selection tests in windows-jobs.test.mjs.
-export const NODE_SELF_TESTS = { passed: 149 };
+export const NODE_SELF_TESTS = { passed: 167 };
 
 // Platform independent. The target-picker selection fix adds 1 file and 7 tests (1549 becomes 1556, 68 files). The
 // Copilot provider adds 4 test files and 15 tests: 72 files and 1571 tests. The Enter-in-search fix adds 2 tests
