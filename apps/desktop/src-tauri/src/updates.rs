@@ -40,6 +40,11 @@ const PAYLOAD_DEADLINE: Duration = Duration::from_secs(600);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const LOCK_WAIT: Duration = Duration::from_secs(10);
 const LOCK_RETRY: Duration = Duration::from_millis(100);
+const IDLE_WAIT: Duration = Duration::from_secs(5);
+const IDLE_RETRY: Duration = Duration::from_millis(250);
+/// The release fields `select` reads; the full objects carry bodies that would overflow `LIST_MAX`.
+const RELEASE_FIELDS: &str =
+    ".[] | {tag_name,draft,published_at,assets:[.assets[]|{id,name,state,size}]}";
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
@@ -270,12 +275,14 @@ struct Asset {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct Manifest {
     version: String,
     platforms: BTreeMap<String, ManifestPlatform>,
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ManifestPlatform {
     url: String,
     signature: String,
@@ -399,7 +406,8 @@ async fn resolve<G: Gh>(
                 "--hostname",
                 HOST,
                 "--paginate",
-                "--slurp",
+                "--jq",
+                RELEASE_FIELDS,
                 &list_path,
             ],
             LIST_MAX,
@@ -407,9 +415,11 @@ async fn resolve<G: Gh>(
         )
         .await
         .map_err(check_error)?;
-    let pages: Vec<Vec<Release>> =
-        serde_json::from_slice(&list).map_err(|_| UpdateError::GithubUnavailable)?;
-    let releases: Vec<Release> = pages.into_iter().flatten().collect();
+    // `--jq` prints one release object per line.
+    let releases = serde_json::Deserializer::from_slice(&list)
+        .into_iter::<Release>()
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|_| UpdateError::GithubUnavailable)?;
     let Some((version, release)) = select(&releases, installed)? else {
         return Ok(None);
     };
@@ -524,10 +534,11 @@ pub async fn desktop_update_install(
     .map_err(|_| UpdateError::InstallFailed)?
 }
 
-/// Field order is drop order: the bridge reopens before the lock is released.
+/// Field order is drop order: the lock is released before the bridge reopens,
+/// so an `open` in between cannot launch a daemon that fails on the lock.
 struct Handoff {
-    _bridge_closed: InstallGuard,
     lock: DataDirectoryLock,
+    _bridge_closed: InstallGuard,
 }
 
 fn stop_daemon_and_install(
@@ -539,7 +550,7 @@ fn stop_daemon_and_install(
     let data_dir = launch::data_dir().ok_or(UpdateError::DaemonUnavailable)?;
     let guard = bridge.begin_install().map_err(|_| UpdateError::Busy)?;
     let handoff = Handoff {
-        lock: acquire_idle_daemon_lock(&data_dir)?,
+        lock: acquire_idle_daemon_lock(&data_dir, IDLE_WAIT)?,
         _bridge_closed: guard,
     };
     // On Windows the installer takes over and the process exits inside `install`.
@@ -564,9 +575,32 @@ fn is_contention(error: &DataDirectoryLockError) -> bool {
     )
 }
 
-/// Takes the data-directory lock. A live holder is asked once to stop, and only
+/// Asks until the daemon agrees to stop. `false` only means a background tick
+/// held its stop gate for a moment, so it is retried until `wait` passes;
+/// an error is not retried.
+fn stop_when_idle<E>(
+    mut ask: impl FnMut() -> Result<bool, E>,
+    wait: Duration,
+    retry: Duration,
+) -> Result<(), UpdateError> {
+    let deadline = Instant::now() + wait;
+    loop {
+        if ask().map_err(|_| UpdateError::DaemonUnavailable)? {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(UpdateError::DaemonBusy);
+        }
+        std::thread::sleep(retry);
+    }
+}
+
+/// Takes the data-directory lock. A live holder is asked to stop, and only
 /// an idle daemon agrees; any other holder, or one that cannot be asked, fails closed.
-fn acquire_idle_daemon_lock(data_dir: &Path) -> Result<DataDirectoryLock, UpdateError> {
+fn acquire_idle_daemon_lock(
+    data_dir: &Path,
+    idle_wait: Duration,
+) -> Result<DataDirectoryLock, UpdateError> {
     match DataDirectoryLock::acquire(data_dir) {
         Ok(lock) => return Ok(lock),
         Err(error) if is_contention(&error) => {}
@@ -574,12 +608,7 @@ fn acquire_idle_daemon_lock(data_dir: &Path) -> Result<DataDirectoryLock, Update
     }
     let mut client = Client::connect_with_timeout(data_dir, &[Capability::Health], CONNECT_TIMEOUT)
         .map_err(|_| UpdateError::DaemonUnavailable)?;
-    if !client
-        .shutdown_if_idle()
-        .map_err(|_| UpdateError::DaemonUnavailable)?
-    {
-        return Err(UpdateError::DaemonBusy);
-    }
+    stop_when_idle(|| client.shutdown_if_idle(), idle_wait, IDLE_RETRY)?;
     drop(client);
     let deadline = Instant::now() + LOCK_WAIT;
     loop {

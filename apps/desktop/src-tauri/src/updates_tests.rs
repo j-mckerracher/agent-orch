@@ -53,6 +53,19 @@ struct Fake {
     calls: Mutex<Vec<Vec<String>>>,
 }
 
+/// One compact release object per line, whatever the page it came from.
+fn ndjson(pages: &[Vec<Value>]) -> Vec<u8> {
+    pages
+        .iter()
+        .flatten()
+        .flat_map(|release| {
+            let mut line = serde_json::to_vec(release).unwrap();
+            line.push(b'\n');
+            line
+        })
+        .collect()
+}
+
 impl Fake {
     fn new(replies: Vec<Result<Vec<u8>, RunError>>) -> Self {
         Self {
@@ -61,10 +74,10 @@ impl Fake {
         }
     }
 
-    /// The list of releases (one page per inner vec) and then the manifest bytes.
+    /// The list of releases (as `gh --paginate --jq` prints them) and then the manifest bytes.
     fn listing(pages: &[Vec<Value>], manifest: &Value) -> Self {
         Self::new(vec![
-            Ok(serde_json::to_vec(pages).unwrap()),
+            Ok(ndjson(pages)),
             Ok(serde_json::to_vec(manifest).unwrap()),
         ])
     }
@@ -161,7 +174,8 @@ fn gh_is_called_with_literal_arguments_for_the_list_and_the_asset() {
                 "--hostname",
                 "github.com",
                 "--paginate",
-                "--slurp",
+                "--jq",
+                ".[] | {tag_name,draft,published_at,assets:[.assets[]|{id,name,state,size}]}",
                 "repos/mc-innersource/motif-mcao/releases?per_page=100"
             ],
             vec![
@@ -308,6 +322,13 @@ fn a_manifest_that_does_not_match_its_release_is_invalid() {
     prefixed["version"] = json!("v0.1.29");
     cases.push(prefixed);
     cases.push(json!({"version": "0.1.29"}));
+    let mut top_level = manifest("0.1.29");
+    top_level["url"] = top_level["platforms"][MAC]["url"].clone();
+    top_level["signature"] = json!("c2lnLW1hYw==");
+    cases.push(top_level);
+    let mut platform = manifest("0.1.29");
+    platform["platforms"][MAC]["notes"] = json!("extra");
+    cases.push(platform);
     cases.push(json!([]));
     for case in cases {
         assert_eq!(
@@ -317,7 +338,7 @@ fn a_manifest_that_does_not_match_its_release_is_invalid() {
         );
     }
     let fake = Fake::new(vec![
-        Ok(serde_json::to_vec(&[vec![release("v0.1.29", assets("0.1.29"))]]).unwrap()),
+        Ok(ndjson(&[vec![release("v0.1.29", assets("0.1.29"))]])),
         Ok(b"not json".to_vec()),
     ]);
     assert_eq!(
@@ -403,7 +424,7 @@ fn api_failures_while_discovering_are_github_unavailable() {
         UpdateError::GithubUnavailable
     );
 
-    let list = serde_json::to_vec(&[vec![release("v0.1.29", assets("0.1.29"))]]).unwrap();
+    let list = ndjson(&[vec![release("v0.1.29", assets("0.1.29"))]]);
     let manifest_fails = Fake::new(vec![Ok(list.clone()), Err(RunError::Timeout)]);
     assert_eq!(
         resolve_with(&manifest_fails, MAC).unwrap_err(),
@@ -643,17 +664,20 @@ fn daemon(dir: &Path, keep_alive: bool) -> JoinHandle<()> {
     handle
 }
 
+/// Short enough that a daemon that stays busy fails the test quickly.
+const BUSY_WAIT: Duration = Duration::from_millis(300);
+
 #[test]
 fn a_free_data_directory_is_locked_without_contacting_a_daemon() {
     let dir = TempDir::new().unwrap();
-    assert!(acquire_idle_daemon_lock(dir.path()).is_ok());
+    assert!(acquire_idle_daemon_lock(dir.path(), BUSY_WAIT).is_ok());
 }
 
 #[test]
 fn an_idle_daemon_is_stopped_and_its_lock_taken() {
     let dir = TempDir::new().unwrap();
     let daemon = daemon(dir.path(), false);
-    let lock = acquire_idle_daemon_lock(dir.path()).unwrap();
+    let lock = acquire_idle_daemon_lock(dir.path(), BUSY_WAIT).unwrap();
     daemon.join().unwrap();
     drop(lock);
 }
@@ -663,7 +687,7 @@ fn a_busy_daemon_is_left_running_and_reported_busy() {
     let dir = TempDir::new().unwrap();
     let daemon = daemon(dir.path(), true);
     assert_eq!(
-        acquire_idle_daemon_lock(dir.path()).err(),
+        acquire_idle_daemon_lock(dir.path(), BUSY_WAIT).err(),
         Some(UpdateError::DaemonBusy)
     );
     assert!(!daemon.is_finished());
@@ -675,11 +699,57 @@ fn a_busy_daemon_is_left_running_and_reported_busy() {
 }
 
 #[test]
+fn a_momentarily_busy_daemon_is_asked_again_until_it_agrees() {
+    let mut answers = VecDeque::from([Ok::<_, ()>(false), Ok(false), Ok(true)]);
+    let mut asked = 0;
+    let outcome = stop_when_idle(
+        || {
+            asked += 1;
+            answers.pop_front().unwrap()
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(1),
+    );
+    assert_eq!((outcome, asked), (Ok(()), 3));
+}
+
+#[test]
+fn a_daemon_that_never_agrees_is_busy_after_the_bounded_wait() {
+    let mut asked = 0;
+    let started = Instant::now();
+    let outcome = stop_when_idle(
+        || {
+            asked += 1;
+            Ok::<_, ()>(false)
+        },
+        Duration::from_millis(50),
+        Duration::from_millis(5),
+    );
+    assert_eq!(outcome, Err(UpdateError::DaemonBusy));
+    assert!(asked > 1);
+    assert!(started.elapsed() >= Duration::from_millis(50));
+}
+
+#[test]
+fn an_error_while_asking_is_not_retried() {
+    let mut asked = 0;
+    let outcome = stop_when_idle(
+        || {
+            asked += 1;
+            Err::<bool, _>("closed")
+        },
+        Duration::from_secs(10),
+        Duration::from_millis(1),
+    );
+    assert_eq!((outcome, asked), (Err(UpdateError::DaemonUnavailable), 1));
+}
+
+#[test]
 fn a_lock_holder_that_cannot_be_asked_to_stop_is_daemon_unavailable() {
     let dir = TempDir::new().unwrap();
     let _held = DataDirectoryLock::acquire(dir.path()).unwrap();
     assert_eq!(
-        acquire_idle_daemon_lock(dir.path()).err(),
+        acquire_idle_daemon_lock(dir.path(), BUSY_WAIT).err(),
         Some(UpdateError::DaemonUnavailable)
     );
 }
