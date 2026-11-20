@@ -1,15 +1,18 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import App from "../../../App";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { FakeDaemon } from "../../../test/fakeDaemon";
 import { installFakeWorkstreams } from "../../../test/fakeWorkstreams";
 import { connected } from "../../../test/render";
+import { backToList, chooseAction, openWorkstream } from "../../../test/workstreamsUi";
 import { createServices } from "../../createServices";
 import { workstreamsGlobalViews, workstreamsShellSlots } from "./register";
 
-it("drops a pending archive confirm when another workstream is selected", async () => {
+const CONFIRM = /Confirm archive \(cannot be undone\)/;
+
+async function mountTwoStreams() {
   const fake = new FakeDaemon();
   installFakeWorkstreams(fake, {
     workstreams: [
@@ -29,9 +32,26 @@ it("drops a pending archive confirm when another workstream is selected", async 
   const user = userEvent.setup();
   render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
   await connected();
-  await user.click(await screen.findByRole("button", { name: /Alpha stream/ }));
-  await user.click(await screen.findByRole("button", { name: "Archive workstream" }));
-  expect(screen.getByRole("button", { name: /Confirm archive \(cannot be undone\)/ })).toBeInTheDocument();
-  await user.click(screen.getByRole("button", { name: /Beta stream/ }));
-  expect(screen.queryByRole("button", { name: /Confirm archive \(cannot be undone\)/ })).not.toBeInTheDocument();
+  await openWorkstream(user, "Alpha stream");
+  await chooseAction(user, "Workstream actions", "Archive workstream");
+  expect(screen.getByRole("button", { name: CONFIRM })).toBeInTheDocument();
+  return { user };
+}
+
+describe("a pending archive confirmation", () => {
+  it("is dropped when another workstream is selected from the sidebar tree", async () => {
+    const { user } = await mountTwoStreams();
+    const tree = screen.getByRole("tree", { name: "Workstreams" });
+    await user.click(await within(tree).findByRole("treeitem", { name: /Workstream 2 of 2/ }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: CONFIRM })).not.toBeInTheDocument();
+  });
+
+  it("is dropped when the operator goes back to the list and opens another workstream", async () => {
+    const { user } = await mountTwoStreams();
+    await backToList(user);
+    expect(screen.queryByRole("button", { name: CONFIRM })).not.toBeInTheDocument();
+    await openWorkstream(user, "Beta stream");
+    expect(screen.queryByRole("button", { name: CONFIRM })).not.toBeInTheDocument();
+  });
 });

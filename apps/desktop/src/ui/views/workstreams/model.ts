@@ -24,6 +24,7 @@ import type {
 } from "../../../sources/surfaces/types";
 import type { Provenance } from "../../../sources/types";
 import { pendingApprovals } from "../../format";
+import type { Tone } from "../../theme";
 import { useGate, useServices, useStore, useSurface } from "../../services";
 
 export interface WsWorker {
@@ -298,6 +299,23 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
     objectives: ws.objectives,
     unreadReason: null,
   }));
+}
+
+/** Succeeded tasks out of all tasks, from the live task rows; null when the tasks could not be read. */
+export function progressOf(group: Pick<WsGroup, "tasks" | "unreadReason">): { done: number; total: number } | null {
+  if (group.unreadReason !== null) return null;
+  return { done: group.tasks.filter((task) => task.state === "Succeeded").length, total: group.tasks.length };
+}
+
+/**
+ * The status chip. "Needs attention" uses the signal behind the top bar's "N require attention":
+ * a task of this workstream with a pending approval.
+ */
+export function workstreamStatus(group: Pick<WsGroup, "state" | "tasks" | "unreadReason">): { label: string; tone: Tone } {
+  if (group.state === "archived") return { label: "Archived", tone: "neutral" };
+  if (group.state === "suspended") return { label: "Suspended", tone: "warn" };
+  if (group.unreadReason !== null) return { label: "Tasks unknown", tone: "neutral" };
+  return group.tasks.some((task) => task.pendingDecision) ? { label: "Needs attention", tone: "warn" } : { label: "On track", tone: "ok" };
 }
 
 /** Workstreams still in play: an archived one stays listed (read-only) but is not counted. */
