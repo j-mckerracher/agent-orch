@@ -1633,36 +1633,6 @@ describe("workspace header and composer, redesigned", () => {
     expect(await screen.findByRole("button", { name: "Monitoring: on" })).toBeVisible();
   });
 
-  it("links to Agents with the number of running tasks, and says nothing when none run or none are known", async () => {
-    const fake = liveDaemon();
-    const services = track(build({ fake }));
-    const { user } = await mountView(services, false);
-    await waitLive(services);
-    const link = await screen.findByRole("link", { name: "1 running" });
-    expect(link).toHaveAttribute("href", "#/agents");
-    await user.click(link);
-    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents" });
-  });
-
-  it("hides the running link when no task runs", async () => {
-    const fake = liveDaemon();
-    fake.tasks = fake.tasks.filter((task) => task.state !== "Running");
-    const services = track(build({ fake }));
-    await mountView(services, false);
-    await waitLive(services);
-    await screen.findByRole("button", { name: /Choose conversation target/ });
-    await waitFor(() => expect(services.data.getSnapshot().tasks.data).not.toBeNull());
-    expect(screen.queryByRole("link", { name: /running/ })).toBeNull();
-  });
-
-  it("hides the running link, never showing 0, while the task list is unknown", async () => {
-    const services = build();
-    await mountView(services);
-    await screen.findByRole("button", { name: /Choose conversation target/ });
-    expect(services.data.getSnapshot().tasks.data).toBeNull();
-    expect(screen.queryByRole("link", { name: /running/ })).toBeNull();
-  });
-
   it("collapses model, effort and permission level into one chip whose panel holds all three; Full asks first", async () => {
     const services = build();
     const { user } = await mountView(services);

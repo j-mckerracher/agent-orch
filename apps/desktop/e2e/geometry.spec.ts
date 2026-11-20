@@ -309,7 +309,7 @@ const sidebarStates = ["min", "max", "collapsed"] as const;
 
 async function horizontalOverflow(page: Page) {
   return page.evaluate(() =>
-    [".shell", ".shell-body", ".shell-sidebar", ".shell-topbar", ".shell-main", ".shell-content"]
+    [".shell", ".shell-body", ".shell-sidebar", ".shell-topbar", ".shell-main", ".shell-content", ".shell-activity"]
       .map((selector) => document.querySelector<HTMLElement>(selector))
       .filter((element): element is HTMLElement => element !== null)
       // scrollWidth ignores clipping; a clipped box (the collapsed 0 px sidebar) cannot scroll or show overflow.
@@ -426,22 +426,116 @@ test("agents rows stay inside the page at 960 and 760 px, and a task opens as it
   await expect(page).toHaveURL(/#\/agents$/);
 });
 
-// The activity column is gone: the conversation uses the whole main column, with the target picker as its title.
+// DPES-1105: the Workspace activity box has its own 324 px column beside the conversation (a 300 px card and a
+// 24 px gutter) at 961 px and up. The conversation must stop short of the card, and the column stays reserved
+// whether the card is open or collapsed, so the conversation width never changes.
+const ACTIVITY_GAP = 24;
 for (const [width, height] of [
   [1440, 900],
   [1920, 1080],
 ] as const) {
-  test(`workspace conversation fills the main column at ${width} CSS px`, async ({ page }) => {
+  test(`workspace activity has its own column at ${width} CSS px: the conversation stops short of the open card`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await page.goto("/?fixture=1#/workspace");
     await expect(page.getByTestId("fixture-banner")).toBeVisible();
     await expect(page.locator(".ws-head").getByRole("button", { name: /Choose conversation target/ })).toBeVisible();
-    await expect(page.getByTestId("shell-activity")).toHaveCount(0);
-    const main = (await page.locator("#shell-main").boundingBox())!;
-    const conversation = (await page.locator(".ws-conversation").boundingBox())!;
-    expect(main.x + main.width - (conversation.x + conversation.width), "right gutter only").toBeLessThanOrEqual(30);
+
+    const conversation = page.locator(".ws-conversation");
+    const conversationBox = async () => (await conversation.boundingBox())!;
+    const trigger = page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ });
+    const card = page.getByTestId("activity-card");
+    await expect(trigger, "open on load").toHaveAttribute("aria-expanded", "true");
+    await expect(card).toBeVisible();
+    const openBox = await conversationBox();
+    const cardBox = (await card.boundingBox())!;
+    expect(openBox.x + openBox.width, "conversation right edge vs activity card left edge").toBeLessThanOrEqual(cardBox.x - ACTIVITY_GAP);
+
+    await trigger.click();
+    await expect(trigger).toHaveAttribute("aria-expanded", "false");
+    const collapsedBox = await conversationBox();
+    expect(collapsedBox.width, "column stays reserved: the conversation width is the same collapsed").toBeCloseTo(openBox.width, 0);
+
+    const parts = await page.locator(".ws-conversation > *, .ws-log > *, .ws-composer-row > *").evaluateAll((els) =>
+      els.map((el) => {
+        const r = el.getBoundingClientRect();
+        return { right: r.right, bottom: r.bottom, left: r.left, top: r.top };
+      }),
+    );
+    expect(parts.length, "conversation parts measured").toBeGreaterThan(0);
+    for (const part of parts) {
+      const overlapsCard =
+        part.left < cardBox.x + cardBox.width && part.right > cardBox.x && part.top < cardBox.y + cardBox.height && part.bottom > cardBox.y;
+      expect(overlapsCard, "a conversation part runs under the activity card").toBe(false);
+    }
   });
 }
+
+test("the activity box opens expanded, with System Usage expanded, on every load of the Workspace", async ({ page }) => {
+  await openFixture(page, 1440);
+  const trigger = page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ });
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("resource-strip")).toHaveAttribute("open", "");
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "false");
+  await page.reload();
+  await expect(page.getByTestId("fixture-banner")).toBeVisible();
+  await expect(trigger, "not remembered between loads").toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByTestId("resource-strip")).toHaveAttribute("open", "");
+});
+
+for (const [width, side] of [
+  [1150, "beside"],
+  [961, "beside"],
+  [960, "above"],
+  [761, "above"],
+] as const) {
+  test(`the activity box sits ${side} the conversation at ${width} CSS px, without horizontal overflow`, async ({ page }) => {
+    await openFixture(page, width);
+    const activity = (await page.getByTestId("shell-activity").boundingBox())!;
+    const main = (await page.locator("#shell-main").boundingBox())!;
+    if (side === "beside") expect(activity.x, "activity starts where main ends").toBeGreaterThanOrEqual(main.x + main.width - 1);
+    else expect(activity.y + activity.height, "activity ends above main").toBeLessThanOrEqual(main.y + 1);
+    expect((await horizontalOverflow(page)).filter((row) => row.overflow > 0)).toEqual([]);
+  });
+}
+
+// The box grows with its content and shows no scrollbar until it needs more than 90% of the height the column has
+// (the visible height of main, which shares the column's grid row). Past that its card scrolls inside itself.
+test("the activity box has no scrollbar while it fits, and scrolls inside at 90% of the column when it does not", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/?fixture=1#/workspace");
+  await expect(page.getByTestId("fixture-banner")).toBeVisible();
+  const measure = () =>
+    page.evaluate(() => {
+      const card = document.querySelector<HTMLElement>('[data-testid="activity-card"]')!;
+      const box = document.querySelector<HTMLElement>('[data-testid="shell-activity"]')!.getBoundingClientRect();
+      const main = document.querySelector<HTMLElement>("#shell-main")!.getBoundingClientRect();
+      const conversation = document.querySelector<HTMLElement>(".ws-conversation")!.getBoundingClientRect();
+      return {
+        scrolls: card.scrollHeight > card.clientHeight + 1,
+        height: box.height,
+        available: main.height,
+        conversationWidth: conversation.width,
+        pageScrollsX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+      };
+    });
+
+  const tall = await measure();
+  expect(tall.scrolls, "content fits in a tall window").toBe(false);
+  expect(tall.height).toBeLessThanOrEqual(0.9 * tall.available);
+
+  await page.setViewportSize({ width: 1440, height: 500 });
+  const short = await measure();
+  expect(short.scrolls, "content overflows in a short window").toBe(true);
+  expect(short.height, "capped at 90% of the available height").toBeLessThanOrEqual(0.9 * short.available + 1);
+  expect(short.height, "and uses all of that 90%").toBeGreaterThanOrEqual(0.9 * short.available - 2);
+  expect(short.conversationWidth, "no layout shift in the conversation column").toBeCloseTo(tall.conversationWidth, 0);
+  expect(short.pageScrollsX).toBe(false);
+
+  // Collapsing the card leaves the trigger alone, with no scrollbar.
+  await page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ }).click();
+  expect((await measure()).scrolls).toBe(false);
+});
 
 test("the model chip's label, level and badge are whole and on one line before the send button, at 960 CSS px", async ({ page }) => {
   await openFixture(page, 960);

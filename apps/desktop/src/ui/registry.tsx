@@ -6,6 +6,7 @@ import type { GlobalViewRenderer } from "../App";
 import type { GlobalView } from "./router";
 import { ambientBackgroundRegistration } from "./background";
 import type { ShellSlots } from "./shell/slots";
+import { ActivityPanel } from "./shell/ActivityPanel";
 import { topBarSlots } from "./shell/TopBar";
 import { agentsGlobalViews } from "./views/agents/register";
 import { reviewGlobalViews } from "./views/review/register";
@@ -22,6 +23,7 @@ export const appGlobalViews: Partial<Record<GlobalView, GlobalViewRenderer>> = {
 };
 
 export const appShellSlots: Partial<ShellSlots> = {
+  activity: <ActivityPanel />,
   ...topBarSlots,
 };
 
