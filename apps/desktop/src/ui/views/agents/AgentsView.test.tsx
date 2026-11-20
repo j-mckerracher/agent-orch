@@ -522,7 +522,9 @@ describe("Agents, the Actions menu", () => {
     const detail = within(await openTask(user, "t-done"));
     expect(detail.queryByRole("button", { name: "Actions" })).not.toBeInTheDocument();
     expect(detail.queryByRole("button", { name: /Cancel attempt|Reassign|Resume|Amend|decomposition|checkpoint/ })).not.toBeInTheDocument();
-    expect(detail.getAllByRole("button").filter((button) => button.hasAttribute("disabled"))).toEqual([]);
+    // The Chat composer's Send stays, disabled with its reason shown; no action is left disabled.
+    const disabled = detail.getAllByRole("button").filter((button) => button.hasAttribute("disabled"));
+    expect(disabled.map((button) => button.getAttribute("aria-label"))).toEqual(["Send message"]);
   });
 
   it("offers no Reassign on a running task and Cancel attempt and Force start on a queued one", async () => {
