@@ -351,8 +351,9 @@ body:has(.shell) {
 
   .shell-activity {
     margin: 8px 22px 0 auto;
-    /* The row is `auto` here, so a percentage would resolve against the panel's own content; use the viewport. */
-    max-height: 90dvh;
+    /* Stacked above the conversation, the row is `auto` (a percentage would resolve against the panel itself) and a
+       tall panel would push the conversation off screen, so keep the pre-column cap. */
+    max-height: min(45dvh, 420px);
   }
 
   .shell-main {
