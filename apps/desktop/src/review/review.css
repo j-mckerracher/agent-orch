@@ -138,3 +138,8 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.review-screen .rv-path input {
+  width: min(32rem, 100%);
+  min-height: 34px;
+}

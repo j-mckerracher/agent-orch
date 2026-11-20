@@ -185,6 +185,8 @@
 .settings-row input {
   width: 6rem;
   min-width: 0;
+  min-height: 34px;
+  padding: 6px 8px;
 }
 
 /* The error text carries the meaning; the border only reinforces it. */
@@ -288,7 +290,7 @@
 }
 
 .settings-row input[type="text"] {
-  width: 12rem;
+  width: min(40rem, 100%);
 }
 
 .settings-row input.settings-path {

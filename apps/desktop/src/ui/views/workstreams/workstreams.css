@@ -453,6 +453,25 @@
   color: var(--ink);
 }
 
+/* Free-text fields grow to the row; a label sized to its caption left them cramped. */
+.ws-form label:has(> input[type="text"]) {
+  flex: 1 1 22rem;
+}
+
+.ws-form label:has(> textarea) {
+  flex: 1 1 100%;
+}
+
+.ws-form label > input[type="text"],
+.ws-form label > textarea {
+  width: 100%;
+}
+
+.ws-form label > textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
 .ws-view select,
 .ws-view textarea {
   min-width: 0;

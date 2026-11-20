@@ -264,6 +264,7 @@ body:has(.shell) {
 
 .shell-topbar-search input {
   width: 100%;
+  min-height: 34px;
   box-sizing: border-box;
 }
 
