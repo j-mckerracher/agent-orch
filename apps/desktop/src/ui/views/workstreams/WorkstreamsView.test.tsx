@@ -869,6 +869,16 @@ describe("live mutations", () => {
       expect(call).not.toHaveProperty("model_selection");
     });
 
+    it("starts the permission from the level the task ran with, as its record states it", async () => {
+      const fake = planDaemon();
+      fake.tasks.find((task) => task.contract.id === "a4")!.permission_level = "auto";
+      const { user } = await mountPlan(fake);
+      const group = await open(user, "Change execution policy", "Change execution policy");
+      await user.selectOptions(within(group).getByLabelText("Task to change"), "a4");
+      const form = within(group).getByRole("form", { name: "Execution policy of Fix lexer" });
+      expect(within(form).getByLabelText("Permission")).toHaveValue("auto");
+    });
+
     it("changes the execution policy from the task's contract and sends only what changed", async () => {
       const fake = planDaemon();
       const { user } = await mountPlan(fake);

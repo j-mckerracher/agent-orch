@@ -5,6 +5,7 @@ import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import { useServices, useStore } from "../../services";
 import { Button, Disclosure, EmptyState } from "../../theme";
 import { PlaceholderBadge } from "../../widgets";
+import { TaskPermissionBadge, ToolsNotice } from "../../TaskPermission";
 import { ActionMenu } from "../workstreams/ActionMenu";
 import { WsTabs } from "../workstreams/WsTabs";
 import { StatePill } from "./common";
@@ -70,6 +71,8 @@ export function TaskDetail({ initial, live, onBack }: { initial: WorkRow; live: 
         <div className="ws-title-row">
           <h1>{row.objective}</h1>
           <StatePill state={row.state} />
+          <ToolsNotice notice={row.toolsNotice} />
+          <TaskPermissionBadge level={row.permission} />
           {!live && <PlaceholderBadge provenance={sources.execution.provenance} compact />}
           <span className="ws-spacer" />
           {actions.items.length > 0 && (

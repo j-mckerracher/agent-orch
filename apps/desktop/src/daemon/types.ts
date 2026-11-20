@@ -164,6 +164,10 @@ export interface TaskRecord {
   /** Audit transitions in order; unit variants such as "TaskAdmitted". */
   events: string[];
   version: number;
+  /** DPES-1126. The level the agent actually ran with. Absent from older daemons; read it with `taskPermissionLevel`. */
+  permission_level?: string;
+  /** DPES-1126. Tools the worker lacked during the run. Absent or null when there were none. */
+  tools_notice?: ToolsNoticeWire | null;
 }
 
 /** `tasks.message` result: the message is queued for the worker's next resume (DPES-1106). */
@@ -624,6 +628,8 @@ export interface TaskSubmission {
   autonomy: AutonomyPolicy;
   max_retries: number;
   max_repairs: number;
+  /** DPES-1126. Left out, the daemon picks Auto. Sent only when the daemon advertises `permission_levels`. */
+  permission?: PermissionLevelWire;
   /** Optional; check it with `agents.validate_selection` first. At least one of model and effort. */
   model_selection?: ModelSelectionWire;
   /**
@@ -810,6 +816,13 @@ export interface PullRequestLinkWire {
 
 /** The permission level a message runs at (DPES-1105). Absent from older daemons; null when no agent launched. */
 export type PermissionLevelWire = "restricted" | "extended" | "auto" | "full";
+
+/** DPES-1126. A task's record of tools its worker lacked. `reason` is the daemon's safe explanation. */
+export interface ToolsNoticeWire {
+  kind: "lacked_tools";
+  tools: string[];
+  reason: string;
+}
 
 export interface ConversationWireTurn {
   id: string;

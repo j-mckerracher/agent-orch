@@ -1,8 +1,9 @@
 /**
- * The chat permission level (DPES-1105): its labels, the level a request carries, why a level cannot be
- * chosen, the Full confirmation's wording, and the one saved preference. Pure, so the rules are tested
- * without rendering.
+ * The permission level for chats (DPES-1105) and tasks (DPES-1126): its labels, the level a request carries,
+ * why a level cannot be chosen, the Full confirmation's wording, and the saved preferences. Pure, so the rules
+ * are tested without rendering.
  */
+import type { TaskRecord } from "../../../daemon/types";
 import type { PermissionLevel } from "../../../sources/surfaces/types";
 
 export const PERMISSION_LEVELS: readonly PermissionLevel[] = ["restricted", "extended", "auto", "full"];
@@ -12,6 +13,9 @@ export const DEFAULT_PERMISSION_LEVEL: PermissionLevel = "auto";
 
 /** The one value that survives a reload. Only Restricted is saved; Auto, Extended and Full reset to Auto (design O4). */
 export const RESTRICTED_PREFERENCE_KEY = "agent-orch.chat.permission-level";
+
+/** The task form's own saved Restricted choice, so a chat choice never reaches a task (design O4). */
+export const TASK_PREFERENCE_KEY = "agent-orch.task.permission-level";
 
 const LABELS: Record<PermissionLevel, string> = {
   restricted: "Restricted",
@@ -30,9 +34,17 @@ export function permissionForSend(level: PermissionLevel, daemonAdvertises: bool
   return daemonAdvertises ? level : undefined;
 }
 
-/** Why a level cannot be chosen for a chat, or null. Extended is refused for chat on every agent for now (PR A). */
-export function chatChoiceBlock(level: PermissionLevel, daemonAdvertises: boolean): string | null {
-  if (level === "extended") return "not available for chat yet";
+/** Where a level is picked. Each surface keeps its own saved Restricted choice. */
+export type PermissionSurface = "chat" | "task";
+
+const EXTENDED_BLOCK: Record<PermissionSurface, string> = {
+  chat: "not available for chat yet",
+  task: "not available for tasks yet",
+};
+
+/** Why a level cannot be chosen on a surface, or null. Extended is refused on every agent for now (PR A). */
+export function choiceBlock(level: PermissionLevel, daemonAdvertises: boolean, surface: PermissionSurface): string | null {
+  if (level === "extended") return EXTENDED_BLOCK[surface];
   if (!daemonAdvertises && level !== "restricted") return "needs an updated daemon";
   return null;
 }
@@ -81,9 +93,9 @@ export function browserStorage(): PreferenceStorage | null {
 }
 
 /** The level to start with. Only a saved Restricted counts; missing or unreadable storage means the default. */
-export function readSavedLevel(storage: PreferenceStorage | null = browserStorage()): PermissionLevel {
+export function readSavedLevel(storage: PreferenceStorage | null = browserStorage(), key = RESTRICTED_PREFERENCE_KEY): PermissionLevel {
   try {
-    return storage?.getItem(RESTRICTED_PREFERENCE_KEY) === "restricted" ? "restricted" : DEFAULT_PERMISSION_LEVEL;
+    return storage?.getItem(key) === "restricted" ? "restricted" : DEFAULT_PERMISSION_LEVEL;
   } catch {
     return DEFAULT_PERMISSION_LEVEL;
   }
@@ -93,11 +105,19 @@ export function readSavedLevel(storage: PreferenceStorage | null = browserStorag
  * Saves Restricted and removes the saved value for any other level, so the only value ever written is the
  * Restricted preference. A failed write means the choice is simply not kept after a reload.
  */
-export function saveLevel(level: PermissionLevel, storage: PreferenceStorage | null = browserStorage()): void {
+export function saveLevel(level: PermissionLevel, storage: PreferenceStorage | null = browserStorage(), key = RESTRICTED_PREFERENCE_KEY): void {
   try {
-    if (level === "restricted") storage?.setItem(RESTRICTED_PREFERENCE_KEY, "restricted");
-    else storage?.removeItem(RESTRICTED_PREFERENCE_KEY);
+    if (level === "restricted") storage?.setItem(key, "restricted");
+    else storage?.removeItem(key);
   } catch {
     // Not kept after a reload; the choice still applies to this session.
   }
+}
+
+/**
+ * The level a task's agent ran with: its explicit `permission_level`, else the contract's. The contract omits
+ * Restricted, so a missing level there means Restricted, which is also what an older task ran at.
+ */
+export function taskPermissionLevel(task: TaskRecord): PermissionLevel {
+  return PERMISSION_LEVELS.find((level) => level === task.permission_level) ?? task.contract.permission ?? "restricted";
 }

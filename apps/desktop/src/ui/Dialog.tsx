@@ -38,7 +38,9 @@ export function Dialog({ title, children, footer, onClose }: DialogProps) {
     const first = focusables(panel)[0] ?? panel;
     first?.focus();
     const pullBack = (event: FocusEvent) => {
-      if (panel && event.target instanceof Node && !panel.contains(event.target)) {
+      // A dialog opened from this one (the Full confirmation) keeps focus until it closes.
+      const inOtherDialog = event.target instanceof Element && event.target.closest(".ui-dialog-backdrop") !== null;
+      if (panel && event.target instanceof Node && !panel.contains(event.target) && !inOtherDialog) {
         (focusables(panel)[0] ?? panel)?.focus();
       }
     };

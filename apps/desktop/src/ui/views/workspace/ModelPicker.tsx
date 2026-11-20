@@ -596,6 +596,7 @@ export function ModelPicker({
             level={permission.level}
             daemonAdvertises={permission.daemonAdvertises}
             agent={choice?.agent}
+            surface="chat"
             onChange={permission.onChange}
             closePanel={popover.close}
           />

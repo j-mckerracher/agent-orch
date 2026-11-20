@@ -22,6 +22,7 @@ const ws = (id: string, dependencies: string[] = []): WsTask => ({
   pendingDecision: false,
   openable: true,
   contract: null,
+  permission: null,
 });
 
 const link = (id: string, projectId: string, objectiveId: string | null = null, state: WorkstreamTask["state"] = "Queued"): WorkstreamTask => ({
