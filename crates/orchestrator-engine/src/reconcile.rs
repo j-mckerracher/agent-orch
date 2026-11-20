@@ -125,8 +125,16 @@ pub fn reconcile_before_scheduling_with(
             .iter()
             .filter(|session| !session.state.is_terminal())
             .collect::<Vec<_>>();
-        // A task cancelled while its candidate awaited verification has no run
-        // owner to confirm the cancel. Its last audit event records it.
+        // A task cancelled while its candidate awaited verification, or while its
+        // worker waited, has no run owner to confirm the cancel. The audit trail
+        // records both: a verification cancel has its own event, and a cancel
+        // straight after a worker wait came from `Waiting`.
+        let cancelled_without_owner = task.events.last()
+            == Some(&AuditEvent::VerificationCancelled)
+            || matches!(
+                task.events.iter().rev().nth(1),
+                Some(AuditEvent::WorkerNeedsDecision | AuditEvent::WorkerBlocked)
+            );
         if task.state == TaskState::Cancelled
             && unfinished.is_empty()
             && task.sessions.iter().rev().any(|session| {
@@ -134,7 +142,7 @@ pub fn reconcile_before_scheduling_with(
                     attempt.id == session.attempt_id && attempt.state == AttemptState::Cancelled
                 })
             })
-            && task.events.last() != Some(&AuditEvent::VerificationCancelled)
+            && !cancelled_without_owner
             && store
                 .cancellation_status_for_task(&task.contract.id)
                 .map_err(|error| {
