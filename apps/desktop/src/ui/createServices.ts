@@ -2,6 +2,7 @@ import { AppData, type AppDataOptions } from "../daemon/appData";
 import { ConnectionManager, type ConnectionOptions } from "../daemon/connection";
 import { DaemonError } from "../daemon/errors";
 import type { DaemonConnector } from "../daemon/session";
+import { decisionNotificationsClient, type DecisionNotificationsClient } from "../native/decisionNotifications";
 import { createDaemonSources } from "../sources/daemon";
 import { createFixtureSources } from "../sources/fixtures";
 import { createDerivedSurfaces } from "../sources/surfaces/derived";
@@ -24,6 +25,8 @@ export interface CreateServicesOptions {
   data?: AppDataOptions;
   /** Persists form drafts across window close/reopen. */
   draftStorage?: DraftStorage;
+  /** Overrides the desktop host's reminder settings client. */
+  notifications?: DecisionNotificationsClient;
 }
 
 const unboundConnector: DaemonConnector = {
@@ -40,5 +43,6 @@ export function createServices(options: CreateServicesOptions = {}): Services {
     router: new RouterStore(options.initialRoute),
     drafts: new DraftsStore(options.draftStorage),
     bridgeBound: options.connector !== undefined,
+    notifications: options.notifications ?? decisionNotificationsClient,
   };
 }

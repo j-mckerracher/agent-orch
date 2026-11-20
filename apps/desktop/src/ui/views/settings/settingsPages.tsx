@@ -6,6 +6,7 @@
  * A section hides itself when the daemon cannot do what it controls; a page with no section says so in one line.
  */
 import type { ComponentType } from "react";
+import { useServices } from "../../services";
 import { NotificationsSection } from "./NotificationsSection";
 import { InstalledAdapters } from "./AgentsInventorySection";
 import { AppearanceSection } from "./AppearanceSection";
@@ -27,8 +28,8 @@ export interface SettingsPageDef {
   sections: ComponentType<{ model: SettingsModel }>[];
 }
 
-// Takes no settings model: its controls talk to the desktop host and apply on click.
-const Notifications = () => <NotificationsSection />;
+// Takes no settings model: its controls talk to the desktop host (`services.notifications`) and apply on click.
+const Notifications = () => <NotificationsSection client={useServices().notifications} />;
 
 export const PAGES: readonly SettingsPageDef[] = [
   { id: "agents", label: "Agents", intro: "Defaults for new tasks.", sections: [DispatchDefaultsSection, InstalledAdapters] },
