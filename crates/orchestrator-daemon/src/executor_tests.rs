@@ -2428,6 +2428,90 @@ fn rpc_failures_are_reported_by_method_and_class_but_never_with_parameters() {
 }
 
 #[test]
+fn update_idle_waits_for_a_running_agent_and_its_supervisor_then_accepts() {
+    let fixture = Fixture::new();
+    let release = fixture.marker("release");
+    let api = fixture.api(&waiting_agent(&fixture, &release));
+    let task_id = fixture.submit(&api, "update-idle-1", 0);
+    wait_state(&api, &task_id, "Running");
+
+    assert!(!api.try_begin_idle_shutdown());
+
+    fs::write(&release, "go").unwrap();
+    wait_state(&api, &task_id, "Succeeded");
+    wait_until("the supervisor thread to end", || {
+        api.try_begin_idle_shutdown()
+    });
+    let rejected = api.dispatch(
+        "tasks.submit",
+        json!({
+            "idempotency_key": "update-idle-2",
+            "contract": {
+                "project_id": fixture.project_id(),
+                "parent_id": null,
+                "objective": "after the gate closed",
+                "kind": "Implement",
+                "agent": "codex",
+                "dependencies": [],
+                "verification": "None",
+                "delivery": "ReportOnly",
+                "autonomy": "WorkspaceWrites",
+                "max_retries": 0,
+                "max_repairs": 0
+            }
+        }),
+    );
+    assert_eq!(rejected, Err(RpcError::Conflict));
+    api.shutdown();
+}
+
+#[test]
+fn update_idle_a_closed_gate_holds_back_the_scheduler_until_it_reopens() {
+    let fixture = Fixture::new();
+    let data = fixture.data();
+    let store = Arc::new(SqliteStore::new(&data.join("store.sqlite")).unwrap());
+    fixture.register(&store);
+    store
+        .create(&TaskContract {
+            id: "queued-task".into(),
+            project_id: fixture.project_id(),
+            parent_id: None,
+            objective: "wait for the gate".into(),
+            kind: TaskKind::Implement,
+            agent: "codex".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::ReportOnly,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+            permission: Default::default(),
+            work_item: None,
+        })
+        .unwrap();
+    store
+        .transition("queued-task", orchestrator_core::task::TaskEvent::Admit)
+        .unwrap();
+    let gate = StopGate::default();
+    *gate.write().unwrap() = true;
+    let config = fixture.config(&data, &succeeding_agent(&fixture));
+    let executor = Executor::start_gated(store.clone(), config, gate.clone()).unwrap();
+
+    executor.wake();
+    thread::sleep(Duration::from_millis(300));
+    assert_eq!(store.get("queued-task").unwrap().state, TaskState::Queued);
+    assert!(!executor.has_live_workers());
+
+    *gate.write().unwrap() = false;
+    executor.wake();
+    wait_until("the reopened scheduler to run the task", || {
+        store.get("queued-task").unwrap().state == TaskState::Succeeded
+    });
+    executor.shutdown();
+}
+
+#[test]
 fn restart_reports_the_orphan_it_stopped_and_the_runs_it_interrupted() {
     let fixture = Fixture::new();
     let data = fixture.data();

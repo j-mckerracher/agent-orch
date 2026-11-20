@@ -1,0 +1,35 @@
+/* Desktop update row. Sits under the connection strip; positioning is owned by the shell (.shell-strip .strip). */
+.strip.update-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.strip.update-strip p {
+  margin: 0;
+  padding: 4px 10px;
+  border-left: 4px solid var(--control-border);
+  border-radius: var(--radius-sm);
+  background: var(--panel);
+  line-height: 1.45;
+}
+
+.strip.update-strip p[role="alert"] {
+  flex: 1 1 100%;
+  border-left-color: var(--red);
+  background: var(--red-bg);
+}
+
+/* The glyph keeps the error distinguishable without color. */
+.strip.update-strip p[role="alert"]::before {
+  content: "✕ ";
+  content: "✕ " / "";
+  color: var(--red);
+  font-weight: 700;
+}

@@ -52,52 +52,6 @@
   white-space: nowrap;
 }
 
-.ws-log {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 12px;
-  min-height: 160px;
-  padding: 4px 2px 8px;
-  overflow: auto;
-}
-
-.ws-log .ui-bubble-body {
-  overflow-wrap: anywhere;
-}
-
-.ws-state {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding: 12px 14px;
-  border: 1px dashed var(--line);
-  border-radius: var(--radius-md);
-  color: var(--ink);
-  font-size: 13px;
-}
-
-.ws-state p {
-  margin: 0;
-}
-
-.ws-note,
-.ws-small {
-  margin: 0;
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.ws-note {
-  padding-top: 12px;
-}
-
-.ws-blocked {
-  padding: 2px 4px 0;
-}
-
 .ws-chips {
   display: flex;
   flex-wrap: wrap;
@@ -135,21 +89,6 @@
   color: var(--muted);
 }
 
-.ws-composer {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px 12px;
-  border: 1px solid var(--control-border);
-  border-radius: 13px;
-  background: var(--panel);
-}
-
-.ws-composer:focus-within {
-  border-color: var(--blue);
-  box-shadow: 0 0 0 var(--focus-width, 2px) var(--focus);
-}
-
 /* app.css gives every label/input a block layout and a 20rem minimum; undo that inside the workspace. */
 .ws-root label {
   margin: 0;
@@ -161,34 +100,10 @@
   min-width: 0;
 }
 
-/* One line at rest (rows={1}); a longer draft scrolls inside the box. */
-.ws-composer textarea {
-  width: 100%;
-  resize: none;
-  border: 0;
-  background: transparent;
-  color: var(--ink);
-  font: 13px/1.5 var(--font-sans);
-}
-
-/* The composer shell shows the focus ring for the textarea; the other controls keep their own. */
-.ws-composer textarea:focus-visible {
-  outline: none;
-}
-
 /* Placeholder text uses the readable secondary token (Chrome's default gray fails 4.5:1 on the dark panel). */
-.ws-composer textarea::placeholder,
 .ws-popover input[type="search"]::placeholder {
   color: var(--subtle);
   opacity: 1;
-}
-
-/* One row at every width: the chips shrink and truncate instead of wrapping the send button away. */
-.ws-composer-row {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: center;
-  gap: 8px;
 }
 
 .ws-composer-row .ws-popover-root {
@@ -221,25 +136,6 @@
 .ws-target-note {
   color: var(--subtle);
   font-size: 12px;
-}
-
-.ws-composer .ws-send {
-  flex: none;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border-radius: 50%;
-  font-size: 15px;
-  line-height: 1;
-}
-
-.ws-feedback p {
-  margin: 4px 0 0;
-  font-size: 12px;
-}
-
-.ws-feedback .notice {
-  margin: 4px 0 0;
 }
 
 /* Popovers open upward from the composer controls. */
@@ -350,8 +246,7 @@
 .ws-chip-link:focus-visible,
 .ws-chip-button:focus-visible,
 .ws-popover input:focus-visible,
-.ws-popover select:focus-visible,
-.ws-log:focus-visible {
+.ws-popover select:focus-visible {
   outline: var(--focus-width, 2px) solid var(--focus);
   outline-offset: 2px;
 }
@@ -485,7 +380,6 @@
 }
 
 @media (forced-colors: active) {
-  .ws-composer,
   .ws-chip-button,
   .ws-chip-link,
   .ws-popover {

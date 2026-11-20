@@ -87,15 +87,10 @@ impl Server {
         while !state.stopping.load(Ordering::Acquire) {
             reap_finished(&mut workers);
             if state.is_idle() {
-                if state
-                    .handler
-                    .as_ref()
-                    .is_some_and(|handler| handler.keep_alive())
-                {
-                    state.touch();
-                } else {
+                if state.try_begin_idle_stop(true) {
                     break;
                 }
+                state.touch();
             }
             match listener.accept() {
                 Ok(stream) => {

@@ -24,8 +24,9 @@ use std::process::{Child, Command, Output, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 
+use orchestrator_private_fs::DataDirectoryLock;
 use orchestrator_runtime::is_process_running;
-use orchestrator_store::{DataDirectoryLock, SqliteStore, Store};
+use orchestrator_store::{SqliteStore, Store};
 use tempfile::TempDir;
 
 const CLI: &str = env!("CARGO_BIN_EXE_orchestrator-cli");

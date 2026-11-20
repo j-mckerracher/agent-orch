@@ -97,7 +97,7 @@ export function gatesFor(platform) {
     suite("store-tests", ["-p", "orchestrator-store"], "store", "store"),
     suite(
       "lock-takeover-test",
-      ["-p", "orchestrator-store", "--lib", "the_lock_file_is_owner_only_when_created_and_when_taken_over"],
+      ["-p", "orchestrator-private-fs", "--lib", "the_lock_file_is_owner_only_when_created_and_when_taken_over"],
       "lockTakeover", "lock-takeover", 600,
     ),
     suite("diagnostics-tests", ["-p", "orchestrator-diagnostics"], "diagnostics", "diagnostics"),

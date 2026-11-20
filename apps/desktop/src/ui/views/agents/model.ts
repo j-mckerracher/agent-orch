@@ -8,13 +8,18 @@ import type { Approval, SessionEntry, TaskRecord, TaskState } from "../../../dae
 import type { PreviewTask, TaskRef } from "../../../sources/types";
 import { matchesFilter } from "../../format";
 
-export type TabId = "active" | "available" | "queued" | "failed" | "disconnected";
+export type TabId = "active" | "waiting" | "available" | "queued" | "failed" | "finished" | "disconnected";
+
+/** Tabs whose rows are tasks, picked by task state alone. */
+export type TaskTab = "active" | "waiting" | "queued" | "failed" | "finished";
 
 export const TABS: ReadonlyArray<{ id: TabId; label: string }> = [
   { id: "active", label: "Active" },
+  { id: "waiting", label: "Waiting" },
   { id: "available", label: "Available / idle" },
   { id: "queued", label: "Queued" },
   { id: "failed", label: "Failed sessions" },
+  { id: "finished", label: "Finished" },
   { id: "disconnected", label: "Disconnected" },
 ];
 
@@ -61,18 +66,29 @@ export interface Headline {
   queued: number;
   /** The queued tasks whose dependencies are met (`queued - blocked`). */
   readyQueued: number;
+  /** Tasks blocked on the operator's reply (state Waiting). */
+  waiting: number;
   blocked: number;
 }
 
 const RUNNING_SESSION = new Set(["Spawning", "Running"]);
-const ACTIVE_STATES: ReadonlySet<TaskState> = new Set(["Running", "Verifying"]);
-const QUEUED_STATES: ReadonlySet<TaskState> = new Set(["Created", "Queued"]);
-const FAILED_STATES: ReadonlySet<TaskState> = new Set(["Failed", "VerificationFailed"]);
+/** Every task state names its tab; a new TaskState does not compile until it is placed. */
+const STATE_TAB: Readonly<Record<TaskState, TaskTab>> = {
+  Created: "queued",
+  Queued: "queued",
+  Running: "active",
+  Verifying: "active",
+  Waiting: "waiting",
+  Failed: "failed",
+  VerificationFailed: "failed",
+  Succeeded: "finished",
+  Cancelled: "finished",
+};
 
 export const isRunningSession = (state: string): boolean => RUNNING_SESSION.has(state);
-export const isActive = (row: WorkRow): boolean => ACTIVE_STATES.has(row.state);
-export const isQueued = (row: WorkRow): boolean => QUEUED_STATES.has(row.state);
-export const isFailed = (row: WorkRow): boolean => FAILED_STATES.has(row.state);
+export const isActive = (row: WorkRow): boolean => STATE_TAB[row.state] === "active";
+export const isQueued = (row: WorkRow): boolean => STATE_TAB[row.state] === "queued";
+export const isFailed = (row: WorkRow): boolean => STATE_TAB[row.state] === "failed";
 
 export function taskRef(row: WorkRow): TaskRef {
   return row.origin === "real" ? { origin: "real", taskId: row.id, state: row.state } : { origin: "fixture", id: row.id };
@@ -159,13 +175,14 @@ export function headline(rows: readonly WorkRow[]): Headline {
     runningSessions: sessionsKnown(rows)
       ? rows.reduce((n, row) => n + (row.sessions ?? []).filter((s) => isRunningSession(s.state)).length, 0)
       : null,
+    waiting: tabRows("waiting", rows).length,
     queued: queued.length,
     readyQueued: queued.filter((row) => !row.blocked).length,
     blocked: queued.filter((row) => row.blocked).length,
   };
 }
 
-/** Task lists for the Active and Queued tabs. The other tabs derive their own rows. */
-export function tabRows(tab: "active" | "queued", rows: readonly WorkRow[]): WorkRow[] {
-  return tab === "active" ? rows.filter(isActive) : rows.filter(isQueued);
+/** Task lists for the tabs that list tasks by state. Failed derives its own rows. */
+export function tabRows(tab: Exclude<TaskTab, "failed">, rows: readonly WorkRow[]): WorkRow[] {
+  return rows.filter((row) => STATE_TAB[row.state] === tab);
 }

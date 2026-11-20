@@ -9,6 +9,7 @@ publish = false
 [dependencies]
 orchestrator-ipc = { path = "../orchestrator-ipc" }
 orchestrator-store = { path = "../orchestrator-store" }
+orchestrator-private-fs = { path = "../orchestrator-private-fs" }
 orchestrator-core = { path = "../orchestrator-core" }
 orchestrator-git = { path = "../orchestrator-git" }
 orchestrator-runtime = { path = "../orchestrator-runtime" }

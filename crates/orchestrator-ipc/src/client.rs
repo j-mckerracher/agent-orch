@@ -159,6 +159,15 @@ impl Client {
         self.call("shutdown", Value::Null).map(|_| ())
     }
 
+    /// Asks the daemon to exit only if it is idle. `true` means it accepted and
+    /// is stopping; `false` means it is busy and nothing changed.
+    pub fn shutdown_if_idle(&mut self) -> Result<bool, IpcError> {
+        self.call_feature(Capability::Health, "shutdown_if_idle", Value::Null)?
+            .get("stopping")
+            .and_then(Value::as_bool)
+            .ok_or(IpcError::Operation)
+    }
+
     pub fn projects_list(&mut self) -> Result<Value, IpcError> {
         self.call_feature(Capability::Projects, "projects.list", Value::Null)
     }
