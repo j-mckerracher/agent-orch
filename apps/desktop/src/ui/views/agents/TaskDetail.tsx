@@ -1,4 +1,4 @@
-/** One task's own view: Output, Thinking, Attempts and the event feed, an Actions menu, and technical detail one click deeper. */
+/** One task's own view: Output, Activity, Attempts and the event feed, an Actions menu, and technical detail one click deeper. */
 import { useEffect, useId, useState } from "react";
 import { timelineKey, type Timeline } from "../../../daemon/appData";
 import { agentDisplayName } from "../../../daemon/agentDisplayNames";
@@ -10,7 +10,7 @@ import { WsTabs } from "../workstreams/WsTabs";
 import { StatePill } from "./common";
 import { OutputTail } from "./OutputTail";
 import { isRunningSession, rowFromTask, type WorkRow } from "./model";
-import { SessionThinking } from "./SessionThinking";
+import { SessionActivity } from "./SessionActivity";
 import { useTaskActions } from "./TaskActions";
 import { taskSubtitle } from "./TaskList";
 
@@ -109,15 +109,15 @@ export function TaskDetail({ initial, live, onBack }: { initial: WorkRow; live: 
               ),
           },
           {
-            id: "thinking",
-            label: "Thinking",
+            id: "activity",
+            label: "Activity",
             content:
               real && session ? (
-                <SessionThinking key={`${session.id}:thinking`} sessionId={session.id} running={running} />
+                <SessionActivity key={`${session.id}:activity`} sessionId={session.id} running={running} />
               ) : real ? (
-                noSession("thinking")
+                noSession("activity")
               ) : (
-                <EmptyState title="No thinking" description="Thinking is only read from the daemon." />
+                <EmptyState title="No activity" description="Activity is only read from the daemon." />
               ),
           },
           {

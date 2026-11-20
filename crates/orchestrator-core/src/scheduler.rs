@@ -382,6 +382,7 @@ pub struct Scheduler<'a> {
     gate: StartGate,
     open_questions: &'a BTreeSet<String>,
     resumable: &'a BTreeSet<String>,
+    forced: &'a BTreeSet<String>,
 }
 
 impl<'a> Scheduler<'a> {
@@ -404,7 +405,17 @@ impl<'a> Scheduler<'a> {
             gate: StartGate::Open,
             open_questions: &NO_QUESTIONS,
             resumable: &NO_QUESTIONS,
+            forced: &NO_QUESTIONS,
         })
+    }
+
+    /// Names the tasks the user forced to start. A forced task that passed the dependency,
+    /// question and authorization checks skips the worker caps and the load gate; a worktree
+    /// that a running task owns still holds it back. A forced start does not move the fairness
+    /// cursor. [`Scheduler::new`] starts with none.
+    pub fn with_forced(mut self, task_ids: &'a BTreeSet<String>) -> Self {
+        self.forced = task_ids;
+        self
     }
 
     /// Sets whether tasks may start. [`Scheduler::new`] starts open. A closed
@@ -491,13 +502,16 @@ impl<'a> Scheduler<'a> {
             eligible.push(index);
         }
 
-        // A closed gate holds back every task that could have started. The
-        // rest of the pass then has nothing to plan, so the cursor stays put.
+        // A closed gate holds back every task that could have started, except a forced one.
+        // The rest of the pass then has nothing to plan, so the cursor stays put.
         if let StartGate::Closed(hold) = self.gate {
-            for &index in &eligible {
-                rejections[index] = Some(RejectionReason::LoadGateClosed(hold));
-            }
-            eligible.clear();
+            eligible.retain(|&index| {
+                let forced = self.forced.contains(&tasks[index].contract.id);
+                if !forced {
+                    rejections[index] = Some(RejectionReason::LoadGateClosed(hold));
+                }
+                forced
+            });
         }
 
         let mut running = 0;
@@ -512,6 +526,33 @@ impl<'a> Scheduler<'a> {
             *running_per_project
                 .entry(task.contract.project_id.as_str())
                 .or_default() += 1;
+            if let Some(owner) = worktree_owner(task) {
+                owners.push(owner);
+            }
+        }
+
+        let mut started = Vec::new();
+        let mut started_by_index = vec![false; tasks.len()];
+        let (forced, eligible): (Vec<usize>, Vec<usize>) = eligible
+            .into_iter()
+            .partition(|&index| self.forced.contains(&tasks[index].contract.id));
+        for index in forced {
+            let task = &tasks[index];
+            let project_id = task.contract.project_id.as_str();
+            if let Some((owner_task_id, resource, value)) =
+                worktree_conflict(task.workspace, project_id, &owners)
+            {
+                rejections[index] = Some(RejectionReason::WorktreeOwned {
+                    owner_task_id: owner_task_id.to_owned(),
+                    resource,
+                    value: value.to_owned(),
+                });
+                continue;
+            }
+            started_by_index[index] = true;
+            started.push(task.contract.id.clone());
+            running += 1;
+            *running_per_project.entry(project_id).or_default() += 1;
             if let Some(owner) = worktree_owner(task) {
                 owners.push(owner);
             }
@@ -543,8 +584,6 @@ impl<'a> Scheduler<'a> {
         let project_limit = self.limits.max_workers_per_project.get();
         let queue_count = queues.len();
         let mut next_queue = 0;
-        let mut started = Vec::new();
-        let mut started_by_index = vec![false; tasks.len()];
         let mut last_started_project = self.snapshot.last_started_project.map(str::to_owned);
 
         while running < global_limit && queue_count > 0 {
@@ -889,6 +928,56 @@ mod tests {
                 reason(&closed, task_id),
                 &RejectionReason::LoadGateClosed(HOLD)
             );
+        }
+    }
+
+    #[test]
+    fn a_forced_task_skips_the_caps_and_the_closed_gate_but_not_its_dependencies() {
+        let tasks = [
+            (contract("run", "project-a", &[]), TaskState::Running),
+            (
+                contract("blocked", "project-a", &["unfinished"]),
+                TaskState::Queued,
+            ),
+            (contract("forced", "project-a", &[]), TaskState::Queued),
+            (contract("plain", "project-a", &[]), TaskState::Queued),
+            (contract("unfinished", "project-b", &[]), TaskState::Queued),
+        ];
+        let snapshots: Vec<_> = tasks
+            .iter()
+            .map(|(contract, state)| TaskSnapshot {
+                contract,
+                state: *state,
+                workspace: None,
+            })
+            .collect();
+        let one = SchedulerLimits::new(Some(1), Some(1)).unwrap();
+        let forced = BTreeSet::from(["forced".to_owned(), "blocked".to_owned()]);
+        for gate in [StartGate::Open, CLOSED] {
+            let plan = Scheduler::new(
+                SchedulerSnapshot {
+                    tasks: &snapshots,
+                    last_started_project: None,
+                },
+                one,
+            )
+            .unwrap()
+            .with_start_gate(gate)
+            .with_forced(&forced)
+            .schedule(Some(&allow_all));
+
+            assert_eq!(plan.started, ["forced"]);
+            assert_eq!(plan.last_started_project, None);
+            assert_eq!(
+                reason(&plan, "blocked"),
+                &RejectionReason::DependencyNotSucceeded {
+                    dependency_id: "unfinished".to_owned()
+                }
+            );
+            assert!(matches!(
+                reason(&plan, "plain"),
+                RejectionReason::GlobalLimitReached | RejectionReason::LoadGateClosed(_)
+            ));
         }
     }
 

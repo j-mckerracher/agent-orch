@@ -398,6 +398,22 @@ export class AppData extends Store<AppDataSnapshot> {
     }
   }
 
+  /** Starts a queued task now, past the worker caps and the load gate. User-only. */
+  async forceStartTask(taskId: string): Promise<MutationResult<boolean>> {
+    const scope = `force-start:${taskId}`;
+    const key = this.tracker.keyFor(scope, taskId);
+    try {
+      const { forced } = await this.connection.api().tasksForceStart(taskId, key);
+      this.tracker.settle(scope, null);
+      void this.refreshAll();
+      return { ok: true, value: forced };
+    } catch (error) {
+      const failure = asDaemonError(error);
+      this.tracker.settle(scope, failure);
+      return { ok: false, error: failure };
+    }
+  }
+
   /** Sends the user's message to a Waiting task (DPES-1106). User-only; the key is reused only while the outcome is unknown. */
   async messageTask(taskId: string, text: string): Promise<MutationResult<boolean>> {
     const scope = `message:${taskId}`;

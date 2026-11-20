@@ -321,6 +321,12 @@ export class FakeDaemon implements DaemonConnector {
         this.discarded.add(task.contract.id);
         return reply({ task_id: task.contract.id, discarded: true });
       }
+      case "tasks.force_start": {
+        const task = this.tasks.find((t) => t.contract.id === params.task_id);
+        if (!task) return fail(-32010, "task not found");
+        if (task.state !== "Queued") return fail(-32011, `task is ${task.state}; only a queued task can be forced`);
+        return reply({ task_id: task.contract.id, forced: true });
+      }
       case "tasks.message": {
         const task = this.tasks.find((t) => t.contract.id === params.task_id);
         if (!task) return fail(-32010, "task not found");

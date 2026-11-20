@@ -2,12 +2,14 @@
 import { useState, type ReactNode } from "react";
 import type { OutputLine, TaskState } from "../daemon/types";
 import { ChatLog } from "./chat/ChatLog";
+import { Timestamp } from "./chat/Timestamp";
 import { useGate } from "./services";
 import { Bubble, CopyButton, EmptyState, Markdown } from "./theme";
 import { type Turn, TaskReply, useTaskReply } from "./TaskReply";
-import { ThinkingBlock } from "./views/workspace/ThinkingBlock";
+import { ActivityLog } from "./activity/ActivityLog";
+import { ActivityStatus } from "./activity/ActivityStatus";
 import { type OutputTailState, useOutputTail } from "./views/agents/useOutputTail";
-import { useSessionThinking } from "./views/agents/useSessionThinking";
+import { useSessionActivity } from "./views/agents/useSessionActivity";
 import { ErrorNotice } from "./widgets";
 
 interface Props {
@@ -33,7 +35,7 @@ export function TaskConversation({ taskId, state, sessionId, running, agent }: P
         <TurnBubble key={turn.key} turn={turn} agent={agent} />
       ))}
       {open && (
-        <Bubble from="coordinator" author={agent} actions={<CopyButton text={open.question} />}>
+        <Bubble from="coordinator" author={agent} time={<Timestamp at={open.askedAt} />} actions={<CopyButton text={open.question} />}>
           <Markdown text={open.question} />
         </Bubble>
       )}
@@ -66,13 +68,18 @@ export function TaskConversation({ taskId, state, sessionId, running, agent }: P
 
 function TurnBubble({ turn, agent }: { turn: Turn; agent: string }) {
   return (
-    <Bubble from={turn.from === "you" ? "human" : "coordinator"} author={turn.from === "you" ? "You" : agent} actions={<CopyButton text={turn.text} />}>
+    <Bubble
+      from={turn.from === "you" ? "human" : "coordinator"}
+      author={turn.from === "you" ? "You" : agent}
+      time={<Timestamp at={turn.at} />}
+      actions={<CopyButton text={turn.text} />}
+    >
       <Markdown text={turn.text} />
     </Bubble>
   );
 }
 
-/** The session's thinking and retained output as thread entries, then `children` (what was said in this window). */
+/** The session's activity (thinking and tool calls) and retained output as thread entries, then `children` (what was said in this window). */
 function SessionThread({
   taskId,
   sessionId,
@@ -83,15 +90,21 @@ function SessionThread({
   children,
 }: Omit<Props, "state"> & { sessionId: string; label: string; scrollKey: string; children: ReactNode }) {
   const tail = useOutputTail(taskId, sessionId, running);
-  const thinking = useSessionThinking(sessionId, running);
+  const activity = useSessionActivity(sessionId, running);
+  const last = activity.items[activity.items.length - 1];
+  // Grows with every line, with every chunk of the newest thinking, and when the newest tool call ends.
+  const grown = `${activity.items.length}:${last?.kind === "thinking" ? last.text.length : last?.kind === "tool" ? last.state : ""}`;
   return (
-    <ChatLog label={label} scrollKey={`${tail.lines.length}:${thinking.text.length}:${scrollKey}`}>
-      {thinking.error && <ErrorNotice error={thinking.error} action="Refreshing thinking" />}
-      {thinking.text !== "" && <ThinkingBlock text={thinking.text} streaming={running} />}
-      {thinking.truncated && <p className="ws-small">Thinking log hit its size limit.</p>}
-      <Output tail={tail} running={running} agent={agent} />
-      {children}
-    </ChatLog>
+    <>
+      <ChatLog label={label} scrollKey={`${tail.lines.length}:${grown}:${scrollKey}`}>
+        {activity.error && <ErrorNotice error={activity.error} action="Refreshing activity" />}
+        {activity.items.length > 0 && <ActivityLog items={activity.items} streaming={running} active={running} />}
+        {activity.truncated && <p className="ws-small">Thinking log hit its size limit.</p>}
+        <Output tail={tail} running={running} agent={agent} />
+        {children}
+      </ChatLog>
+      {running && <ActivityStatus live={activity.live} />}
+    </>
   );
 }
 
@@ -121,7 +134,13 @@ function Output({ tail, running, agent }: { tail: OutputTailState; running: bool
       ) : tail.lines.length === 0 ? (
         <EmptyState title="No messages yet" description={tail.ended ? "The session ended without producing output." : "The agent has not produced output yet."} />
       ) : (
-        <Bubble from="coordinator" author={agent} actions={<CopyButton text={tail.lines.map((line) => line.text).join("\n")} label="Copy output" />}>
+        <Bubble
+          from="coordinator"
+          author={agent}
+          // Output lines carry no times, so the bubble says when the app last read them.
+          time={tail.readAt && <>as of <Timestamp at={tail.readAt} /></>}
+          actions={<CopyButton text={tail.lines.map((line) => line.text).join("\n")} label="Copy output" />}
+        >
           {tail.olderDropped && <p className="ws-small">Older lines were dropped and are not shown.</p>}
           <div className="ws-output">
             {tail.lines.map((line) => (

@@ -201,8 +201,11 @@ export type ConversationTarget =
 export type LiveConversationTarget = Exclude<ConversationTarget, { kind: "project" }>;
 export interface ConversationEntry {
   id: string;
-  /** `status` is a daemon-recorded turn outcome (failed, canceled, empty) and never a reply. `thinking` is a turn's agent reasoning. */
-  kind: "message" | "proposal" | "status" | "thinking";
+  /**
+   * `status` is a daemon-recorded turn outcome (failed, canceled, empty) and never a reply. `activity` is one run of a
+   * turn's agent reasoning and tool calls between two replies; its `items` hold them in order and its `text` is empty.
+   */
+  kind: "message" | "proposal" | "status" | "activity";
   role: "user" | "coordinator" | "system";
   text: string;
   at: string;
@@ -210,7 +213,9 @@ export interface ConversationEntry {
   turnId?: string;
   /** Stable machine code of a failed turn, e.g. `runtime_unavailable`. */
   errorCode?: string;
-  /** True while the daemon has not recorded the end of this reply. */
+  /** The thinking and tool calls of an `activity` entry, in order. */
+  items?: ActivityItem[];
+  /** True while the daemon has not recorded the end of this reply, or while its activity run can still grow. */
   streaming?: boolean;
   /** `wake` on the opening entry of an automatic turn: it is event lines, not something the user wrote (DPES-1105). */
   origin?: "wake";
@@ -218,6 +223,30 @@ export interface ConversationEntry {
   sequence?: number;
   /** The recorded pull requests of the tasks this turn acted on or reported (DPES-1108), on its reply or status. */
   pullRequests?: PullRequestLink[];
+}
+
+/** One tool call of an agent. `result` is the daemon's redacted, bounded preview; empty until the call finishes. */
+export interface ToolItem {
+  kind: "tool";
+  key: string;
+  /** The agent's own id for the call; it joins the start to its finish. */
+  id: string;
+  name: string;
+  summary: string;
+  state: "running" | "ok" | "failed";
+  result: string;
+}
+
+/** What an agent did, in the order it did it. A `cap` item marks where the daemon stopped recording tool calls. */
+export type ActivityItem = { kind: "thinking"; key: string; text: string } | ToolItem | { kind: "cap"; key: string };
+
+/** What the agent is doing now. `receivedAt` is when this app got it, so elapsed time never depends on the daemon's clock. */
+export interface LiveActivity {
+  phase: string;
+  tool: { id: string; name: string; summary: string } | null;
+  phaseMs: number;
+  idleMs: number;
+  receivedAt: number;
 }
 
 /** A pull request the daemon recorded for a task. The URL is the daemon's, checked again before it is shown. */
@@ -333,6 +362,8 @@ export interface ConversationTranscript {
   truncated: boolean;
   /** Latest runtime turn; null when nothing was sent yet. */
   turn?: ConversationTurnInfo | null;
+  /** What the latest turn is doing now. Absent when it is not running and from older daemons. */
+  activity?: LiveActivity;
   /** The scope's proposed actions, newest first (DPES-1105). Absent when the daemon did not send them. */
   proposals?: ActionProposal[];
   /** The action block outcome of each turn in the window, by turn id (DPES-1105). Absent when the daemon did not send it. */
@@ -1062,6 +1093,8 @@ export interface QuestionItem {
   /** `YYYY-MM-DD` while a deferral is in the future, else null. A deferred question stays open. */
   deferredUntil: string | null;
   state: string;
+  /** When the daemon recorded the question (ISO instant). */
+  askedAt: string;
 }
 
 export interface QuestionReceipt {
