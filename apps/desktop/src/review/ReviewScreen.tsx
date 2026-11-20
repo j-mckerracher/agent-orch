@@ -1,10 +1,13 @@
 // S6 — Review one candidate: diff, evidence, request changes, Accept, Reject and delivery. REAL: approvals.list,
 // workspaces.diff, approvals.resolve (approve/reject only), delivery.request. DUMMY behind injected interfaces:
 // ReviewEvidenceSource (D7), ChangeRequestSource (D8). It sits inside the app shell's `<main>`, so it adds no landmark.
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
+import { DaemonError, presentError } from "../daemon/errors";
+import { ActionStatus, useAction } from "../ui/action";
 import { basename } from "../ui/format";
 import { WsTabs } from "../ui/views/workstreams/WsTabs";
 import { Button, Disclosure } from "../ui/theme";
+import { Notice } from "../ui/widgets";
 import { digestHex, deliveryKindOf } from "./binding";
 import { ChangeRequestHistoryList, RequestChangesForm, useChangeRequests } from "./ChangeRequestPanel";
 import { EvidencePanel } from "./EvidencePanel";
@@ -34,6 +37,10 @@ export interface ReviewScreenProps {
   session?: ReviewSession;
 }
 
+/**
+ * The daemon's answer to a decision or a delivery. It lives in the review session, so it stays beside the controls until
+ * the next request for that approval, even after the view is left and opened again, so it is not a useAction.
+ */
 function MutationStatus<T>({
   view,
   label,
@@ -44,19 +51,20 @@ function MutationStatus<T>({
   describe: (receipt: T) => string;
 }) {
   if (!view) return null;
-  if (view.phase === "pending") return <p role="status">{label}: waiting for the daemon…</p>;
+  if (view.phase === "pending") return <Notice tone="info" role="status">{label}: waiting for the daemon…</Notice>;
   if (view.phase === "succeeded") {
     return (
-      <p role="status">
+      <Notice tone="ok" role="status">
         {label} receipt from daemon: {describe(view.receipt)}
-      </p>
+      </Notice>
     );
   }
+  const { reason } = presentError(new DaemonError(view.kind, view.message));
   return (
-    <p role="alert">
-      {label} failed ({view.kind}): {view.message}. {view.indeterminate ? "The daemon may or may not have applied it. " : ""}
-      Refresh to reconcile before retrying; a retry reuses the same idempotency key.
-    </p>
+    <Notice tone="bad" role="alert">
+      {label} failed. {reason} {view.indeterminate ? "The daemon may or may not have applied it. " : ""}Refresh before trying again; the
+      retry reuses the same request, so it cannot apply twice.
+    </Notice>
   );
 }
 
@@ -83,6 +91,11 @@ export function ReviewScreen({
   const r = useReview({ client, evidenceSource, scope, newKey, session });
   const { approval, task } = r;
   const requests = useChangeRequests(changeRequestSource, approval);
+  const refreshing = useAction();
+  // Which decision button was pressed: the session keeps one decision per approval, not per button.
+  const [chosen, setChosen] = useState<"approve" | "reject" | null>(null);
+  const deciding = (kind: "approve" | "reject") => r.mutation.decision?.phase === "pending" && chosen === kind;
+  const delivering = r.mutation.delivery?.phase === "pending";
   const approver = client.provenance === "fixture" || r.connection.approver;
   const fixture = client.provenance === "fixture";
   const accepted = approval?.state.state === "approved";
@@ -142,9 +155,20 @@ export function ReviewScreen({
         <Button variant="quiet" onClick={onBack}>
           ← Review
         </Button>
-        <Button variant="quiet" onClick={() => void r.refresh()} disabled={r.loading}>
+        <Button
+          variant="quiet"
+          pending={refreshing.pending}
+          disabled={r.loading && !refreshing.pending}
+          onClick={() =>
+            void refreshing.run("Refreshing…", async () => {
+              if (!(await r.refresh())) throw new Error("The pending decisions could not be read, so nothing was refreshed. Try Refresh again.");
+              return { kind: "saved", text: "Candidate refreshed from the daemon." };
+            })
+          }
+        >
           Refresh
         </Button>
+        <ActionStatus action={refreshing} />
       </div>
 
       {!approval && <h1>Review changes</h1>}
@@ -173,10 +197,25 @@ export function ReviewScreen({
             </div>
             <div className="rv-actions">
               {hold?.(r)}
-              <Button disabled={r.rejectBlockers.length > 0 || r.pendingRequest} onClick={() => void r.decide("reject")}>
+              <Button
+                disabled={r.rejectBlockers.length > 0 || (r.pendingRequest && !deciding("reject"))}
+                pending={deciding("reject")}
+                onClick={() => {
+                  setChosen("reject");
+                  void r.decide("reject");
+                }}
+              >
                 Reject
               </Button>
-              <Button variant="primary" disabled={r.acceptBlockers.length > 0 || r.pendingRequest} onClick={() => void r.decide("approve")}>
+              <Button
+                variant="primary"
+                disabled={r.acceptBlockers.length > 0 || (r.pendingRequest && !deciding("approve"))}
+                pending={deciding("approve")}
+                onClick={() => {
+                  setChosen("approve");
+                  void r.decide("approve");
+                }}
+              >
                 Accept
               </Button>
             </div>
@@ -223,7 +262,8 @@ export function ReviewScreen({
             </p>
             <Button
               variant={accepted ? "primary" : "secondary"}
-              disabled={!r.canDeliver || r.pendingRequest}
+              disabled={!r.canDeliver || (r.pendingRequest && !delivering)}
+              pending={delivering}
               onClick={() => void r.requestDelivery()}
             >
               Request delivery
