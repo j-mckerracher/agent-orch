@@ -5,6 +5,52 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.31](https://github.com/mc-innersource/motif-mcao/compare/v0.1.30...v0.1.31) (2026-11-20)
+
+
+### Features
+
+* **daemon:** DPES-1044 - Add idle-only daemon shutdown for in-app updates ([25dc253](https://github.com/mc-innersource/motif-mcao/commit/25dc253997f9ece9329f8bbdba0dec5b43bd6e6f))
+* **desktop:** DPES-1044 - Add in-app updates from GitHub Releases ([7d18d80](https://github.com/mc-innersource/motif-mcao/commit/7d18d8045db1bb6426cddf3c98e2459d2fea5d36))
+* **desktop:** DPES-1044 - Add the desktop update prompt ([4f28fea](https://github.com/mc-innersource/motif-mcao/commit/4f28fea0a002a3bd6be782b5fd6c9bfaba9b9f08))
+* **desktop:** DPES-1044 - Install signed updates from GitHub Releases through gh ([67e0863](https://github.com/mc-innersource/motif-mcao/commit/67e0863302e52352d70c6a7bf78980c68325eeb9))
+* **desktop:** DPES-1088 - Use the chat interface in the task window conversation ([fbf6a9f](https://github.com/mc-innersource/motif-mcao/commit/fbf6a9fe3d0e1d0c421038b765940a791591cf7b))
+* **desktop:** DPES-1088 - Use the chat interface in the task window conversation ([5c9e7db](https://github.com/mc-innersource/motif-mcao/commit/5c9e7db223f6fcfd93ca158f3535c610c2197a8d))
+
+
+### Bug Fixes
+
+* **daemon:** DPES-1044 - Keep the landing poll from vetoing an update and recover a poisoned gate ([5b72cab](https://github.com/mc-innersource/motif-mcao/commit/5b72cab433a90f023faddc27787c0345fdd61e5b))
+* **desktop:** DPES-1044 - Retry a briefly busy daemon, release the lock before the bridge reopens and bound the release list ([c8cee8c](https://github.com/mc-innersource/motif-mcao/commit/c8cee8cb10257fb281e429fdd56022dc28bf7b49))
+* **desktop:** DPES-1044 - Show Waiting tasks in Agents & Sessions tabs ([78d1d48](https://github.com/mc-innersource/motif-mcao/commit/78d1d4819a188ba402292ccd74bba5704ce2d185))
+* **desktop:** DPES-1044 - Show Waiting tasks in Agents & Sessions tabs ([4fc9124](https://github.com/mc-innersource/motif-mcao/commit/4fc91246d6c4b3cfabf9d59ab2430bdf469de12f))
+
+
+### Refactoring
+
+* **desktop:** DPES-1088 - Extract the workspace chat log and composer ([25f17a7](https://github.com/mc-innersource/motif-mcao/commit/25f17a72489051a45014feb2395d16074bac1b00))
+
+
+### Documentation
+
+* **desktop:** DPES-1044 - Add before and after screenshots ([0a6d39e](https://github.com/mc-innersource/motif-mcao/commit/0a6d39e6c86263f6f95c9cc2664c4341e0fbe505))
+* **desktop:** DPES-1088 - Add task window conversation before and after screenshots ([eb51326](https://github.com/mc-innersource/motif-mcao/commit/eb51326926a9ad9f68d22597e49dc58f64fab43e))
+
+
+### Tests
+
+* **desktop:** DPES-1044 - Add failing tests for Waiting task missing from Agents tabs ([d959970](https://github.com/mc-innersource/motif-mcao/commit/d959970492ea07dc0f1577c561b1b57f6ca80962))
+
+
+### CI
+
+* **desktop:** DPES-1088 - Update the desktop vitest test count pin ([102f605](https://github.com/mc-innersource/motif-mcao/commit/102f605653ee2b6852d7791195bf7488f7396446))
+* **release:** DPES-1044 - Expect the moved lock test's ignore in private-fs, not the store ([e3064b1](https://github.com/mc-innersource/motif-mcao/commit/e3064b1589f0cdf3dc9294c2749728a9d976e67a))
+* **release:** DPES-1044 - Pin the desktop vitest counts for the update prompt ([8902084](https://github.com/mc-innersource/motif-mcao/commit/89020844c48199f0af734bb47d1f8b813c51c96c))
+* **release:** DPES-1044 - Publish signed updater artifacts behind MCAO_UPDATES_ENABLED ([7b9185d](https://github.com/mc-innersource/motif-mcao/commit/7b9185d61c417304c2c70b1392b94448adde79fb))
+* **release:** DPES-1044 - Re-pin the Rust test counts from native gate evidence ([85b79e2](https://github.com/mc-innersource/motif-mcao/commit/85b79e270457549d4e770c4a0364151702132fa9))
+* **release:** DPES-1044 - Repoint the lock gate, drop skip-prone minisign tests and update the security notes ([f541207](https://github.com/mc-innersource/motif-mcao/commit/f5412073261d6ad404c91ec80f06aa5edf157046))
+
 ## [0.1.30](https://github.com/mc-innersource/motif-mcao/compare/v0.1.29...v0.1.30) (2026-11-20)
 
 
