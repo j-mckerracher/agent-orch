@@ -49,7 +49,8 @@ try {
   copyFileSync(binary, staged);
   chmodSync(staged, 0o755);
 } finally {
-  rmSync(extractDir, { recursive: true, force: true });
+  // Windows can still hold treehouse.exe after `--version` (EBUSY); Node retries the removal.
+  rmSync(extractDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
 }
 
 console.log(`staged ${staged}`);
