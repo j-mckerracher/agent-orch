@@ -7,6 +7,7 @@ import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
 import { FakeDaemon, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { installFakeWorkstreams } from "../../../test/fakeWorkstreams";
 import { connected } from "../../../test/render";
+import { openMenu, openTab, openWorkstream } from "../../../test/workstreamsUi";
 import { createServices } from "../../createServices";
 import type { Route } from "../../router";
 import { workstreamsGlobalViews, workstreamsShellSlots } from "./register";
@@ -50,7 +51,8 @@ async function mountLive() {
   const user = userEvent.setup();
   render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
   await connected();
-  await screen.findAllByTestId("task-row");
+  await openWorkstream(user, "Alpha stream");
+  await screen.findAllByTestId("ws-overview-task");
   return { user };
 }
 
@@ -62,40 +64,40 @@ async function mountFixture() {
   });
   const user = userEvent.setup();
   render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
-  await screen.findAllByTestId("task-row");
+  await openWorkstream(user, "Auth hardening");
   return { user };
 }
 
 describe("workstream detail tabs (OX-W3)", () => {
-  it("exposes Tasks, Dependencies and Activity as one tablist with Tasks selected", async () => {
+  it("exposes Overview, Tasks, Objectives, Dependencies and Activity as one tablist with Overview selected", async () => {
     await mountLive();
     const tablist = screen.getByRole("tablist", { name: /Views of Alpha stream/ });
     const tabs = within(tablist).getAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["Tasks", "Dependencies", "Activity"]);
-    expect(screen.getByRole("tab", { name: "Tasks" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByRole("tab", { name: "Dependencies" })).toHaveAttribute("aria-selected", "false");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["Overview", "Tasks 2", "Objectives 0", "Dependencies", "Activity"]);
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Tasks 2" })).toHaveAttribute("aria-selected", "false");
   });
 
   it("moves between tabs with the arrow, Home and End keys and shows the selected panel only", async () => {
     const { user } = await mountLive();
-    screen.getByRole("tab", { name: "Tasks" }).focus();
+    screen.getByRole("tab", { name: "Overview" }).focus();
     await user.keyboard("{ArrowRight}");
-    expect(screen.getByRole("tab", { name: "Dependencies" })).toHaveFocus();
-    expect(screen.getByRole("tab", { name: "Dependencies" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "Tasks 2" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Tasks 2" })).toHaveAttribute("aria-selected", "true");
     const panelFor = (tab: string) => document.getElementById(screen.getByRole("tab", { name: tab }).getAttribute("aria-controls") ?? "");
-    expect(panelFor("Dependencies")).toBeVisible();
-    expect(panelFor("Tasks")).not.toBeVisible();
+    expect(panelFor("Tasks 2")).toBeVisible();
+    expect(panelFor("Overview")).not.toBeVisible();
     await user.keyboard("{End}");
     expect(screen.getByRole("tab", { name: "Activity" })).toHaveFocus();
     await user.keyboard("{Home}");
-    expect(screen.getByRole("tab", { name: "Tasks" })).toHaveFocus();
+    expect(screen.getByRole("tab", { name: "Overview" })).toHaveFocus();
     await user.keyboard("{ArrowLeft}");
     expect(screen.getByRole("tab", { name: "Activity" })).toHaveFocus();
   });
 
   it("lists each task's state and assignment in the Activity tab, derived from recorded data", async () => {
     const { user } = await mountLive();
-    await user.click(screen.getByRole("tab", { name: "Activity" }));
+    await openTab(user, "Activity");
     const rows = await screen.findAllByTestId("ws-activity-row");
     expect(rows).toHaveLength(2);
     expect(rows[1]).toHaveTextContent("Wire the CLI");
@@ -104,8 +106,9 @@ describe("workstream detail tabs (OX-W3)", () => {
     expect(screen.getByText(/event stream is on the task detail/)).toBeVisible();
   });
 
-  it("shows the live plan revision as not available, never a number", async () => {
+  it("shows the live plan revision as not available, never a number, inside Technical details", async () => {
     await mountLive();
+    expect(screen.getByTestId("ws-technical")).toContainElement(screen.getByTestId("ws-plan-revision"));
     expect(screen.getByTestId("ws-plan-revision")).toHaveTextContent("Plan revision not available");
   });
 
@@ -114,13 +117,9 @@ describe("workstream detail tabs (OX-W3)", () => {
     expect(screen.getByTestId("ws-plan-revision")).toHaveTextContent("Plan revision: PLACEHOLDER");
   });
 
-  it("renders the wireframe purpose note under the workstream view", async () => {
-    await mountLive();
-    expect(screen.getByText(/^Purpose and rationale: organize outcomes across repositories/)).toBeVisible();
-  });
-
   it("shows the read-only dependency detail with predecessors, and disables every edit action with a reason", async () => {
-    await mountLive();
+    const { user } = await mountLive();
+    await openTab(user, "Dependencies");
     const detail = screen.getByTestId("ws-dependency-detail");
     expect(within(detail).getByText("Dependency and resource detail")).toBeInTheDocument();
     expect(detail).toHaveTextContent("Wire the CLI waits on Ship the parser (Succeeded)");
@@ -133,7 +132,8 @@ describe("workstream detail tabs (OX-W3)", () => {
   });
 
   it("merges objective and project into one task table column", async () => {
-    await mountLive();
+    const { user } = await mountLive();
+    await openTab(user, "Tasks");
     const headers = screen.getAllByRole("columnheader").map((header) => header.textContent);
     expect(headers).toContain("Objective / project");
     expect(headers).not.toContain("Project");
@@ -141,15 +141,19 @@ describe("workstream detail tabs (OX-W3)", () => {
   });
 });
 
-describe("workstream list card (OX-W2)", () => {
-  it("titles the list as initiatives and offers Prioritize and Archive for the selected one", async () => {
-    await mountLive();
-    const list = screen.getByRole("region", { name: "Workstream list" });
-    expect(within(list).getByRole("heading", { name: /1 initiative$/ })).toBeInTheDocument();
-    // The only initiative is already first, so there is nothing to move.
-    const prioritize = within(list).getByRole("button", { name: "Prioritize" });
-    expect(prioritize).toBeDisabled();
-    expect(document.getElementById(prioritize.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/already first/);
-    expect(within(list).getByRole("button", { name: "Archive" })).toBeEnabled();
+describe("workstream Actions menu (OX-W2)", () => {
+  it("offers Suspend, Prioritize and Archive for the open workstream, with Prioritize disabled for the only one", async () => {
+    const { user } = await mountLive();
+    const menu = await openMenu(user, "Workstream actions");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual([
+      "Suspend workstream",
+      "Prioritize",
+      "Archive workstream",
+    ]);
+    // The only workstream is already first, so there is nothing to move.
+    const prioritize = within(menu).getByRole("menuitem", { name: "Prioritize" });
+    expect(prioritize).toHaveAttribute("aria-disabled", "true");
+    expect(prioritize).toHaveAccessibleDescription('"Alpha stream" is already first.');
+    expect(within(menu).getByRole("menuitem", { name: "Archive workstream" })).not.toHaveAttribute("aria-disabled");
   });
 });

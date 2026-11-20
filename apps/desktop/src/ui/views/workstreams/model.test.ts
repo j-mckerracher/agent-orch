@@ -3,7 +3,7 @@ import { mkApproval, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { layoutGraph, MAX_GRAPH_NODES, textDependencies } from "./graph";
 import { countStates, measured } from "../../../sources/surfaces/result";
 import type { Workstream, WorkstreamTask } from "../../../sources/surfaces/types";
-import { activeCount, deriveLiveGroups, requiredEvidence, taskTitleOf, type WsTask } from "./model";
+import { activeCount, deriveLiveGroups, progressOf, requiredEvidence, taskTitleOf, workstreamStatus, type WsTask } from "./model";
 
 const A = "/work/alpha";
 const B = "/work/beta";
@@ -218,5 +218,39 @@ describe("activeCount", () => {
   it("counts every state but archived", () => {
     expect(activeCount([{ state: "active" }, { state: "suspended" }, { state: "archived" }])).toBe(2);
     expect(activeCount([])).toBe(0);
+  });
+});
+
+describe("progressOf", () => {
+  it("counts succeeded tasks out of all tasks", () => {
+    const tasks = [{ ...ws("a"), state: "Succeeded" as const }, ws("b"), { ...ws("c"), state: "Failed" as const }];
+    expect(progressOf({ tasks, unreadReason: null })).toEqual({ done: 1, total: 3 });
+    expect(progressOf({ tasks: [], unreadReason: null })).toEqual({ done: 0, total: 0 });
+  });
+
+  it("is null, never zero, when the tasks could not be read", () => {
+    expect(progressOf({ tasks: [], unreadReason: "tasks refresh failed" })).toBeNull();
+  });
+});
+
+describe("workstreamStatus", () => {
+  const group = (state: "active" | "suspended" | "archived", tasks: WsTask[] = [], unreadReason: string | null = null) => ({ state, tasks, unreadReason });
+
+  it("reports On track for an active workstream with no pending decision", () => {
+    expect(workstreamStatus(group("active", [ws("a")]))).toEqual({ label: "On track", tone: "ok" });
+  });
+
+  it("reports Needs attention when any task has a pending decision", () => {
+    expect(workstreamStatus(group("active", [ws("a"), { ...ws("b"), pendingDecision: true }]))).toEqual({ label: "Needs attention", tone: "warn" });
+  });
+
+  it("lets Archived and Suspended win over a pending decision and over unreadable tasks", () => {
+    const pending = [{ ...ws("a"), pendingDecision: true }];
+    expect(workstreamStatus(group("archived", pending, "x"))).toEqual({ label: "Archived", tone: "neutral" });
+    expect(workstreamStatus(group("suspended", pending, "x"))).toEqual({ label: "Suspended", tone: "warn" });
+  });
+
+  it("reports Tasks unknown for an active workstream whose tasks could not be read", () => {
+    expect(workstreamStatus(group("active", [], "tasks refresh failed"))).toEqual({ label: "Tasks unknown", tone: "neutral" });
   });
 });

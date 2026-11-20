@@ -11,6 +11,7 @@ import type { Provenance } from "../../../sources/types";
 import { FakeDaemon, mkApproval, mkSession, mkTask } from "../../../test/fakeDaemon";
 import { installFakeWorkstreams, type FakeWorkstreams } from "../../../test/fakeWorkstreams";
 import { connected } from "../../../test/render";
+import { backToList, chooseAction, openMenu, openTab, openWorkstream, type User } from "../../../test/workstreamsUi";
 import { createServices } from "../../createServices";
 import type { Route } from "../../router";
 import { workstreamsGlobalViews, workstreamsShellSlots } from "./register";
@@ -90,6 +91,13 @@ async function mount(
   return { services, user };
 }
 
+/** Mounts the list screen, then opens one workstream (Alpha stream unless named). */
+async function mountOpen(fake: FakeDaemon, title = "Alpha stream", options: Parameters<typeof mount>[1] = {}) {
+  const mounted = await mount(fake, options);
+  await openWorkstream(mounted.user, title);
+  return mounted;
+}
+
 const streams = new WeakMap<FakeDaemon, FakeWorkstreams>();
 
 /** Two projects; "Alpha stream" has an objective (one verified, one pending gate), "Beta stream" has one task. */
@@ -139,6 +147,7 @@ function daemon(extra: (fake: FakeDaemon, state: FakeWorkstreams) => void = () =
 const tree = () => screen.getByRole("tree", { name: "Workstreams" });
 const level = (n: number) => Array.from(tree().querySelectorAll<HTMLElement>(`[role="treeitem"][aria-level="${n}"]`));
 const groupsReady = () => waitFor(() => expect(level(1).length).toBeGreaterThan(0));
+const titleOf = (row: HTMLElement) => within(row).getByText(/ stream$/).textContent;
 const original = window.matchMedia;
 
 afterEach(() => {
@@ -148,21 +157,25 @@ afterEach(() => {
 
 describe("live data", () => {
   it("renders the daemon's workstreams, not projects, with no placeholder content", async () => {
-    await mount(daemon());
+    const { user } = await mount(daemon());
     await groupsReady();
     expect(level(1).map((group) => group.getAttribute("aria-label"))).toEqual([
       "Workstream 1 of 2: Alpha stream, 2 tasks",
       "Workstream 2 of 2: Beta stream, 1 task",
     ]);
+    expect((await screen.findAllByTestId("ws-row")).map(titleOf)).toEqual(["Alpha stream", "Beta stream"]);
     for (const region of [screen.getByTestId("workstream-tree"), screen.getByTestId("workstreams-view")]) {
       expect(region.textContent).not.toMatch(/PLACEHOLDER|Auth hardening|Docs refresh/);
     }
+    await openWorkstream(user, "Alpha stream");
     expect(screen.getByTestId("ws-source")).toHaveTextContent("daemon records");
   });
   it("shows D9 count observation separately from AppData task state", async () => {
     const fake = daemon();
     fake.tasks = fake.tasks.map((task) => (task.contract.id === "a2" ? { ...task, state: "Failed" } : task));
-    const { services } = await mount(fake, { surfaces: d9CountSurfaces() });
+    const { services, user } = await mount(fake, { surfaces: d9CountSurfaces() });
+    await openWorkstream(user, "Alpha stream");
+    await openTab(user, "Tasks");
     await screen.findByTestId("task-row");
     await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
 
@@ -175,7 +188,8 @@ describe("live data", () => {
 
   it("exposes a failed AppData refresh when task rows use retained data", async () => {
     const fake = daemon();
-    const { services } = await mount(fake);
+    const { services, user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     await screen.findAllByTestId("task-row");
     await waitFor(() => expect(services.data.getSnapshot().tasks.status).toBe("ready"));
     const retained = services.data.getSnapshot().tasks.data;
@@ -191,6 +205,8 @@ describe("live data", () => {
     expect(taskStatus).toHaveTextContent(/task rows use retained data/i);
     expect(taskStatus).toHaveTextContent("The daemon reported an internal error.");
     expect(screen.getByTestId("ws-count-observation")).toBeInTheDocument();
+    // The same error also surfaces as a top-level alert, outside the closed Technical details.
+    expect(within(screen.getByTestId("workstreams-view")).getAllByRole("alert")[0]).toHaveTextContent(/refresh failed/i);
   });
 
   it("keeps the header count equal to the tree groups and the view list", async () => {
@@ -199,12 +215,13 @@ describe("live data", () => {
     const count = screen.getByTestId("workstreams-count");
     expect(count).toHaveTextContent("2");
     expect(level(1)).toHaveLength(Number(count.textContent));
-    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("2");
-    expect(within(screen.getByRole("list", { name: "Workstreams" })).getAllByRole("listitem")).toHaveLength(2);
+    expect(within(screen.getByTestId("workstreams-view")).getByText("2 active")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Active 2" })).toBeInTheDocument();
+    expect(await screen.findAllByTestId("ws-row")).toHaveLength(2);
   });
 
-  it("lists archived workstreams in their own box, not under initiatives or in the sidebar", async () => {
-    await mount(
+  it("lists archived workstreams in a collapsed Archived group, not among the active rows or in the sidebar", async () => {
+    const { user } = await mount(
       daemon((_, state) => {
         state.workstreams[1]!.state = "archived";
       }),
@@ -212,24 +229,39 @@ describe("live data", () => {
     await groupsReady();
     expect(screen.getByTestId("workstreams-count")).toHaveTextContent("1");
     expect(level(1)).toHaveLength(1);
-    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("1");
-    expect(within(screen.getByRole("list", { name: "Workstreams" })).getAllByRole("listitem")).toHaveLength(1);
-    expect(screen.getByTestId("ws-archived-count")).toHaveTextContent("1");
-    expect(within(screen.getByRole("list", { name: "Archived workstreams" })).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(screen.getByTestId("workstreams-view")).getByText("1 active")).toBeInTheDocument();
+
+    const archived = await screen.findByTestId("ws-archived");
+    expect(archived).not.toHaveAttribute("open");
+    const activeRows = within(screen.getByRole("tabpanel"))
+      .getAllByTestId("ws-row")
+      .filter((row) => !archived.contains(row));
+    expect(activeRows.map(titleOf)).toEqual(["Alpha stream"]);
+    expect(within(archived).getAllByTestId("ws-row").map(titleOf)).toEqual(["Beta stream"]);
+
+    await user.click(within(archived).getByText("Archived", { selector: ".ui-disclosure-title" }));
+    expect(archived).toHaveAttribute("open");
+    await openTab(user, "Archived");
+    expect(within(screen.getByRole("tabpanel")).getAllByTestId("ws-row").map(titleOf)).toEqual(["Beta stream"]);
   });
 
-  it("moves a workstream to the archived box when it is archived", async () => {
+  it("moves a workstream to the Archived group when it is archived", async () => {
     const { user } = await mount(daemon());
     await groupsReady();
-    expect(screen.queryByRole("list", { name: "Archived workstreams" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "Archive" }));
-    await user.click(screen.getByRole("button", { name: "Confirm archive" }));
-    expect(await screen.findByTestId("ws-archived-count")).toHaveTextContent("1");
-    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("1");
+    expect(screen.queryByTestId("ws-archived")).toBeNull();
+    await openWorkstream(user, "Alpha stream");
+    await chooseAction(user, "Workstream actions", "Archive workstream");
+    await user.click(screen.getByRole("button", { name: /Confirm archive/ }));
+    await waitFor(() => expect(screen.getByTestId("ws-status")).toHaveTextContent("Archived"));
+    await backToList(user);
+    expect(screen.getByRole("tab", { name: "Active 1" })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "Archived 1" })).toBeInTheDocument();
+    expect(within(screen.getByTestId("ws-archived")).getAllByTestId("ws-row").map(titleOf)).toEqual(["Alpha stream"]);
   });
 
   it("shows every objective with its gate states and evidence task", async () => {
-    await mount(daemon());
+    const { user } = await mountOpen(daemon());
+    await openTab(user, "Objectives");
     const objectives = await screen.findAllByTestId("ws-objective");
     expect(objectives.map((node) => node.getAttribute("aria-label"))).toEqual(["Objective Parser lands", "Objective Docs"]);
     expect(objectives[0]).toHaveTextContent("Revision 3 · 1 of 2 gates verified");
@@ -239,7 +271,7 @@ describe("live data", () => {
     expect(gates[0]).toHaveTextContent("verified");
     expect(gates[0]).toHaveTextContent("evidence: a1");
     expect(gates[1]).toHaveTextContent("pending");
-    expect(screen.getByTestId("ws-lifecycle")).toHaveTextContent("active");
+    expect(screen.getByTestId("ws-status")).toHaveTextContent("On track");
     expect(screen.getByTestId("ws-summary")).toHaveTextContent("Parser and CLI");
   });
 
@@ -266,26 +298,28 @@ describe("live data", () => {
       await user.click(link);
       expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId });
       expect(link).toHaveAttribute("href", `#/workstreams?workstream=${workstreamId}`);
-      expect(await screen.findByRole("heading", { level: 2, name: title })).toBeVisible();
+      expect(await screen.findByRole("heading", { level: 1, name: title })).toBeVisible();
     }
-
     await act(async () => services.router.navigate(workspace));
     await user.click(within(tree()).getByTestId("tree-worker"));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
-    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
-    expect(screen.getByRole("heading", { level: 2, name: "Beta stream" })).toBeVisible();
+    await backToList(user);
+    await openWorkstream(user, "Beta stream");
+    expect(screen.getByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
     await user.click(within(tree()).getByRole("treeitem", { name: /Wire the CLI/ }));
-    expect(screen.getByRole("heading", { level: 2, name: "Alpha stream" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Alpha stream" })).toBeVisible();
     expect(within(tree()).getByRole("treeitem", { name: /Workstream 1 of 2/ })).toHaveAttribute("aria-expanded", "true");
 
     await act(async () => services.router.navigate(VIEW));
+    await openTab(user, "Tasks");
     const row = (await screen.findAllByTestId("task-row"))[0]!;
     await user.click(within(row).getByRole("link", { name: "Ship the parser" }));
     expect(services.router.getSnapshot()).toEqual({ name: "task", projectId: A, taskId: "a1" });
   });
 
   it("derives the table: objective link, state, assignment and required evidence", async () => {
-    await mount(daemon());
+    const { user } = await mountOpen(daemon());
+    await openTab(user, "Tasks");
     const rows = await screen.findAllByTestId("task-row");
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent("Parser lands");
@@ -297,7 +331,9 @@ describe("live data", () => {
   });
 
   it("selects the workstream named in the route", async () => {
-    await mount(daemon(), { route: { name: "global", view: "workstreams", workstreamId: "ws-b" } });
+    const { user } = await mount(daemon(), { route: { name: "global", view: "workstreams", workstreamId: "ws-b" } });
+    expect(await screen.findByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
+    await openTab(user, "Tasks");
     await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(1));
     expect(screen.getByTestId("task-row")).toHaveTextContent("None until dispatched");
   });
@@ -306,44 +342,50 @@ describe("live data", () => {
     const fake = daemon();
     fake.queue.dispatch_blocked = true;
     const { user } = await mount(fake, { route: { name: "global", view: "workstreams", workstreamId: "ws-b" } });
+    await openTab(user, "Tasks");
     const row = await screen.findByTestId("task-row");
     expect(await within(row).findByTestId("queue-wait")).toHaveTextContent("Restart gate blocking launches");
-    await user.click(screen.getByRole("tab", { name: "Activity" }));
+    await openTab(user, "Activity");
     expect(within(screen.getByTestId("ws-activity-row")).getByTestId("queue-wait")).toHaveTextContent(
       "Restart gate blocking launches",
     );
   });
 
   it("selecting another workstream swaps the table and the objectives", async () => {
-    const { user } = await mount(daemon());
-    await screen.findAllByTestId("task-row");
-    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
+    const { user } = await mountOpen(daemon());
+    await openTab(user, "Tasks");
+    expect(await screen.findAllByTestId("task-row")).toHaveLength(2);
+    await backToList(user);
+    await openWorkstream(user, "Beta stream");
+    await openTab(user, "Tasks");
     const rows = screen.getAllByTestId("task-row");
     expect(rows).toHaveLength(1);
     expect(rows[0]).toHaveTextContent("None until dispatched");
+    await openTab(user, "Objectives");
     expect(screen.getByTestId("ws-objective")).toHaveTextContent("No objectives yet.");
   });
 
-  it("disables what the daemon cannot do and says why", async () => {
-    await mount(daemon());
-    await screen.findAllByTestId("task-row");
-    for (const name of ["Resolve contract decision"]) {
-      const button = screen.getByRole("button", { name });
-      expect(button).toBeDisabled();
-      const reason = button.getAttribute("aria-describedby");
-      expect(reason && document.getElementById(reason)?.textContent).toMatch(/Disabled|becomes a link/);
-    }
-    expect(screen.getByText(/Suspend is advisory/)).toBeVisible();
+  it("shows no decision banner without a pending approval, and keeps the advisory scheduler note in Technical details", async () => {
+    const { user } = await mountOpen(daemon());
+    await screen.findAllByTestId("ws-overview-task");
+    expect(screen.queryByTestId("ws-banner")).toBeNull();
+    expect(screen.queryByRole("link", { name: "Resolve decision" })).toBeNull();
+    const technical = screen.getByTestId("ws-technical");
+    expect(technical).not.toHaveAttribute("open");
+    expect(within(technical).getByText(/Suspend is advisory/)).toBeInTheDocument();
+    await user.click(within(technical).getByText("Technical details"));
+    expect(technical).toHaveAttribute("open");
+    expect(within(technical).getByText(/Suspend is advisory/)).toBeVisible();
   });
 
-  it("pluralises task counts in the list and the detail badge", async () => {
+  it("pluralises task counts in the list rows and the detail tabs", async () => {
     const { user } = await mount(daemon());
-    await screen.findAllByTestId("task-row");
-    expect(screen.getByRole("button", { name: /2\. Beta stream/ })).toHaveTextContent("1 task");
-    expect(screen.getByRole("button", { name: /2\. Beta stream/ })).not.toHaveTextContent("1 tasks");
-    expect(screen.getByRole("button", { name: /1\. Alpha stream/ })).toHaveTextContent("2 tasks");
-    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
-    expect(within(screen.getByTestId("ws-detail")).getByText("1 task")).toBeInTheDocument();
+    const rows = await screen.findAllByTestId("ws-row");
+    expect(rows[0]).toHaveTextContent("1 of 2 tasks done");
+    expect(rows[1]).toHaveTextContent("0 of 1 task done");
+    expect(rows[1]).not.toHaveTextContent("1 tasks");
+    await openWorkstream(user, "Beta stream");
+    expect(screen.getByRole("tab", { name: "Tasks 1" })).toBeInTheDocument();
   });
 
   it("notes tasks that belong to no workstream instead of inventing a group", async () => {
@@ -371,25 +413,39 @@ describe("live data", () => {
       snapshot: null,
       change_request: null,
     }));
-    await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     const rows = await screen.findAllByTestId("task-row");
     await waitFor(() => expect(rows[1]).toHaveTextContent("Approval request for candidate 12345678"));
     expect(rows[0]).toHaveTextContent("None: task succeeded");
     expect(fake.callsTo("review.evidence").map((call) => (call.params as { task_id: string }).task_id)).toEqual(["a2"]);
   });
 
-  it("turns Resolve contract decision into a review link when an approval is pending", async () => {
-    await mount(daemon((fake) => (fake.approvals = [mkApproval("ap1", "a2")])));
-    const link = await screen.findByRole("link", { name: "Resolve contract decision" });
+  it("turns the Resolve decision banner into a review link when an approval is pending", async () => {
+    await mountOpen(daemon((fake) => (fake.approvals = [mkApproval("ap1", "a2")])));
+    const link = await screen.findByRole("link", { name: "Resolve decision" });
     expect(link).toHaveAttribute("href", "#/project/%2Fwork%2Falpha/review/a2");
+    expect(screen.getByTestId("ws-banner")).toContainElement(link);
   });
 
-  it("filters the list and announces the shown count", async () => {
-    const { user } = await mount(daemon());
-    await screen.findAllByTestId("task-row");
-    await user.type(screen.getByRole("searchbox", { name: "Filter workstreams" }), "bet");
-    expect(screen.getByTestId("ws-showing")).toHaveTextContent("Showing 1 of 2");
-    expect(screen.getByTestId("ws-list-count")).toHaveTextContent("2");
+  it("filters the rows by title or project as the operator types, leaving the tab counts alone", async () => {
+    const { user } = await mount(
+      daemon((_, state) => {
+        state.workstreams[0]!.title = "Parser stream";
+      }),
+    );
+    await screen.findAllByTestId("ws-row");
+    const search = screen.getByRole("searchbox", { name: "Search workstreams" });
+    await user.type(search, "bet");
+    expect(within(screen.getByRole("tabpanel")).getAllByTestId("ws-row").map(titleOf)).toEqual(["Beta stream"]);
+    expect(screen.getByRole("tab", { name: "Active 2" })).toBeInTheDocument();
+    await user.clear(search);
+    await user.type(search, "ALPHA");
+    expect(within(screen.getByRole("tabpanel")).getAllByTestId("ws-row").map(titleOf)).toEqual(["Parser stream"]);
+    await user.clear(search);
+    await user.type(search, "zzz");
+    expect(within(screen.getByRole("tabpanel")).queryAllByTestId("ws-row")).toHaveLength(0);
+    expect(within(screen.getByRole("tabpanel")).getByRole("status")).toHaveTextContent("No workstream matches the search.");
   });
 
   it("follows live task changes without losing the operator's collapsed groups", async () => {
@@ -412,16 +468,124 @@ describe("live data", () => {
   });
 });
 
+describe("list screen", () => {
+  const rowTitles = (scope: HTMLElement) => within(scope).getAllByTestId("ws-row").map((row) => row.querySelector(".ws-row-name")?.textContent);
+
+  it("shows one row per workstream with its status chip, progress and age, and none of the detail controls", async () => {
+    await mount(daemon());
+    const rows = await screen.findAllByTestId("ws-row");
+    expect(rows[0]).toHaveTextContent("Alpha stream");
+    expect(rows[0]).toHaveTextContent("alpha");
+    expect(rows[0]).toHaveTextContent("On track");
+    expect(rows[0]).toHaveTextContent("1 of 2 tasks done");
+    expect(rows[1]).toHaveTextContent("0 of 1 task done");
+    expect(screen.getByRole("heading", { level: 1, name: "Workstreams" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "+ New workstream" })).toHaveAttribute("href", "#/workspace");
+    expect(screen.getByRole("tablist", { name: "Workstream status" })).toBeVisible();
+    expect(screen.getByTestId("ws-updated")).toHaveTextContent(/Updated \d+ s ago/);
+    expect(screen.queryByTestId("task-row")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("ws-objective")).not.toBeInTheDocument();
+    expect(screen.queryByRole("form", { name: "Add objective" })).not.toBeInTheDocument();
+    for (const name of [/Suspend workstream/, /Resume workstream/, "Prioritize", /Archive workstream/, /Add objective/]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+  });
+
+  it("marks a workstream whose task has a pending approval as Needs attention, matching the top bar count", async () => {
+    await mount(daemon((fake) => (fake.approvals = [mkApproval("ap1", "a2")])));
+    const rows = await screen.findAllByTestId("ws-row");
+    await waitFor(() => expect(rows[0]).toHaveTextContent("Needs attention"));
+    expect(rows[1]).toHaveTextContent("On track");
+    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+  });
+
+  it("lists the Global tasks workstream first, in the order the daemon returns", async () => {
+    await mount(
+      daemon((_, state) => {
+        state.workstreams.unshift({ id: "ws-global", title: "Global tasks", summary: "", state: "active", revision: 1 });
+      }),
+    );
+    await screen.findAllByTestId("ws-row");
+    expect(rowTitles(screen.getByRole("tabpanel"))).toEqual(["Global tasks", "Alpha stream", "Beta stream"]);
+  });
+
+  it("counts the three status tabs and holds archived workstreams under the closed Archived group", async () => {
+    const { user } = await mount(
+      daemon((_, state) => {
+        state.workstreams[0]!.state = "suspended";
+        state.workstreams.push({ id: "ws-c", title: "Gamma stream", summary: "", state: "archived", revision: 1 });
+      }),
+    );
+    await screen.findAllByTestId("ws-row");
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Active 1", "Suspended 1", "Archived 1"]);
+    const archived = screen.getByTestId("ws-archived");
+    expect(archived).not.toHaveAttribute("open");
+    await user.click(within(archived).getByText("Archived", { selector: ".ui-disclosure-title" }));
+    expect(archived).toHaveAttribute("open");
+    expect(rowTitles(archived)).toEqual(["Gamma stream"]);
+    await openTab(user, "Archived");
+    expect(rowTitles(screen.getByRole("tabpanel"))).toEqual(["Gamma stream"]);
+    await openTab(user, "Suspended");
+    expect(rowTitles(screen.getByRole("tabpanel"))).toEqual(["Alpha stream"]);
+    expect(within(screen.getByRole("tabpanel")).getByTestId("ws-row")).toHaveTextContent("Suspended");
+  });
+
+  it("holds Manage projects, Archive finished and Refresh in the More actions menu", async () => {
+    const { user } = await mount(daemon());
+    await screen.findAllByTestId("ws-row");
+    const menu = await openMenu(user, "More actions");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Manage projects", "Archive finished (1)", "Refresh"]);
+    await user.click(within(menu).getByRole("menuitem", { name: "Archive finished (1)" }));
+    expect(await screen.findByRole("dialog", { name: "Archive 1 finished task?" })).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Keep" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+describe("detail screen", () => {
+  it("shows the banner only while an approval is pending, above three stat tiles", async () => {
+    await mountOpen(daemon());
+    expect(screen.queryByTestId("ws-banner")).not.toBeInTheDocument();
+    const stats = screen.getByRole("tabpanel").querySelectorAll(".ws-stat");
+    expect(Array.from(stats).map((stat) => stat.textContent)).toEqual(["Tasks2", "Succeeded1", "Running1"]);
+  });
+
+  it("reveals the objective form from + Add objective and keeps Technical details collapsed", async () => {
+    const { user } = await mountOpen(daemon());
+    expect(screen.queryByRole("form", { name: "Add objective" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ Add objective" }));
+    expect(await screen.findByRole("form", { name: "Add objective" })).toBeVisible();
+    const technical = screen.getByTestId("ws-technical");
+    expect(technical).not.toHaveAttribute("open");
+    expect(within(technical).getByText(/Suspend is advisory: the daemon scheduler does not consult it/)).toBeInTheDocument();
+  });
+
+  it("offers Suspend, Prioritize and Archive only in the Actions menu, and archives only after the dialog", async () => {
+    const fake = daemon();
+    const { user } = await mountOpen(fake);
+    for (const name of ["Suspend workstream", "Prioritize", "Archive workstream"]) {
+      expect(screen.queryByRole("button", { name })).not.toBeInTheDocument();
+    }
+    const menu = await openMenu(user, "Workstream actions");
+    expect(within(menu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Suspend workstream", "Prioritize", "Archive workstream"]);
+    await user.click(within(menu).getByRole("menuitem", { name: "Archive workstream" }));
+    expect(await screen.findByRole("dialog", { name: 'Archive "Alpha stream"?' })).toBeVisible();
+    expect(fake.callsTo("workstreams.update")).toHaveLength(0);
+    await user.click(screen.getByRole("button", { name: /Confirm archive \(cannot be undone\)/ }));
+    await waitFor(() => expect(screen.getByTestId("ws-status")).toHaveTextContent("Archived"));
+    expect(fake.callsTo("workstreams.update")).toHaveLength(1);
+  });
+});
+
 describe("live mutations", () => {
   const writes = (fake: FakeDaemon) => fake.calls.filter((call) => /^workstreams\.(create|update|prioritize|add_|revise_|set_|link_|unlink_)/.test(call.method));
   const paramsOf = (fake: FakeDaemon, method: string) => fake.callsTo(method).map((call) => call.params as Record<string, unknown>);
 
-  const listActions = () => within(screen.getByRole("group", { name: "Selected initiative" }));
-
   it("offers no create control: workstreams are created through the orchestrator", async () => {
     const fake = daemon();
     await mount(fake);
-    await screen.findAllByTestId("task-row");
+    await screen.findAllByTestId("ws-row");
+    expect(screen.getByRole("link", { name: "+ New workstream" })).toHaveAttribute("href", "#/workspace");
     expect(screen.queryByRole("button", { name: /Create workstream/ })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("New workstream title")).not.toBeInTheDocument();
     expect(paramsOf(fake, "workstreams.create")).toHaveLength(0);
@@ -429,43 +593,53 @@ describe("live mutations", () => {
 
   it("prioritizes the selected workstream through workstreams.prioritize and lists it first", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
-    await screen.findAllByTestId("task-row");
-    expect(listActions().getByRole("button", { name: "Prioritize" })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
-    await user.click(listActions().getByRole("button", { name: "Prioritize" }));
+    const { user } = await mountOpen(fake);
+    const alphaMenu = await openMenu(user, "Workstream actions");
+    const alphaPrioritize = within(alphaMenu).getByRole("menuitem", { name: "Prioritize" });
+    expect(alphaPrioritize).toHaveAttribute("aria-disabled", "true");
+    expect(alphaPrioritize).toHaveAccessibleDescription('"Alpha stream" is already first.');
+    await user.keyboard("{Escape}");
+    await backToList(user);
+    await openWorkstream(user, "Beta stream");
+    await chooseAction(user, "Workstream actions", "Prioritize");
     expect(await screen.findByText(/Prioritize "Beta stream": recorded by the daemon/)).toBeInTheDocument();
     const [call] = paramsOf(fake, "workstreams.prioritize");
     expect(call).toMatchObject({ workstream_id: "ws-b" });
     expect(typeof call!.idempotency_key).toBe("string");
-    expect(await screen.findByRole("button", { name: /1\. Beta stream/ })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByRole("button", { name: /2\. Alpha stream/ })).toBeInTheDocument();
-    expect(listActions().getByRole("button", { name: "Prioritize" })).toBeDisabled();
+    const betaMenu = await openMenu(user, "Workstream actions");
+    await waitFor(() => expect(within(betaMenu).getByRole("menuitem", { name: "Prioritize" })).toHaveAttribute("aria-disabled", "true"));
+    await user.keyboard("{Escape}");
+    await backToList(user);
+    expect((await screen.findAllByTestId("ws-row")).map(titleOf)).toEqual(["Beta stream", "Alpha stream"]);
   });
 
-  it("archives the selected workstream from the list only after confirmation", async () => {
+  it("archives the selected workstream from its Actions menu only after confirmation", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
-    await screen.findAllByTestId("task-row");
-    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
-    await user.click(listActions().getByRole("button", { name: "Archive" }));
+    const { user } = await mountOpen(fake, "Beta stream");
+    await chooseAction(user, "Workstream actions", "Archive workstream");
     expect(paramsOf(fake, "workstreams.update")).toHaveLength(0);
-    expect(screen.getByText(/Archive "Beta stream"\? It becomes read-only/)).toBeInTheDocument();
-    await user.click(listActions().getByRole("button", { name: "Cancel" }));
-    expect(listActions().getByRole("button", { name: "Archive" })).toBeEnabled();
-    await user.click(listActions().getByRole("button", { name: "Archive" }));
-    await user.click(listActions().getByRole("button", { name: "Confirm archive" }));
-    expect(await screen.findByText(/Archive "Beta stream": recorded by the daemon/)).toBeInTheDocument();
+    const dialog = screen.getByRole("dialog", { name: 'Archive "Beta stream"?' });
+    expect(dialog).toHaveTextContent("It becomes read-only, and this cannot be undone.");
+    await user.click(within(dialog).getByRole("button", { name: "Keep workstream" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(paramsOf(fake, "workstreams.update")).toHaveLength(0);
+    await chooseAction(user, "Workstream actions", "Archive workstream");
+    await user.click(screen.getByRole("button", { name: "Confirm archive (cannot be undone)" }));
+    expect(await screen.findByText(/Archive workstream: recorded by the daemon/)).toBeInTheDocument();
     expect(paramsOf(fake, "workstreams.update")).toEqual([
       expect.objectContaining({ workstream_id: "ws-b", state: "archived" }),
     ]);
-    await waitFor(() => expect(listActions().getByRole("button", { name: "Archive" })).toBeDisabled());
-    expect(listActions().getByRole("button", { name: "Prioritize" })).toBeDisabled();
+    const menu = await openMenu(user, "Workstream actions");
+    for (const name of ["Suspend workstream", "Prioritize", "Archive workstream"]) {
+      expect(within(menu).getByRole("menuitem", { name })).toHaveAttribute("aria-disabled", "true");
+    }
   });
 
   it("adds an objective with its gates", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Objectives");
+    await user.click(screen.getByRole("button", { name: "+ Add objective" }));
     const form = await screen.findByRole("form", { name: "Add objective" });
     await user.type(within(form).getByLabelText("New objective title"), "Harden");
     await user.type(within(form).getByLabelText("Acceptance gates, one per line"), "First{Enter}Second");
@@ -480,7 +654,8 @@ describe("live mutations", () => {
 
   it("revises an objective at the revision it last read and sends only what changed", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Objectives");
     const card = (await screen.findAllByTestId("ws-objective"))[0]!;
     await user.click(within(card).getByText("Revise this objective"));
     const title = within(card).getByLabelText("Objective title");
@@ -500,7 +675,8 @@ describe("live mutations", () => {
 
   it("sets a gate with an evidence task linked to the workstream", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Objectives");
     await screen.findAllByTestId("ws-gate");
     await user.selectOptions(screen.getByLabelText("Evidence task for gate CLI wired"), "a2");
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
@@ -516,7 +692,8 @@ describe("live mutations", () => {
   });
 
   it("only offers the gate moves the daemon allows", async () => {
-    await mount(daemon());
+    const { user } = await mountOpen(daemon());
+    await openTab(user, "Objectives");
     const verified = await screen.findByLabelText("New state of gate Parser tests pass");
     expect(within(verified).getAllByRole("option").map((option) => option.textContent)).toEqual(["Mark pending"]);
     expect(screen.getByLabelText("Evidence task for gate Parser tests pass")).toBeDisabled();
@@ -524,24 +701,30 @@ describe("live mutations", () => {
 
   it("links an unlinked task under an objective and unlinks a linked one", async () => {
     const fake = daemon((f) => f.tasks.push(mkTask("c1", A, { contract: { objective: "Orphan" } })));
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     const form = await screen.findByRole("form", { name: "Link task" });
     await user.selectOptions(within(form).getByLabelText("Task to link"), "c1");
     await user.selectOptions(within(form).getByLabelText("Under objective"), "obj-a");
     await user.click(within(form).getByRole("button", { name: "Link task" }));
     await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(3));
     expect(paramsOf(fake, "workstreams.link_task")[0]).toMatchObject({ workstream_id: "ws-a", task_id: "c1", objective_id: "obj-a" });
+    await backToList(user);
     expect(screen.queryByTestId("ws-unlinked")).not.toBeInTheDocument();
 
+    await openWorkstream(user, "Alpha stream");
+    await openTab(user, "Tasks");
     await user.click(screen.getByRole("button", { name: "Unlink Orphan" }));
     await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(2));
     expect(paramsOf(fake, "workstreams.unlink_task")[0]).toMatchObject({ workstream_id: "ws-a", task_id: "c1" });
-    expect(await screen.findByTestId("ws-unlinked")).toBeInTheDocument();
+    await backToList(user);
+    expect(await screen.findByTestId("ws-unlinked")).toHaveTextContent("1 task not in any workstream.");
   });
 
   it("disables unlinking a task that a gate cites as evidence and says why", async () => {
     const fake = daemon();
-    await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     const button = await screen.findByRole("button", { name: "Unlink Ship the parser" });
     expect(button).toBeDisabled();
     expect(button).toHaveAccessibleDescription(/a gate cites this task as evidence/);
@@ -550,7 +733,8 @@ describe("live mutations", () => {
 
   it("archives a finished task from its table row, and the task leaves the table and the sidebar", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     await screen.findAllByTestId("task-row");
     await user.click(screen.getByRole("button", { name: "Archive Ship the parser" }));
     await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(1));
@@ -562,7 +746,8 @@ describe("live mutations", () => {
 
   it("disables archive on a running task row and says why", async () => {
     const fake = daemon();
-    await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     const button = await screen.findByRole("button", { name: "Archive Wire the CLI" });
     expect(button).toBeDisabled();
     expect(button).toHaveAccessibleDescription(/Only finished tasks can be archived/);
@@ -571,7 +756,8 @@ describe("live mutations", () => {
 
   it("shows the daemon's conflict as a notice when a finished task is refused", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     await screen.findAllByTestId("task-row");
     fake.failNext("tasks.archive", { code: -32011, message: "task is not finished" });
     await user.click(screen.getByRole("button", { name: "Archive Ship the parser" }));
@@ -584,23 +770,30 @@ describe("live mutations", () => {
       f.tasks.push(mkTask("a3", A, { state: "Failed" }), mkTask("c9", B, { state: "Cancelled" }));
     });
     const { user } = await mount(fake);
-    await screen.findAllByTestId("task-row");
-    await user.click(screen.getByRole("button", { name: "Archive finished (3)" }));
+    await screen.findAllByTestId("ws-row");
+    await chooseAction(user, "More actions", "Archive finished (3)");
+    expect(screen.getByRole("dialog", { name: "Archive 3 finished tasks?" })).toBeInTheDocument();
     expect(paramsOf(fake, "tasks.archive")).toHaveLength(0);
     await user.click(screen.getByRole("button", { name: "Confirm archive" }));
     expect(await screen.findByText(/Archive 3 finished tasks: recorded by the daemon/)).toBeInTheDocument();
     expect(paramsOf(fake, "tasks.archive")).toEqual([{ task_ids: ["a1", "a3", "c9"], idempotency_key: expect.any(String) }]);
+    const menu = await openMenu(user, "More actions");
+    await waitFor(() => expect(within(menu).getByRole("menuitem", { name: "Archive finished (0)" })).toHaveAttribute("aria-disabled", "true"));
+    await user.keyboard("{Escape}");
+    await openWorkstream(user, "Alpha stream");
+    await openTab(user, "Tasks");
     await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(1));
-    expect(await screen.findByRole("button", { name: "Archive finished (0)" })).toBeDisabled();
   });
 
   it("sends nothing when the bulk archive is kept", async () => {
     const fake = daemon();
     const { user } = await mount(fake);
-    await screen.findAllByTestId("task-row");
-    await user.click(screen.getByRole("button", { name: "Archive finished (1)" }));
+    await screen.findAllByTestId("ws-row");
+    await chooseAction(user, "More actions", "Archive finished (1)");
     await user.click(screen.getByRole("button", { name: "Keep" }));
-    expect(screen.getByRole("button", { name: "Archive finished (1)" })).toBeEnabled();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const menu = await openMenu(user, "More actions");
+    expect(within(menu).getByRole("menuitem", { name: "Archive finished (1)" })).not.toHaveAttribute("aria-disabled");
     expect(paramsOf(fake, "tasks.archive")).toHaveLength(0);
   });
 
@@ -608,20 +801,27 @@ describe("live mutations", () => {
     const fake = daemon((f) => {
       f.tasks = f.tasks.filter((task) => task.contract.id !== "a1");
     });
-    await mount(fake);
-    await screen.findAllByTestId("task-row");
-    expect(await screen.findByRole("button", { name: "Archive finished (0)" })).toBeDisabled();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("ws-row");
+    const menu = await openMenu(user, "More actions");
+    const item = within(menu).getByRole("menuitem", { name: "Archive finished (0)" });
+    expect(item).toHaveAttribute("aria-disabled", "true");
+    await waitFor(() => expect(item).toHaveAccessibleDescription("No finished task to archive."));
   });
 
   it("hides every archive control once the daemon answers method-unavailable", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     await screen.findAllByTestId("task-row");
     fake.failNext("tasks.archive", { code: -32601, message: "method not found" });
     await user.click(screen.getByRole("button", { name: "Archive Ship the parser" }));
     await waitFor(() => expect(screen.queryByRole("button", { name: "Archive Ship the parser" })).not.toBeInTheDocument());
-    expect(screen.queryByRole("button", { name: /Archive finished/ })).not.toBeInTheDocument();
     expect(screen.getAllByTestId("task-row")).toHaveLength(2);
+    await backToList(user);
+    const menu = await openMenu(user, "More actions");
+    expect(within(menu).getByRole("menuitem", { name: "Manage projects" })).toBeInTheDocument();
+    expect(within(menu).queryByRole("menuitem", { name: /Archive finished/ })).not.toBeInTheDocument();
   });
 
   describe("plan editing", () => {
@@ -637,14 +837,20 @@ describe("live mutations", () => {
           { task_id: "a4", workstream_id: "ws-a", objective_id: null },
         );
       });
-    const open = async (user: ReturnType<typeof userEvent.setup>, button: string, form: string) => {
+    const open = async (user: User, button: string, form: string) => {
       await user.click(await screen.findByRole("button", { name: button }));
       return screen.getByRole(button === "Change execution policy" ? "group" : "form", { name: form });
     };
     const rowOf = (label: string) => screen.getAllByTestId("task-row").find((row) => row.textContent?.includes(label));
+    /** Opens Alpha stream's Tasks tab, where the plan-editing controls live. */
+    const mountPlan = async (fake: FakeDaemon) => {
+      const mounted = await mountOpen(fake);
+      await openTab(mounted.user, "Tasks");
+      return mounted;
+    };
 
     it("disables the edits no task qualifies for and says why", async () => {
-      await mount(daemon());
+      await mountPlan(daemon());
       await screen.findAllByTestId("task-row");
       for (const name of ["Split task", "Reassign", "Change execution policy"]) {
         expect(screen.getByRole("button", { name })).toBeDisabled();
@@ -657,7 +863,7 @@ describe("live mutations", () => {
 
     it("adds a task under an objective", async () => {
       const fake = daemon();
-      const { user } = await mount(fake);
+      const { user } = await mountPlan(fake);
       const form = await open(user, "Add task", "Add task");
       expect(within(form).getByLabelText("Project")).toHaveValue(A);
       await user.type(within(form).getByLabelText("Task objective"), "Add a REPL");
@@ -676,7 +882,7 @@ describe("live mutations", () => {
 
     it("splits a task into one new task per line and cancels the original", async () => {
       const fake = planDaemon();
-      const { user } = await mount(fake);
+      const { user } = await mountPlan(fake);
       const form = await open(user, "Split task", "Split task");
       expect(within(within(form).getByLabelText("Task to split")).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["", "a3", "a4"]);
       await user.selectOptions(within(form).getByLabelText("Task to split"), "a3");
@@ -690,7 +896,7 @@ describe("live mutations", () => {
 
     it("combines the checked tasks, prefilling the objective from theirs", async () => {
       const fake = planDaemon();
-      const { user } = await mount(fake);
+      const { user } = await mountPlan(fake);
       const form = await open(user, "Combine tasks", "Combine tasks");
       const submit = within(form).getByRole("button", { name: "Combine into one task" });
       await user.click(within(form).getByRole("checkbox", { name: /Write docs/ }));
@@ -704,7 +910,7 @@ describe("live mutations", () => {
 
     it("removes only a task that may leave, after a confirmation that says what happens", async () => {
       const fake = planDaemon();
-      const { user } = await mount(fake);
+      const { user } = await mountPlan(fake);
       const form = await open(user, "Remove task", "Remove task");
       expect(within(within(form).getByLabelText("Task to remove")).getAllByRole("option").map((option) => option.getAttribute("value"))).toEqual(["", "a3", "a4"]);
       await user.selectOptions(within(form).getByLabelText("Task to remove"), "a3");
@@ -716,7 +922,7 @@ describe("live mutations", () => {
 
     it("reassigns a task to another agent, never to the one it has", async () => {
       const fake = planDaemon();
-      const { user } = await mount(fake);
+      const { user } = await mountPlan(fake);
       const form = await open(user, "Reassign", "Reassign task");
       await user.selectOptions(within(form).getByLabelText("Task to reassign"), "a4");
       expect(within(form).getByRole("option", { name: "Codex (current)" })).toBeDisabled();
@@ -730,7 +936,7 @@ describe("live mutations", () => {
 
     it("changes the execution policy from the task's contract and sends only what changed", async () => {
       const fake = planDaemon();
-      const { user } = await mount(fake);
+      const { user } = await mountPlan(fake);
       const group = await open(user, "Change execution policy", "Change execution policy");
       await user.selectOptions(within(group).getByLabelText("Task to change"), "a4");
       const form = within(group).getByRole("form", { name: "Execution policy of Fix lexer" });
@@ -752,35 +958,53 @@ describe("live mutations", () => {
 
   it("suspends and resumes with an advisory note, and updates at the revision it read", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
-    await user.click(await screen.findByRole("button", { name: "Suspend workstream" }));
-    await waitFor(() => expect(screen.getByTestId("ws-lifecycle")).toHaveTextContent("suspended"));
+    const { user } = await mountOpen(fake);
+    await chooseAction(user, "Workstream actions", "Suspend workstream");
+    await waitFor(() => expect(screen.getByTestId("ws-status")).toHaveTextContent("Suspended"));
     expect(paramsOf(fake, "workstreams.update")[0]).toMatchObject({ workstream_id: "ws-a", expected_revision: 2, state: "suspended" });
-    await user.click(await screen.findByRole("button", { name: "Resume workstream" }));
-    await waitFor(() => expect(screen.getByTestId("ws-lifecycle")).toHaveTextContent("active"));
+    expect(within(screen.getByTestId("ws-technical")).getByText(/Suspend is advisory/)).toBeInTheDocument();
+    await backToList(user);
+    expect(screen.getByText(/Suspend workstream: recorded by the daemon/)).toBeInTheDocument();
+    await openTab(user, "Suspended 1");
+    expect(within(screen.getByRole("tabpanel")).getAllByTestId("ws-row").map(titleOf)).toEqual(["Alpha stream"]);
+    expect(within(screen.getByRole("tabpanel")).getByTestId("ws-row")).toHaveTextContent("Suspended");
+    await openWorkstream(user, "Alpha stream");
+    await chooseAction(user, "Workstream actions", "Resume workstream");
+    await waitFor(() => expect(screen.getByTestId("ws-status")).toHaveTextContent("On track"));
     expect(paramsOf(fake, "workstreams.update")[1]).toMatchObject({ expected_revision: 3, state: "active" });
   });
 
   it("archives only after a confirmation, then locks every control with a reason", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
-    await user.click(await screen.findByRole("button", { name: "Archive workstream" }));
+    const { user } = await mountOpen(fake);
+    await chooseAction(user, "Workstream actions", "Archive workstream");
     expect(writes(fake)).toHaveLength(0);
     await user.click(screen.getByRole("button", { name: "Keep workstream" }));
     expect(writes(fake)).toHaveLength(0);
-    await user.click(screen.getByRole("button", { name: "Archive workstream" }));
+    await chooseAction(user, "Workstream actions", "Archive workstream");
     await user.click(screen.getByRole("button", { name: /Confirm archive/ }));
-    await waitFor(() => expect(screen.getByTestId("ws-lifecycle")).toHaveTextContent("archived"));
-    expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Add objective" })).toBeDisabled();
+    await waitFor(() => expect(screen.getByTestId("ws-status")).toHaveTextContent("Archived"));
+    const menu = await openMenu(user, "Workstream actions");
+    const suspend = within(menu).getByRole("menuitem", { name: "Suspend workstream" });
+    expect(suspend).toHaveAttribute("aria-disabled", "true");
+    expect(suspend).toHaveAccessibleDescription("Disabled: an archived workstream is read-only.");
+    await user.keyboard("{Escape}");
+
+    const overviewAdd = screen.getByRole("button", { name: "+ Add objective" });
+    expect(overviewAdd).toBeDisabled();
+    expect(overviewAdd).toHaveAccessibleDescription(/archived workstream is read-only/);
+    await openTab(user, "Objectives");
+    expect(screen.getByRole("button", { name: "+ Add objective" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Apply to CLI wired" })).toBeDisabled();
+    await openTab(user, "Tasks");
     expect(screen.getByRole("button", { name: "Add task" })).toHaveAccessibleDescription(/archived workstream is read-only/);
-    for (const note of screen.getAllByText(/archived workstream is read-only/)) expect(note).toBeVisible();
+    for (const note of within(screen.getByRole("tabpanel")).getAllByText(/archived workstream is read-only/)) expect(note).toBeVisible();
   });
 
   it("answers a stale-revision conflict by reloading, never by overwriting", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Objectives");
     await screen.findAllByTestId("ws-gate");
     const state = streams.get(fake)!;
     state.objectives[0]!.revision = 9;
@@ -793,45 +1017,54 @@ describe("live mutations", () => {
 
   it("locks every write while the data is stale because the connection is down", async () => {
     const fake = daemon();
-    await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Tasks");
     await screen.findAllByTestId("task-row");
     fake.openError = new DaemonError("disconnected", "down");
     fake.drop();
     await waitFor(() => expect(screen.getByTestId("ws-source")).toHaveTextContent("Stale"));
     expect(screen.getAllByTestId("task-row")).toHaveLength(2);
-    expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Archive" })).toBeDisabled();
+    const menu = await openMenu(user, "Workstream actions");
+    for (const name of ["Suspend workstream", "Prioritize", "Archive workstream"]) {
+      expect(within(menu).getByRole("menuitem", { name })).toHaveAttribute("aria-disabled", "true");
+    }
+    expect(
+      within(menu).getByText("Disabled: the connection was lost. Changes resume when the daemon is reachable again."),
+    ).toBeInTheDocument();
   });
 
   it("has a Refresh control that re-reads the daemon, so another client's edit shows without an own action", async () => {
     const fake = daemon();
     const { user } = await mount(fake);
-    await screen.findAllByTestId("task-row");
-    expect(screen.getByRole("heading", { level: 2, name: "Alpha stream" })).toBeInTheDocument();
+    await screen.findAllByTestId("ws-row");
     streams.get(fake)!.workstreams[0]!.title = "Alpha renamed elsewhere";
     const before = fake.callsTo("workstreams.list").length;
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
-    expect(await screen.findByRole("heading", { level: 2, name: "Alpha renamed elsewhere" })).toBeInTheDocument();
+    await chooseAction(user, "More actions", "Refresh");
+    expect(await within(screen.getByTestId("workstreams-view")).findByText("Alpha renamed elsewhere")).toBeInTheDocument();
     expect(fake.callsTo("workstreams.list").length).toBeGreaterThan(before);
     expect(within(tree()).getByText("Alpha renamed elsewhere")).toBeInTheDocument();
   });
 
   it("clears a failure banner when the operator refreshes, and its advice names a control that exists", async () => {
     const fake = daemon();
-    const { user } = await mount(fake);
+    const { user } = await mountOpen(fake);
+    await openTab(user, "Objectives");
     await screen.findAllByTestId("ws-gate");
     streams.get(fake)!.objectives[0]!.revision = 9;
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent(/Refresh to see the current state/);
-    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/Refresh to see the current state/);
+    // Refresh lives in the list screen's "More actions" menu; the notice follows the operator there.
+    await backToList(user);
+    expect(screen.getByRole("alert")).toHaveTextContent(/Refresh to see the current state/);
+    await chooseAction(user, "More actions", "Refresh");
     await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
     expect(screen.queryByText("The workstream data was reloaded from the daemon.")).not.toBeInTheDocument();
   });
 
   it("clears a failure banner once the connection recovers", async () => {
     const fake = daemon();
-    const { services, user } = await mount(fake);
+    const { services, user } = await mountOpen(fake);
+    await openTab(user, "Objectives");
     await screen.findAllByTestId("ws-gate");
     streams.get(fake)!.objectives[0]!.revision = 9;
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
@@ -853,20 +1086,28 @@ describe("live mutations", () => {
       f.stub("workstreams.list", () => [...state.workstreams, ghost]);
     });
     const { user } = await mount(fake);
-    await screen.findAllByTestId("task-row");
+    await screen.findAllByTestId("ws-row");
     expect(level(1).map((group) => group.getAttribute("aria-label"))).toEqual([
       "Workstream 1 of 3: Alpha stream, 2 tasks",
       "Workstream 2 of 3: Beta stream, 1 task",
       "Workstream 3 of 3: Ghost stream, tasks unknown",
     ]);
     expect(screen.getByTestId("ws-unlinked")).toHaveTextContent("Tasks not in any workstream: unknown.");
-    await user.click(screen.getByRole("button", { name: /Ghost stream/ }));
-    expect(await screen.findByTestId("ws-unread")).toHaveTextContent("Tasks unknown");
+    const ghostRow = (await screen.findAllByTestId("ws-row")).find((row) => row.textContent?.includes("Ghost stream"));
+    expect(ghostRow).toHaveTextContent("Tasks unknown");
+    expect(ghostRow).not.toHaveTextContent("0 of");
+    await openWorkstream(user, "Ghost stream");
+    expect(screen.getByTestId("ws-status")).toHaveTextContent("Tasks unknown");
     expect(screen.getByTestId("ws-unread-reason")).toHaveTextContent(/could not be read/);
+    const menu = await openMenu(user, "Workstream actions");
+    const suspend = within(menu).getByRole("menuitem", { name: "Suspend workstream" });
+    expect(suspend).toHaveAttribute("aria-disabled", "true");
+    expect(suspend).toHaveAccessibleDescription(/could not be read/);
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "+ Add objective" })).toBeDisabled();
+    await openTab(user, "Tasks");
     expect(screen.queryAllByTestId("task-row")).toHaveLength(0);
     expect(screen.queryByText("No tasks")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Suspend workstream" })).toBeDisabled();
-    expect(screen.queryByRole("button", { name: "Add objective" })).not.toBeInTheDocument();
     expect(screen.getByTestId("ws-unlinked-unknown")).toBeInTheDocument();
   });
 });
@@ -922,10 +1163,11 @@ describe("tree keyboard navigation", () => {
     expect(first).toHaveAttribute("aria-current", "page");
     expect(second).not.toHaveAttribute("aria-current");
 
-    await user.click(screen.getByRole("button", { name: /2\. Beta stream/ }));
-    expect(screen.getByRole("heading", { level: 2, name: "Beta stream" })).toBeVisible();
+    await backToList(user);
+    await openWorkstream(user, "Beta stream");
+    expect(screen.getByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
     await user.click(first);
-    expect(screen.getByRole("heading", { level: 2, name: "Alpha stream" })).toBeVisible();
+    expect(screen.getByRole("heading", { level: 1, name: "Alpha stream" })).toBeVisible();
   });
 
   it("Enter and Space on a task row open its parent workstream", async () => {
@@ -939,7 +1181,7 @@ describe("tree keyboard navigation", () => {
       await user.keyboard(key);
       expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
       expect(task).toHaveFocus();
-      expect(await screen.findByRole("heading", { level: 2, name: "Alpha stream" })).toBeVisible();
+      expect(await screen.findByRole("heading", { level: 1, name: "Alpha stream" })).toBeVisible();
     }
   });
 });
@@ -954,12 +1196,14 @@ describe("100+ tasks", () => {
     });
 
   it("renders every task in independently scrollable containers and keeps the counts honest", async () => {
-    await mount(big());
+    const { user } = await mountOpen(big());
+    await openTab(user, "Tasks");
     expect(await screen.findAllByTestId("task-row")).toHaveLength(150);
     expect(level(2)).toHaveLength(150);
     expect(level(1)[0]).toHaveAttribute("aria-label", "Workstream 1 of 2: Alpha stream, 150 tasks");
     expect(screen.getByRole("region", { name: "Tasks of Alpha stream" })).toHaveAttribute("tabindex", "0");
     expect(tree().closest(".shell-tree-body")).not.toBeNull();
+    await openTab(user, "Dependencies");
     expect(screen.getAllByTestId("graph-node").length).toBeLessThanOrEqual(16);
     expect(screen.getByText(/more connected tasks are not drawn/)).toBeInTheDocument();
   });
@@ -967,8 +1211,8 @@ describe("100+ tasks", () => {
 
 describe("dependency graph", () => {
   it("draws the SVG with a text equivalent on wide layouts", async () => {
-    const { user } = await mount(daemon());
-    await user.click(await screen.findByRole("tab", { name: "Dependencies" }));
+    const { user } = await mountOpen(daemon());
+    await openTab(user, "Dependencies");
     const svg = await screen.findByRole("img", { name: /Task dependency graph/ });
     expect(within(svg as unknown as HTMLElement).getAllByTestId("graph-node")).toHaveLength(2);
     expect(screen.getByText("Dependencies as text").closest("details")).not.toHaveAttribute("open");
@@ -979,8 +1223,8 @@ describe("dependency graph", () => {
       const max = /max-width:\s*(\d+)px/.exec(query);
       return { matches: max ? 500 <= Number(max[1]) : false, media: query, addEventListener: () => {}, removeEventListener: () => {} };
     }) as unknown as typeof window.matchMedia;
-    await mount(daemon());
-    await screen.findAllByTestId("task-row");
+    const { user } = await mountOpen(daemon());
+    await openTab(user, "Dependencies");
     expect(screen.queryByRole("img", { name: /Task dependency graph/ })).not.toBeInTheDocument();
     expect(screen.getByText("Dependencies as text").closest("details")).toHaveAttribute("open");
     expect(screen.getByText(/waits on:/)).toHaveTextContent("Ship the parser (Succeeded)");
@@ -1041,16 +1285,22 @@ describe("states without data", () => {
 
 describe("fixture mode", () => {
   it("labels every fixture section PLACEHOLDER, shows its objectives read-only and never links fixture tasks", async () => {
-    await mount(null);
-    await screen.findAllByTestId("task-row");
+    const { user } = await mount(null);
+    await screen.findAllByTestId("ws-row");
     const view = screen.getByTestId("workstreams-view");
-    expect(within(view).getAllByTestId("badge-D9").length).toBeGreaterThanOrEqual(4);
+    expect(within(view).getAllByTestId("badge-D9").length).toBeGreaterThanOrEqual(1);
     expect(within(screen.getByTestId("workstream-tree")).getAllByText(/PLACEHOLDER DATA/).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByTestId("workstreams-count")).toHaveTextContent("3");
+    await openWorkstream(user, "Auth hardening");
+    expect(within(view).getAllByTestId("badge-D9")).toHaveLength(1);
+    expect(screen.getByRole("button", { name: "+ Add objective" })).toBeDisabled();
+    await openTab(user, "Objectives");
     expect(screen.getAllByTestId("ws-objective").length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole("button", { name: "+ Add objective" })).toBeDisabled();
+    await openTab(user, "Tasks");
     expect(within(view).queryAllByRole("link", { name: /Rotate signing keys/ })).toHaveLength(0);
     expect(document.querySelector('a[href*="fixture"]')).toBeNull();
-    for (const name of ["Add objective", "Suspend new dispatch", "Add task", "Remove task"]) {
+    for (const name of ["Add task", "Remove task"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
     expect(screen.queryByRole("button", { name: /Apply to/ })).not.toBeInTheDocument();
@@ -1058,7 +1308,9 @@ describe("fixture mode", () => {
 
   it("shows no wait reasons beside fixture tasks and reads no queue diagnostics", async () => {
     const fake = daemon();
-    await mount(fake, { fixtureOverBridge: true });
+    const { user } = await mount(fake, { fixtureOverBridge: true });
+    await openWorkstream(user, "Auth hardening");
+    await openTab(user, "Tasks");
     const rows = await screen.findAllByTestId("task-row");
     expect(rows.some((row) => row.textContent?.includes("Queued"))).toBe(true);
     await act(() => new Promise((resolve) => setTimeout(resolve, 50)));
@@ -1066,15 +1318,19 @@ describe("fixture mode", () => {
     expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
   });
 
-  it("disables the list actions on placeholder data and sends nothing to the daemon, even when one is connected", async () => {
+  it("disables the actions on placeholder data and sends nothing to the daemon, even when one is connected", async () => {
     const fake = daemon();
-    await mount(fake, { fixtureOverBridge: true });
-    await screen.findAllByTestId("task-row");
-    const list = screen.getByRole("region", { name: "Workstream list" });
-    for (const name of ["Prioritize", "Archive"]) {
-      const button = within(list).getByRole("button", { name });
-      expect(button).toBeDisabled();
-      expect(document.getElementById(button.getAttribute("aria-describedby") ?? "")?.textContent).toMatch(/not wired to anything/);
+    const { user } = await mount(fake, { fixtureOverBridge: true });
+    await screen.findAllByTestId("ws-row");
+    const listMenu = await openMenu(user, "More actions");
+    expect(within(listMenu).getAllByRole("menuitem").map((item) => item.textContent)).toEqual(["Manage projects"]);
+    await user.keyboard("{Escape}");
+    await openWorkstream(user, "Auth hardening");
+    const menu = await openMenu(user, "Workstream actions");
+    for (const name of ["Suspend workstream", "Prioritize", "Archive workstream"]) {
+      const item = within(menu).getByRole("menuitem", { name });
+      expect(item).toHaveAttribute("aria-disabled", "true");
+      expect(item).toHaveAccessibleDescription(/not wired to anything/);
     }
     expect(screen.queryByRole("button", { name: /Create workstream/ })).not.toBeInTheDocument();
     expect(fake.calls.filter((call) => /^workstreams\.(create|update|prioritize|add_|revise_|set_|link_|unlink_)/.test(call.method))).toEqual([]);

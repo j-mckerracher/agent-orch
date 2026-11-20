@@ -8,6 +8,7 @@ import { DaemonSession } from "../src/daemon/session";
 import { M5_03_CAPABILITIES } from "../src/daemon/types";
 import { createServices } from "../src/ui/createServices";
 import { ServicesProvider } from "../src/ui/services";
+import { chooseAction, openTab } from "../src/test/workstreamsUi";
 import { WorkstreamsView } from "../src/ui/views/workstreams/WorkstreamsView";
 import { NodeConnector, noAgentsEnv, startDaemon } from "./harness";
 
@@ -52,25 +53,33 @@ describe("WorkstreamsView over the real daemon", () => {
 
       const other = await api.workstreamsCreate("Other stream", undefined, "ws-view-create-0");
       const created = await api.workstreamsCreate("Real stream", undefined, "ws-view-create-1");
-      await user.click(screen.getByRole("button", { name: "Refresh" }));
-      await user.click(await screen.findByRole("button", { name: /2\. Real stream/ }, { timeout: 15000 }));
+      await chooseAction(user, "More actions", "Refresh");
+      const rows = await screen.findAllByTestId("ws-row", undefined, { timeout: 15000 });
+      expect(rows.map((row) => row.querySelector(".ws-row-name")?.textContent)).toEqual(["Other stream", "Real stream"]);
+      await user.click(rows[1]!);
+      await screen.findByRole("heading", { level: 1, name: "Real stream" }, { timeout: 15000 });
       expect(screen.getByTestId("ws-detail").getAttribute("aria-label")).toBe("Workstream Real stream");
 
-      await user.click(within(screen.getByRole("group", { name: "Selected initiative" })).getByRole("button", { name: "Prioritize" }));
-      await screen.findByRole("button", { name: /1\. Real stream/ }, { timeout: 15000 });
-      expect((await api.workstreamsList()).map((item) => item.id)).toEqual([created.id, other.id]);
+      await chooseAction(user, "Workstream actions", "Prioritize");
+      await waitFor(async () => expect((await api.workstreamsList()).map((item) => item.id)).toEqual([created.id, other.id]), {
+        timeout: 15000,
+      });
 
-      const addForm = screen.getByRole("form", { name: "Add objective" });
+      await user.click(screen.getByRole("button", { name: "+ Add objective" }));
+      const addForm = await screen.findByRole("form", { name: "Add objective" });
       await user.type(within(addForm).getByLabelText("New objective title"), "Ship");
       await user.type(within(addForm).getByLabelText("Acceptance gates, one per line"), "It works");
       await user.click(within(addForm).getByRole("button", { name: "Add objective" }));
+      await openTab(user, "Objectives");
       await screen.findByRole("region", { name: "Objective Ship" }, { timeout: 15000 });
 
+      await openTab(user, "Tasks");
       const linkForm = screen.getByRole("form", { name: "Link task" });
       await user.selectOptions(within(linkForm).getByLabelText("Task to link"), task.contract.id);
       await user.click(within(linkForm).getByRole("button", { name: "Link task" }));
       await screen.findByRole("button", { name: /Unlink Prove the view/ }, { timeout: 15000 });
 
+      await openTab(user, "Objectives");
       await user.selectOptions(screen.getByLabelText("Evidence task for gate It works"), task.contract.id);
       await user.click(screen.getByRole("button", { name: "Apply to It works" }));
       await waitFor(

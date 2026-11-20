@@ -10,6 +10,8 @@ import type { GateState, WorkstreamGate, WorkstreamObjective } from "../../../so
 import { canArchive, stateLabel } from "../../format";
 import { useGate, useServices, useStore } from "../../services";
 import { Button, Pill } from "../../theme";
+import { Dialog } from "../../Dialog";
+import { ActionMenu, type MenuItem } from "./ActionMenu";
 import { ErrorNotice, Notice } from "../../widgets";
 import { reloadWorkstreams, taskLabelOf, type WsGroup, type WsTask } from "./model";
 
@@ -272,100 +274,63 @@ export function AddObjectiveForm({ group, controls }: { group: WsGroup; controls
   );
 }
 
-/** Suspend/resume are advisory (the scheduler ignores them); archive is terminal and confirmed. */
-export function LifecycleControls({ group, controls }: { group: WsGroup; controls: Controls }) {
-  const { surfaces } = useServices();
-  const noteId = useId();
-  const [confirming, setConfirming] = useState(false);
-  // The panel is not remounted on selection, so a pending confirm must not carry over to another workstream.
-  useEffect(() => setConfirming(false), [group.id]);
-  const change = (action: string, state: "active" | "suspended" | "archived") => {
-    setConfirming(false);
-    void controls.run(action, () => surfaces.workstreams.update({ id: group.id, revision: group.revision }, { state }));
-  };
-  const off = controls.busy || controls.locked !== null;
-  return (
-    <div className="ws-row" role="group" aria-label="Workstream lifecycle">
-      {group.state === "suspended" ? (
-        <Button disabled={off} onClick={() => change("Resume workstream", "active")}>
-          Resume workstream
-        </Button>
-      ) : (
-        <Button disabled={off} aria-describedby={noteId} onClick={() => change("Suspend workstream", "suspended")}>
-          Suspend workstream
-        </Button>
-      )}
-      {confirming ? (
-        <>
-          <Button variant="danger" disabled={off} onClick={() => change("Archive workstream", "archived")}>
-            Confirm archive (cannot be undone)
-          </Button>
-          <Button disabled={off} onClick={() => setConfirming(false)}>
-            Keep workstream
-          </Button>
-        </>
-      ) : (
-        <Button disabled={off} onClick={() => setConfirming(true)}>
-          Archive workstream
-        </Button>
-      )}
-      <p className="ws-reason" id={noteId}>
-        {controls.locked ?? "Suspend is advisory: the daemon scheduler does not consult it, so it does not stop dispatch."}
-      </p>
-    </div>
-  );
-}
-
 /**
- * The list card's actions on the selected initiative. Prioritize moves it to the top of the
- * daemon's order (`workstreams.prioritize`); Archive is the same confirmed terminal change as the
- * detail panel's.
+ * The detail header's Actions menu. Suspend and the list order are advisory (the scheduler ignores
+ * both); archive is terminal and confirmed in a dialog. `fixtureReason` disables every item on placeholder data.
  */
-export function ListActions({ group, first, controls }: { group: WsGroup; first: boolean; controls: Controls }) {
+export function WorkstreamActions({
+  group,
+  first,
+  controls,
+  fixtureReason,
+}: {
+  group: WsGroup;
+  first: boolean;
+  controls: Controls;
+  fixtureReason: string | null;
+}) {
   const { surfaces } = useServices();
-  const noteId = useId();
   const [confirming, setConfirming] = useState(false);
-  useEffect(() => setConfirming(false), [group.id]);
-  const off = controls.busy || controls.locked !== null;
-  const archive = () => {
-    setConfirming(false);
-    void controls.run(`Archive "${group.title}"`, () =>
-      surfaces.workstreams.update({ id: group.id, revision: group.revision }, { state: "archived" }),
-    );
-  };
+  const reason = fixtureReason ?? controls.locked ?? (controls.busy ? "Another change is still being recorded." : null);
+  const target = { id: group.id, revision: group.revision };
+  const change = (action: string, state: "active" | "suspended" | "archived") =>
+    void controls.run(action, () => surfaces.workstreams.update(target, { state }));
+  const items: MenuItem[] = [
+    group.state === "suspended"
+      ? { label: "Resume workstream", onSelect: () => change("Resume workstream", "active"), reason }
+      : { label: "Suspend workstream", onSelect: () => change("Suspend workstream", "suspended"), reason },
+    {
+      label: "Prioritize",
+      onSelect: () => void controls.run(`Prioritize "${group.title}"`, () => surfaces.workstreams.prioritize(group.id)),
+      reason: reason ?? (first ? `"${group.title}" is already first.` : null),
+    },
+    { label: "Archive workstream", onSelect: () => setConfirming(true), reason },
+  ];
   return (
     <>
-      <div className="ws-row" role="group" aria-label="Selected initiative">
-        <Button
-          disabled={off || first}
-          aria-describedby={noteId}
-          onClick={() => void controls.run(`Prioritize "${group.title}"`, () => surfaces.workstreams.prioritize(group.id))}
+      <ActionMenu label="Workstream actions" trigger={<>Actions <span aria-hidden="true">⌄</span></>} items={items} />
+      {confirming && (
+        <Dialog
+          title={`Archive "${group.title}"?`}
+          onClose={() => setConfirming(false)}
+          footer={
+            <>
+              <Button onClick={() => setConfirming(false)}>Keep workstream</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setConfirming(false);
+                  change("Archive workstream", "archived");
+                }}
+              >
+                Confirm archive (cannot be undone)
+              </Button>
+            </>
+          }
         >
-          Prioritize
-        </Button>
-        {confirming ? (
-          <>
-            <Button variant="danger" disabled={off} onClick={archive}>
-              Confirm archive
-            </Button>
-            <Button disabled={off} onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
-          </>
-        ) : (
-          <Button disabled={off} aria-describedby={noteId} onClick={() => setConfirming(true)}>
-            Archive
-          </Button>
-        )}
-      </div>
-      <p className="ws-reason" id={noteId}>
-        {controls.locked ??
-          (confirming
-            ? `Archive "${group.title}"? It becomes read-only, and this cannot be undone.`
-            : first
-              ? `"${group.title}" is already first. Prioritize moves the selected initiative to the top.`
-              : `Prioritize moves "${group.title}" to the top. The order is advisory: the scheduler does not consult it.`)}
-      </p>
+          <p>It becomes read-only, and this cannot be undone.</p>
+        </Dialog>
+      )}
     </>
   );
 }
@@ -494,36 +459,53 @@ export function ArchiveTaskButton({ task, controls }: { task: WsTask; controls: 
   );
 }
 
-/** Archives every finished task, linked or not, behind the same two-step confirm as the lifecycle controls. */
-export function ArchiveFinished({ run, busy }: { run: Run; busy: boolean }) {
-  const { data } = useServices();
+/**
+ * The list header's "⋯" menu. Archive finished archives every finished task, linked or not, after a
+ * confirmation. The workstream-lifecycle actions live on the detail screen, not here.
+ */
+export function ListMenu({ run, busy, live, onRefresh }: { run: Run; busy: boolean; live: boolean; onRefresh: () => void }) {
+  const { data, router } = useServices();
   const gate = useGate();
   const { tasks, archiveUnsupported } = useStore(data);
   const [confirming, setConfirming] = useState(false);
   const finished = (tasks.data ?? []).filter((task) => canArchive(task.state)).map((task) => task.contract.id);
-  if (archiveUnsupported) return null;
-  const off = busy || !gate.can("tasks") || finished.length === 0;
-  if (!confirming) {
-    return (
-      <Button disabled={off} onClick={() => setConfirming(true)}>
-        Archive finished ({finished.length})
-      </Button>
-    );
+  const busyReason = busy ? "Another change is still being recorded." : null;
+  const items: MenuItem[] = [{ label: "Manage projects", onSelect: () => router.navigate({ name: "projects" }) }];
+  if (live) {
+    if (!archiveUnsupported) {
+      items.push({
+        label: `Archive finished (${finished.length})`,
+        onSelect: () => setConfirming(true),
+        reason: !gate.can("tasks") ? "Offline: reconnect to archive tasks." : finished.length === 0 ? "No finished task to archive." : busyReason,
+      });
+    }
+    items.push({ label: "Refresh", onSelect: onRefresh, reason: busyReason });
   }
   return (
     <>
-      <Button
-        variant="danger"
-        disabled={off}
-        onClick={() => {
-          setConfirming(false);
-          void run(`Archive ${finished.length} finished tasks`, () => archiveSend(data, finished));
-        }}
-      >
-        Confirm archive
-      </Button>
-      <Button onClick={() => setConfirming(false)}>Keep</Button>
-      <span className="ws-reason">Archived tasks leave the lists; their history is kept.</span>
+      <ActionMenu label="More actions" trigger={<span aria-hidden="true">⋯</span>} items={items} />
+      {confirming && (
+        <Dialog
+          title={`Archive ${finished.length} finished ${finished.length === 1 ? "task" : "tasks"}?`}
+          onClose={() => setConfirming(false)}
+          footer={
+            <>
+              <Button onClick={() => setConfirming(false)}>Keep</Button>
+              <Button
+                variant="danger"
+                onClick={() => {
+                  setConfirming(false);
+                  void run(`Archive ${finished.length} finished tasks`, () => archiveSend(data, finished));
+                }}
+              >
+                Confirm archive
+              </Button>
+            </>
+          }
+        >
+          <p>Archived tasks leave the lists; their history is kept.</p>
+        </Dialog>
+      )}
     </>
   );
 }

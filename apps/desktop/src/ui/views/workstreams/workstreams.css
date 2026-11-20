@@ -16,14 +16,6 @@
   font: 600 28px/1.15 var(--font-display);
 }
 
-.ws-eyebrow {
-  margin: 0 0 4px;
-  color: var(--subtle);
-  font: 700 11px/1.4 var(--font-mono);
-  letter-spacing: 0.8px;
-  text-transform: uppercase;
-}
-
 .ws-source,
 .ws-subtle,
 .ws-reason,
@@ -37,14 +29,6 @@
 
 .ws-reason {
   flex-basis: 100%;
-}
-
-.ws-filter {
-  display: grid;
-  gap: 4px;
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ink);
 }
 
 .ws-view input[type="text"],
@@ -63,21 +47,6 @@
   opacity: 0.7;
 }
 
-.ws-layout {
-  display: grid;
-  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
-  gap: 14px;
-  align-items: start;
-  min-width: 0;
-}
-
-.ws-side {
-  display: grid;
-  gap: 14px;
-  min-width: 0;
-}
-
-.ws-list,
 .ws-detail > .ui-panel {
   min-width: 0;
 }
@@ -90,20 +59,18 @@
 
 .ws-items {
   display: grid;
-  gap: 6px;
-  margin: 10px 0;
+  gap: 8px;
+  margin: 0;
   padding: 0;
   list-style: none;
-  max-height: 24rem;
-  overflow: auto;
 }
 
-.ws-item {
+.ws-row-card {
   display: flex;
-  justify-content: space-between;
-  gap: 8px;
+  align-items: center;
+  gap: 14px;
   width: 100%;
-  padding: 8px 10px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--panel);
@@ -113,31 +80,192 @@
   cursor: pointer;
 }
 
-.ws-item[aria-pressed="true"] {
-  border-color: var(--blue);
-  background: var(--blue-bg);
-  box-shadow: inset 3px 0 0 var(--blue);
-  font-weight: 700;
+.ws-row-card:hover {
+  border-color: var(--control-border);
+  background: var(--soft);
 }
 
-.ws-item small {
-  color: var(--subtle);
-  white-space: nowrap;
+.ws-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--subtle);
 }
 
-.ws-item-title {
+.ws-dot[data-tone="ok"] {
+  background: var(--green);
+}
+
+.ws-dot[data-tone="warn"] {
+  background: var(--amber);
+}
+
+.ws-dot[data-tone="bad"] {
+  background: var(--red);
+}
+
+.ws-dot[data-tone="info"] {
+  background: var(--blue);
+}
+
+.ws-row-main {
+  display: grid;
+  flex: 1;
+  gap: 2px;
   min-width: 0;
+}
+
+.ws-row-name {
+  font-size: 14px;
+  font-weight: 700;
   overflow-wrap: anywhere;
 }
 
-.ws-list-marker {
-  margin: 0 0 8px;
+.ws-row-main small,
+.ws-row-updated,
+.ws-progress {
+  color: var(--subtle);
+  font-size: 12px;
 }
 
-.ws-list-marker .ui-badge {
-  max-width: 100%;
-  overflow-wrap: normal;
-  white-space: nowrap;
+.ws-progress {
+  display: grid;
+  gap: 4px;
+  width: 130px;
+}
+
+.ws-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--line);
+}
+
+.ws-bar i {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+.ws-row-updated {
+  width: 96px;
+  text-align: right;
+}
+
+.ws-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.ws-spacer {
+  flex: 1;
+}
+
+.ws-search {
+  flex: 0 1 22rem;
+  margin-bottom: 8px;
+}
+
+.ws-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.ws-tabpanel .ui-disclosure {
+  margin-top: 12px;
+}
+
+.ws-view a.ui-btn-primary {
+  color: var(--on-accent);
+  text-decoration: none;
+}
+
+.ws-detail-head {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ws-detail-head h1 {
+  margin: 0;
+  font: 600 28px/1.15 var(--font-display);
+}
+
+.ws-back {
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.ws-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 12px 0 0;
+}
+
+.ws-stat {
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  background: var(--soft);
+}
+
+.ws-stat dt {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+.ws-stat dd {
+  margin: 0;
+  font: 600 22px/1.3 var(--font-display);
+}
+
+.ws-banner {
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 0;
+}
+
+.ws-banner p {
+  margin: 0;
+}
+
+.ws-tech,
+.ws-objective-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+
+.ws-tech {
+  color: var(--subtle);
+  font-size: 12px;
+}
+
+@media (max-width: 760px) {
+  .ws-view {
+    padding: 16px 12px 24px;
+  }
+
+  .ws-row-card {
+    flex-wrap: wrap;
+  }
 }
 
 .ws-row {
@@ -165,13 +293,6 @@
   margin: 8px 0;
   padding: 0;
   list-style: none;
-}
-
-.ws-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin: 10px 0 0;
 }
 
 .ws-table-scroll,
@@ -425,48 +546,6 @@
   padding: 4px 6px;
 }
 
-@media (max-width: 1150px) {
-  .ws-layout {
-    grid-template-columns: 145px minmax(0, 1fr);
-  }
-}
-
-@media (max-width: 760px) {
-  .ws-layout {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .ws-items {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 4px;
-  }
-
-  .ws-view {
-    padding: 16px 12px 24px;
-  }
-}
-
-/* Narrow list column (the 1150 px split): the marker badge stays on one line and items fit the column. */
-@media (max-width: 1150px) {
-  .ws-list-marker .ui-badge {
-    letter-spacing: 0;
-    padding: 2px 6px;
-  }
-
-  .ws-item {
-    flex-direction: column;
-  }
-
-  .ws-item small {
-    white-space: normal;
-  }
-}
-
-@media (max-width: 1150px) and (min-width: 761px) {
-  .ws-items {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 
 /* Live workstream controls (M7-23). */
 .ws-objective-card {
@@ -604,15 +683,6 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-}
-
-.ws-purpose {
-  margin: 0;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
-  color: var(--subtle);
-  font-size: 12px;
-  line-height: 1.5;
 }
 
 .ws-head {
