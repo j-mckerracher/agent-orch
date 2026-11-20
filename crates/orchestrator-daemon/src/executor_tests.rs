@@ -132,6 +132,11 @@ impl Fixture {
         self.submit_full(api, key, "codex", max_retries, &[])
     }
 
+    /// A Codex task at Restricted, the only level at which Codex can wait and be resumed.
+    fn submit_restricted(&self, api: &DaemonApi, key: &str, max_retries: u32) -> String {
+        self.submit_at(api, key, "codex", max_retries, &[], Some("restricted"))
+    }
+
     fn submit_full(
         &self,
         api: &DaemonApi,
@@ -139,6 +144,19 @@ impl Fixture {
         agent: &str,
         max_retries: u32,
         dependencies: &[&str],
+    ) -> String {
+        self.submit_at(api, key, agent, max_retries, dependencies, None)
+    }
+
+    /// `permission` of `None` leaves the task default (Auto).
+    fn submit_at(
+        &self,
+        api: &DaemonApi,
+        key: &str,
+        agent: &str,
+        max_retries: u32,
+        dependencies: &[&str],
+        permission: Option<&str>,
     ) -> String {
         let task = api
             .dispatch(
@@ -156,7 +174,8 @@ impl Fixture {
                         "delivery": "ReportOnly",
                         "autonomy": "WorkspaceWrites",
                         "max_retries": max_retries,
-                        "max_repairs": 0
+                        "max_repairs": 0,
+                        "permission": permission
                     }
                 }),
             )
@@ -615,7 +634,8 @@ fn the_daemons_git_calls_in_a_slot_run_no_hook_the_agent_wrote() {
     );
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
-    assert_eq!(attempt.changed_files, Some(1));
+    // dirty.txt, and the hooks/pre-commit script the agent wrote, are both candidate files.
+    assert_eq!(attempt.changed_files, Some(2));
     api.shutdown();
 }
 
@@ -688,7 +708,7 @@ fn contract_naming_input(fixture: &Fixture, input: &Path) -> Value {
         "source": {"kind": "text", "reference": null},
         "title": "Spec",
         "ask": format!("Match the spec at {}.", input.display()),
-        "acceptance_criteria": []
+        "acceptance_criteria": [{"text": "Matches the spec.", "drafted": false, "confirmed": true}]
     });
     contract
 }
@@ -700,7 +720,7 @@ fn a_named_input_is_copied_into_the_status_directory_and_the_source_is_untouched
     fs::write(&input, "the spec\n").unwrap();
     let agent = fixture.script(
         "staging-agent",
-        &format!("{THREAD_STARTED}{TURN_COMPLETED}"),
+        &format!("echo staged > agent-output.txt\n{THREAD_STARTED}{TURN_COMPLETED}"),
     );
     let api = fixture.api(&agent);
     let contract = contract_naming_input(&fixture, &input);
@@ -1891,29 +1911,6 @@ fn codex_task_argv_per_level_is_exact() {
             objective,
         ]
     );
-    // Without a workflow agent the vector is the one Codex launched before, plus the status
-    // directory.
-    let plain = launched_argv("codex", Some("restricted"), |config| {
-        config.locate_workflow_agent = no_workflow_agent
-    });
-    assert_eq!(
-        strs(&plain),
-        [
-            "exec",
-            "--json",
-            "--sandbox",
-            "workspace-write",
-            "--ignore-user-config",
-            "-c",
-            "show_raw_agent_reasoning=true",
-            "-c",
-            "model_reasoning_summary=\"detailed\"",
-            "--add-dir",
-            "<status>",
-            "--",
-            objective,
-        ]
-    );
 }
 
 #[test]
@@ -1951,8 +1948,8 @@ fn claude_task_argv_per_level_is_exact() {
     };
     let mut restricted = CLAUDE_TASK_HEAD.to_vec();
     restricted.extend(["Read,Edit,Write", "--allowedTools", "Read,Edit,Write"]);
-    // Every level ends with the fixture workflow agent's flags. Without one, Restricted launches
-    // the vector a Claude task has always had.
+    // Every level ends with the fixture workflow agent's flags. Without the plugin the agent never
+    // starts: `a_missing_workflow_agent_refuses_the_launch_with_a_cannot_start_reason` pins that.
     let restricted_agent = with_flags(
         with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS),
         &CLAUDE_CHANNEL,
@@ -1962,12 +1959,6 @@ fn claude_task_argv_per_level_is_exact() {
         strs(&claude(Some("auto"), |_| {}))
     );
     assert_eq!(strs(&claude(Some("restricted"), |_| {})), restricted_agent);
-    assert_eq!(
-        strs(&claude(Some("restricted"), |config| {
-            config.locate_workflow_agent = no_workflow_agent
-        })),
-        with_flags(restricted, &CLAUDE_CHANNEL)
-    );
 
     let mut extended = CLAUDE_TASK_HEAD.to_vec();
     extended.extend([
@@ -2083,14 +2074,6 @@ fn copilot_task_argv_per_level_is_exact() {
         strs(&launched_argv(COPILOT_AGENT, Some("restricted"), |_| {})),
         restricted_agent
     );
-    let plain = launched_argv(COPILOT_AGENT, Some("restricted"), |config| {
-        config.locate_workflow_agent = no_workflow_agent
-    });
-    assert_eq!(
-        strs(&plain),
-        with_flags(restricted.clone(), &COPILOT_CHANNEL)
-    );
-
     let mut extended = head.clone();
     extended.extend([
         "--allow-tool",
@@ -2513,7 +2496,7 @@ fn task_launch_refuses_a_replaced_cli_without_required_permission_options() {
     assert!(task(&api, &task_id)["attempts"][0]["failure_reason"]
         .as_str()
         .unwrap()
-        .contains("--sandbox"));
+        .contains("--approve-for-me"));
     assert!(!launched.exists());
 }
 
@@ -2874,7 +2857,7 @@ fn rpc_failures_are_reported_by_method_and_class_but_never_with_parameters() {
     let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
         config.diagnostics = diag.clone()
     });
-    let waiting = fixture.submit_full(&api, "dep-parent", "pi", 0, &[]);
+    let waiting = fixture.submit_at(&api, "dep-parent", "pi", 0, &[], Some("restricted"));
     let second = fixture.submit_full(&api, "dep-child", "codex", 5, &[&waiting]);
     assert_eq!(
         api.dispatch(
@@ -3928,7 +3911,7 @@ fn a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_w
         ],
     );
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "asks-1", 0);
+    let task_id = fixture.submit_restricted(&api, "asks-1", 0);
 
     let waiting = wait_state(&api, &task_id, "Waiting");
     assert_eq!(waiting["attempts"][0]["state"], "Waiting");
@@ -4018,7 +4001,7 @@ fn a_resume_whose_staged_plugin_is_gone_fails_with_a_cannot_start_reason() {
         &["needs-decision [key=db] SQLite or Postgres?"],
     );
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "resume-plugin-1", 0);
+    let task_id = fixture.submit_restricted(&api, "resume-plugin-1", 0);
     wait_state(&api, &task_id, "Waiting");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     let question = store.open_questions().unwrap().pop().unwrap();
@@ -4052,7 +4035,7 @@ fn a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it() {
         &["blocked the fixture database is down"],
     );
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "blocked-1", 0);
+    let task_id = fixture.submit_restricted(&api, "blocked-1", 0);
     wait_state(&api, &task_id, "Waiting");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     assert!(store.open_questions().unwrap().is_empty());
@@ -4108,7 +4091,7 @@ fn a_user_message_resumes_a_waiting_task_under_the_users_heading() {
         &["blocked the fixture database is down"],
     );
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "user-message-1", 0);
+    let task_id = fixture.submit_restricted(&api, "user-message-1", 0);
     wait_state(&api, &task_id, "Waiting");
     api.dispatch(
         "tasks.message",
@@ -4139,7 +4122,7 @@ fn a_waiting_task_is_cancelled_without_an_owner() {
     let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
     let program = status_agent(&fixture, &first, &resumed, &["blocked no access"]);
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "cancel-wait", 0);
+    let task_id = fixture.submit_restricted(&api, "cancel-wait", 0);
     wait_state(&api, &task_id, "Waiting");
     api.dispatch(
         "tasks.cancel",

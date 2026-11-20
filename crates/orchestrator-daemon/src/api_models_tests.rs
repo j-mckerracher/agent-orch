@@ -15,7 +15,7 @@ const MODELS: &str = r#"{"models":[
 const CLAUDE_HELP: &str =
     "Options:\n  --effort <level>    Effort level\n                      (low, medium, high)\n\
      -p\n--verbose\n--output-format\n--include-partial-messages\n--permission-mode\n\
-     --permission-prompts\n--restricted\n--strict-mcp-config\n--tools\n--allowedTools\n--model\n--plugin-dir\n--agent\n";
+     --permission-prompts\n--restricted\n--strict-mcp-config\n--tools\n--allowedTools\n--disallowedTools\n--model\n--plugin-dir\n--agent\n--add-dir\n--session-id\n--resume\n";
 
 /// A fake `copilot --acp` that lists `gpt-a` (levels low and high) and `mini` (no levels).
 const COPILOT_ACP: &str = r#"if [ "$1" = "--version" ]; then printf '%s\n' 'GitHub Copilot CLI 1.0.114.'; exit 0; fi
@@ -289,9 +289,9 @@ fn submit_with(
         "autonomy": "WorkspaceWrites",
         "max_retries": 0,
         "max_repairs": 0,
-        // Named, so these tests keep the Restricted launch argv they assert. The task default
-        // is Auto, which the fake CLIs here do not advertise.
-        "permission": "restricted"
+        // Codex keeps the Restricted launch argv these tests assert. Claude refuses an
+        // implementation task at Restricted (no shell), so it runs at Auto.
+        "permission": if agent == "claude-code" { "auto" } else { "restricted" }
     });
     if !selection.is_null() {
         contract["model_selection"] = selection;
@@ -758,12 +758,18 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
     );
     wait_state(&api, &task_id, "Succeeded");
 
-    let argv = fs::read_to_string(&agents.codex_argv).unwrap();
+    let argv = without_git_grants(
+        fs::read_to_string(&agents.codex_argv)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+    );
     // The status directory (DPES-1108 phase 4) goes after the selection, before the separator.
     let status = super::worker_status::status_dir(&fixture.data(), &task_id, 1);
     let status = status.display().to_string();
     assert_eq!(
-        argv.lines().collect::<Vec<_>>(),
+        argv.iter().map(String::as_str).collect::<Vec<_>>(),
         [
             "exec",
             "--json",
@@ -771,7 +777,9 @@ fn accepted_selection_reaches_the_agent_and_shows_in_the_effective_configuration
             "workspace-write",
             "--ignore-user-config",
             "-c",
-            "developer_instructions=\"fixture instructions\"",
+            FIXTURE_CODEX_INSTRUCTIONS
+                .replace("<status>", &status)
+                .as_str(),
             "-m",
             "gpt-6-luna",
             "-c",
@@ -825,11 +833,17 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
     assert!(submitted["contract"].get("model_selection").is_none());
     wait_state(&api, &task_id, "Succeeded");
 
-    let argv = fs::read_to_string(&agents.codex_argv).unwrap();
+    let argv = without_git_grants(
+        fs::read_to_string(&agents.codex_argv)
+            .unwrap()
+            .lines()
+            .map(str::to_owned)
+            .collect(),
+    );
     let status = super::worker_status::status_dir(&fixture.data(), &task_id, 1);
     let status = status.display().to_string();
     assert_eq!(
-        argv.lines().collect::<Vec<_>>(),
+        argv.iter().map(String::as_str).collect::<Vec<_>>(),
         [
             "exec",
             "--json",
@@ -837,7 +851,9 @@ fn task_without_a_selection_launches_unchanged_and_reports_adapter_defaults_as_u
             "workspace-write",
             "--ignore-user-config",
             "-c",
-            "developer_instructions=\"fixture instructions\"",
+            FIXTURE_CODEX_INSTRUCTIONS
+                .replace("<status>", &status)
+                .as_str(),
             "-c",
             "show_raw_agent_reasoning=true",
             "-c",
@@ -888,7 +904,7 @@ fn claude_effort_selection_reaches_the_agent() {
     });
     let argv = fs::read_to_string(&agents.claude_argv).unwrap();
     let args: Vec<_> = argv.lines().collect();
-    assert_eq!(args[args.len() - 2..], ["--effort", "high"]);
+    assert!(args.windows(2).any(|pair| pair == ["--effort", "high"]));
     assert!(!args.contains(&"--model"));
 }
 
@@ -912,11 +928,10 @@ fn claude_model_alias_reaches_the_launched_claude_argv() {
     });
     let argv = fs::read_to_string(&agents.claude_argv).unwrap();
     let args: Vec<_> = argv.lines().collect();
-    // The alias and the effort are the last two pairs, after the fixed restricted invocation.
-    assert_eq!(
-        args[args.len() - 4..],
-        ["--model", "sonnet", "--effort", "high"]
-    );
+    // The alias and the effort follow the level's flags; the workflow agent and channel come after.
+    assert!(args
+        .windows(4)
+        .any(|run| run == ["--model", "sonnet", "--effort", "high"]));
 }
 
 #[test]
