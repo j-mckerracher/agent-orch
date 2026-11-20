@@ -471,6 +471,24 @@ mod tests {
     }
 
     #[test]
+    fn the_longest_worker_wait_notice_fits_the_wake_brief_line() {
+        let mut event = event(
+            "task.transition",
+            json!({"state": "Waiting", "audit": "WorkerNeedsDecision"}),
+        );
+        event.task_id = format!("task-{}", "a1".repeat(32));
+        let mut waiting = facts(&"o".repeat(80));
+        waiting.wait_note = Some("n ".repeat(80));
+        let notice = classify(&event, Some(&waiting)).unwrap().notice;
+        assert!(notice.ends_with("n n"), "{notice}");
+        assert!(
+            notice.len() <= crate::api::conversation_runtime::WAKE_BRIEF_LINE_BYTES,
+            "{}",
+            notice.len()
+        );
+    }
+
+    #[test]
     fn a_worker_wait_wakes_with_its_kind_and_its_note_as_redacted_data() {
         let mut waiting = facts("Pick a database");
         waiting.wait_note = Some("Use /etc/app/db.conf or Postgres?".into());

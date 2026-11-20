@@ -67,7 +67,7 @@ export const WINDOWS = {
   // DPES-1108 phase 7 coordinators adds 8 daemon unit tests: 732 in the phase 9 integration, re-synced from CI.
   // DPES-1108 phase 8 adds 4 daemon unit tests: 736 in the phase 9 integration, re-synced from CI.
   // With main merged (DPES-1106): one real-daemon test and the agent_thinking store binary (5) plus one store lib test; re-synced from CI.
-  daemon: { passed: 738, ignored: 1, sequence: [633, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 739, ignored: 1, sequence: [634, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -175,7 +175,7 @@ export const MACOS = {
   // DPES-1108 phase 6 preferences adds 7 daemon tests: 866 in the phase 9 integration, re-synced from CI.
   // DPES-1108 phase 7 coordinators adds 8 daemon unit tests: 874 in the phase 9 integration, re-synced from CI.
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
-  daemon: { passed: 882, ignored: 1, sequence: [750, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  daemon: { passed: 883, ignored: 1, sequence: [751, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured

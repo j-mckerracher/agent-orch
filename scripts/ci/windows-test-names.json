@@ -839,6 +839,7 @@
    "api::decisions_tests::an_ask_on_a_missing_task_fails_and_raises_nothing",
    "api::decisions_tests::the_methods_refuse_unknown_questions_and_bad_text",
    "api::wake_events::tests::a_worker_wait_wakes_with_its_kind_and_its_note_as_redacted_data",
+   "api::wake_events::tests::the_longest_worker_wait_notice_fits_the_wake_brief_line",
    "api::authority_tests::a_departure_from_the_default_delivery_is_kept_on_that_task_only",
    "api::authority_tests::a_matched_card_of_an_earlier_turn_is_not_run_by_a_later_turn",
    "api::authority_tests::a_restart_never_runs_a_wake_task_the_orchestrator_approved",
