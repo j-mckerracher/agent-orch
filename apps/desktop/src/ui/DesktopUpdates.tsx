@@ -82,9 +82,16 @@ export function DesktopUpdates() {
   const mounted = useRef(false);
   // Checks and installs share one native lock, so overlapping calls are skipped here too.
   const inFlight = useRef(false);
+  // A manual check asked for while a check runs waits for it, so the click is not dropped.
+  const queued = useRef(false);
+  const [checking, setChecking] = useState(false);
 
-  const check = useCallback(async (manual: boolean) => {
-    if (inFlight.current) return;
+  const check = useCallback(async (manual: boolean): Promise<void> => {
+    if (manual) setChecking(true);
+    if (inFlight.current) {
+      if (manual) queued.current = true;
+      return;
+    }
     inFlight.current = true;
     try {
       const result = parseCheck(await invoke<unknown>("desktop_update_check"));
@@ -100,6 +107,12 @@ export function DesktopUpdates() {
       if (manual && mounted.current) setState({ kind: "failed", error: parseErrorKind(error) });
     } finally {
       inFlight.current = false;
+      if (queued.current) {
+        queued.current = false;
+        void check(true);
+      } else if (manual) {
+        setChecking(false);
+      }
     }
   }, []);
 
@@ -145,10 +158,10 @@ export function DesktopUpdates() {
 
   return (
     <div className="strip update-strip" data-testid="desktop-updates">
-      {message && <p role="status">{message}</p>}
+      <p role="status">{checking ? "Checking for updates…" : message}</p>
       {shown && (
         <>
-          <Button variant="primary" disabled={installing} onClick={() => void install(shown.version)}>
+          <Button variant="primary" pending={installing} onClick={() => void install(shown.version)}>
             Install and restart
           </Button>
           <Button
@@ -162,7 +175,7 @@ export function DesktopUpdates() {
           </Button>
         </>
       )}
-      <Button disabled={installing} onClick={() => void check(true)}>
+      <Button pending={checking} disabled={installing} onClick={() => void check(true)}>
         Check for updates
       </Button>
       {error && <p role="alert">{ERROR_TEXT[error]}</p>}

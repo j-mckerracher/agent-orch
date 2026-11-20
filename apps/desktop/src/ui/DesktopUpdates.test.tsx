@@ -59,7 +59,7 @@ describe("DesktopUpdates", () => {
   it("shows only the manual check when the app is current, then confirms it is up to date", async () => {
     answer(() => ({ kind: "current", version: "0.1.28" }));
     await mount();
-    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.getByRole("status")).toBeEmptyDOMElement();
     expect(screen.queryByRole("button", { name: INSTALL })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
@@ -114,10 +114,30 @@ describe("DesktopUpdates", () => {
     await settle();
     expect(invoke).toHaveBeenLastCalledWith("desktop_update_install", { version: "0.1.29" });
     expect(screen.getByRole("status")).toHaveTextContent("Preparing update…");
-    for (const name of [INSTALL, "Later", "Check for updates"]) {
+    expect(screen.getByRole("button", { name: INSTALL })).toHaveAttribute("aria-busy", "true");
+    for (const name of ["Later", "Check for updates"]) {
       expect(screen.getByRole("button", { name })).toBeDisabled();
     }
     finish();
+  });
+
+  it("Check for updates shows pending and 'Checking for updates…' until the check answers", async () => {
+    let finish: (value: unknown) => void = () => undefined;
+    invoke.mockImplementation((command: string) =>
+      command === "desktop_update_check" && checkCalls() > 1
+        ? new Promise((resolve) => (finish = resolve))
+        : Promise.resolve({ kind: "current", version: "0.1.28" }),
+    );
+    await mount();
+
+    fireEvent.click(screen.getByRole("button", { name: "Check for updates" }));
+    expect(screen.getByRole("button", { name: "Check for updates" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status")).toHaveTextContent("Checking for updates…");
+
+    await act(async () => finish({ kind: "current", version: "0.1.28" }));
+    await settle();
+    expect(screen.getByRole("status")).toHaveTextContent("MCAO 0.1.28 is up to date.");
+    expect(screen.getByRole("button", { name: "Check for updates" })).not.toHaveAttribute("aria-busy");
   });
 
   it("keeps the offer and reports a busy daemon without retrying the install", async () => {
