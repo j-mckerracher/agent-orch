@@ -5,6 +5,24 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.29](https://github.com/mc-innersource/motif-mcao/compare/v0.1.28...v0.1.29) (2026-11-20)
+
+
+### Features
+
+* **daemon:** DPES-1106 - Let the user message a waiting worker ([6000531](https://github.com/mc-innersource/motif-mcao/commit/600053192d3b15a866cd8c5c01756ac9a36a86a2))
+* **desktop:** DPES-1106 - Show the agent conversation and reply box in the task window ([fcf6925](https://github.com/mc-innersource/motif-mcao/commit/fcf69254b4a9092575f1e3752c126d792c205e30))
+* **desktop:** DPES-1106 - Show the agent conversation and reply box in the task window ([81f8aa0](https://github.com/mc-innersource/motif-mcao/commit/81f8aa0bff7228094fdc04023d8b341365937f6e))
+
+
+### Bug Fixes
+
+* **ci:** DPES-1106 - Raise the desktop vitest pin to the measured count ([2b8e2ff](https://github.com/mc-innersource/motif-mcao/commit/2b8e2ffe7a60bd2977cb6a03ca8074824d415ed1))
+* **daemon:** DPES-1044 - Keep the worker note in wake update lines ([38689de](https://github.com/mc-innersource/motif-mcao/commit/38689de0af80af52c81986fa4c33c474e287bbe2))
+* **daemon:** DPES-1044 - Keep the worker note in wake update lines ([753befe](https://github.com/mc-innersource/motif-mcao/commit/753befe7d4eabbebc6ae29ae30a53951c11d47af))
+* **daemon:** DPES-1106 - Guard user replies against open questions and racing resumes ([c7703fe](https://github.com/mc-innersource/motif-mcao/commit/c7703fef28f58d3b84593b379392491d7cc87ae6))
+* **desktop:** DPES-1106 - Lock the reply text while an outcome is unknown ([942a4c3](https://github.com/mc-innersource/motif-mcao/commit/942a4c3e30758a349c85716c729d9723f19b6fb4))
+
 ## [0.1.28](https://github.com/mc-innersource/motif-mcao/compare/v0.1.27...v0.1.28) (2026-11-19)
 
 
