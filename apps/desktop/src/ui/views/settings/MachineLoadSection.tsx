@@ -156,6 +156,7 @@ function LimitsForm({ model, snapshot, refreshFailed }: { model: SettingsModel; 
 function MachineLoad({ model }: { model: SettingsModel }) {
   const gate = useGate();
   const { load } = model;
+  const [retrying, setRetrying] = useState(false);
   // A first read that fails while the first connection is still opening is not an error yet.
   if (load.status === "loading" || (load.status === "failed" && gate.settling)) return <p role="status">Loading settings…</p>;
   if (load.status === "unsupported") {
@@ -167,7 +168,15 @@ function MachineLoad({ model }: { model: SettingsModel }) {
         <Notice tone="bad" role="alert">
           The machine load limits could not be read. {load.reason}
         </Notice>
-        <Button onClick={model.reload}>Retry</Button>
+        <Button
+          pending={retrying}
+          onClick={() => {
+            setRetrying(true);
+            void model.reload().finally(() => setRetrying(false));
+          }}
+        >
+          Retry
+        </Button>
       </div>
     );
   }

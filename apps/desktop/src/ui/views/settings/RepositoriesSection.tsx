@@ -1,10 +1,11 @@
 import { useId, useState } from "react";
-import type { DaemonError } from "../../../daemon/errors";
+import { presentError } from "../../../daemon/errors";
+import { ActionStatus, useAction } from "../../action";
 import { basename } from "../../format";
 import { useGate, useServices, useStore } from "../../services";
 import { Dialog } from "../../Dialog";
 import { Button } from "../../theme";
-import { ErrorNotice, LoadableRegion } from "../../widgets";
+import { LoadableRegion } from "../../widgets";
 
 function isAbsolutePath(path: string): boolean {
   return path.startsWith("/") || /^[A-Za-z]:[\\/]/.test(path) || path.startsWith("\\\\");
@@ -18,37 +19,34 @@ export function RepositoriesSection() {
   const inputId = useId();
   const headingId = useId();
   const formId = useId();
-  const [error, setError] = useState<DaemonError | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [registered, setRegistered] = useState(false);
-  const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState(false);
+  // The dialog closes on success, so the result shows beside the list; a failure stays in the dialog, where it is read.
+  const register = useAction();
 
-  const register = async () => {
+  const submit = () => {
     const path = registerPath.trim();
-    setError(null);
-    setRegistered(false);
     if (!isAbsolutePath(path)) {
       setLocalError("Enter an absolute repository path.");
       return;
     }
     setLocalError(null);
-    setBusy(true);
-    const result = await data.registerProject(path);
-    setBusy(false);
-    if (result.ok) {
+    void register.run("Registering…", async () => {
+      const result = await data.registerProject(path);
+      if (!result.ok) {
+        const { reason, nextStep } = presentError(result.error);
+        throw new Error(`The repository was not registered. ${reason} ${nextStep}`);
+      }
       drafts.setRegisterPath("");
-      setRegistered(true);
       setAdding(false);
-    } else {
-      setError(result.error);
-    }
+      return { kind: "saved", text: "Repository registered." };
+    });
   };
 
   const close = () => {
     setAdding(false);
-    setError(null);
     setLocalError(null);
+    register.clear();
   };
 
   return (
@@ -57,22 +55,30 @@ export function RepositoriesSection() {
         <h3 id={headingId}>Your repositories</h3>
         <Button
           onClick={() => {
-            setRegistered(false);
+            register.clear();
             setAdding(true);
           }}
         >
           Add repository
         </Button>
       </div>
-      {registered && <p role="status">Repository registered.</p>}
+      {!adding && <ActionStatus action={register} />}
       {adding && (
         <Dialog
           title="Add a repository"
           onClose={close}
           footer={
             <>
-              <Button onClick={close}>Cancel</Button>
-              <Button type="submit" form={formId} variant="primary" disabled={!gate.can("projects") || busy || registerPath.trim() === ""}>
+              <Button onClick={close} disabled={register.pending}>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form={formId}
+                variant="primary"
+                pending={register.pending}
+                disabled={!gate.can("projects") || registerPath.trim() === ""}
+              >
                 Register repository
               </Button>
             </>
@@ -83,7 +89,7 @@ export function RepositoriesSection() {
             noValidate
             onSubmit={(event) => {
               event.preventDefault();
-              void register();
+              submit();
             }}
           >
             <div className="settings-row">
@@ -105,7 +111,7 @@ export function RepositoriesSection() {
             </div>
             {!gate.connected && <p className="settings-hint">Registration is unavailable while offline; the draft is kept.</p>}
             {localError && <p role="alert" className="settings-error">{localError}</p>}
-            {error && <ErrorNotice error={error} action="Registering the repository" />}
+            <ActionStatus action={register} />
           </form>
         </Dialog>
       )}
