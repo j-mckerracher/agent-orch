@@ -1407,7 +1407,7 @@ fn decode_entry(row: SqliteRow) -> Result<ConversationEntry, StoreError> {
         author: row.try_get("author")?,
         body: row.try_get("body")?,
         error_code: row.try_get("error_code")?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }
 
@@ -1438,8 +1438,8 @@ fn decode_turn(row: SqliteRow) -> Result<ConversationTurn, StoreError> {
         permission_profile: row.try_get("permission_profile")?,
         action_block,
         trigger: TurnTrigger::from_column(&trigger)?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
+        updated_at: crate::instant::instant(&row, "updated_at")?,
     })
 }
 

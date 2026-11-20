@@ -234,6 +234,6 @@ fn lineage_from_row(row: &SqliteRow) -> Result<TaskLineage, StoreError> {
         relation: LineageRelation::parse(&relation)
             .ok_or_else(|| corrupt(format!("unknown lineage relation {relation:?}")))?,
         added_intent: row.try_get("added_intent")?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }

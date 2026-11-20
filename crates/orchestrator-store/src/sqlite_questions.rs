@@ -468,7 +468,7 @@ async fn read_question(
                     ClosingKind::Reconcile
                 },
                 text: row.try_get("text")?,
-                recorded_at: row.try_get("recorded_at")?,
+                recorded_at: crate::instant::instant(&row, "recorded_at")?,
             })
         })
         .transpose()?;
@@ -505,7 +505,7 @@ fn question_from_row(row: &SqliteRow) -> Result<DecisionQuestion, StoreError> {
         key: row.try_get("question_key")?,
         raised_by: QuestionRaiser::parse(&set_by)
             .ok_or_else(|| corrupt(format!("unknown question raiser {set_by:?}")))?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
         closing: None,
         deferred_until: None,
     })

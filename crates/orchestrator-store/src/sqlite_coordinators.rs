@@ -175,7 +175,7 @@ fn decode_request(row: &SqliteRow) -> Result<RoutedRequest, StoreError> {
         work: row.try_get("work")?,
         origin_proposal_id: row.try_get("origin_proposal_id")?,
         answered: row.try_get::<i64, _>("answered")? == 1,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }
 
@@ -189,7 +189,7 @@ fn decode_report(row: &SqliteRow) -> Result<CoordinatorReport, StoreError> {
         task_id: row.try_get("task_id")?,
         key: row.try_get("report_key")?,
         note: row.try_get("note")?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }
 

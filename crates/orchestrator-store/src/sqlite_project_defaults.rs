@@ -353,6 +353,6 @@ fn decode_row(row: &sqlx::sqlite::SqliteRow) -> Result<ProjectDefaultsRow, Store
         branch_prefix: row.try_get("branch_prefix")?,
         checks,
         merge_method: row.try_get("merge_method")?,
-        updated_at: row.try_get("updated_at")?,
+        updated_at: crate::instant::instant(&row, "updated_at")?,
     })
 }

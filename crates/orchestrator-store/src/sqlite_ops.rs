@@ -494,7 +494,7 @@ impl SqliteStore {
                         sequence: row.try_get("seq")?,
                         task_id: row.try_get("task_id")?,
                         event: decode(&row.try_get::<String, _>("payload")?)?,
-                        created_at: row.try_get("created_at")?,
+                        created_at: crate::instant::instant(&row, "created_at")?,
                     })
                 })
                 .collect()

@@ -196,7 +196,7 @@ impl SqliteStore {
                         actor: row.try_get("actor")?,
                         entries_deleted: row.try_get("entries_deleted")?,
                         turns_deleted: row.try_get("turns_deleted")?,
-                        created_at: row.try_get("created_at")?,
+                        created_at: crate::instant::instant(&row, "created_at")?,
                     })
                 })
                 .collect()

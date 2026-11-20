@@ -291,7 +291,7 @@ fn decode_event(row: sqlx::sqlite::SqliteRow) -> Result<StreamEvent, StoreError>
         session_id: row.try_get("session_id")?,
         kind: row.try_get("kind")?,
         payload: serde_json::from_str(&row.try_get::<String, _>("payload")?)?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }
 
@@ -311,7 +311,7 @@ pub struct TaskDurableEvent {
     pub kind: String,
     /// Payload exactly as recorded. Readers ignore keys they do not know.
     pub payload: Value,
-    /// SQLite `CURRENT_TIMESTAMP` at journal write: UTC, whole seconds, `YYYY-MM-DD HH:MM:SS`.
+    /// SQLite `CURRENT_TIMESTAMP` at journal write, read as RFC 3339 UTC (`YYYY-MM-DDTHH:MM:SSZ`).
     /// Write time, not the event instant. Projection never uses it as `occurred_at_utc`.
     pub created_at: String,
     /// Lineage joined through `payload.step_id`; `None` for other kinds.
@@ -371,7 +371,7 @@ fn decode_task_event(row: sqlx::sqlite::SqliteRow) -> Result<TaskDurableEvent, S
         session_id: row.try_get("session_id")?,
         kind: row.try_get("kind")?,
         payload: serde_json::from_str(&row.try_get::<String, _>("payload")?)?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
         delivery,
     })
 }

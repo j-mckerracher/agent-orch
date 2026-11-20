@@ -403,8 +403,8 @@ fn hold_from_row(row: &SqliteRow) -> Result<DecisionHold, StoreError> {
         until_ms: row.try_get("until_ms")?,
         state: HoldState::parse(&state)
             .ok_or_else(|| corrupt(format!("unknown hold state {state:?}")))?,
-        created_at: row.try_get("created_at")?,
-        released_at: row.try_get("released_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
+        released_at: crate::instant::opt_instant(&row, "released_at")?,
     })
 }
 

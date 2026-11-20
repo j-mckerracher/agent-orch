@@ -254,7 +254,7 @@ impl SqliteStore {
                         verb: verb_from(&row.try_get::<String, _>("verb")?)?,
                         key: row.try_get("status_key")?,
                         note: row.try_get("note")?,
-                        recorded_at: row.try_get("recorded_at")?,
+                        recorded_at: crate::instant::instant(&row, "recorded_at")?,
                     })
                 })
                 .collect()
