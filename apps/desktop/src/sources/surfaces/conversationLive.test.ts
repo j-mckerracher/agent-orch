@@ -97,25 +97,29 @@ describe("mapEntries", () => {
     expect(done[1]).toMatchObject({ text: "Hello", streaming: false });
   });
 
-  it("joins a turn's thinking chunks into one entry before its reply and ends it when the reply starts", () => {
+  it("joins a turn's thinking chunks into one activity entry before its reply and ends it when the reply starts", () => {
     const thinking = [
       wire(1, "t1", "user_message", "hi"),
       wire(2, "t1", "thinking_chunk", "Let me "),
       wire(3, "t1", "thinking_chunk", "think."),
     ];
-    expect(mapEntries(thinking).map((e) => [e.kind, e.role, e.text, e.streaming, e.sequence])).toEqual([
-      ["message", "user", "hi", undefined, 1],
-      ["thinking", "coordinator", "Let me think.", true, 3],
+    const open = mapEntries(thinking);
+    expect(open.map((e) => [e.kind, e.role, e.streaming, e.sequence])).toEqual([
+      ["message", "user", undefined, 1],
+      ["activity", "coordinator", true, 3],
     ]);
+    expect(open[1]!.items).toEqual([{ kind: "thinking", key: "t2", text: "Let me think." }]);
     const replied = mapEntries([...thinking, wire(4, "t1", "reply_chunk", "Hello")]);
-    expect(replied.map((e) => [e.kind, e.text, e.streaming])).toEqual([
-      ["message", "hi", undefined],
-      ["thinking", "Let me think.", false],
-      ["message", "Hello", true],
+    expect(replied.map((e) => [e.kind, e.streaming])).toEqual([
+      ["message", undefined],
+      ["activity", false],
+      ["message", true],
     ]);
+    expect(replied[1]!.items).toEqual([{ kind: "thinking", key: "t2", text: "Let me think." }]);
+    expect(replied[2]!.text).toBe("Hello");
   });
 
-  it("keeps thinking apart per turn and ends it with the turn when there is no reply", () => {
+  it("keeps activity apart per turn and ends it with the turn when there is no reply", () => {
     const entries = mapEntries([
       wire(1, "t1", "user_message", "a"),
       wire(2, "t1", "thinking_chunk", "one"),
@@ -123,13 +127,73 @@ describe("mapEntries", () => {
       wire(4, "t2", "user_message", "b"),
       wire(5, "t2", "thinking_chunk", "two"),
     ]);
-    expect(entries.map((e) => [e.kind, e.text, e.streaming])).toEqual([
+    expect(entries.map((e) => [e.kind, e.items?.[0]?.kind === "thinking" ? e.items[0].text : e.text, e.streaming])).toEqual([
       ["message", "a", undefined],
-      ["thinking", "one", false],
+      ["activity", "one", false],
       ["status", "This turn was canceled.", undefined],
       ["message", "b", undefined],
-      ["thinking", "two", true],
+      ["activity", "two", true],
     ]);
+  });
+
+  describe("tool rows", () => {
+    const tool = (sequence: number, turn: string, kind: "tool_started" | "tool_finished", body: object | string) =>
+      wire(sequence, turn, kind, typeof body === "string" ? body : JSON.stringify(body));
+
+    it("orders thinking, tools and reply text by sequence and joins a tool's start and finish by id", () => {
+      const entries = mapEntries([
+        wire(1, "t1", "user_message", "go"),
+        wire(2, "t1", "thinking_chunk", "plan "),
+        wire(3, "t1", "thinking_chunk", "it"),
+        tool(4, "t1", "tool_started", { id: "a", name: "Read", summary: "src/x.ts" }),
+        tool(5, "t1", "tool_started", { id: "b", name: "Grep", summary: "needle" }),
+        tool(6, "t1", "tool_finished", { id: "b", ok: false, summary: "no match" }),
+        tool(7, "t1", "tool_finished", { id: "a", ok: true, summary: "40 lines" }),
+        wire(8, "t1", "thinking_chunk", "now reply"),
+        wire(9, "t1", "reply_chunk", "Part one. "),
+        tool(10, "t1", "tool_started", { id: "c", name: "Edit", summary: "y.ts" }),
+        wire(11, "t1", "reply_chunk", "Part two."),
+        wire(12, "t1", "turn_completed"),
+      ]);
+      expect(entries.map((e) => [e.kind, e.id, e.streaming])).toEqual([
+        ["message", "t1:user_message:1", undefined],
+        ["activity", "t1:activity:2", false],
+        ["message", "t1:reply", false],
+        ["activity", "t1:activity:10", false],
+        ["message", "t1:reply:11", false],
+      ]);
+      expect(entries[1]!.items).toEqual([
+        { kind: "thinking", key: "t2", text: "plan it" },
+        { kind: "tool", key: "u4", id: "a", name: "Read", summary: "src/x.ts", state: "ok", result: "40 lines" },
+        { kind: "tool", key: "u5", id: "b", name: "Grep", summary: "needle", state: "failed", result: "no match" },
+        { kind: "thinking", key: "t8", text: "now reply" },
+      ]);
+      expect(entries[2]!.text).toBe("Part one. ");
+      expect(entries[4]!.text).toBe("Part two.");
+    });
+
+    it("leaves a tool with no finish running, so the view can show it stopped once the turn is over", () => {
+      const entries = mapEntries([
+        wire(1, "t1", "user_message", "go"),
+        tool(2, "t1", "tool_started", { id: "a", name: "Bash", summary: "make" }),
+        wire(3, "t1", "turn_cancelled"),
+      ]);
+      expect(entries[1]).toMatchObject({ kind: "activity", streaming: false });
+      expect(entries[1]!.items).toMatchObject([{ kind: "tool", state: "running" }]);
+    });
+
+    it("shows the cap marker as an item and ignores rows it cannot read", () => {
+      const entries = mapEntries([
+        wire(1, "t1", "user_message", "go"),
+        tool(2, "t1", "tool_started", { truncated: true }),
+        tool(3, "t1", "tool_started", "not json"),
+        tool(4, "t1", "tool_started", { name: "no id" }),
+        tool(5, "t1", "tool_finished", { id: "never-started", ok: true, summary: "" }),
+        { ...wire(6, "t1", "thinking_chunk", "x"), kind: "future_kind" } as unknown as ConversationWireEntry,
+      ]);
+      expect(entries).toHaveLength(2);
+      expect(entries[1]!.items).toEqual([{ kind: "cap", key: "c2" }]);
+    });
   });
 
   it("turns a runtime_unavailable failure into a system status, never reply text", () => {
@@ -337,6 +401,88 @@ describe("live conversation adapter", () => {
     expect(result.data.turn).toMatchObject({ state: "failed", errorCode: "runtime_unavailable" });
     expect(result.data.truncated).toBe(false);
     expect(fake.callsTo("conversations.get").map((c) => (c.params as Record<string, unknown>).after_sequence)).toEqual([undefined, 1]);
+  });
+
+  describe("live activity", () => {
+    const global = { kind: "global" } as const;
+    const read = async (surfaces: Awaited<ReturnType<typeof live>>) => {
+      const result = await surfaces.conversation.transcript(global);
+      if (result.status !== "ok") throw new Error(`transcript ${result.status}`);
+      return result.data;
+    };
+    const afters = (fake: FakeDaemon) => fake.callsTo("conversations.get").map((c) => (c.params as Record<string, unknown>).after_sequence);
+
+    it("continues a running turn from its last cursor, and the appended read equals a full read", async () => {
+      const fake = populate(new FakeDaemon());
+      const convo = stubConversation(fake, "running");
+      const s = await live(fake);
+      await s.conversation.send(global, "go");
+      convo.think("plan ");
+      const first = await read(s);
+      expect(afters(fake)).toEqual([undefined]);
+
+      convo.think("more");
+      convo.toolStart("a", "Read", "x.ts");
+      const second = await read(s);
+      expect(afters(fake)).toEqual([undefined, 2]);
+      convo.toolFinish("a", true, "ok");
+      convo.reply("Hi");
+      const third = await read(s);
+      expect(afters(fake)).toEqual([undefined, 2, 4]);
+
+      const fresh = await read(await live(fake));
+      expect(third.entries).toEqual(fresh.entries);
+      expect(third.entries.map((e) => e.kind)).toEqual(["message", "activity", "message"]);
+      // A poll that adds one line keeps the identity of the entries it did not touch.
+      expect(second.entries[0]).toBe(first.entries[0]);
+      expect(third.entries[0]).toBe(second.entries[0]);
+    });
+
+    it("reads in full again once the turn has ended", async () => {
+      const fake = populate(new FakeDaemon());
+      const convo = stubConversation(fake, "running");
+      const s = await live(fake);
+      await s.conversation.send(global, "go");
+      await read(s);
+      convo.finishRunning(null, "Done");
+      const ended = await read(s);
+      expect(ended.entries.at(-1)).toMatchObject({ text: "Done", streaming: false });
+      await read(s);
+      expect(afters(fake)).toEqual([undefined, 1, undefined]);
+    });
+
+    it("starts over when a clear lands between two reads of a running turn", async () => {
+      const fake = populate(new FakeDaemon());
+      const convo = stubConversation(fake, "running");
+      convo.clearGeneration = 1;
+      const s = await live(fake);
+      await s.conversation.send(global, "go");
+      convo.think("one");
+      await read(s);
+      convo.clearGeneration = 2;
+      convo.think("two");
+      const data = await read(s);
+      expect(afters(fake)).toEqual([undefined, 2, undefined]);
+      expect(data.clearGeneration).toBe(2);
+      expect(data.entries).toHaveLength(2);
+    });
+
+    it("carries the live snapshot with the time this app received it", async () => {
+      const fake = populate(new FakeDaemon());
+      const convo = stubConversation(fake, "running");
+      convo.activity = { phase: "tool", tool: { id: "a", name: "Read", summary: "x.ts" }, phase_ms: 4000, idle_ms: 100 };
+      const s = await live(fake);
+      await s.conversation.send(global, "go");
+      expect((await read(s)).activity).toEqual({
+        phase: "tool",
+        tool: { id: "a", name: "Read", summary: "x.ts" },
+        phaseMs: 4000,
+        idleMs: 100,
+        receivedAt: expect.any(Number),
+      });
+      convo.finishRunning(null, "done");
+      expect((await read(s)).activity).toBeUndefined();
+    });
   });
 
   it("sends the wire target and a key, and shows the runtime-unavailable outcome as recorded, not replied", async () => {

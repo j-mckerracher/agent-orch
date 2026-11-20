@@ -60,6 +60,10 @@ async function prepare(env: Record<string, string> = noAgentsEnv(), reconnect: R
 // With no installed agent the daemon's runtime fails closed with `runtime_unavailable`. These
 // tests prove the UI reports exactly that and never produces a reply of its own. The tests after
 // them use the deterministic fake agent (`examples/fake_agent`) as the only installed agent.
+/** An activity entry's text is its thinking; every other entry has its own text. */
+const shownText = (entry: { kind: string; text: string; items?: readonly { kind: string; text?: string }[] }) =>
+  entry.kind === "activity" ? (entry.items ?? []).map((item) => item.text ?? "").join("") : entry.text;
+
 describe("Workspace conversation and model selector over the real daemon", () => {
   it("sends to Global, records it, and shows the runtime-unavailable state with no reply", async () => {
     const t = await prepare();
@@ -352,7 +356,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       await settled(t, global);
       await conversation.send(global, "two");
       const before = await settled(t, global);
-      expect(before.data.entries.map((e) => [e.role, e.text])).toEqual([
+      expect(before.data.entries.map((e) => [e.role, shownText(e)])).toEqual([
         ["user", "one"],
         ["coordinator", "fake thinking about: one"],
         ["coordinator", "fake reply to: one"],
@@ -366,7 +370,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         const r = await conversation.transcript(global);
         return r.status === "ok" ? r : undefined;
       }, "transcript after restart");
-      expect(after.data.entries.map((e) => [e.role, e.text])).toEqual(before.data.entries.map((e) => [e.role, e.text]));
+      expect(after.data.entries.map((e) => [e.role, shownText(e)])).toEqual(before.data.entries.map((e) => [e.role, shownText(e)]));
       expect(after.data.turn).toMatchObject({ state: "completed" });
 
       const workstream = await t.direct((api) => api.workstreamsCreate("Auth rewrite", "Replace session cookies", "e2e-ws-1"));
