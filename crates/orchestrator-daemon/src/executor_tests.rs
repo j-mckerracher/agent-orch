@@ -1858,8 +1858,6 @@ fn codex_task_argv_per_level_is_exact() {
         [
             "exec",
             "--json",
-            "--sandbox",
-            "workspace-write",
             "--approve-for-me",
             "--ignore-user-config",
             "-c",

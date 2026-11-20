@@ -85,7 +85,7 @@ The `codex` on this PATH is a cmux shim. It adds `--dangerously-bypass-hook-trus
 | Claude | Auto | `--permission-mode auto --restricted --tools …,Bash`; `--disallowedTools` `Bash(git push *)`, `Bash(git * push *)`, `Bash(git remote *)`, `Bash(git credential *)`, `Bash(git config *)`, `Bash(gh *)`; `--add-dir G` | same, `--resume <id>` |
 | Claude | Full | `--permission-mode bypassPermissions`; `--add-dir G` | same |
 | Codex | Restricted | `--sandbox workspace-write --ignore-user-config`; `--add-dir G` | `-c sandbox_mode`, `-c sandbox_workspace_write.writable_roots=[G]` |
-| Codex | Auto | `--sandbox workspace-write --approve-for-me --ignore-user-config -c sandbox_workspace_write.network_access=true`; `--add-dir G` | refused (`resume_refusal`), until a live resume confirms the `-c` keys |
+| Codex | Auto | `--approve-for-me --ignore-user-config -c sandbox_workspace_write.network_access=true`; `--add-dir G` | refused (`resume_refusal`), until a live resume confirms the `-c` keys |
 | Codex | Full | no sandbox flag; `--add-dir G` | `-c sandbox_workspace_write.writable_roots=[G]` (restores the status grant; replaces the user's own roots) |
 | Codex | Extended | no mapping, refused | refused |
 | Copilot | Restricted | `--deny-tool shell --deny-tool url --deny-tool memory`; per dir `--add-dir d --allow-tool write(d/**)` for G | same, `--resume=<id>` |

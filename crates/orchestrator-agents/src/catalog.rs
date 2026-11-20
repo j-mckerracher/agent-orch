@@ -916,9 +916,8 @@ impl CodexAdapter {
             PermissionLevel::Restricted => {
                 &["--sandbox", "workspace-write", "--ignore-user-config"]
             }
+            // Codex rejects `--sandbox` together with `--approve-for-me`, which already selects workspace-write.
             PermissionLevel::Auto => &[
-                "--sandbox",
-                "workspace-write",
                 "--approve-for-me",
                 "--ignore-user-config",
                 "-c",
@@ -2059,8 +2058,6 @@ mod tests {
             [
                 "exec",
                 "--json",
-                "--sandbox",
-                "workspace-write",
                 "--approve-for-me",
                 "--ignore-user-config",
                 "-c",
