@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Workstreams page wireframe</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<style>
+/* Wireframe only. Neutral grayscale stand-ins; the real UI must use the app's own theme tokens. */
+:root{--text-primary:#1a1a1a;--text-secondary:#5f5f5f;--text-muted:#999;--text-success:#2f7d32;--text-warning:#a15c00;--text-accent:#1f5fbf;
+--surface-2:#fff;--bg-neutral:#f0f0f0;--bg-accent:#e6effb;--bg-warning:#fdf3e2;--border:#e2e2e2;--border-strong:#c4c4c4;--border-warning:#e0b060}
+body{font-family:system-ui,sans-serif;max-width:860px;margin:24px auto;padding:0 16px;background:#fafafa}
+.wf{font-size:13px;line-height:1.4;color:var(--text-primary)}
+.fr{border:0.5px solid var(--border-strong);border-radius:12px;background:var(--surface-2);padding:16px;margin-bottom:8px}
+.lbl{font-size:12px;color:var(--text-secondary);margin:1.25rem 0 6px;display:flex;align-items:center;gap:8px}
+.bx{border:0.5px solid var(--border-strong);border-radius:6px;padding:4px 10px;font-size:12px;background:var(--surface-2);display:inline-block}
+.bx.p{background:var(--text-primary);color:var(--surface-2);border-color:var(--text-primary)}
+.bx.g{border-style:dashed;color:var(--text-secondary)}
+.row{display:flex;align-items:center;gap:12px;border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:6px}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.ok{background:var(--text-success)}.warn{background:var(--text-warning)}.idle{background:var(--text-muted)}
+.mut{color:var(--text-secondary);font-size:12px}
+.chip{font-size:11px;border:0.5px solid var(--border-strong);border-radius:4px;padding:1px 6px;color:var(--text-secondary)}
+.bar{height:4px;background:var(--bg-neutral);border-radius:2px;width:90px}
+.bar i{display:block;height:4px;background:var(--text-secondary);border-radius:2px}
+.n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--bg-accent);color:var(--text-accent);font-size:11px;font-weight:500;flex:none}
+.tabs{display:flex;gap:16px;border-bottom:0.5px solid var(--border);margin:12px 0}
+.tabs span{padding:6px 0;font-size:13px;color:var(--text-secondary)}
+.tabs .on{color:var(--text-primary);border-bottom:2px solid var(--text-primary);font-weight:500}
+.cd{border:0.5px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-weight:500;color:var(--text-secondary);padding:6px 8px;border-bottom:0.5px solid var(--border)}
+td{padding:7px 8px;border-bottom:0.5px solid var(--border)}
+</style>
+</head>
+<body>
+<div class="wf">
+
+<div class="lbl"><b style="font-weight:500">Screen 1</b> Default view: just my workstreams</div>
+<div class="fr">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:4px">
+    <div style="font-size:20px;font-weight:500">Workstreams</div>
+    <span class="mut">2 active</span>
+    <span style="flex:1"></span>
+    <span class="bx p"><i class="ti ti-plus" aria-hidden="true"></i> New workstream</span>
+    <span class="bx" aria-label="More actions"><i class="ti ti-dots" aria-hidden="true"></i></span>
+  </div>
+  <div class="mut" style="margin-bottom:12px">Each workstream groups related projects and tasks toward one goal.</div>
+
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+    <div style="display:flex;border:0.5px solid var(--border-strong);border-radius:6px;overflow:hidden;font-size:12px">
+      <span style="padding:4px 12px;background:var(--bg-neutral);font-weight:500">Active 2</span>
+      <span style="padding:4px 12px;border-left:0.5px solid var(--border)">Suspended 0</span>
+      <span style="padding:4px 12px;border-left:0.5px solid var(--border)">Archived 3</span>
+    </div>
+    <div class="bx" style="flex:1;color:var(--text-muted);padding:6px 10px"><i class="ti ti-search" aria-hidden="true"></i> Search workstreams</div>
+  </div>
+
+  <div class="row">
+    <span class="dot warn"></span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:500;font-size:14px">Global tasks</div>
+      <div class="mut">code, motif-mcao-cloud</div>
+    </div>
+    <span class="chip" style="color:var(--text-warning);border-color:var(--border-warning)">Needs attention</span>
+    <div style="width:110px"><div class="mut">2 of 2 tasks done</div><div class="bar"><i style="width:100%"></i></div></div>
+    <span class="mut" style="width:70px">Updated just now</span>
+    <i class="ti ti-chevron-right" aria-hidden="true"></i>
+  </div>
+  <div class="row">
+    <span class="dot ok"></span>
+    <div style="flex:1;min-width:0">
+      <div style="font-weight:500;font-size:14px">agentic-workflow-bootstrap debugging</div>
+      <div class="mut">1 project</div>
+    </div>
+    <span class="chip">On track</span>
+    <div style="width:110px"><div class="mut">0 of 1 tasks done</div><div class="bar"><i style="width:0%"></i></div></div>
+    <span class="mut" style="width:70px">Updated 2 h ago</span>
+    <i class="ti ti-chevron-right" aria-hidden="true"></i>
+  </div>
+
+  <div style="margin-top:14px;padding-top:10px;border-top:0.5px solid var(--border);display:flex;gap:16px" class="mut">
+    <span><i class="ti ti-chevron-right" aria-hidden="true"></i> Archived (3)</span>
+    <span style="flex:1"></span>
+    <span><i class="ti ti-refresh" aria-hidden="true"></i> Updated 0 s ago</span>
+  </div>
+</div>
+<div class="mut" style="display:flex;flex-wrap:wrap;gap:6px 18px">
+  <span><span class="n">1</span> one primary action</span>
+  <span><span class="n">2</span> rare actions behind the menu: Manage projects, Archive finished, Refresh</span>
+  <span><span class="n">3</span> status plus plain-language progress</span>
+  <span><span class="n">4</span> Archived collapsed by default</span>
+</div>
+
+<div class="lbl" style="margin-top:2rem"><b style="font-weight:500">Screen 2</b> Click a row: all the detail, in layers</div>
+<div class="fr">
+  <div class="mut" style="margin-bottom:6px"><i class="ti ti-arrow-left" aria-hidden="true"></i> Workstreams</div>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div style="font-size:20px;font-weight:500">Global tasks</div>
+    <span class="chip" style="color:var(--text-warning);border-color:var(--border-warning)">Needs attention</span>
+    <span style="flex:1"></span>
+    <span class="bx" aria-label="Workstream actions">Actions <i class="ti ti-chevron-down" aria-hidden="true"></i></span>
+  </div>
+  <div class="mut" style="margin-top:2px">Tasks the global orchestrator proposed without naming a workstream. Projects: code, motif-mcao-cloud</div>
+
+  <div class="tabs"><span class="on">Overview</span><span>Tasks 2</span><span>Objectives 0</span><span>Dependencies</span><span>Activity</span></div>
+
+  <div class="cd" style="border-color:var(--border-warning);background:var(--bg-warning)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <i class="ti ti-alert-triangle" style="color:var(--text-warning)" aria-hidden="true"></i>
+      <div style="flex:1"><b style="font-weight:500">A task is waiting on your decision</b><div class="mut">Review the pending approval to let work continue.</div></div>
+      <span class="bx p">Resolve decision</span>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:8px">
+    <div style="background:var(--bg-neutral);border-radius:8px;padding:8px 12px"><div class="mut">Tasks</div><div style="font-size:18px;font-weight:500">2</div></div>
+    <div style="background:var(--bg-neutral);border-radius:8px;padding:8px 12px"><div class="mut">Succeeded</div><div style="font-size:18px;font-weight:500">2</div></div>
+    <div style="background:var(--bg-neutral);border-radius:8px;padding:8px 12px"><div class="mut">Running</div><div style="font-size:18px;font-weight:500">0</div></div>
+  </div>
+
+  <div class="cd">
+    <div style="display:flex;align-items:center"><b style="font-weight:500">Objectives</b><span style="flex:1"></span><span class="bx g"><i class="ti ti-plus" aria-hidden="true"></i> Add objective</span></div>
+    <div class="mut" style="margin-top:4px">No objectives yet. Add one to set acceptance gates for this workstream.</div>
+  </div>
+
+  <div class="cd" style="padding-bottom:4px">
+    <b style="font-weight:500">Tasks</b>
+    <table style="margin-top:6px">
+      <tr><th>Task</th><th>Project</th><th>State</th><th>Assignee</th></tr>
+      <tr><td>Do the work described in Jira…</td><td>code</td><td><span class="chip">Succeeded</span></td><td>claude-code</td></tr>
+      <tr><td>Second task title</td><td>motif-mcao-cloud</td><td><span class="chip">Succeeded</span></td><td>claude-code</td></tr>
+    </table>
+  </div>
+
+  <div class="mut" style="padding:6px 2px"><i class="ti ti-chevron-right" aria-hidden="true"></i> Technical details: plan revision, data observation times, scheduler notes</div>
+</div>
+<div class="mut" style="display:flex;flex-wrap:wrap;gap:6px 18px">
+  <span><span class="n">5</span> Suspend, Archive, Prioritize live in one Actions menu</span>
+  <span><span class="n">6</span> the blocking item is the only highlighted block</span>
+  <span><span class="n">7</span> tabs hold dependencies and activity</span>
+  <span><span class="n">8</span> system notes collapsed</span>
+</div>
+
+</div>
+</body>
+</html>
