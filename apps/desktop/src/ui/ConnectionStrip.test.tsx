@@ -57,7 +57,8 @@ function setup({ fake = new FakeDaemon(), bridge = true, layout = createLayoutSe
 }
 
 const toggle = () => screen.getByRole("button", { name: TOGGLE });
-const connected = () => waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Connected"));
+/** A healthy bridged connection renders no strip at all, so "connected" is the pill's absence. */
+const connected = () => waitFor(() => expect(screen.queryByTestId("connection-status")).toBeNull());
 
 /** Asserts the strip is locked open: expanded, the toggle disabled, and the visible reason linked to it. */
 function expectLocked(reason: string) {
@@ -74,53 +75,71 @@ function expectLocked(reason: string) {
   expect(screen.getByTestId("journal-continuity")).toBeVisible();
 }
 
-describe("ConnectionStrip collapse (DPES-1105)", () => {
-  it("is expanded by default and shows the explanatory notes", async () => {
+describe("ConnectionStrip visibility", () => {
+  it("renders nothing while the connection is healthy", async () => {
     setup();
     await connected();
+    expect(document.querySelector(".conn-strip")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Refresh / reconnect" })).toBeNull();
+  });
+
+  it("appears while the daemon is down, and leaves again once it is reachable", async () => {
+    const fake = new FakeDaemon();
+    fake.openError = new DaemonError("disconnected", "down");
+    const { user } = setup({ fake, connection: { maxAutoAttempts: 0 } });
+    await waitFor(() => expect(screen.getByTestId("connection-status")).not.toHaveTextContent("Connected"));
+    fake.openError = null;
+    await user.click(screen.getByRole("button", { name: "Refresh / reconnect" }));
+    await connected();
+  });
+
+  it("shows the connecting state first, then disappears when connected", async () => {
+    setup();
+    expect(screen.getByTestId("connection-status")).toHaveTextContent(/Offline|Connecting/);
+    await connected();
+  });
+});
+
+describe("ConnectionStrip collapse (DPES-1105), in fixture demo mode", () => {
+  it("is expanded by default and shows the explanatory notes", () => {
+    setup({ bridge: false });
     expect(toggle()).toHaveAttribute("aria-expanded", "true");
     expect(toggle()).toHaveAccessibleName(COLLAPSE);
-    expect(screen.getByTestId("connected-note")).toBeVisible();
     expect(screen.getByTestId("recovery-unknown")).toBeVisible();
     expect(screen.getByTestId("journal-continuity")).toBeVisible();
   });
 
   it("collapses to a one-line summary and folds only the explanatory notes", async () => {
-    const { user, layout } = setup();
-    await connected();
+    const { user, layout } = setup({ bridge: false });
     await user.click(toggle());
     expect(toggle()).toHaveAccessibleName(EXPAND);
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByTestId("connection-status")).toBeVisible();
     expect(screen.getByTestId("last-sequence")).toBeVisible();
     expect(screen.getByRole("button", { name: "Refresh / reconnect" })).toBeVisible();
-    expect(screen.getByTestId("connected-note")).not.toBeVisible();
     expect(screen.getByTestId("recovery-unknown")).not.toBeVisible();
     expect(screen.getByTestId("journal-continuity")).not.toBeVisible();
     expect(layout.getSnapshot().connectionStripExpanded).toBe(false);
   });
 
   it("keeps the compact summary in the toggle's row: status, last durable sequence and reconnect", async () => {
-    const { user } = setup();
-    await connected();
+    const { user } = setup({ bridge: false });
     await user.click(toggle());
     const row = toggle().parentElement!;
-    expect(row).toHaveTextContent("Connected");
+    expect(row).toHaveTextContent("Offline");
     expect(row).toHaveTextContent(/Last durable sequence: \w+/);
     expect(row).toHaveTextContent("Refresh / reconnect");
   });
 
-  it("ties the toggle to the region it controls", async () => {
-    setup();
-    await connected();
+  it("ties the toggle to the region it controls", () => {
+    setup({ bridge: false });
     const region = document.getElementById(toggle().getAttribute("aria-controls") ?? "");
     expect(region).toBe(screen.getByTestId("connection-details"));
     expect(region).toBeVisible();
   });
 
   it("works from the keyboard with Enter and Space", async () => {
-    const { user } = setup();
-    await connected();
+    const { user } = setup({ bridge: false });
     toggle().focus();
     await user.keyboard("{Enter}");
     expect(toggle()).toHaveAttribute("aria-expanded", "false");
@@ -138,11 +157,31 @@ describe("ConnectionStrip collapse (DPES-1105)", () => {
     expect(screen.getByTestId("recovery-unknown")).not.toBeVisible();
   });
 
-  it("locks open while the connection is reconnecting, and restores the choice when it returns", async () => {
+  it("keeps a collapsed choice across a remount when storage works", async () => {
+    const storage = memoryStorage();
+    const first = setup({ bridge: false, layout: createLayoutSettings(storage) });
+    await first.user.click(toggle());
+    expect(JSON.parse(storage.data[LAYOUT_STORAGE_KEY]!)).toMatchObject({ connectionStripExpanded: false });
+
+    cleanup();
+    setup({ bridge: false, layout: createLayoutSettings(storage) });
+    await waitFor(() => expect(toggle()).toHaveAttribute("aria-expanded", "false"));
+  });
+
+  it("applies the collapse for the page and reports not persisted when storage throws", async () => {
+    const layout = createLayoutSettings(throwingStorage);
+    const { user } = setup({ layout, bridge: false });
+    await user.click(toggle());
+    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    expect(layout.getSnapshot()).toMatchObject({ connectionStripExpanded: false, persisted: false });
+  });
+});
+
+describe("ConnectionStrip when the connection needs attention", () => {
+  it("locks open while the connection is reconnecting, and leaves when it returns", async () => {
     const fake = new FakeDaemon();
     const { user } = setup({ fake, connection: { maxAutoAttempts: 100, backoffMs: [60_000] } });
     await connected();
-    await user.click(toggle());
     fake.openError = new DaemonError("disconnected", "down");
     fake.drop();
     await waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Reconnecting..."));
@@ -151,8 +190,6 @@ describe("ConnectionStrip collapse (DPES-1105)", () => {
     fake.openError = null;
     await user.click(screen.getByRole("button", { name: "Refresh / reconnect" }));
     await connected();
-    expect(toggle()).toHaveAttribute("aria-expanded", "false");
-    expect(toggle()).not.toBeDisabled();
   });
 
   it("locks open when the daemon is unavailable (no bridge answer)", async () => {
@@ -166,23 +203,21 @@ describe("ConnectionStrip collapse (DPES-1105)", () => {
 
   it("locks open on an authentication failure", async () => {
     const fake = new FakeDaemon();
-    const { user } = setup({ fake });
+    setup({ fake });
     await connected();
-    await user.click(toggle());
     fake.openError = new DaemonError("auth", "bad token", -32001);
     fake.drop();
     await waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Authentication failed"));
     expectLocked("Kept open while the connection needs attention.");
   });
 
-  it("locks open while history is incomplete even though the connection is up, and keeps the alert out of the folding region", async () => {
+  it("shows the strip while history is incomplete even though the connection is up, and keeps the alert out of the folding region", async () => {
     const fake = new FakeDaemon();
     const { user } = setup({ fake });
     await connected();
-    await user.click(toggle());
     fake.pushStreamError(-32015, "slow");
     const alert = await screen.findByTestId("history-incomplete");
-    await connected();
+    await waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Connected"));
     expectLocked("Kept open until history is refreshed.");
     expect(alert).toHaveAttribute("role", "alert");
     expect(alert).toBeVisible();
@@ -190,44 +225,19 @@ describe("ConnectionStrip collapse (DPES-1105)", () => {
 
     fake.openError = null;
     await user.click(screen.getByRole("button", { name: "Refresh / reconnect" }));
-    await waitFor(() => expect(screen.queryByTestId("history-incomplete")).not.toBeInTheDocument());
-    expect(toggle()).toHaveAttribute("aria-expanded", "false");
+    await connected();
   });
 
-  it("keeps the status pill announced while collapsed: it stays visible and live when the state changes", async () => {
+  it("keeps the status pill announced: it stays live and is the same element when the state changes", async () => {
     const fake = new FakeDaemon();
-    const { user } = setup({ fake, connection: { maxAutoAttempts: 100, backoffMs: [60_000] } });
-    await connected();
-    await user.click(toggle());
+    fake.openError = new DaemonError("disconnected", "down");
+    setup({ fake, connection: { maxAutoAttempts: 100, backoffMs: [60_000] } });
     const pill = screen.getByTestId("connection-status");
     expect(pill).toHaveAttribute("role", "status");
     expect(pill.closest("[hidden]")).toBeNull();
     expect(pill).toBeVisible();
-
-    fake.openError = new DaemonError("disconnected", "down");
-    fake.drop();
     await waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Reconnecting..."));
     expect(screen.getByTestId("connection-status")).toBe(pill);
     expect(pill).toBeVisible();
-  });
-
-  it("keeps a collapsed choice across a remount when storage works", async () => {
-    const storage = memoryStorage();
-    const first = setup({ layout: createLayoutSettings(storage) });
-    await connected();
-    await first.user.click(toggle());
-    expect(JSON.parse(storage.data[LAYOUT_STORAGE_KEY]!)).toMatchObject({ connectionStripExpanded: false });
-
-    cleanup();
-    setup({ layout: createLayoutSettings(storage) });
-    await waitFor(() => expect(toggle()).toHaveAttribute("aria-expanded", "false"));
-  });
-
-  it("applies the collapse for the page and reports not persisted when storage throws", async () => {
-    const layout = createLayoutSettings(throwingStorage);
-    const { user } = setup({ layout, bridge: false });
-    await user.click(toggle());
-    expect(toggle()).toHaveAttribute("aria-expanded", "false");
-    expect(layout.getSnapshot()).toMatchObject({ connectionStripExpanded: false, persisted: false });
   });
 });

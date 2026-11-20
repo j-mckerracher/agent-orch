@@ -29,6 +29,7 @@ import {
   readingText,
 } from "./settingsModel";
 import { SaveButton, useSaveGuard } from "./SaveBar";
+import { AppearanceSection } from "./AppearanceSection";
 import { AutonomousActionsSection } from "./AutonomousActionsSection";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
@@ -213,6 +214,7 @@ export function SettingsView() {
       <HomeDirectorySection model={model} />
       <GrantsSection />
       <PreferencesSection />
+      <AppearanceSection />
     </div>
   );
 }

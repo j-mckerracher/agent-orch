@@ -374,8 +374,7 @@
   color: var(--blue);
 }
 
-.ws-view :focus-visible,
-.ws-tree :focus-visible {
+.ws-view :focus-visible {
   outline: var(--focus-width, 3px) solid var(--focus);
   outline-offset: 2px;
 }
@@ -423,129 +422,6 @@
   gap: 4px;
   font-size: 13px;
 }
-
-/* Sidebar tree */
-.ws-tree {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-  font-size: 13px;
-}
-
-.ws-tree-caption {
-  margin: 0;
-  color: var(--subtle);
-  font-size: 11px;
-}
-
-.ws-tree-root,
-.ws-tree-tasks {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.ws-tree-summary {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  padding: 5px 4px;
-  border-radius: var(--radius-sm);
-  color: var(--ink);
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.ws-tree-summary:hover,
-.ws-tree-task:hover {
-  background: var(--soft-strong);
-}
-
-.ws-tree-number {
-  color: var(--subtle);
-  font: 11px var(--font-mono);
-  white-space: nowrap;
-}
-
-/* Generated so the row's visible text is only its name (WCAG 2.5.3 label in name). */
-.ws-tree-number::before,
-.ws-tree-count::before {
-  content: attr(data-text);
-}
-
-.ws-tree-title {
-  min-width: 0;
-  flex: 1;
-  overflow-wrap: anywhere;
-}
-
-.ws-tree-count {
-  color: var(--subtle);
-}
-
-.ws-tree-tasks {
-  margin: 0 0 4px 8px;
-  padding-left: 8px;
-  border-left: 1px solid var(--line);
-}
-
-.ws-tree-task {
-  display: grid;
-  gap: 1px;
-  padding: 4px 6px;
-  border-radius: var(--radius-sm);
-  color: var(--ink);
-  text-decoration: none;
-}
-
-.ws-tree-task[aria-current="page"] {
-  background: var(--blue-bg);
-  box-shadow: inset 3px 0 0 var(--blue);
-  font-weight: 700;
-}
-
-.ws-tree-task[aria-disabled="true"] {
-  cursor: default;
-}
-
-.ws-tree-task-head {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-}
-
-.ws-tree-task-name {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-/* Worker bullet from the wireframe (`workers .worker-name:before`): a 6px dot in --green. */
-.ws-tree-task-name::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 7px;
-  border-radius: 50%;
-  background: var(--green);
-  vertical-align: middle;
-}
-
-.ws-tree-task-head small,
-.ws-tree-worker,
-.ws-tree-none {
-  color: var(--subtle);
-  font-size: 11px;
-}
-
-.ws-tree-worker {
-  padding-left: 8px;
-}
-
-.ws-tree-none {
-  padding: 4px 6px;
-}
-
 
 /* Live workstream controls (M7-23). */
 .ws-objective-card {

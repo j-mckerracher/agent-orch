@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>App windows wireframes</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+<style>
+/* Wireframe only. Neutral grayscale stand-ins; the real UI must use the app's own theme tokens. */
+:root{--tp:#1a1a1a;--ts:#5f5f5f;--tm:#999;--ok:#2f7d32;--warn:#a15c00;--acc:#1f5fbf;--s2:#fff;--bn:#f0f0f0;--ba:#e6effb;--bw:#fdf3e2;--b:#e2e2e2;--bs:#c4c4c4;--bwarn:#e0b060}
+body{font-family:system-ui,sans-serif;max-width:960px;margin:24px auto;padding:0 16px;background:#fafafa;font-size:13px;line-height:1.4;color:var(--tp)}
+h2{font-size:15px;font-weight:500;margin:2.5rem 0 4px}
+.why{color:var(--ts);font-size:12px;margin-bottom:8px}
+.fr{border:0.5px solid var(--bs);border-radius:12px;background:var(--s2);padding:16px;margin-bottom:8px}
+.bx{border:0.5px solid var(--bs);border-radius:6px;padding:4px 10px;font-size:12px;background:var(--s2);display:inline-block;white-space:nowrap}
+.bx.p{background:var(--tp);color:var(--s2);border-color:var(--tp)}
+.bx.g{border-style:dashed;color:var(--ts)}
+.row{display:flex;align-items:center;gap:12px;border:0.5px solid var(--b);border-radius:8px;padding:10px 12px;margin-bottom:6px}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.ok{background:var(--ok)}.warn{background:var(--warn)}.idle{background:var(--tm)}.run{background:var(--acc)}
+.mut{color:var(--ts);font-size:12px}
+.chip{font-size:11px;border:0.5px solid var(--bs);border-radius:4px;padding:1px 6px;color:var(--ts);white-space:nowrap}
+.chip.w{color:var(--warn);border-color:var(--bwarn)}
+.n{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;background:var(--ba);color:var(--acc);font-size:11px;font-weight:500;flex:none}
+.tabs{display:flex;gap:16px;border-bottom:0.5px solid var(--b);margin:12px 0}
+.tabs span{padding:6px 0;color:var(--ts)}
+.tabs .on{color:var(--tp);border-bottom:2px solid var(--tp);font-weight:500}
+.cd{border:0.5px solid var(--b);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.alert{border-color:var(--bwarn);background:var(--bw)}
+.seg{display:flex;border:0.5px solid var(--bs);border-radius:6px;overflow:hidden;font-size:12px}
+.seg span{padding:4px 12px;border-left:0.5px solid var(--b)}.seg span:first-child{border-left:0}
+.seg .on{background:var(--bn);font-weight:500}
+.hd{display:flex;align-items:center;gap:10px;margin-bottom:4px}
+.t{font-size:20px;font-weight:500}
+.sp{flex:1}
+.notes{display:flex;flex-wrap:wrap;gap:6px 18px;color:var(--ts);font-size:12px}
+.side{width:170px;flex:none;border-right:0.5px solid var(--b);padding-right:12px}
+.side div{padding:6px 8px;border-radius:6px;display:flex;align-items:center;gap:8px}
+.side .on{background:var(--bn);font-weight:500}
+.in{border:0.5px solid var(--bs);border-radius:6px;padding:6px 10px;color:var(--tm);background:var(--s2)}
+.bub{border-radius:10px;padding:8px 12px;max-width:70%;margin-bottom:8px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;font-weight:500;color:var(--ts);padding:6px 8px;border-bottom:0.5px solid var(--b)}
+td{padding:7px 8px;border-bottom:0.5px solid var(--b)}
+.fld{margin-bottom:10px}.fld .mut{margin-bottom:3px}
+.tog{width:28px;height:16px;border-radius:8px;background:var(--bs);display:inline-block;vertical-align:middle;position:relative}
+.tog.on{background:var(--tp)}
+</style>
+</head>
+<body>
+
+<p class="mut">Companion to workstreams-page-wireframe.html. One rule everywhere: each window opens on the one thing you came for. Detail sits one click deeper (tabs, row detail, a collapsed "Technical details"). Controls the daemon can't run are hidden, not shown disabled.</p>
+
+<h2>A. App shell (every window)</h2>
+<div class="why">You need: where am I, what needs me. Nothing else.</div>
+<div class="fr" style="padding:0;overflow:hidden">
+  <div style="display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:0.5px solid var(--b)">
+    <b style="font-weight:500">MCAO</b>
+    <div class="in" style="flex:1"><i class="ti ti-search"></i> Search  <span style="float:right">⌘K</span></div>
+    <span class="chip w"><i class="ti ti-bell"></i> 3 need you</span>
+    <span class="bx">$0.08 today</span>
+  </div>
+  <div style="display:flex;min-height:150px">
+    <div class="side" style="padding:10px">
+      <div class="on"><i class="ti ti-message"></i> Workspace</div>
+      <div><i class="ti ti-stack-2"></i> Workstreams</div>
+      <div><i class="ti ti-cpu"></i> Agents <span class="sp"></span><span class="mut">1</span></div>
+      <div><i class="ti ti-checks"></i> Review <span class="sp"></span><span class="n">3</span></div>
+      <div style="margin-top:24px"><i class="ti ti-settings"></i> Settings</div>
+    </div>
+    <div style="flex:1;padding:12px">
+      <div class="cd alert" style="display:flex;gap:10px;align-items:center"><i class="ti ti-plug-off"></i><div class="sp">Reconnecting to the daemon…</div><span class="mut">Details</span></div>
+      <div class="mut">Window content</div>
+    </div>
+  </div>
+</div>
+<div class="notes">
+  <span><span class="n">1</span> top bar: search, one "need you" count, usage. Drop the four-count line; nav badges carry it</span>
+  <span><span class="n">2</span> usage pill opens the existing popover unchanged</span>
+  <span><span class="n">3</span> connection strip appears only when not connected</span>
+  <span><span class="n">4</span> workstream tree leaves the sidebar; the Workstreams page is the list</span>
+  <span><span class="n">5</span> theme toggle moves to Settings</span>
+</div>
+
+<h2>B. Workspace (default route)</h2>
+<div class="why">You need: talk to the orchestrator and answer what it asks.</div>
+<div class="fr">
+  <div class="hd">
+    <span class="bx">Global orchestrator <i class="ti ti-chevron-down"></i></span>
+    <span class="mut">All workstreams</span>
+    <span class="sp"></span>
+    <span class="mut"><span class="dot run" style="display:inline-block;width:8px;height:8px"></span> 1 running</span>
+    <span class="bx" aria-label="Conversation actions"><i class="ti ti-dots"></i></span>
+  </div>
+  <div class="cd" style="display:flex;align-items:center;gap:10px;margin-top:8px">
+    <i class="ti ti-history"></i><div class="sp"><b style="font-weight:500">While you were away:</b> <span class="mut">2 decisions waiting, 1 task needs attention</span></div><span class="mut">Show</span><span class="bx">Dismiss</span>
+  </div>
+  <div style="padding:8px 0">
+    <div class="bub" style="background:var(--bn)">I split the Jira story into two tasks. One needs your approval to start.</div>
+    <div class="cd alert" style="max-width:70%">
+      <div style="display:flex;align-items:center;gap:8px"><b style="font-weight:500">Start task: Fix wake-line cap</b><span class="sp"></span><span class="chip">motif-mcao</span></div>
+      <div class="mut" style="margin:4px 0 8px">claude-code · ends in a pull request · <u>Details</u></div>
+      <span class="bx p">Approve</span> <span class="bx">Reject</span>
+    </div>
+    <div class="bub" style="background:var(--ba);margin-left:auto">Go ahead, and keep the PR small.</div>
+  </div>
+  <div class="cd" style="margin:0">
+    <div class="mut" style="padding:4px 0 10px">Ask a question, redirect work, or discuss the plan…</div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <span class="bx g">Opus · default effort · Auto <i class="ti ti-chevron-down"></i></span>
+      <span class="sp"></span><span class="bx p"><i class="ti ti-send"></i> Send</span>
+    </div>
+  </div>
+</div>
+<div class="notes">
+  <span><span class="n">1</span> target picker is the title; scope and monitoring move into the ⋯ menu</span>
+  <span><span class="n">2</span> "While you were away" is one dismissible line</span>
+  <span><span class="n">3</span> action cards show 2 facts and Approve/Reject; Details expands the full field list</span>
+  <span><span class="n">4</span> model, effort and permission collapse into one chip; Full still confirms</span>
+  <span><span class="n">5</span> activity popover becomes the "1 running" link (opens Agents)</span>
+  <span><span class="n">6</span> project targets: coordinator scope and reports go in the ⋯ menu</span>
+</div>
+
+<h2>C. Agents</h2>
+<div class="why">You need: what's running right now, and is anything stuck.</div>
+<div class="fr">
+  <div class="hd"><div class="t">Agents</div><span class="mut">1 running · 2 queued</span><span class="sp"></span><span class="bx"><i class="ti ti-dots"></i></span></div>
+  <div style="display:flex;gap:12px;margin:10px 0">
+    <div class="seg"><span class="on">Running 1</span><span>Waiting 1</span><span>Queued 2</span><span>Failed 0</span><span>Finished 14</span></div>
+    <div class="in" style="flex:1"><i class="ti ti-search"></i> Filter tasks or agents</div>
+  </div>
+  <div class="row"><span class="dot run"></span><div class="sp"><div style="font-weight:500">Fix wake-line cap</div><div class="mut">motif-mcao · claude-code · attempt 1</div></div><span class="mut">12 min</span><i class="ti ti-chevron-right"></i></div>
+  <div class="row"><span class="dot warn"></span><div class="sp"><div style="font-weight:500">Bootstrap debugging</div><div class="mut">agentic-workflow · codex</div></div><span class="chip w">Waiting for approval</span><i class="ti ti-chevron-right"></i></div>
+</div>
+<div class="fr">
+  <div class="mut" style="margin-bottom:6px"><i class="ti ti-arrow-left"></i> Agents</div>
+  <div class="hd"><div class="t">Fix wake-line cap</div><span class="chip">Running</span><span class="sp"></span><span class="bx">Actions <i class="ti ti-chevron-down"></i></span></div>
+  <div class="mut">motif-mcao · claude-code · attempt 1 of 1 · started 12 min ago</div>
+  <div class="tabs"><span class="on">Output</span><span>Thinking</span><span>Attempts 1</span><span>Event feed</span></div>
+  <div class="cd" style="font-family:ui-monospace,monospace;font-size:12px;color:var(--ts)">running tests…<br>42 passed<br>editing src/wake.rs</div>
+</div>
+<div class="notes">
+  <span><span class="n">1</span> drop eyebrow, subtitle, and the 6 status pills; the tab counts say it</span>
+  <span><span class="n">2</span> 7 tabs become 5; Disconnected and idle (not available) are hidden</span>
+  <span><span class="n">3</span> detail is its own view, not a permanent right pane</span>
+  <span><span class="n">4</span> Actions: Cancel attempt, Reassign. Disabled future controls hidden</span>
+  <span><span class="n">5</span> adapter inventory moves to Settings › Agents; later-scope previews removed</span>
+</div>
+
+<h2>D. Review</h2>
+<div class="why">You need: what's waiting on me, and decide it.</div>
+<div class="fr">
+  <div class="hd"><div class="t">Review</div><span class="mut">3 waiting</span></div>
+  <div style="display:flex;gap:12px;margin:10px 0">
+    <div class="seg"><span class="on">Needs you 3</span><span>Held 0</span><span>Resolved</span></div>
+    <span class="sp"></span><span class="bx">All projects <i class="ti ti-chevron-down"></i></span>
+  </div>
+  <div class="row"><span class="chip">Approval</span><div class="sp"><div style="font-weight:500">Start task: Fix wake-line cap</div><div class="mut">motif-mcao · 5 min ago</div></div><span class="bx p">Approve</span><span class="bx">Reject</span></div>
+  <div class="row"><span class="chip">Question</span><div class="sp"><div style="font-weight:500">Which branch should the fix target?</div><div class="mut">agentic-workflow · 20 min ago</div></div><span class="bx">Answer</span></div>
+  <div class="row"><span class="chip">Candidate</span><div class="sp"><div style="font-weight:500">Review changes: Compact header</div><div class="mut">motif-mcao · 3 files · checks passed</div></div><span class="bx">Review</span></div>
+</div>
+<div class="fr">
+  <div class="mut" style="margin-bottom:6px"><i class="ti ti-arrow-left"></i> Review</div>
+  <div class="hd"><div class="t">Review changes: Compact header</div><span class="sp"></span><span class="bx">Hold</span><span class="bx">Reject</span><span class="bx p">Accept</span></div>
+  <div class="mut">motif-mcao · Global tasks · commit 7aa6602 · checks passed</div>
+  <div class="tabs"><span class="on">Changes 3</span><span>Evidence</span><span>Request changes</span><span>History</span></div>
+  <div style="display:flex;gap:12px">
+    <div style="width:180px" class="mut">src/Header.tsx<br>src/Composer.tsx<br>src/styles.css</div>
+    <div class="cd sp" style="font-family:ui-monospace,monospace;font-size:12px;margin:0">- &lt;Header big /&gt;<br>+ &lt;Header compact /&gt;</div>
+  </div>
+  <div class="cd" style="margin-top:10px;display:flex;align-items:center"><div class="sp">After accepting: <b style="font-weight:500">Request delivery</b> <span class="mut">(separate step, opens the PR)</span></div></div>
+  <div class="mut"><i class="ti ti-chevron-right"></i> Technical details: six facts, attempts and tokens, audit transitions</div>
+</div>
+<div class="notes">
+  <span><span class="n">1</span> one list: questions, approvals, candidates, PRs, newest first; the type chip tells them apart</span>
+  <span><span class="n">2</span> simple items decide inline; complex ones open detail</span>
+  <span><span class="n">3</span> 7 tabs become 3; Approvals, Verification, Candidates and Delivery become a type filter in the list</span>
+  <span><span class="n">4</span> notification settings move to Settings › Notifications</span>
+  <span><span class="n">5</span> disabled owner, response-time, silence and audit controls hidden</span>
+  <span><span class="n">6</span> Accept is the only primary button</span>
+</div>
+
+<h2>E. Settings</h2>
+<div class="why">You need: change one setting and leave.</div>
+<div class="fr" style="display:flex;gap:16px">
+  <div class="side">
+    <div class="in" style="margin-bottom:8px;padding:4px 8px"><i class="ti ti-search"></i> Find a setting</div>
+    <div class="on">Agents</div><div>Limits</div><div>Autonomy</div><div>Repositories</div><div>Memory</div><div>Notifications</div><div>Appearance</div>
+  </div>
+  <div class="sp">
+    <div class="t" style="margin-bottom:2px">Agents</div>
+    <div class="mut" style="margin-bottom:14px">Defaults for new tasks.</div>
+    <div class="fld"><div class="mut">Default provider</div><span class="bx" style="width:240px">claude-code <i class="ti ti-chevron-down" style="float:right"></i></span></div>
+    <div class="fld"><div class="mut">Default model</div><span class="bx" style="width:240px">Use provider default <i class="ti ti-chevron-down" style="float:right"></i></span></div>
+    <div class="fld"><div class="mut">Default effort</div><span class="bx" style="width:240px">Medium <i class="ti ti-chevron-down" style="float:right"></i></span></div>
+    <div class="mut" style="margin:6px 0 14px"><i class="ti ti-chevron-right"></i> Per-provider overrides · Installed adapters</div>
+    <div style="border-top:0.5px solid var(--b);padding-top:10px;display:flex;align-items:center;gap:8px"><span class="mut">Unsaved changes</span><span class="sp"></span><span class="bx">Discard</span><span class="bx p">Save</span></div>
+  </div>
+</div>
+<div class="fr" style="display:flex;gap:16px">
+  <div class="side"><div>Agents</div><div>Limits</div><div class="on">Autonomy</div><div>Repositories</div><div>Memory</div><div>Notifications</div><div>Appearance</div></div>
+  <div class="sp">
+    <div class="t" style="margin-bottom:14px">Autonomy</div>
+    <div class="row"><div class="sp"><div style="font-weight:500">Let the orchestrator act on its own</div><div class="mut">Starts and retries tasks without asking.</div></div><span class="tog"></span></div>
+    <div class="row"><div class="sp"><div style="font-weight:500">Propose tasks that end in a pull request</div><div class="mut">You still approve each one.</div></div><span class="tog on"></span></div>
+    <div class="row"><div class="sp"><div style="font-weight:500">Read-only task tools in chat</div></div><span class="tog on"></span></div>
+    <div style="display:flex;align-items:center;margin:14px 0 6px"><b style="font-weight:500">Standing approvals</b><span class="sp"></span><span class="bx g"><i class="ti ti-plus"></i> Add</span></div>
+    <div class="mut">None yet. Nothing runs without your approval.</div>
+  </div>
+</div>
+<div class="notes">
+  <span><span class="n">1</span> 11 stacked sections become 7 pages; one shown at a time</span>
+  <span><span class="n">2</span> Limits: machine load, checks on running work, automatic replies</span>
+  <span><span class="n">3</span> Repositories: repo list, register, home directory</span>
+  <span><span class="n">4</span> Memory: preferences and learnings</span>
+  <span><span class="n">5</span> one Save bar per page instead of a Save per section; toggles save on click</span>
+  <span><span class="n">6</span> Add opens the standing approval form; it isn't always visible</span>
+</div>
+
+<h2>F. Project (from a workstream)</h2>
+<div class="why">You need: this project's tasks, and to start a new one.</div>
+<div class="fr">
+  <div class="mut" style="margin-bottom:6px"><i class="ti ti-arrow-left"></i> Global tasks</div>
+  <div class="hd"><div class="t">motif-mcao</div><span class="mut">4 tasks · 1 awaiting review</span><span class="sp"></span><span class="bx"><i class="ti ti-dots"></i></span><span class="bx p"><i class="ti ti-plus"></i> New task</span></div>
+  <div class="tabs"><span class="on">Tasks</span><span>Coordinator</span><span>Defaults</span></div>
+  <div style="display:flex;gap:12px;margin-bottom:10px"><div class="seg"><span class="on">Open 2</span><span>Awaiting review 1</span><span>Done 1</span></div></div>
+  <table><tr><th>Task</th><th>State</th><th>Agent</th><th></th></tr>
+  <tr><td>Fix wake-line cap</td><td><span class="chip">Running</span></td><td>claude-code</td><td><i class="ti ti-chevron-right"></i></td></tr>
+  <tr><td>Compact header</td><td><span class="chip w">Awaiting review</span></td><td>claude-code</td><td><i class="ti ti-chevron-right"></i></td></tr></table>
+</div>
+<div class="notes">
+  <span><span class="n">1</span> New task opens the form in a dialog: kind, agent, delivery. Autonomy, checks and commands sit under "More options"</span>
+  <span><span class="n">2</span> agent detection moves to Settings › Agents</span>
+  <span><span class="n">3</span> 6 task filters become 3; Task ID and session go into the task detail</span>
+</div>
+
+<h2>G. Task</h2>
+<div class="why">You need: is it done, and what do I do next.</div>
+<div class="fr">
+  <div class="mut" style="margin-bottom:6px"><i class="ti ti-arrow-left"></i> motif-mcao</div>
+  <div class="hd"><div class="t">Compact header</div><span class="chip w">Awaiting review</span><span class="sp"></span><span class="bx"><i class="ti ti-dots"></i></span><span class="bx p">Review changes</span></div>
+  <div class="mut">claude-code · ends in a pull request · finished 4 min ago</div>
+  <div class="tabs"><span class="on">Conversation</span><span>Attempts 1</span><span>Timeline</span></div>
+  <div class="bub" style="background:var(--bn)">Done. Header now uses the compact layout; 3 files changed, tests pass.</div>
+  <div class="mut"><i class="ti ti-chevron-right"></i> Technical details: outcome, recovery class, sessions, audit transitions</div>
+</div>
+<div class="notes">
+  <span><span class="n">1</span> one primary action that changes with state: Review changes, Retry, or Cancel</span>
+  <span><span class="n">2</span> ⋯ menu: Retry, Discard changes (confirm), Archive</span>
+  <span><span class="n">3</span> 7 panels become 3 tabs plus Technical details</span>
+</div>
+
+</body>
+</html>

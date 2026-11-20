@@ -9,13 +9,11 @@ import { AppShell } from "./AppShell";
 import type { ShellSlots } from "./slots";
 
 const slots: ShellSlots = {
+  agentsCount: null,
   reviewCount: null,
-  workstreamsCount: null,
-  workstreamsTree: null,
-  themeToggle: null,
   topUsage: null,
   topSearch: null,
-  topCounts: null,
+  topNeedYou: null,
   activity: null,
   resources: null,
 };

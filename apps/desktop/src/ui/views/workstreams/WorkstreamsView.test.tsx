@@ -14,7 +14,7 @@ import { connected } from "../../../test/render";
 import { backToList, chooseAction, openMenu, openTab, openWorkstream, type User } from "../../../test/workstreamsUi";
 import { createServices } from "../../createServices";
 import type { Route } from "../../router";
-import { workstreamsGlobalViews, workstreamsShellSlots } from "./register";
+import { workstreamsGlobalViews } from "./register";
 
 const A = "/work/alpha";
 const B = "/work/beta";
@@ -86,7 +86,7 @@ async function mount(
     surfaces: options.surfaces ?? (fake && !options.fixtureOverBridge ? undefined : createFixtureSurfaces({ scenario: options.scenario })),
   });
   const user = userEvent.setup();
-  render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+  render(<App services={services} globalViews={workstreamsGlobalViews} />);
   if (fake) await connected();
   return { services, user };
 }
@@ -144,9 +144,7 @@ function daemon(extra: (fake: FakeDaemon, state: FakeWorkstreams) => void = () =
   return fake;
 }
 
-const tree = () => screen.getByRole("tree", { name: "Workstreams" });
-const level = (n: number) => Array.from(tree().querySelectorAll<HTMLElement>(`[role="treeitem"][aria-level="${n}"]`));
-const groupsReady = () => waitFor(() => expect(level(1).length).toBeGreaterThan(0));
+const groupsReady = () => screen.findAllByTestId("ws-row");
 const titleOf = (row: HTMLElement) => within(row).getByText(/ stream$/).textContent;
 const original = window.matchMedia;
 
@@ -159,14 +157,8 @@ describe("live data", () => {
   it("renders the daemon's workstreams, not projects, with no placeholder content", async () => {
     const { user } = await mount(daemon());
     await groupsReady();
-    expect(level(1).map((group) => group.getAttribute("aria-label"))).toEqual([
-      "Workstream 1 of 2: Alpha stream, 2 tasks",
-      "Workstream 2 of 2: Beta stream, 1 task",
-    ]);
     expect((await screen.findAllByTestId("ws-row")).map(titleOf)).toEqual(["Alpha stream", "Beta stream"]);
-    for (const region of [screen.getByTestId("workstream-tree"), screen.getByTestId("workstreams-view")]) {
-      expect(region.textContent).not.toMatch(/PLACEHOLDER|Auth hardening|Docs refresh/);
-    }
+    expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER|Auth hardening|Docs refresh/);
     await openWorkstream(user, "Alpha stream");
     expect(screen.getByTestId("ws-source")).toHaveTextContent("daemon records");
   });
@@ -209,26 +201,21 @@ describe("live data", () => {
     expect(within(screen.getByTestId("workstreams-view")).getAllByRole("alert")[0]).toHaveTextContent(/refresh failed/i);
   });
 
-  it("keeps the header count equal to the tree groups and the view list", async () => {
+  it("keeps the header count equal to the list", async () => {
     await mount(daemon());
     await groupsReady();
-    const count = screen.getByTestId("workstreams-count");
-    expect(count).toHaveTextContent("2");
-    expect(level(1)).toHaveLength(Number(count.textContent));
     expect(within(screen.getByTestId("workstreams-view")).getByText("2 active")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "Active 2" })).toBeInTheDocument();
     expect(await screen.findAllByTestId("ws-row")).toHaveLength(2);
   });
 
-  it("lists archived workstreams in a collapsed Archived group, not among the active rows or in the sidebar", async () => {
+  it("lists archived workstreams in a collapsed Archived group, not among the active rows", async () => {
     const { user } = await mount(
       daemon((_, state) => {
         state.workstreams[1]!.state = "archived";
       }),
     );
     await groupsReady();
-    expect(screen.getByTestId("workstreams-count")).toHaveTextContent("1");
-    expect(level(1)).toHaveLength(1);
     expect(within(screen.getByTestId("workstreams-view")).getByText("1 active")).toBeInTheDocument();
 
     const archived = await screen.findByTestId("ws-archived");
@@ -275,42 +262,11 @@ describe("live data", () => {
     expect(screen.getByTestId("ws-summary")).toHaveTextContent("Parser and CLI");
   });
 
-  it("shows worker rows as adapter · state under the open group only", async () => {
-    await mount(daemon());
-    await groupsReady();
-    expect(within(tree()).getAllByTestId("tree-worker").map((worker) => worker.textContent)).toEqual(["codex · Running"]);
-    expect(within(tree()).queryByText("Cache downloads")).not.toBeInTheDocument();
-  });
-
-  it("opens each sidebar task's parent workstream while table links still open task details", async () => {
-    const workspace: Route = { name: "global", view: "workspace" };
-    const { services, user } = await mount(daemon(), { route: workspace });
-    const second = await within(tree()).findByRole("treeitem", { name: /Workstream 2 of 2/ });
-    second.focus();
-    await user.keyboard("{ArrowRight}");
-    for (const [name, workstreamId, title] of [
-      ["Ship the parser", "ws-a", "Alpha stream"],
-      ["Wire the CLI", "ws-a", "Alpha stream"],
-      ["Cache downloads", "ws-b", "Beta stream"],
-    ] as const) {
-      await act(async () => services.router.navigate(workspace));
-      const link = within(tree()).getByRole("treeitem", { name: new RegExp(name) });
-      await user.click(link);
-      expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId });
-      expect(link).toHaveAttribute("href", `#/workstreams?workstream=${workstreamId}`);
-      expect(await screen.findByRole("heading", { level: 1, name: title })).toBeVisible();
-    }
-    await act(async () => services.router.navigate(workspace));
-    await user.click(within(tree()).getByTestId("tree-worker"));
-    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
-    await backToList(user);
-    await openWorkstream(user, "Beta stream");
-    expect(screen.getByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
-    await user.click(within(tree()).getByRole("treeitem", { name: /Wire the CLI/ }));
-    expect(screen.getByRole("heading", { level: 1, name: "Alpha stream" })).toBeVisible();
-    expect(within(tree()).getByRole("treeitem", { name: /Workstream 1 of 2/ })).toHaveAttribute("aria-expanded", "true");
-
-    await act(async () => services.router.navigate(VIEW));
+  it("opens the workstream a deep link names, and a task link in its table still opens the task", async () => {
+    const { services, user } = await mount(daemon(), { route: { name: "global", view: "workstreams", workstreamId: "ws-b" } });
+    expect(await screen.findByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
+    await act(async () => services.router.navigate({ name: "global", view: "workstreams", workstreamId: "ws-a" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Alpha stream" })).toBeVisible();
     await openTab(user, "Tasks");
     const row = (await screen.findAllByTestId("task-row"))[0]!;
     await user.click(within(row).getByRole("link", { name: "Ship the parser" }));
@@ -391,7 +347,7 @@ describe("live data", () => {
   it("notes tasks that belong to no workstream instead of inventing a group", async () => {
     await mount(daemon((fake) => fake.tasks.push(mkTask("c1", A, { contract: { objective: "Orphan" } }))));
     expect(await screen.findByTestId("ws-unlinked")).toHaveTextContent("1 task not in any workstream.");
-    expect(level(1)).toHaveLength(2);
+    expect(screen.getAllByTestId("ws-row")).toHaveLength(2);
   });
 
   it("reads required evidence from review.evidence for tasks that may hold a candidate", async () => {
@@ -447,25 +403,6 @@ describe("live data", () => {
     expect(within(screen.getByRole("tabpanel")).queryAllByTestId("ws-row")).toHaveLength(0);
     expect(within(screen.getByRole("tabpanel")).getByRole("status")).toHaveTextContent("No workstream matches the search.");
   });
-
-  it("follows live task changes without losing the operator's collapsed groups", async () => {
-    const fake = daemon();
-    const { services, user } = await mount(fake);
-    const first = await within(tree()).findByRole("treeitem", { name: /Workstream 1 of 2/ });
-    await user.click(first);
-    expect(first).toHaveAttribute("aria-expanded", "true");
-    await user.click(first);
-    expect(first).toHaveAttribute("aria-expanded", "false");
-    await user.click(within(tree()).getByRole("treeitem", { name: /Workstream 2 of 2/ }));
-    expect(within(tree()).getByText("Cache downloads")).toBeInTheDocument();
-
-    fake.tasks = [...fake.tasks, mkTask("b2", B, { state: "Running", contract: { objective: "Pin toolchain" } })];
-    streams.get(fake)!.links.push({ task_id: "b2", workstream_id: "ws-b", objective_id: null });
-    await act(async () => services.data.refreshAll());
-    await within(tree()).findByText("Pin toolchain");
-    expect(within(tree()).getByRole("treeitem", { name: /Workstream 1 of 2/ })).toHaveAttribute("aria-expanded", "false");
-    expect(within(tree()).getByRole("treeitem", { name: /Workstream 2 of 2/ })).toHaveAttribute("aria-expanded", "true");
-  });
 });
 
 describe("list screen", () => {
@@ -496,7 +433,7 @@ describe("list screen", () => {
     const rows = await screen.findAllByTestId("ws-row");
     await waitFor(() => expect(rows[0]).toHaveTextContent("Needs attention"));
     expect(rows[1]).toHaveTextContent("On track");
-    expect(screen.getByTestId("top-counts")).toHaveTextContent("1 require attention");
+    expect(screen.getByTestId("top-need-you")).toHaveTextContent("1 need you");
   });
 
   it("lists the Global tasks workstream first, in the order the daemon returns", async () => {
@@ -731,7 +668,7 @@ describe("live mutations", () => {
     expect(screen.getByRole("button", { name: "Unlink Wire the CLI" })).toBeEnabled();
   });
 
-  it("archives a finished task from its table row, and the task leaves the table and the sidebar", async () => {
+  it("archives a finished task from its table row, and the task leaves the table", async () => {
     const fake = daemon();
     const { user } = await mountOpen(fake);
     await openTab(user, "Tasks");
@@ -740,8 +677,6 @@ describe("live mutations", () => {
     await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(1));
     expect(paramsOf(fake, "tasks.archive")).toEqual([{ task_ids: ["a1"], idempotency_key: expect.any(String) }]);
     expect(await screen.findByText(/Archive task a1: recorded by the daemon/)).toBeInTheDocument();
-    expect(within(tree()).queryByRole("treeitem", { name: /Ship the parser/ })).not.toBeInTheDocument();
-    expect(within(tree()).getByRole("treeitem", { name: /Wire the CLI/ })).toBeInTheDocument();
   });
 
   it("disables archive on a running task row and says why", async () => {
@@ -1042,7 +977,6 @@ describe("live mutations", () => {
     await chooseAction(user, "More actions", "Refresh");
     expect(await within(screen.getByTestId("workstreams-view")).findByText("Alpha renamed elsewhere")).toBeInTheDocument();
     expect(fake.callsTo("workstreams.list").length).toBeGreaterThan(before);
-    expect(within(tree()).getByText("Alpha renamed elsewhere")).toBeInTheDocument();
   });
 
   it("clears a failure banner when the operator refreshes, and its advice names a control that exists", async () => {
@@ -1086,12 +1020,9 @@ describe("live mutations", () => {
       f.stub("workstreams.list", () => [...state.workstreams, ghost]);
     });
     const { user } = await mount(fake);
-    await screen.findAllByTestId("ws-row");
-    expect(level(1).map((group) => group.getAttribute("aria-label"))).toEqual([
-      "Workstream 1 of 3: Alpha stream, 2 tasks",
-      "Workstream 2 of 3: Beta stream, 1 task",
-      "Workstream 3 of 3: Ghost stream, tasks unknown",
-    ]);
+    const rows = await screen.findAllByTestId("ws-row");
+    expect(rows.map(titleOf)).toEqual(["Alpha stream", "Beta stream", "Ghost stream"]);
+    expect(rows[2]).toHaveTextContent("Tasks unknown");
     expect(screen.getByTestId("ws-unlinked")).toHaveTextContent("Tasks not in any workstream: unknown.");
     const ghostRow = (await screen.findAllByTestId("ws-row")).find((row) => row.textContent?.includes("Ghost stream"));
     expect(ghostRow).toHaveTextContent("Tasks unknown");
@@ -1112,80 +1043,6 @@ describe("live mutations", () => {
   });
 });
 
-describe("tree keyboard navigation", () => {
-  it("uses a single tab stop and the ARIA tree keys", async () => {
-    const { user } = await mount(daemon());
-    const items = await within(tree()).findAllByRole("treeitem");
-    expect(items.filter((item) => item.tabIndex === 0)).toHaveLength(1);
-    items[0]!.focus();
-    await user.keyboard("{ArrowDown}");
-    expect(items[1]).toHaveFocus();
-    await user.keyboard("{ArrowDown}{ArrowDown}");
-    expect(within(tree()).getAllByRole("treeitem")[3]).toHaveFocus();
-    await user.keyboard("{ArrowUp}");
-    expect(within(tree()).getAllByRole("treeitem")[2]).toHaveFocus();
-    await user.keyboard("{Home}");
-    expect(items[0]).toHaveFocus();
-    await user.keyboard("{End}");
-    expect(within(tree()).getAllByRole("treeitem").at(-1)).toHaveFocus();
-  });
-
-  it("expands, collapses and moves between levels with Right, Left and Space", async () => {
-    const { user } = await mount(daemon());
-    const first = await within(tree()).findByRole("treeitem", { name: /Workstream 1 of 2/ });
-    first.focus();
-    await user.keyboard("{ArrowRight}");
-    expect(within(tree()).getAllByRole("treeitem")[1]).toHaveFocus();
-    await user.keyboard("{ArrowLeft}");
-    expect(first).toHaveFocus();
-    await user.keyboard("{ArrowLeft}");
-    expect(first).toHaveAttribute("aria-expanded", "false");
-    await user.keyboard(" ");
-    expect(first).toHaveAttribute("aria-expanded", "true");
-    await user.keyboard(" ");
-    expect(first).toHaveAttribute("aria-expanded", "false");
-    await user.keyboard("{ArrowRight}");
-    expect(first).toHaveAttribute("aria-expanded", "true");
-  });
-
-  it("a workstream row opens that workstream's view on click or Enter", async () => {
-    const { services, user } = await mount(daemon());
-    const second = await within(tree()).findByRole("treeitem", { name: /Workstream 2 of 2/ });
-    await user.click(second);
-    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-b" });
-    expect(second).toHaveAttribute("aria-current", "page");
-    expect(second).toHaveAttribute("aria-expanded", "true");
-
-    const first = within(tree()).getByRole("treeitem", { name: /Workstream 1 of 2/ });
-    first.focus();
-    await user.keyboard("{Enter}");
-    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
-    expect(first).toHaveAttribute("aria-current", "page");
-    expect(second).not.toHaveAttribute("aria-current");
-
-    await backToList(user);
-    await openWorkstream(user, "Beta stream");
-    expect(screen.getByRole("heading", { level: 1, name: "Beta stream" })).toBeVisible();
-    await user.click(first);
-    expect(screen.getByRole("heading", { level: 1, name: "Alpha stream" })).toBeVisible();
-  });
-
-  it("Enter and Space on a task row open its parent workstream", async () => {
-    const { services, user } = await mount(daemon(), {
-      route: { name: "global", view: "workstreams", workstreamId: "ws-b" },
-    });
-    const task = await within(tree()).findByRole("treeitem", { name: /Ship the parser/ });
-    for (const key of ["{Enter}", " "]) {
-      await act(async () => services.router.navigate({ name: "global", view: "workstreams", workstreamId: "ws-b" }));
-      task.focus();
-      await user.keyboard(key);
-      expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams", workstreamId: "ws-a" });
-      expect(task).toHaveFocus();
-      expect(await screen.findByRole("heading", { level: 1, name: "Alpha stream" })).toBeVisible();
-    }
-  });
-});
-
 describe("100+ tasks", () => {
   const big = () =>
     daemon((fake, state) => {
@@ -1199,10 +1056,7 @@ describe("100+ tasks", () => {
     const { user } = await mountOpen(big());
     await openTab(user, "Tasks");
     expect(await screen.findAllByTestId("task-row")).toHaveLength(150);
-    expect(level(2)).toHaveLength(150);
-    expect(level(1)[0]).toHaveAttribute("aria-label", "Workstream 1 of 2: Alpha stream, 150 tasks");
     expect(screen.getByRole("region", { name: "Tasks of Alpha stream" })).toHaveAttribute("tabindex", "0");
-    expect(tree().closest(".shell-tree-body")).not.toBeNull();
     await openTab(user, "Dependencies");
     expect(screen.getAllByTestId("graph-node").length).toBeLessThanOrEqual(16);
     expect(screen.getByText(/more connected tasks are not drawn/)).toBeInTheDocument();
@@ -1235,7 +1089,6 @@ describe("states without data", () => {
   it("is empty only when the daemon says no workstreams exist, and never shows fixtures", async () => {
     await mount(daemon((fake, state) => ((fake.projects = []), (fake.tasks = []), (state.workstreams = []), (state.objectives = []), (state.links = []))));
     expect(await screen.findByText("No workstreams")).toBeInTheDocument();
-    expect(within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getByText(/No workstreams exist yet/)).toBeInTheDocument();
     expect(within(screen.getByTestId("workstreams-view")).getByText(/Ask the global orchestrator to create one/)).toBeInTheDocument();
     expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER|Harden session/);
   });
@@ -1260,9 +1113,8 @@ describe("states without data", () => {
 
   it("shows loading, never empty, before the daemon has answered", async () => {
     const services = createServices({ connector: new FakeDaemon(), initialRoute: VIEW, sources: createFixtureSources() });
-    render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+    render(<App services={services} globalViews={workstreamsGlobalViews} />);
     expect(screen.getAllByText("Loading workstreams…").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("workstreams: loading")).toBeInTheDocument();
     expect(screen.queryByText("No workstreams")).not.toBeInTheDocument();
   });
 
@@ -1276,7 +1128,7 @@ describe("states without data", () => {
       data: { coalesceMs: 10 },
       sources: createFixtureSources(),
     });
-    render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+    render(<App services={services} globalViews={workstreamsGlobalViews} />);
     await waitFor(() => expect(services.connection.getSnapshot().failedAttempts).toBeGreaterThan(0));
     expect(within(screen.getByTestId("workstreams-view")).getByText(/Offline: no cached workstreams/)).toBeInTheDocument();
     expect(screen.queryByText("Loading workstreams…")).not.toBeInTheDocument();
@@ -1289,8 +1141,6 @@ describe("fixture mode", () => {
     await screen.findAllByTestId("ws-row");
     const view = screen.getByTestId("workstreams-view");
     expect(within(view).getAllByTestId("badge-D9").length).toBeGreaterThanOrEqual(1);
-    expect(within(screen.getByTestId("workstream-tree")).getAllByText(/PLACEHOLDER DATA/).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByTestId("workstreams-count")).toHaveTextContent("3");
     await openWorkstream(user, "Auth hardening");
     expect(within(view).getAllByTestId("badge-D9")).toHaveLength(1);
     expect(screen.getByRole("button", { name: "+ Add objective" })).toBeDisabled();

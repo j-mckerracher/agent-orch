@@ -123,15 +123,6 @@ export function taskLabelOf(task: Pick<WsTask, "id" | "objective">): string {
   return task.objective.trim() === "" ? task.id : task.objective;
 }
 
-/** Most words a task title shows in the sidebar. */
-export const TASK_TITLE_WORDS = 5;
-
-/** A task's short title: the first five words of its label, with "…" when cut. */
-export function taskTitleOf(task: Pick<WsTask, "id" | "objective">): string {
-  const words = taskLabelOf(task).trim().split(/\s+/);
-  return words.length <= TASK_TITLE_WORDS ? words.join(" ") : `${words.slice(0, TASK_TITLE_WORDS).join(" ")}…`;
-}
-
 function approvalKind(approval: Approval): string {
   const kind = approval.action.kind;
   return kind.type === "delivery" ? kind.kind : kind.type;
@@ -318,12 +309,8 @@ export function workstreamStatus(group: Pick<WsGroup, "state" | "tasks" | "unrea
   return group.tasks.some((task) => task.pendingDecision) ? { label: "Needs attention", tone: "warn" } : { label: "On track", tone: "ok" };
 }
 
-/** Workstreams still in play: an archived one stays listed (read-only) but is not counted. */
-export const activeCount = (workstreams: readonly { state: string }[]): number =>
-  workstreams.filter((ws) => ws.state !== "archived").length;
-
 /*
- * Every consumer of D9 (this view, the sidebar tree, the top-bar counts) reloads when a
+ * Every consumer of D9 (this view and the Workspace target picker) reloads when a
  * workstream mutation lands, so none of them keeps showing the pre-mutation revision.
  */
 let version = 0;
@@ -345,7 +332,7 @@ export function useWorkstreamsVersion(): number {
 }
 
 /**
- * Loads the workstream model for the view and the sidebar tree. The mode is chosen by the
+ * Loads the workstream model for the Workstreams view. The mode is chosen by the
  * D9 source's provenance and never changes at runtime: a failed live load is shown as
  * such, never replaced by fixture data.
  */

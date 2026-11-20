@@ -4,9 +4,16 @@ import { DaemonError } from "../daemon/errors";
 import { createFixtureSources } from "../sources/fixtures";
 import type { AgentCapabilitiesSource, Sources } from "../sources/types";
 import { FakeDaemon, mkApproval, mkEvent, mkTask, until } from "../test/fakeDaemon";
-import { REPO, connected, mount } from "../test/render";
+import { REPO, mount } from "../test/render";
 
 const fixture = createFixtureSources();
+
+/** An incomplete history keeps the connection strip on screen over a healthy connection, so its notes can be read. */
+const stripOpen = (fake: FakeDaemon) => {
+  fake.pushStreamError(-32015, "slow");
+  return screen.findByTestId("history-incomplete");
+};
+const statusConnected = () => waitFor(() => expect(screen.getByTestId("connection-status")).toHaveTextContent("Connected"));
 
 describe("C1 connection strip", () => {
   it("shows Offline and the fixture demo banner when no connector is supplied", async () => {
@@ -21,6 +28,8 @@ describe("C1 connection strip", () => {
     const fake = new FakeDaemon();
     fake.events = [mkEvent(1, "t", null), mkEvent(2, "t", null)];
     await mount(fake);
+    await stripOpen(fake);
+    await statusConnected();
     await waitFor(() => expect(screen.getByTestId("last-sequence")).toHaveTextContent("Last durable sequence: 2"));
     const continuity = screen.getByTestId("journal-continuity");
     await waitFor(() => expect(continuity).toHaveTextContent("never proof that history is complete"));
@@ -30,7 +39,9 @@ describe("C1 connection strip", () => {
   });
 
   it("says continuity is unknown when D6 is unavailable", async () => {
-    await mount(new FakeDaemon(), { sources: createFixtureSources({ scenario: "unavailable" }) });
+    const fake = new FakeDaemon();
+    await mount(fake, { sources: createFixtureSources({ scenario: "unavailable" }) });
+    await stripOpen(fake);
     await waitFor(() =>
       expect(screen.getByTestId("journal-continuity")).toHaveTextContent(
         "unknown (Journal identity is unavailable in this fixture scenario.)",
@@ -78,7 +89,7 @@ describe("C1 connection strip", () => {
     const { user } = await mount(fake);
     fake.pushStreamError(-32015, "slow");
     expect(await screen.findByTestId("history-incomplete")).toHaveTextContent(/History incomplete \(slow-consumer\)/);
-    await connected();
+    await statusConnected();
     expect(screen.getByTestId("history-incomplete")).toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: "Refresh / reconnect" }));
     await waitFor(() => expect(screen.queryByTestId("history-incomplete")).not.toBeInTheDocument());

@@ -10,7 +10,7 @@ import { connected } from "../../../test/render";
 import { openMenu, openTab, openWorkstream } from "../../../test/workstreamsUi";
 import { createServices } from "../../createServices";
 import type { Route } from "../../router";
-import { workstreamsGlobalViews, workstreamsShellSlots } from "./register";
+import { workstreamsGlobalViews } from "./register";
 
 const A = "/work/alpha";
 const VIEW: Route = { name: "global", view: "workstreams" };
@@ -49,7 +49,7 @@ async function mountLive() {
     sources: createFixtureSources(),
   });
   const user = userEvent.setup();
-  render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+  render(<App services={services} globalViews={workstreamsGlobalViews} />);
   await connected();
   await openWorkstream(user, "Alpha stream");
   await screen.findAllByTestId("ws-overview-task");
@@ -63,7 +63,7 @@ async function mountFixture() {
     surfaces: createFixtureSurfaces(),
   });
   const user = userEvent.setup();
-  render(<App services={services} shellSlots={workstreamsShellSlots} globalViews={workstreamsGlobalViews} />);
+  render(<App services={services} globalViews={workstreamsGlobalViews} />);
   await openWorkstream(user, "Auth hardening");
   return { user };
 }

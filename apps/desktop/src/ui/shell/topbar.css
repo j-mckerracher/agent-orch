@@ -1,5 +1,5 @@
 /*
- * Top bar content (M7-16): counts, usage pill and local search. The surrounding flex
+ * Top bar content (M7-16): the "N need you" count, usage pill and local search. The surrounding flex
  * layout, the 760 px full-width search row and the wrapper elements belong to shell.css;
  * this file styles only what the three slots render. Colors read tokens.css names.
  */
@@ -15,24 +15,14 @@
   border: 0;
 }
 
-/* Counts ---------------------------------------------------------------------------- */
-.top-counts {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px 8px;
+/* "N need you" ---------------------------------------------------------------------- */
+.top-need {
   margin: 0;
   font: 700 12px/1.4 var(--font-sans);
-  color: var(--ink);
 }
 
-.top-counts a {
-  color: var(--blue);
-  text-underline-offset: 3px;
-}
-
-.top-counts-sep {
-  color: var(--ink);
+.top-need a {
+  text-decoration: none;
 }
 
 /* Usage pill ------------------------------------------------------------------------ */

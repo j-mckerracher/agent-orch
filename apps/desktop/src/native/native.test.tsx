@@ -61,6 +61,8 @@ const browserWindow = (hash = "", search = "") => ({ location: { hash, search } 
 const FAST = { backoffMs: [5], requestTimeoutMs: 250 };
 
 const status = () => screen.getByTestId("connection-status");
+/** The strip renders only while the connection needs attention, so a healthy connection has no status pill. */
+const healthy = () => waitFor(() => expect(screen.queryByTestId("connection-status")).toBeNull());
 
 describe("Tauri host connector", () => {
   it("opens an authenticated connection through the host and forwards JSON-RPC", async () => {
@@ -182,15 +184,15 @@ describe("shipped app wiring", () => {
     expect(services.connection.getSnapshot()).toMatchObject({ status: "unavailable", failedAttempts: 1 });
   });
 
-  it("native: live daemon data, connected note, and no fixture banner", async () => {
+  it("native: live daemon data, no connection strip while healthy, and no fixture banner", async () => {
     const fake = new FakeDaemon();
     fake.projects = [{ id: "p1", repo_path: "/work/repo", created_at: "2026-01-01T00:00:00Z" } as never];
     const host = new FakeHost(fake);
     const { services } = bootServices(tauriWindow(), { nativeConnector: createTauriConnector(host), connection: FAST });
     render(<App services={services} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await healthy();
     expect(screen.queryByTestId("fixture-banner")).toBeNull();
-    expect(screen.getByTestId("connected-note")).toHaveTextContent("does not prove any agent is running");
+    expect(screen.queryByTestId("shell-connection")?.childElementCount).toBe(0);
     expect(host.calls[0]?.command).toBe("daemon_open");
     expect(fake.callsTo("projects.list").length).toBeGreaterThan(0);
   });
@@ -205,7 +207,7 @@ describe("shipped app wiring", () => {
       renderReview: (props) => <ReviewRoute {...props} />,
     });
     render(<App services={services} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await healthy();
     await until(() => fake.callsTo("approvals.list").length > 0, "approvals.list on the daemon");
     expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();
   });
@@ -221,7 +223,7 @@ describe("shipped app wiring", () => {
     });
     expect(services.bridgeBound).toBe(true);
     render(<App services={services} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await healthy();
     await until(() => fake.callsTo("approvals.list").length > 0, "approvals.list on the daemon");
     expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();
     expect(screen.queryByText(/PLACEHOLDER DATA — fixture/i)).toBeNull();
@@ -237,7 +239,7 @@ describe("shipped app wiring", () => {
       connection: FAST,
     });
     render(<App services={services} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await healthy();
     const region = await screen.findByRole("region", { name: "Recovery classification" });
     await waitFor(() => expect(region).toHaveTextContent(/Unavailable: the daemon exposes no recovery status yet/));
     expect(region).toHaveTextContent("unknown");
@@ -256,7 +258,7 @@ describe("shipped app wiring", () => {
       renderReview: (props) => <ReviewRoute {...props} />,
     });
     render(<App services={services} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await healthy();
     await until(() => fake.callsTo("approvals.list").length > 0, "approvals.list attempted");
     expect(screen.queryByText(/FIXTURE DAEMON/)).toBeNull();
     expect(screen.queryByText(/PLACEHOLDER DATA — fixture/i)).toBeNull();
@@ -273,8 +275,8 @@ describe("C1 window close and reopen", () => {
 
     const first = bootServices(tauriWindow(), { nativeConnector: createTauriConnector(host), storage, connection: FAST }).services;
     const view = render(<App services={first} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
-    await waitFor(() => expect(screen.getByTestId("last-sequence")).toHaveTextContent("Last durable sequence: 2"));
+    await healthy();
+    await waitFor(() => expect(first.connection.getSnapshot().lastSequence).toBe(2));
     first.drafts.setRegisterPath("/work/unsent");
     first.drafts.patchSubmit("p1", { objective: "half-written objective" });
 
@@ -288,10 +290,10 @@ describe("C1 window close and reopen", () => {
     fake.events.push(mkEvent(3, "t1", null));
     const second = bootServices(tauriWindow(), { nativeConnector: createTauriConnector(host), storage, connection: FAST }).services;
     render(<App services={second} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await healthy();
     // A new connection authenticated again and replayed authoritative state from the start.
     expect(host.calls.filter((call) => call.command === "daemon_open")).toHaveLength(2);
-    await waitFor(() => expect(screen.getByTestId("last-sequence")).toHaveTextContent("Last durable sequence: 3"));
+    await waitFor(() => expect(second.connection.getSnapshot().lastSequence).toBe(3));
     expect(second.drafts.getSnapshot().registerPath).toBe("/work/unsent");
     expect(second.drafts.submitDraft("p1").objective).toBe("half-written objective");
   });
@@ -325,7 +327,7 @@ describe("C1 window close and reopen", () => {
     connection: FAST,
     }).services;
     render(<App services={services} />);
-    await waitFor(() => expect(status()).toHaveTextContent("Connected"));
+    await healthy();
     host.openFailure = { code: "io", message: "pipe broke" };
     fake.drop();
     await waitFor(() => expect(status()).toHaveTextContent(/Reconnecting|Disconnected/));

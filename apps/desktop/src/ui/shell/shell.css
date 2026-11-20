@@ -72,6 +72,11 @@ body:has(.shell) {
   border-bottom: 1px solid var(--shell-line);
 }
 
+/* Nothing to show while the connection is healthy and no update is offered: the region leaves the layout and the tab order. */
+.shell-strip:empty {
+  display: none;
+}
+
 .shell-strip .strip {
   position: static;
 }
@@ -173,8 +178,6 @@ body:has(.shell) {
 .shell-nav {
   display: grid;
   gap: 6px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--shell-line);
 }
 
 .shell-nav-link {
@@ -217,47 +220,6 @@ body:has(.shell) {
 
 .shell-count {
   font: 11px/1.4 ui-monospace, monospace;
-}
-
-.shell-tree {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-height: 120px;
-  margin-top: 16px;
-}
-
-.shell-tree-heading {
-  margin: 0 0 10px;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--blue);
-  border-radius: 6px;
-  background: var(--panel);
-  font: 10px/1.6 ui-monospace, monospace;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-.shell-tree-heading a {
-  display: block;
-  padding: 10px 11px;
-  color: inherit;
-  text-decoration: none;
-}
-
-.shell-tree-heading a[aria-current="page"] {
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
-.shell-tree-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-
-.shell-bottom {
-  padding-top: 10px;
 }
 
 .shell-placeholder {
@@ -303,7 +265,7 @@ body:has(.shell) {
 }
 
 @media (min-width: 1151px) {
-  /* A basis this large pushes the counts to their own line, so the search keeps its width on the first line. */
+  /* A basis this large keeps the search wide; the need-you count and the usage pill sit to its right. */
   .shell-topbar-search {
     flex-basis: 500px;
   }
@@ -314,13 +276,8 @@ body:has(.shell) {
   box-sizing: border-box;
 }
 
-.shell-topbar-counts {
+.shell-topbar-need {
   margin-left: auto;
-  font-weight: 700;
-}
-
-.shell-counts {
-  margin: 0;
 }
 
 .shell-main {
@@ -443,11 +400,6 @@ body:has(.shell) {
     font-size: 12px;
   }
 
-  .shell-tree {
-    flex: none;
-    max-height: 260px;
-  }
-
   .shell-content,
   .shell-content.has-activity {
     overflow: visible;
@@ -463,7 +415,7 @@ body:has(.shell) {
     max-width: none;
   }
 
-  .shell-topbar-counts {
+  .shell-topbar-need {
     margin-left: 0;
   }
 

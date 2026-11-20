@@ -109,7 +109,7 @@ test("sidebar and connection controls stay separate and independent", async ({ p
     await expect(connectionToggle).toHaveAttribute("aria-expanded", "false");
     await expect(sidebarToggle).toHaveAttribute("aria-expanded", "true");
     await page.getByRole("navigation", { name: "Primary views" })
-      .getByRole("link", { name: /Agents & Sessions/ })
+      .getByRole("link", { name: /^Agents/ })
       .click();
     await expect(page).toHaveURL(/#\/agents$/);
     await expect(page.getByTestId("shell-sidebar")).toBeVisible();
@@ -261,7 +261,7 @@ test("Back and Forward traverse canonical and non-canonical routes", async ({ pa
     await expect(page).toHaveURL(/#\/agents$/);
     await page.goForward();
     await expect(page).toHaveURL(new RegExp(canonical + "$"));
-    await page.getByRole("link", { name: /Agents & Sessions/ }).click();
+    await page.getByRole("navigation", { name: "Primary views" }).getByRole("link", { name: /^Agents/ }).click();
     await expect(page).toHaveURL(/#\/agents$/);
   }
   for (const route of censusRoutes) {
@@ -304,7 +304,7 @@ test("keyboard Tab census, reverse traversal and skip link", async ({ page }) =>
     await page.getByRole("link", { name: "Skip to main content" }).focus();
     await page.keyboard.press("Enter");
     await expect(page.locator("#shell-main")).toBeFocused();
-    await page.getByRole("link", { name: /Agents & Sessions/ }).focus();
+    await page.getByRole("navigation", { name: "Primary views" }).getByRole("link", { name: /^Agents/ }).focus();
     await page.keyboard.press("Enter");
     await expect(page).toHaveURL(/#\/agents$/);
   }
