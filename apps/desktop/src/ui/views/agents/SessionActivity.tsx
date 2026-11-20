@@ -15,7 +15,7 @@ export function SessionActivity({ sessionId, running }: { sessionId: string; run
       ) : activity.items.length === 0 ? (
         <p role="status">No activity recorded</p>
       ) : (
-        <ActivityLog items={activity.items} running={running} />
+        <ActivityLog items={activity.items} streaming={running} active={running} />
       )}
       {running && activity.live && <ActivityStatus live={activity.live} />}
       {activity.truncated && <p role="status">Thinking log hit its size limit.</p>}

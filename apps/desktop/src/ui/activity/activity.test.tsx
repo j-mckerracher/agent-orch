@@ -75,7 +75,7 @@ describe("ActivityLog", () => {
       { kind: "thinking", key: "t3", text: "second thought" },
       { kind: "cap", key: "c4" },
     ];
-    const { container } = render(<ActivityLog items={items} running={false} />);
+    const { container } = render(<ActivityLog items={items} streaming={false} active={false} />);
     expect(container.querySelectorAll("details")).toHaveLength(2);
     expect(screen.getByText(/stopped recording tool calls/)).toBeInTheDocument();
   });

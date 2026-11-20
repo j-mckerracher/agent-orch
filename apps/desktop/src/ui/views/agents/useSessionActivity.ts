@@ -44,6 +44,11 @@ export function useSessionActivity(sessionId: string, poll: boolean): SessionAct
   // Survives the effect re-running (connection or `poll` changes) so a re-read continues from the cursor.
   const read = useRef<Read>({ cursor: 0, items: [], shown: [], tools: new Map(), truncated: false, legacy: false });
 
+  // Without a connection the snapshot is stale, and its idle time would keep climbing on screen.
+  useEffect(() => {
+    if (!connected) setState((prev) => (prev.live === null ? prev : { ...prev, live: null }));
+  }, [connected]);
+
   useEffect(() => {
     if (!connected) return;
     let cancelled = false;

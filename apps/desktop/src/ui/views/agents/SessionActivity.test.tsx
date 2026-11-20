@@ -129,6 +129,17 @@ describe("SessionActivity", () => {
     expect(screen.getByText("No activity").closest("p")).toHaveTextContent("No activity for 25 s");
   });
 
+  it("drops the live status when the connection is lost", async () => {
+    const { fake, log, services } = setup();
+    log.live = { phase: "thinking", tool: null, phase_ms: 2000, idle_ms: 0 };
+    await start(services);
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
+    act(() => fake.drop());
+    await settle(0);
+    expect(screen.queryByText("Thinking")).toBeNull();
+    expect(document.querySelector(".act-status")).toBeNull();
+  });
+
   it("falls back to sessions.thinking when the daemon has no sessions.activity", async () => {
     const { fake, services } = setup();
     fake.stub("sessions.activity", () => {

@@ -17,8 +17,6 @@ export function phaseLabel(live: LiveActivity): string {
       return `Running ${live.tool?.name ?? "a tool"}`;
     case "replying":
       return "Replying";
-    case "approval":
-      return "Waiting for approval";
     default:
       return live.phase;
   }

@@ -92,7 +92,7 @@ function SessionThread({
     <>
       <ChatLog label={label} scrollKey={`${tail.lines.length}:${grown}:${scrollKey}`}>
         {activity.error && <ErrorNotice error={activity.error} action="Refreshing activity" />}
-        {activity.items.length > 0 && <ActivityLog items={activity.items} running={running} />}
+        {activity.items.length > 0 && <ActivityLog items={activity.items} streaming={running} active={running} />}
         {activity.truncated && <p className="ws-small">Thinking log hit its size limit.</p>}
         <Output tail={tail} running={running} agent={agent} />
         {children}

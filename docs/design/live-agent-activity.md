@@ -52,7 +52,7 @@ Adapters hand raw summaries to the daemon. Full file contents and full command o
 
 `SessionPulse` becomes `ActivityBoard`, keyed by session id or chat turn id. Per key it holds the phase, the running tool (id, name, summary), when the phase began, and the last event time. It is updated on every event in the chat loop and the executor loop, and the key is removed when the turn or session ends.
 
-Phases: `starting`, `thinking`, `tool`, `replying`, `approval`.
+Phases: `starting`, `thinking`, `tool`, `replying`. No adapter emits an approval request today, so there is no approval phase; the UI shows a phase it does not know as the daemon sent it.
 
 The daemon returns durations, not timestamps: `phase_ms` and `idle_ms`, both measured at read time. The UI adds the time since the reply arrived, so a clock difference between daemon and UI cannot show a wrong elapsed time.
 
@@ -79,7 +79,7 @@ Version gate. `sessions.activity` is a new method, so an older daemon answers me
 Shared components in `apps/desktop/src/ui/activity/`, used by the orchestrator chat and the task conversation:
 
 - `ActivityLog`: ordered items, thinking text (existing `ThinkingBlock`, open while running) and tool rows. A tool row shows name, one-line summary, a spinner while running, a check or cross when finished, a stop mark when stopped. It expands by keyboard (`Enter` and `Space`) to the redacted result preview. Rendering is capped to the newest 200 rows with an "N earlier tool calls" line; thinking text is joined once, not per chunk.
-- `ActivityStatus`: a polite live region, "Thinking · 4 s", "Running Read · 12 s", "Waiting for approval · 3 s", and "No activity for N s" once `idle_ms` passes 20 s. A one-second ticker re-renders only this element.
+- `ActivityStatus`: a polite live region, "Thinking · 4 s", "Running Read · 12 s", and "No activity for N s" once `idle_ms` passes 20 s. A one-second ticker re-renders only this element.
 - A scroll hook that follows the newest line until the user scrolls up, then shows "Jump to latest".
 
 Data layer.
@@ -96,7 +96,6 @@ UI states.
 | Thinking | Thinking block open, status "Thinking · N s" | Same |
 | Tool running | Running tool row with spinner, status `Running` plus the tool name and N s | Same |
 | Stale | Status "No activity for N s" | Same |
-| Approval | Status "Waiting for approval · N s" | Same |
 | Finished | Block collapsed, rows keep check or cross | Static history from the cursor reads |
 | Cancelled or failed | Open tools show stopped, thinking collapsed | Same |
 | Old daemon | Thinking only plus elapsed | `sessions.thinking` text only |

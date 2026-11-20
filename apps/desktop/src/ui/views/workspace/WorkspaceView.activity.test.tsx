@@ -101,10 +101,18 @@ describe("orchestrator chat live activity", () => {
     await waitFor(() => expect(statusOf("No activity")).toHaveTextContent(/^No activity for 2[567] s$/), POLL);
   });
 
-  it("shows the approval phase", async () => {
+  it("keeps a call in progress when reply text started before it finished, and stopped only when the turn is over", async () => {
     const { convo } = await runningTurn();
-    convo.activity = { phase: "approval", tool: null, phase_ms: 3000, idle_ms: 0 };
-    await waitFor(() => expect(statusOf("Waiting for approval")).toBeInTheDocument(), POLL);
+    act(() => {
+      convo.toolStart("a", "Read", "src/main.rs");
+      convo.reply("Let me check that file.");
+    });
+    await screen.findByText("Let me check that file.", {}, POLL);
+    expect(screen.getByRole("button", { name: /Read/ })).toHaveTextContent("Running: Read");
+    expect(screen.getByRole("button", { name: /Read/ })).not.toHaveTextContent("Stopped");
+
+    act(() => convo.toolFinish("a", true, "ok"));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Read/ })).toHaveTextContent("Finished: Read"), POLL);
   });
 
   it("cancels through the daemon and shows a call that never finished as stopped", async () => {

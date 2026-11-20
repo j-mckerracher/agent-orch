@@ -927,6 +927,7 @@ function TranscriptBody({
             label={label}
             wakeTurn={entry.turnId !== undefined && wakeTurns.has(entry.turnId)}
             runtime={latestTurn && entry.turnId === latestTurn.id ? latestTurn.runtime : undefined}
+            turnRunning={latestTurn?.state === "running" && entry.turnId === latestTurn.id}
           />
           {afterTurn && entry.turnId !== undefined && entries[index + 1]?.turnId !== entry.turnId && afterTurn(entry.turnId)}
           <WakeRecords records={placement.after.get(entry.id) ?? []} taskRoute={taskRoute} />
@@ -943,16 +944,19 @@ const EntryBubble = memo(function EntryBubble({
   label,
   wakeTurn,
   runtime,
+  turnRunning,
 }: {
   entry: ConversationEntry;
   label: string;
   wakeTurn: boolean;
   /** The runtime of this entry's turn, when the transcript has it (the latest turn only). */
   runtime: WakeRuntime | undefined;
+  /** The entry's turn is the latest and still running; a tool call of it with no finish yet is in progress. */
+  turnRunning: boolean;
 }) {
   // The opening entry of an automatic turn is event lines inside an update, not something the user wrote.
   if (entry.origin === "wake") return <WakeLines text={entry.text} runtime={runtime} />;
-  if (entry.kind === "activity") return <ActivityLog items={entry.items ?? []} running={entry.streaming === true} />;
+  if (entry.kind === "activity") return <ActivityLog items={entry.items ?? []} streaming={entry.streaming === true} active={turnRunning} />;
   const human = entry.role === "user";
   // A daemon turn outcome is a system line, never a reply from the orchestrator. It is daemon text, so it stays plain.
   if (entry.kind === "status") {
@@ -1010,5 +1014,6 @@ const EntryBubble = memo(function EntryBubble({
   a.entry === b.entry &&
   a.label === b.label &&
   a.wakeTurn === b.wakeTurn &&
+  a.turnRunning === b.turnRunning &&
   a.runtime?.name === b.runtime?.name &&
   a.runtime?.version === b.runtime?.version);

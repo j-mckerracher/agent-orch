@@ -8,7 +8,20 @@ import "./activity.css";
 /** The newest tool rows drawn; a run with more says how many earlier ones are left out. */
 export const MAX_TOOL_ROWS = 200;
 
-export const ActivityLog = memo(function ActivityLog({ items, running }: { items: readonly ActivityItem[]; running: boolean }) {
+/**
+ * `streaming`: the newest item can still grow. `active`: the turn or session that made these items is still running, so
+ * a call with no finish yet is in progress; otherwise it never finished and shows as stopped. They differ in a chat run
+ * that a reply followed: it stopped streaming, but its tool call can still finish while the turn runs.
+ */
+export const ActivityLog = memo(function ActivityLog({
+  items,
+  streaming,
+  active,
+}: {
+  items: readonly ActivityItem[];
+  streaming: boolean;
+  active: boolean;
+}) {
   const toolCount = items.reduce((count, item) => count + (item.kind === "tool" ? 1 : 0), 0);
   let skip = Math.max(0, toolCount - MAX_TOOL_ROWS);
   const hidden = skip;
@@ -19,13 +32,13 @@ export const ActivityLog = memo(function ActivityLog({ items, running }: { items
         switch (item.kind) {
           case "thinking":
             // Only the newest item can still be streaming; thinking before a tool call is done.
-            return <ThinkingBlock key={item.key} text={item.text} streaming={running && index === items.length - 1} />;
+            return <ThinkingBlock key={item.key} text={item.text} streaming={streaming && index === items.length - 1} />;
           case "tool":
             if (skip > 0) {
               skip--;
               return null;
             }
-            return <ToolRow key={item.key} tool={item} stopped={!running} />;
+            return <ToolRow key={item.key} tool={item} stopped={!active} />;
           case "cap":
             return (
               <p key={item.key} className="ws-small">
