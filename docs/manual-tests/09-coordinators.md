@@ -1,6 +1,6 @@
 # 09 Coordinators: one orchestrator per project
 
-Setup: [00-setup.md](00-setup.md), sections 6, 7 and 8. **Let the orchestrator act on its own** is on. A coordinator for `manual-test-project` exists: open the target picker, choose **Add coordinator…**, and click **Add** next to `manual-test-project`.
+Setup: [00-setup.md](00-setup.md), sections 6, 7 and 8. **Let the orchestrator act on its own** (Settings > Autonomy) is on. A coordinator for `manual-test-project` exists: open the target picker, choose **Add coordinator…**, and click **Add** next to `manual-test-project`.
 
 When `manual-test-project` is the chosen target, a panel "Coordinator scope and work" sits above the message box. It shows "Scope:" and the sentence (or "No scope set"), the line "Open tasks: N. Open routed requests: N.", up to three "Open routed requests" as `r-…: <work>`, up to three "Latest reports", and the field "Scope sentence" with **Save scope**.
 
@@ -19,13 +19,13 @@ Every step that sends a message and expects a card is **Model-dependent** (RUNNE
 ## TC-C-01 Each coordinator has a scope sentence
 
 Purpose: the user tells the coordinator, and Global, what the project covers.
-**Source:** `docs/chat.md` ("Give each coordinator a scope sentence … Set it in the coordinator panel above the message box").
+**Source:** `docs/chat.md` ("Give each coordinator a scope sentence, one line that says what the project covers. Set it in the coordinator panel above the message box").
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** Prompt log running (setup section 7).
 
 1. Choose `manual-test-project`. In "Scope sentence", type `The README and the docs of the manual test project`. Click **Save scope**.
 2. Type a sentence of more than 300 bytes in the field. Read the form.
-3. Clear the field, type the first sentence again and save. Choose **Global** and send `Hello`.
+3. Clear the field, type the first sentence again and save. Choose **Global orchestrator** and send `Hello`.
 4. **Prompt log:** read the newest turn entry.
 
 **Expected:**
@@ -47,7 +47,7 @@ Purpose: work in a coordinator's scope goes to the coordinator as a routed reque
 
 **Expected:**
 
-- Step 2: the card "Proposed: Route work to the project coordinator" reads "Done on its own" and "Routed the work to the “manual-test-project” coordinator. It reports back in this conversation." Its fields show "Coordinator: Active" and the work.
+- Step 2: the card "Proposed: Route work to the project coordinator" reads "Done on its own" and "Routed the work to the “manual-test-project” coordinator. It reports back in this conversation." Its fields show a "Coordinator" field reading "Active" and the work.
 - Step 3: the panel reads "Open routed requests: 1." and lists `r-…: Add a line to the README about the tests. Start no task until the user says so.` A notice reads "The global orchestrator routed work to you as request r-…. It is listed under requests routed to you."
 
 **Screenshot** after step 3. If the coordinator started a task for the request anyway, note it; it does not fail this test.
@@ -55,7 +55,7 @@ Purpose: work in a coordinator's scope goes to the coordinator as a routed reque
 ## TC-C-03 The coordinator starts the task for the request and owns it
 
 Purpose: tasks for a routed request start on their own and wake the coordinator, not Global.
-**Source:** `docs/chat.md` ("A task for an open request starts on its own (at most 5 per request) … Global stops watching that work"); Integration I5 and I6.
+**Source:** `docs/chat.md` ("A task for an open request starts on its own (at most 5 per request) … Global stops watching that work"); `docs/design/firstmate-behavior-decisions.md` "Integration" I5 and I6.
 **Real agent:** Sonnet (alias), medium, for the chat turns and two NO-CHANGE runs. Cost: medium.
 **Preconditions:** TC-C-02 left request `r-…` open. Note its id.
 
@@ -67,21 +67,22 @@ Purpose: tasks for a routed request start on their own and wake the coordinator,
 
 2. Read the card. Wait until the task has failed, then up to 5 minutes for the wake.
 3. Read the newest notices in the `manual-test-project` conversation.
-4. Choose **Global**. Read the newest notice.
+4. Choose **Global orchestrator**. Read the newest notice.
 
 **Expected:**
 
 - Step 2: the card reads "Done on its own" and shows "Routed request" with the id. The panel reads "Open tasks: 1." while the task runs (or a larger count if the coordinator started a task in TC-C-02).
 - Step 3: the failure notice for the task is here, in the coordinator's conversation.
 - Step 4: Global has no notice of the form "Task `<id>` (README line about the tests) failed." Instead it reads "The coordinator's work in manual-test-project (p-…): task `<id>` failed (request r-…)."
-**Known limitations:** the coordinator's own notices raise no badge in the target picker; only Global and workstreams have one (Phase 7 item 17).
+
+**Known limitations:** the coordinator's own notices raise no badge in the target picker; only Global and workstreams have one (`docs/design/firstmate-behavior-decisions.md` "Phase 7" item 17).
 
 ## TC-C-04 A coordinator acts only inside its project
 
 Purpose: a coordinator cannot reach other projects or create workstreams.
-**Source:** `docs/chat.md` ("It cannot create workstreams, remove the project, or hand work to another coordinator"); Phase 7 item 5.
+**Source:** `docs/chat.md` ("It cannot create workstreams, remove the project, or hand work to another coordinator"); `docs/design/firstmate-behavior-decisions.md` "Phase 7" item 5.
 **Real agent:** Sonnet (alias), medium. Cost: low.
-**Preconditions:** Register the second project: on the Projects page, add `$HOME/agent-orch-manual-test/projects/other-project` and name it `other-project` (setup section 5).
+**Preconditions:** Register the second project: in **Settings > Repositories**, click **Add repository**, type `$HOME/agent-orch-manual-test/projects/other-project` in **Repository path** and click **Register repository** (setup section 5).
 
 1. In `manual-test-project`, send this message:
 
@@ -106,9 +107,9 @@ Purpose: a coordinator cannot reach other projects or create workstreams.
 ## TC-C-05 The coordinator answers and Global reads only the report
 
 Purpose: the parent channel carries reports, never the coordinator's chat.
-**Source:** `docs/chat.md` ("Global … learns about it only from the coordinator's reports"); Phase 7 item 22; Integration I3.
+**Source:** `docs/chat.md` ("It learns about it only from the coordinator's reports"); `docs/design/firstmate-behavior-decisions.md` "Phase 7" item 22 and "Integration" I3.
 **Real agent:** Sonnet (alias), medium. Cost: low.
-**Preconditions:** Prompt log running. Request `r-…` from TC-C-02 is open. Monitoring **On**.
+**Preconditions:** Prompt log running. Request `r-…` from TC-C-02 is open. Monitoring mode on (the chip reads `Monitoring: on`).
 
 1. In `manual-test-project`, send `Status pineapple? Reply in one sentence and propose no action.`
 2. Send this message. Replace `<request id>` with the request's id.
@@ -117,7 +118,7 @@ Purpose: the parent channel carries reports, never the coordinator's chat.
    Propose exactly one action and nothing else: coordinator.report with verb answer, request "<request id>" and note "The README line is drafted".
    ```
 
-3. Read the card and the panel. Choose **Global** and wait up to two minutes.
+3. Read the card and the panel. Choose **Global orchestrator** and wait up to two minutes.
 4. Read the newest notice in Global.
 5. **Prompt log:** read Global's wake turn entry.
 
@@ -131,19 +132,19 @@ Purpose: the parent channel carries reports, never the coordinator's chat.
 
 Purpose: no routed request and no message means no automatic turns.
 **Source:** `docs/chat.md` ("With no routed request and no message from you, it stays idle and gets no periodic check").
-**Real agent:** Sonnet (alias), medium, for Global's work checks. Cost: low.
-**Preconditions:** The coordinator has no open request and no running task. In **Settings > Checks on running work**, base interval `1` minute. A held Global task runs: start the hold helper for `HOLD-1` (setup section 8c), send the message below to Global, and stop the helper when the task reads `Running`.
+**Real agent:** Sonnet (alias), medium, for the held task and Global's work checks. Cost: medium.
+**Preconditions:** The coordinator has no open request and no running task. In **Settings > Limits**, set **Check interval with one task running (minutes)** to `1` and click **Save changes**. A held Global task runs: start the hold helper for `HOLD-1` (setup section 8c), send the message below to Global, and stop the helper when the task reads `Running`.
 
 ```text
 Propose exactly one action and nothing else: task.propose for project manual-test-project, task_kind Investigate, delivery ReportOnly, objective "HOLD-1: Read README.md and report its first line. Change no file."
 ```
 
 1. Wait five minutes.
-2. Read the `manual-test-project` conversation, then Global.
+2. Read the `manual-test-project` conversation, then **Global orchestrator**.
 
 **Expected:** Global shows work checks: the collapsed line "Checked N updates. Nothing needs you." or a check reply from the model. The coordinator's conversation has no new notice or reply.
 
-**Reset:** release `HOLD-1` and cancel the task. Set the base interval back to `10` minutes.
+**Reset:** release `HOLD-1` (setup section 8c), then click **Cancel** on the task page (open it from the card's **Open task**). In **Settings > Limits**, set **Check interval with one task running (minutes)** back to `10` and click **Save changes**.
 
 ## TC-C-07 A coordinator with open work cannot be removed
 
@@ -152,26 +153,26 @@ Purpose: work is never orphaned by removing its coordinator.
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** An open routed request for `manual-test-project`: send the route message to Global.
 
-1. In `manual-test-project`, open **Actions** in the header, choose **Remove coordinator…**, then **Remove coordinator permanently**.
+1. In `manual-test-project`, open the **⋯** button in the header (its label starts "Conversation actions for"), choose **Remove coordinator…**, then **Remove coordinator permanently**.
 2. Answer the request (TC-C-05 step 2). Repeat step 1.
 
 **Expected:**
 
 - Step 1: "This coordinator still owns open work. Finish or cancel its tasks and answer its routed requests first." The coordinator stays in the target picker.
-- Step 2: the coordinator leaves the target picker and the target switches to Global.
+- Step 2: the coordinator leaves the target picker and the target switches to **Global orchestrator**.
 
-**Known limitations:** this test does not check what removal keeps. Its project's preferences are kept (see TC-P-08). Adding it back restores the same scope sentence (Phase 7 item 3).
+**Known limitations:** this test does not check what removal keeps. Its project's preferences are kept (see TC-P-08). Adding it back restores the same scope sentence (`docs/design/firstmate-behavior-decisions.md` "Phase 7" item 3).
 
 ## TC-C-08 A route waits when it cannot run on its own
 
 Purpose: a route runs on its own only from your message and only to an active coordinator.
-**Source:** Integration I4.
+**Source:** `docs/design/firstmate-behavior-decisions.md` "Integration" I4.
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** `manual-test-project` has no coordinator (removed in TC-C-07).
 
 1. In Global, send the route message.
 2. Read the card.
 
-**Expected:** The card waits for you and shows "Coordinator: Not active. Add the coordinator before approving." Nothing is routed.
+**Expected:** The card waits for you. Its **Coordinator** field reads "Not active. Add the coordinator before approving." Nothing is routed.
 
-**Reset:** reject the card. Add the coordinator back.
+**Reset:** reject the card. Add the coordinator back: in the target picker choose **Add coordinator…**, then click **Add** next to `manual-test-project`.
