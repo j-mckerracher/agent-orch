@@ -82,7 +82,8 @@ export const WINDOWS = {
   // ran git-lib at 46 (the 47 once derived counted the two cfg(unix) tests and missed the
   // cfg(windows) one) and cleanup_safety at 3 (two of its five tests are cfg(unix)).
   // git-lib: 58 = 56 portable tests + 2 cfg(windows) tests (macOS: 56 + 2 cfg(unix) = 58).
-  gitLib: { passed: 103, sequence: [103] },
+  // Worker environment (DPES-1126) adds 4 portable orchestrator-git tests (slot git grants, guard identity): 103 becomes 107 (CI run 44783088646).
+  gitLib: { passed: 107, sequence: [107] },
   cliCleanupSafety: { passed: 3, sequence: [3] },
   // 4 portable tests + 7 in the cfg(windows) module (the DACL tests; the inherited-ACE regression for
   // `.orchestrator.lock` is one of them).
@@ -191,10 +192,13 @@ export const MACOS = {
   // pin is 2467 passed and 2 ignored; minus daemon 882+1, store 432+1 and ipc 121 that is 1032 passed and none ignored.
   // A cancelled waiting task no longer blocks the restart gate: one engine test, so 1054 becomes 1055.
   // Reading Copilot's models (DPES-1105) adds two portable parser tests and three Unix-only catalog tests in orchestrator-agents: 1073 becomes 1078.
-  workspace: { passed: 1078, ignored: 1 },
+  // Worker environment (DPES-1126) adds 11 tests outside daemon, store and ipc: 1078 becomes 1089 (CI run 44783088646,
+  // measured on macOS).
+  workspace: { passed: 1089, ignored: 1 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
-  gitLib: { passed: 105, sequence: [105] },
+  // Worker environment (DPES-1126) adds 5 orchestrator-git tests, one of them Unix-only (a hook the agent pointed git at): 105 becomes 110 (CI run 44783088646).
+  gitLib: { passed: 110, sequence: [110] },
   cliCleanupSafety: { passed: 4, sequence: [4] },
   privateFs: { passed: 30, ignored: 1, sequence: [18, 9, 4, 0] },
   runtimeCommandLine: { passed: 8, sequence: [8] },
