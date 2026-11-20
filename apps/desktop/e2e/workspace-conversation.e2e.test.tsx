@@ -1,4 +1,5 @@
 // @vitest-environment jsdom
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +30,16 @@ async function until<T>(read: () => T | undefined | false | Promise<T | undefine
     if (v) return v as T;
     if (Date.now() > deadline) throw new Error(`timeout ${label}`);
     await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
+/** Whether a process whose command line holds `needle` runs. `pgrep` exits 1 when none does. */
+function agentRunning(needle: string): boolean {
+  try {
+    execFileSync("pgrep", ["-f", needle]);
+    return true;
+  } catch {
+    return false;
   }
 }
 
@@ -289,15 +300,20 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       await userEvent.click(send());
 
       expect(await screen.findByText("ls src", undefined, { timeout: 20000 })).toBeTruthy();
+      expect(await screen.findByText(/deploy --token \[REDACTED\]/, undefined, { timeout: 20000 })).toBeTruthy();
       expect(await screen.findByText("Running shell", undefined, { timeout: 20000 })).toBeTruthy();
-      expect(document.body.textContent).toContain("[REDACTED]");
       expect(document.body.textContent).not.toContain("ghp_PLANTED");
       expect(document.body.textContent).not.toContain("hunter2");
 
       await userEvent.click(screen.getByRole("button", { name: "Cancel reply" }));
       expect(await screen.findByText(/Stopped:/, undefined, { timeout: 20000 })).toBeTruthy();
       expect(document.body.textContent).not.toContain("hunter2");
+      // The gate fails on a leftover agent process, and the daemon ends it just after the turn shows canceled.
+      await until(() => !agentRunning("fake:tool-hang"), "agent process gone");
     } finally {
+      // The agent sleeps until canceled; a failed assertion must not leave it running past the test.
+      const cancel = screen.queryByRole("button", { name: "Cancel reply" });
+      if (cancel) await userEvent.click(cancel);
       await t.stop();
     }
   }, 90000);
