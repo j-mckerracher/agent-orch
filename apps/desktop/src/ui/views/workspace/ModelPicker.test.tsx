@@ -440,6 +440,32 @@ describe("ModelPicker permission level in a chat", () => {
     expect(screen.queryByRole("button", { name: "Retry compatibility check" })).not.toBeInTheDocument();
   });
 
+  it("retry now is pending while the catalog is read again, then says the list was checked", async () => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    const unread: ModelProvider = { ...provider("codex", "Codex"), models: { status: "unknown", reason: "not read yet" } };
+    const view = (refreshing: boolean, providers: ModelProvider[]) => (
+      <ModelPicker catalog={catalog(providers)} provenance={provenance} onRetry={onRetry} refreshing={refreshing} />
+    );
+    const { rerender } = render(view(false, [unread]));
+    await user.click(screen.getByRole("button", { name: /Model settings/ }));
+    await user.click(screen.getByRole("button", { name: "Retry now" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+    rerender(view(true, [unread]));
+    expect(screen.getByRole("button", { name: "Retry now" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Checking the model list again…")).toHaveAttribute("role", "status");
+    rerender(view(false, [provider("codex", "Codex")]));
+    expect(screen.getByText("The model list was checked again.")).toHaveAttribute("role", "status");
+  });
+
+  it("a failed catalog read is an alert, not a status line", async () => {
+    const user = userEvent.setup();
+    const failed = { status: "unavailable", reason: "the daemon did not answer", provenance, ...observed } as SurfaceResult<ModelCatalog>;
+    render(<ModelPicker catalog={failed} provenance={provenance} onRetry={vi.fn()} />);
+    await user.click(screen.getByRole("button", { name: /Model settings/ }));
+    expect(screen.getByRole("alert")).toHaveTextContent("Model settings are not available: the daemon did not answer");
+  });
+
   it("asks before Full, and on Cancel returns focus to the chip with the panel closed", async () => {
     const user = userEvent.setup();
     const onChange = vi.fn();

@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from "react";
+import { CLEAR_MS } from "../../action";
 import type {
   ModelCatalog,
   ModelCatalogSource,
@@ -177,6 +178,7 @@ export function ModelPicker({
   validate,
   copilotSignIn,
   onRetry,
+  refreshing = false,
   onChoiceChange,
   onChoiceBlocked,
   selectionSupported = true,
@@ -187,6 +189,8 @@ export function ModelPicker({
   validate?: ModelCatalogSource["validate"];
   copilotSignIn?: Pick<ModelCatalogSource, "checkCopilotSignIn" | "copilotSignInStatus">;
   onRetry?: () => void;
+  /** True while the catalog is being read again: the retry buttons show pending until it is. */
+  refreshing?: boolean;
   /**
    * Live only: the choice each message is sent with. Null until the user chooses or a saved choice is restored, and
    * null while a choice is unavailable or not confirmed yet (DPES-1105). When the connected daemon cannot take a model
@@ -213,6 +217,8 @@ export function ModelPicker({
   const [check, setCheck] = useState<Check | null>(null);
   const [retries, setRetries] = useState(0);
   const [signIn, setSignIn] = useState<CopilotSignInRecord | null>(null);
+  // A manual check the person asked for; its result is shown until it clears itself.
+  const [asked, setAsked] = useState(false);
 
   const providers = catalog.status === "ok" ? catalog.data.providers : [];
   const level = permission?.level ?? "restricted";
@@ -298,6 +304,25 @@ export function ModelPicker({
     }, RETRY_MS);
     return () => clearTimeout(timer);
   }, [cold, retries, onRetry]);
+
+  const retryNow = () => {
+    setRetries(0);
+    setAsked(true);
+    onRetry?.();
+  };
+  // Pending while the catalog is read again, then what it found. Shown for a few seconds, like other minor confirmations.
+  const checkText = !asked
+    ? ""
+    : refreshing
+      ? "Checking the model list again…"
+      : cold
+        ? "The model list is still being read."
+        : "The model list was checked again.";
+  useEffect(() => {
+    if (!asked || refreshing) return;
+    const timer = setTimeout(() => setAsked(false), CLEAR_MS);
+    return () => clearTimeout(timer);
+  }, [asked, refreshing]);
 
   // The Copilot sign-in state is read as the panel opens, and at mount for a restored Copilot choice, so a signed-out
   // choice is known before a send (DPES-1105). The read is free and nothing waits for it: until it arrives,
@@ -437,19 +462,14 @@ export function ModelPicker({
         <p className="ws-menu-title">
           {live ? "Model settings" : "Conversation settings"} {!live && <Badge tone="placeholder">{panelBadge}</Badge>}
         </p>
-        {unavailable && <p role="status">{unavailable}</p>}
+        {/* A failed read is an error, so it is an alert; a read in progress is a status. */}
+        {unavailable && <p role={catalog.status === "loading" ? "status" : "alert"}>{unavailable}</p>}
         {cold && (
           <p role="status" className="ws-small">
             The catalog is still being read; retry shortly.{" "}
             {retries < MAX_AUTO_RETRIES ? "Retrying automatically." : "Automatic retries stopped."}{" "}
             {onRetry && (
-              <Button
-                variant="quiet"
-                onClick={() => {
-                  setRetries(0);
-                  onRetry();
-                }}
-              >
+              <Button variant="quiet" pending={refreshing} onClick={retryNow}>
                 Retry now
               </Button>
             )}
@@ -488,8 +508,14 @@ export function ModelPicker({
           </p>
         ))}
         {onRetry && providers.some((item) => item.chatCompatibility?.[level]?.retryable) && (
-          <Button variant="quiet" onClick={onRetry}>Retry compatibility check</Button>
+          <Button variant="quiet" pending={refreshing} onClick={retryNow}>
+            Retry compatibility check
+          </Button>
         )}
+        {/* Always mounted, so a manual check's result is announced. */}
+        <p role="status" className="ws-small">
+          {checkText}
+        </p>
         {problemNote && (
           <p role="status" className="ws-small">
             {problemNote}

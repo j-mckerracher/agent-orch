@@ -813,6 +813,7 @@ function Conversation({
               validate={surfaces.models.validate}
               copilotSignIn={surfaces.models}
               onRetry={retryModels}
+              refreshing={modelLoaded.status === "loading"}
               onChoiceChange={setChoice}
               onChoiceBlocked={setChoiceBlocked}
               selectionSupported={!live || !gate.connected || gate.can("conversation_selection")}
