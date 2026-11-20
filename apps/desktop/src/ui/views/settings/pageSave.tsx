@@ -17,15 +17,12 @@ import {
   type ReactNode,
 } from "react";
 import { Button } from "../../theme";
+import type { Outcome } from "../../action";
 import { Notice } from "../../widgets";
 import { FIXTURE_SAVE_TEXT } from "./settingsModel";
 import type { SaveResult } from "./useSettings";
 
-/** What one section tells the person after Save. */
-export interface Outcome {
-  kind: "saved" | "fixture" | "failed";
-  text: string;
-}
+export type { Outcome };
 
 export const outcomeOf = (result: SaveResult, savedText: string): Outcome =>
   result.kind === "saved"
@@ -129,7 +126,7 @@ export function SettingsPage({ children }: { children: ReactNode }) {
             <div role="status" aria-live="polite" aria-label="Save result" className="settings-result">
               {shown.map((outcome) =>
                 outcome.kind === "failed" ? (
-                  <Notice key={outcome.text} tone="bad">
+                  <Notice key={outcome.text} tone="bad" role="alert">
                     {outcome.text}
                   </Notice>
                 ) : (

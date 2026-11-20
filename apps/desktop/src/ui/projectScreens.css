@@ -400,6 +400,11 @@
   color: var(--amber);
 }
 
+.ps-notice-ok {
+  background: var(--green-bg);
+  color: var(--green);
+}
+
 .ps-notice-bad {
   background: var(--red-bg);
   color: var(--red);
