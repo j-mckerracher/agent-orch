@@ -5,8 +5,21 @@ import { FakeDaemon, StubRpcError } from "../../../test/fakeDaemon";
 import type { LiveActivityWire } from "../../../daemon/types";
 import { createServices } from "../../createServices";
 import { ServicesProvider, type Services } from "../../services";
-import { SessionActivity } from "./SessionActivity";
-import { ACTIVITY_POLL_MS } from "./useSessionActivity";
+import { ActivityLog } from "../../activity/ActivityLog";
+import { ActivityStatus } from "../../activity/ActivityStatus";
+import { ACTIVITY_POLL_MS, useSessionActivity } from "./useSessionActivity";
+
+/** What the Chat thread draws from the hook, without the rest of the thread. */
+function Activity({ sessionId, running }: { sessionId: string; running: boolean }) {
+  const activity = useSessionActivity(sessionId, running);
+  return (
+    <>
+      {activity.items.length > 0 && <ActivityLog items={activity.items} streaming={running} active={running} />}
+      {running && activity.live && <ActivityStatus live={activity.live} />}
+      {activity.truncated && <p>Thinking log hit its size limit.</p>}
+    </>
+  );
+}
 
 type Row = { sequence: number; kind: string; body: string };
 
@@ -22,7 +35,7 @@ function setup(running = true) {
   const services: Services = createServices({ connector: fake, connection: { backoffMs: [5], requestTimeoutMs: 250 } });
   const ui = (isRunning: boolean) => (
     <ServicesProvider services={services}>
-      <SessionActivity sessionId="s1" running={isRunning} />
+      <Activity sessionId="s1" running={isRunning} />
     </ServicesProvider>
   );
   const view = render(ui(running));
@@ -39,19 +52,12 @@ const think = (sequence: number, body: string): Row => ({ sequence, kind: "think
 const started = (sequence: number, id: string, name: string, summary = ""): Row => ({ sequence, kind: "tool_started", body: JSON.stringify({ id, name, summary }) });
 const finished = (sequence: number, id: string, ok: boolean, summary = ""): Row => ({ sequence, kind: "tool_finished", body: JSON.stringify({ id, ok, summary }) });
 
-describe("SessionActivity", () => {
+describe("useSessionActivity", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
   afterEach(() => {
     vi.useRealTimers();
-  });
-
-  it("says no activity was recorded when the log is empty", async () => {
-    const { services } = setup();
-    await start(services);
-    expect(screen.getByText("No activity recorded")).toBeInTheDocument();
-    expect(screen.queryByText("Thinking log hit its size limit.")).toBeNull();
   });
 
   it("notes when the thinking log hit its size limit, and still shows what was kept", async () => {

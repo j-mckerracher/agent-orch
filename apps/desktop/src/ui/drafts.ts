@@ -49,6 +49,8 @@ export interface DraftsSnapshot {
   coordinator: Record<string, string>;
   /** Absent until the workspace view stores something; snapshots persisted before M7-10 lack it. */
   workspace?: WorkspaceDrafts;
+  /** Unsent replies on the task window, by task id (a message) or question id (an answer). Absent until one is typed. */
+  task?: Record<string, string>;
 }
 
 /** Bump when the persisted shape changes; an unknown version is discarded. */
@@ -58,6 +60,16 @@ export type DraftStorage = Pick<Storage, "getItem" | "setItem">;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+function loadTexts(value: unknown): Record<string, string> {
+  const texts: Record<string, string> = {};
+  if (isRecord(value)) {
+    for (const [key, text] of Object.entries(value)) {
+      if (typeof text === "string") texts[key] = text;
+    }
+  }
+  return texts;
+}
 
 function loadWorkspace(value: unknown): WorkspaceDrafts | null {
   if (!isRecord(value) || !isRecord(value.drafts)) return null;
@@ -86,6 +98,7 @@ function loadDrafts(storage: DraftStorage): DraftsSnapshot | null {
     const snapshot: DraftsSnapshot = { registerPath: parsed.registerPath, submit, coordinator };
     const workspace = loadWorkspace(parsed.workspace);
     if (workspace) snapshot.workspace = workspace;
+    if (isRecord(parsed.task)) snapshot.task = loadTexts(parsed.task);
     return snapshot;
   } catch {
     return null;
@@ -145,5 +158,15 @@ export class DraftsStore extends Store<DraftsSnapshot> {
   setWorkspaceDraft(targetKey: string, text: string): void {
     const { [targetKey]: _dropped, ...rest } = this.workspace().drafts;
     this.update({ workspace: { ...this.workspace(), drafts: text === "" ? rest : { ...rest, [targetKey]: text } } });
+  }
+
+  taskDraft(key: string): string {
+    return this.getSnapshot().task?.[key] ?? "";
+  }
+
+  /** An empty draft is removed so sent replies do not accumulate keys. */
+  setTaskDraft(key: string, text: string): void {
+    const { [key]: _dropped, ...rest } = this.getSnapshot().task ?? {};
+    this.update({ task: text === "" ? rest : { ...rest, [key]: text } });
   }
 }

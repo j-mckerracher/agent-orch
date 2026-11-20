@@ -32,6 +32,19 @@ async function liveView(fake = seeded()) {
   return { fake, ...mounted };
 }
 
+type ActivityRow = { sequence: number; kind: string; body: string };
+const toolStarted = (sequence: number, id: string, name: string, summary = ""): ActivityRow => ({ sequence, kind: "tool_started", body: JSON.stringify({ id, name, summary }) });
+const toolFinished = (sequence: number, id: string, ok: boolean, summary = ""): ActivityRow => ({ sequence, kind: "tool_finished", body: JSON.stringify({ id, ok, summary }) });
+
+/** Answers `sessions.activity` like the daemon: the session's own rows after the cursor. */
+function stubActivity(fake: FakeDaemon, bySession: Record<string, ActivityRow[]>) {
+  fake.stub("sessions.activity", (params: Record<string, unknown>) => {
+    const after = typeof params.after === "number" ? params.after : 0;
+    const entries = (bySession[String(params.session_id)] ?? []).filter((row) => row.sequence > after);
+    return { entries, next_cursor: entries.length > 0 ? entries[entries.length - 1]!.sequence : after, truncated: false, live: null };
+  });
+}
+
 async function openTask(user: Awaited<ReturnType<typeof liveView>>["user"], id: string) {
   await user.click(await screen.findByRole("button", { name: new RegExp(`^objective of ${id}`) }));
   return screen.findByTestId("agents-detail");
@@ -212,13 +225,25 @@ describe("Agents, the task view", () => {
     expect(detail.getByRole("heading", { level: 1, name: "objective of t-run" })).toBeInTheDocument();
     expect(within(detail.getByRole("heading", { level: 1 }).parentElement!).getByText("Running")).toBeInTheDocument();
     expect(detail.getByText("repo · fake-agent")).toBeInTheDocument();
-    expect(detail.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Output", "Activity", "Attempts 0", "Event feed"]);
+    expect(detail.getAllByRole("tab").map((tab) => tab.textContent)).toEqual(["Chat", "Output", "Attempts 0", "Event feed"]);
+    expect(detail.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true");
     expect(screen.queryByRole("tablist", { name: "Task status" })).not.toBeInTheDocument();
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents", taskId: "t-run" });
 
     await user.click(detail.getByRole("button", { name: /Agents/ }));
     expect(await screen.findByRole("tab", { name: "Running 1" })).toBeInTheDocument();
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents" });
+  });
+
+  it("opens on Chat every time, also after another tab was chosen", async () => {
+    const { user } = await liveView();
+    let detail = within(await openTask(user, "t-run"));
+    await user.click(detail.getByRole("tab", { name: "Event feed" }));
+    expect(detail.getByRole("tab", { name: "Event feed" })).toHaveAttribute("aria-selected", "true");
+    await user.click(detail.getByRole("button", { name: /Agents/ }));
+    detail = within(await openTask(user, "t-run"));
+    expect(detail.getByRole("tab", { name: "Chat" })).toHaveAttribute("aria-selected", "true");
+    expect(detail.getByRole("tab", { name: "Event feed" })).toHaveAttribute("aria-selected", "false");
   });
 
   it("opens straight into a task from a #/agents?task= link, and says so for an unknown task", async () => {
@@ -239,7 +264,8 @@ describe("Agents, the task view", () => {
     const fake = seeded();
     fake.outputs.set("s-1", { lines: [{ sequence: 1, stream: "stderr", text: "compiling", line_truncated: false }] });
     const { user } = await liveView(fake);
-    await openTask(user, "t-run");
+    const detail = within(await openTask(user, "t-run"));
+    await user.click(detail.getByRole("tab", { name: "Output" }));
     const panel = within(await screen.findByRole("region", { name: "Recent output" }));
     expect(await panel.findByText("compiling")).toBeInTheDocument();
     expect(panel.getByText("stderr")).toBeInTheDocument();
@@ -247,22 +273,137 @@ describe("Agents, the task view", () => {
     expect(fake.callsTo("sessions.output_tail")[0]!.params).toMatchObject({ task_id: "t-run", session_id: "s-1" });
   });
 
-  it("shows the session's activity on the Activity tab, empty by default", async () => {
-    const { user } = await liveView(seeded());
-    const detail = within(await openTask(user, "t-run"));
-    await user.click(detail.getByRole("tab", { name: "Activity" }));
-    expect(await detail.findByText("No activity recorded")).toBeInTheDocument();
+  it("interleaves the agent's thinking and tool calls in the Chat thread, then its output", async () => {
+    const fake = seeded();
+    fake.outputs.set("s-1", { lines: [{ sequence: 1, stream: "stdout", text: "compiling", line_truncated: false }] });
+    stubActivity(fake, {
+      "s-1": [
+        { sequence: 1, kind: "thinking", body: "Plan the work first." },
+        toolStarted(2, "a", "Read", "src/lib.rs"),
+        toolFinished(3, "a", true, "40 lines"),
+        toolStarted(4, "b", "Bash", "make"),
+      ],
+    });
+    const { user } = await liveView(fake);
+    await openTask(user, "t-run");
+    const log = await screen.findByRole("log", { name: /^Conversation with/ });
+    const thread = within(log);
+    expect(await thread.findByRole("button", { name: /Bash/ })).toHaveTextContent("Running: Bash");
+    expect(thread.getByRole("button", { name: /Read/ })).toHaveTextContent("Finished: Read");
+    const text = log.textContent ?? "";
+    expect(text.indexOf("Plan the work first.")).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf("Plan the work first.")).toBeLessThan(text.indexOf("Read"));
+    expect(text.indexOf("Read")).toBeLessThan(text.indexOf("Bash"));
+    expect(text.indexOf("Bash")).toBeLessThan(text.indexOf("compiling"));
   });
 
-  it("shows recorded thinking and the size-limit note on the Activity tab", async () => {
+  it("shows recorded thinking and the size-limit note in Chat from a daemon without sessions.activity", async () => {
     const fake = seeded();
     fake.stub("sessions.thinking", { chunks: [{ sequence: 1, body: "Plan the **marker-zz**." }], next_cursor: 1, truncated: true });
     const { user } = await liveView(fake);
     const detail = within(await openTask(user, "t-run"));
-    await user.click(detail.getByRole("tab", { name: "Activity" }));
     expect(await detail.findByText("marker-zz")).toBeInTheDocument();
     expect(detail.getByText("Thinking log hit its size limit.")).toBeInTheDocument();
     expect(fake.callsTo("sessions.thinking")[0]!.params).toMatchObject({ session_id: "s-1" });
+  });
+
+  it("switches the Chat thread with the session picker", async () => {
+    const fake = seeded();
+    fake.tasks.push(
+      mkTask("t-multi", REPO, { state: "Failed", sessions: [mkSession("s-a", { state: "Exited" }), mkSession("s-b", { state: "Exited" })] }),
+    );
+    stubActivity(fake, {
+      "s-a": [{ sequence: 1, kind: "thinking", body: "Thought in the first session." }],
+      "s-b": [{ sequence: 1, kind: "thinking", body: "Thought in the second session." }],
+    });
+    const { user, services } = await liveView(fake);
+    services.router.navigate({ name: "global", view: "agents", taskId: "t-multi" });
+    const detail = within(await screen.findByTestId("agents-detail"));
+    expect(await detail.findByText("Thought in the second session.")).toBeInTheDocument();
+    await user.selectOptions(detail.getByRole("combobox", { name: "Session" }), "s-a");
+    expect(await detail.findByText("Thought in the first session.")).toBeInTheDocument();
+    expect(detail.queryByText("Thought in the second session.")).not.toBeInTheDocument();
+  });
+
+  describe("the Chat composer", () => {
+    const waiting = () => {
+      const fake = seeded();
+      fake.tasks.push(mkTask("t-wait", REPO, { state: "Waiting", sessions: [mkSession("s-w", { state: "Exited" })] }));
+      fake.stub("decisions.list", { questions: [] });
+      return fake;
+    };
+    const openWaiting = async (fake: FakeDaemon) => {
+      const live = await liveView(fake);
+      live.services.router.navigate({ name: "global", view: "agents", taskId: "t-wait" });
+      await screen.findByTestId("agents-detail");
+      const box = await screen.findByRole("textbox", { name: "Message to the agent" });
+      await waitFor(() => expect(box).toBeEnabled());
+      return { ...live, box };
+    };
+
+    it("sends a message to a waiting task with the existing API and adds its bubble to the thread", async () => {
+      const fake = waiting();
+      const { user, box } = await openWaiting(fake);
+      await user.type(box, "Use the staging database{Enter}");
+      const thread = within(await screen.findByRole("log", { name: /^Conversation with/ }));
+      expect(await thread.findByText("Use the staging database")).toBeInTheDocument();
+      expect(thread.getByText("You")).toBeInTheDocument();
+      expect(fake.messages).toEqual([{ task_id: "t-wait", text: "Use the staging database" }]);
+      expect(box).toHaveValue("");
+    });
+
+    it("answers an open question from the thread with decisions.answer", async () => {
+      const fake = seeded();
+      fake.tasks.push(mkTask("t-wait", REPO, { state: "Waiting" }));
+      const question = {
+        id: "q1",
+        task_id: "t-wait",
+        task_title: "Fix the login bug",
+        project: "",
+        question: "Migrate sessions now?",
+        options: ["Migrate them now", "Let them expire"],
+        key: null,
+        raised_by: "worker",
+        state: "open",
+        deferred_until: null,
+        created_at: "2026-11-18T09:00:00Z",
+      };
+      fake.stub("decisions.list", { questions: [question] });
+      fake.stub("decisions.answer", { question: { ...question, state: "answered" } });
+      const { user, services } = await liveView(fake);
+      services.router.navigate({ name: "global", view: "agents", taskId: "t-wait" });
+      const thread = within(await screen.findByRole("log", { name: /^Conversation with/ }));
+      expect(await thread.findByText("Migrate sessions now?")).toBeInTheDocument();
+      await user.click(screen.getByRole("button", { name: "Migrate them now" }));
+      await user.click(screen.getByRole("button", { name: "Send answer" }));
+      await waitFor(() => expect(fake.callsTo("decisions.answer")).toHaveLength(1));
+      expect(fake.callsTo("decisions.answer")[0]!.params).toMatchObject({ question_id: "q1", answer: "Migrate them now" });
+      expect(await thread.findByText("You")).toBeInTheDocument();
+      expect(fake.callsTo("tasks.message")).toHaveLength(0);
+    });
+
+    it("keeps the unsent draft of a task when its window is closed and opened again", async () => {
+      const { user, box, services } = await openWaiting(waiting());
+      await user.type(box, "Half a thought");
+      await user.click(within(screen.getByTestId("agents-detail")).getByRole("button", { name: /Agents/ }));
+      services.router.navigate({ name: "global", view: "agents", taskId: "t-wait" });
+      expect(await screen.findByRole("textbox", { name: "Message to the agent" })).toHaveValue("Half a thought");
+    });
+
+    it.each([
+      ["t-run", /Live steering is not available yet/],
+      ["t-done", /This task is finished\. The agent cannot be messaged\./],
+    ])("disables the composer of %s and says why, while the thread stays readable", async (taskId, reason) => {
+      const { services } = await liveView();
+      services.router.navigate({ name: "global", view: "agents", taskId });
+      const detail = within(await screen.findByTestId("agents-detail"));
+      const box = await detail.findByRole("textbox", { name: "Message to the agent" });
+      expect(box).toBeDisabled();
+      expect(detail.getByRole("button", { name: "Send message" })).toBeDisabled();
+      expect(detail.getByText(reason)).toBeInTheDocument();
+      expect(box).toHaveAccessibleDescription(reason);
+      expect(detail.getByRole("log", { name: /^Conversation with/ })).toBeInTheDocument();
+    });
   });
 
   it("lists attempts with the sessions each ran, and counts them in the tab", async () => {
