@@ -5,7 +5,7 @@
  */
 import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { AppData } from "../../../daemon/appData";
-import { asDaemonError, presentError, type DaemonError } from "../../../daemon/errors";
+import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import type { GateState, WorkstreamGate, WorkstreamObjective } from "../../../sources/surfaces/types";
 import { canArchive, stateLabel } from "../../format";
 import { ActionStatus, useAction, type Action, type Outcome } from "../../action";
@@ -14,16 +14,16 @@ import { useGate, useServices, useStore } from "../../services";
 import { Button, Pill } from "../../theme";
 import { Dialog } from "../../Dialog";
 import { ActionMenu, type MenuItem } from "./ActionMenu";
+import { failureText } from "../../widgets";
 import { reloadWorkstreams, taskLabelOf, type WsGroup, type WsTask } from "./model";
 
 export type Run = <T>(action: string, send: () => Promise<T>) => Promise<T | null>;
 
-/** A failed daemon write in the person's words: what happened, what to do, then the daemon's own message. */
-export function failureText(action: string, failure: DaemonError, reloaded = false): string {
-  const { reason, nextStep } = presentError(failure);
+/** The shared failure text, then the daemon's own message, then what was re-read after a stale or vanished record. */
+function writeFailureText(action: string, failure: DaemonError, reloaded: boolean): string {
   const detail = failure.message ? ` (${failure.message})` : "";
   const reread = reloaded ? " The workstream data was reloaded from the daemon." : "";
-  return `${action} failed. ${reason} ${nextStep}${detail}${reread}`;
+  return `${failureText(action, failure)}${detail}${reread}`;
 }
 
 /**
@@ -49,7 +49,7 @@ export function useGroupRunner(action: Action): Run {
         // A stale or vanished record is re-read so the operator sees the daemon's current state.
         const reloaded = failure.kind === "conflict" || failure.kind === "not-found";
         if (reloaded) reloadWorkstreams();
-        throw new Error(failureText(text, failure, reloaded));
+        throw new Error(writeFailureText(text, failure, reloaded));
       }
       reloadWorkstreams();
       return { kind: "saved", text: `${text}: recorded by the daemon.` };

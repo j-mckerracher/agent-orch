@@ -580,7 +580,7 @@ describe("Agents, the Actions menu", () => {
     const detail = within(await openTask(user, "t-queued"));
     await user.click(menu(detail));
     await user.click(detail.getByRole("menuitem", { name: "Force start" }));
-    const alert = await screen.findByRole("alert");
+    const alert = await detail.findByRole("alert");
     expect(alert).toHaveTextContent(/Forcing the task to start failed/);
     expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });

@@ -959,7 +959,7 @@ describe("live mutations", () => {
     state.objectives[0]!.revision = 9;
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/stale revision/i);
-    expect(screen.getByRole("alert")).toHaveTextContent("The workstream data was reloaded from the daemon.");
+    expect(within(screen.getByTestId("workstreams-view")).getByRole("alert")).toHaveTextContent("The workstream data was reloaded from the daemon.");
     await waitFor(() => expect(screen.getAllByTestId("ws-objective")[0]).toHaveTextContent("Revision 9"));
     expect(state.applied).toEqual([]);
   });
@@ -997,7 +997,7 @@ describe("live mutations", () => {
     await screen.findAllByTestId("ws-row");
     fake.failNext("workstreams.list", { code: -32603, message: "boom" });
     await chooseAction(user, "More actions", "Refresh");
-    const alert = await screen.findByRole("alert");
+    const alert = await within(screen.getByTestId("workstreams-view")).findByRole("alert");
     expect(alert).toHaveTextContent(/Refresh failed/);
     expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
@@ -1011,7 +1011,7 @@ describe("live mutations", () => {
     fake.failNext("tasks.archive", { code: -32011, message: "task is not finished" });
     await chooseAction(user, "More actions", "Archive finished (2)");
     await user.click(screen.getByRole("button", { name: "Confirm archive" }));
-    const alert = await screen.findByRole("alert");
+    const alert = await within(screen.getByTestId("workstreams-view")).findByRole("alert");
     expect(alert).toHaveTextContent(/Archive 2 finished tasks failed/);
     expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
   });
@@ -1034,10 +1034,11 @@ describe("live mutations", () => {
     await screen.findAllByTestId("ws-gate");
     streams.get(fake)!.objectives[0]!.revision = 9;
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/Refresh to see the current state/);
+    const view = within(screen.getByTestId("workstreams-view"));
+    expect(await view.findByRole("alert")).toHaveTextContent(/Refresh to see the current state/);
     // The alert belongs to the objective's controls. The list has none of them, so the alert does not follow the operator there.
     await backToList(user);
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(view.queryByRole("alert")).not.toBeInTheDocument();
     await chooseAction(user, "More actions", "Refresh");
     expect(await screen.findByText(/Workstreams refreshed\./)).toBeInTheDocument();
   });

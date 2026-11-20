@@ -7,8 +7,8 @@ import { canCancel, stateLabel } from "../../format";
 import { ActionStatus, useAction, type Action, type Outcome } from "../../action";
 import { useLastingAction } from "../../lastingAction";
 import { useGate, useServices, useSource } from "../../services";
+import { failureText } from "../../widgets";
 import type { MenuItem } from "../workstreams/ActionMenu";
-import { failureText } from "../workstreams/Manage";
 import { taskRef, type WorkRow } from "./model";
 
 const BUSY_REASON = "Another action is still running for this task.";
@@ -41,8 +41,7 @@ export function useTaskActions(row: WorkRow, live: boolean): { items: MenuItem[]
         return { kind: "saved", text: await request() };
       } catch (error) {
         const failure = asDaemonError(error);
-        const unknown = failure.indeterminate ? " The outcome is unknown. Trying again reuses the same request key." : "";
-        throw new Error(`${failureText(text, failure)}${unknown}`);
+        throw new Error(`${failureText(text, failure)}${failure.message ? ` (${failure.message})` : ""}`);
       }
     });
 
