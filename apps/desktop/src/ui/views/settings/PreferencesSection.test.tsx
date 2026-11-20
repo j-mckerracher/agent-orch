@@ -239,7 +239,7 @@ describe("preferences section", () => {
     await user.type(screen.getByRole("textbox", { name: "New shared preference key" }), "big");
     await user.type(screen.getByRole("textbox", { name: "New shared preference text" }), "Something long.");
     await user.click(screen.getByRole("button", { name: "Add shared preference" }));
-    await waitFor(() => expect(sharedResult()).toHaveTextContent("Over the budget: 2100 of 2048 bytes. Shorten or remove an entry."));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Over the budget: 2100 of 2048 bytes. Shorten or remove an entry.");
     expect(screen.getByRole("textbox", { name: "New shared preference key" })).toHaveValue("big");
     expect(screen.getByRole("textbox", { name: "New shared preference text" })).toHaveValue("Something long.");
   });
@@ -255,14 +255,30 @@ describe("preferences section", () => {
     expect(fake.callsTo("memory.set")).toHaveLength(0);
   });
 
-  it("the_daemons_refusal_is_shown_in_words", async () => {
-    const { user } = await section({ configure: (daemon) => daemon.failNext("memory.set", { code: -32602, message: "invalid params" }) });
+  it("the_daemons_refusal_is_shown_in_words_as_an_alert_and_retry_sends_again", async () => {
+    const { fake, user } = await section({ configure: (daemon) => daemon.failNext("memory.set", { code: -32602, message: "invalid params" }) });
     await addShared();
     await user.type(screen.getByRole("textbox", { name: "New shared preference key" }), "token");
     await user.type(screen.getByRole("textbox", { name: "New shared preference text" }), "something the daemon dislikes");
     await user.click(screen.getByRole("button", { name: "Add shared preference" }));
-    await waitFor(() => expect(sharedResult()).toHaveTextContent(REFUSED_TEXT));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent(REFUSED_TEXT);
     expect(screen.getByRole("textbox", { name: "New shared preference text" })).toHaveValue("something the daemon dislikes");
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(sharedResult()).toHaveTextContent(/Added token\./));
+    expect(fake.callsTo("memory.set")).toHaveLength(2);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("add_shows_adding_on_its_button_until_the_daemon_answers", async () => {
+    const { user } = await section({ configure: (daemon) => daemon.delayNext("memory.set", 200) });
+    await addShared();
+    await user.type(screen.getByRole("textbox", { name: "New shared preference key" }), "token");
+    await user.type(screen.getByRole("textbox", { name: "New shared preference text" }), "Keep tokens out of logs.");
+    await user.click(screen.getByRole("button", { name: "Add shared preference" }));
+    expect(screen.getByRole("button", { name: "Add shared preference" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Adding…")).toBeInTheDocument();
+    await waitFor(() => expect(sharedResult()).toHaveTextContent(/Added token\./));
   });
 
   it("remove_moves_the_entry_to_the_archive_and_restore_brings_it_back", async () => {
@@ -281,6 +297,15 @@ describe("preferences section", () => {
     expect(screen.queryByRole("button", { name: "Restore shared preference small-prs" })).not.toBeInTheDocument();
   });
 
+  it("remove_shows_removing_on_its_own_button_while_the_daemon_answers", async () => {
+    const { user } = await section({ docs: SHARED([entry("small-prs", "Prefer small pull requests.")]), configure: (daemon) => daemon.delayNext("memory.remove", 200) });
+    await addShared();
+    await user.click(screen.getByRole("button", { name: "Remove shared preference small-prs" }));
+    expect(screen.getByRole("button", { name: "Remove shared preference small-prs" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Removing…")).toBeInTheDocument();
+    await waitFor(() => expect(sharedResult()).toHaveTextContent("Removed small-prs. It is under Removed entries."));
+  });
+
   it("a_restore_conflict_says_the_key_is_in_use_again", async () => {
     const { user } = await section({
       docs: SHARED([], [{ id: 5, key: "old", text: "Old text.", written_by: "user", archived_at_ms: NOW, reason: "removed", restored: false }]),
@@ -289,7 +314,7 @@ describe("preferences section", () => {
     await addShared();
     await user.click(screen.getByText("Removed entries (1)"));
     await user.click(screen.getByRole("button", { name: "Restore shared preference old" }));
-    await waitFor(() => expect(sharedResult()).toHaveTextContent(/key is in use again, or it was already restored/));
+    expect(await screen.findByRole("alert")).toHaveTextContent(/key is in use again, or it was already restored/);
   });
 
   it("is_read_only_for_a_non_approver_with_the_notice", async () => {

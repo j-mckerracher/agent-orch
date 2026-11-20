@@ -7,6 +7,7 @@ import { useId, useRef, useState } from "react";
 import { APPROVER_REQUIRED_NOTICE, asDaemonError } from "../../../daemon/errors";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import type { MemoryArchived, MemoryEntry, MemoryKind, MemoryReceipt, MemorySnapshot, Workstream } from "../../../sources/surfaces/types";
+import { useAction } from "../../action";
 import { basename } from "../../format";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { Badge, Button, Disclosure, Pill } from "../../theme";
@@ -66,8 +67,6 @@ function useMemoryDocument(kind: MemoryKind, scope: string | null, enabled: bool
   return { result, reload: () => setNonce((value) => value + 1) };
 }
 
-type Announcement = { kind: "ok" | "bad"; text: string } | null;
-
 function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snapshot: MemorySnapshot; fixture: boolean; reload: () => void }) {
   const { surfaces } = useServices();
   const gate = useGate();
@@ -75,10 +74,13 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
   const [addKey, setAddKey] = useState("");
   const [addText, setAddText] = useState("");
   const [editing, setEditing] = useState<{ key: string; text: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [announcement, setAnnouncement] = useState<Announcement>(null);
+  // One change at a time for this list. `target` names the control that is saving, so only that control shows pending.
+  const action = useAction();
+  const [target, setTarget] = useState<string | null>(null);
+  const busy = action.pending;
+  const mine = (control: string) => busy && target === control;
+  const waiting = (control: string) => busy && target !== control;
   const keyInput = useRef<HTMLInputElement>(null);
-  const working = useRef(false);
   const ids = { reason: useId(), key: useId(), text: useId(), edit: useId() };
   const { kind, scope, entries, archived, budget } = snapshot;
 
@@ -97,32 +99,30 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
   const editOver = editing !== null && overBudget(snapshot, editAfter) ? overBudgetText(editAfter, budget) : null;
   const describedBy = accessReason === null ? undefined : ids.reason;
 
-  /** Sends one change. `answer` reads the daemon's result; `saved` false keeps the typed text and the open editor. */
-  const run = async <T,>(send: () => Promise<MemoryReceipt<T>>, answer: (result: T) => { saved: boolean; text: string }, then: () => void) => {
-    if (working.current) return;
-    working.current = true;
-    setBusy(true);
-    setAnnouncement(null);
-    try {
-      const receipt = await send();
-      if (receipt.simulated) {
-        setAnnouncement({ kind: "ok", text: receipt.notice || FIXTURE_TEXT });
-        return;
+  /**
+   * Sends one change through the list's action. `answer` reads the daemon's result; `saved` false is a refusal, which keeps
+   * the typed text and the open editor and shows as a failure with Retry.
+   */
+  const run = <T,>(control: string, label: string, send: () => Promise<MemoryReceipt<T>>, answer: (result: T) => { saved: boolean; text: string }, then: () => void) => {
+    setTarget(control);
+    void action.run(label, async () => {
+      try {
+        const receipt = await send();
+        if (receipt.simulated) return { kind: "fixture", text: receipt.notice || FIXTURE_TEXT };
+        const { saved, text } = answer(receipt.result);
+        if (saved) then();
+        reload();
+        return saved ? { kind: "saved", text } : { kind: "failed", text };
+      } catch (error) {
+        throw new Error(changeFailureText(asDaemonError(error)));
       }
-      const { saved, text } = answer(receipt.result);
-      setAnnouncement({ kind: saved ? "ok" : "bad", text });
-      if (saved) then();
-      reload();
-    } catch (error) {
-      setAnnouncement({ kind: "bad", text: changeFailureText(asDaemonError(error)) });
-    } finally {
-      working.current = false;
-      setBusy(false);
-    }
+    });
   };
 
-  const save = (key: string, text: string, keeping: boolean, then: () => void) =>
-    void run(
+  const save = (control: string, label: string, key: string, text: string, keeping: boolean, then: () => void) =>
+    run(
+      control,
+      label,
       () => source.set(kind, scope, key, text),
       (result) =>
         result.outcome === "over_budget"
@@ -133,7 +133,7 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
 
   const add = () => {
     if (addReason !== null) return;
-    save(addKey, addText, false, () => {
+    save("add", "Adding…", addKey, addText, false, () => {
       setAddKey("");
       setAddText("");
       keyInput.current?.focus();
@@ -141,15 +141,17 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
   };
   const change = () => {
     if (editing === null || accessReason !== null || editError !== null || editOver !== null) return;
-    save(editing.key, editing.text, false, () => setEditing(null));
+    save(`edit:${editing.key}`, "Saving…", editing.key, editing.text, false, () => setEditing(null));
   };
   const keep = (entry: MemoryEntry) => {
     if (accessReason !== null) return;
-    save(entry.key, entry.text, true, () => undefined);
+    save(`keep:${entry.key}`, "Keeping…", entry.key, entry.text, true, () => undefined);
   };
   const remove = (key: string) => {
     if (accessReason !== null) return;
-    void run(
+    run(
+      `remove:${key}`,
+      "Removing…",
       () => source.remove(kind, scope, key),
       (result) =>
         result.removed
@@ -160,7 +162,9 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
   };
   const restore = (row: MemoryArchived) => {
     if (accessReason !== null) return;
-    void run(
+    run(
+      `restore:${row.id}`,
+      "Restoring…",
       () => source.restore(row.id),
       (result) =>
         result.outcome === "restored"
@@ -224,7 +228,8 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
                       type="submit"
                       variant="primary"
                       aria-label={`Save ${copy.noun} ${entry.key}`}
-                      disabled={busy || accessReason !== null || editError !== null || editOver !== null}
+                      pending={mine(`edit:${entry.key}`)}
+                      disabled={waiting(`edit:${entry.key}`) || accessReason !== null || editError !== null || editOver !== null}
                       aria-describedby={describedBy}
                     >
                       Save
@@ -245,7 +250,8 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
                       <Button
                         aria-label={`Keep ${copy.noun} ${entry.key}`}
                         aria-describedby={describedBy}
-                        disabled={busy || accessReason !== null}
+                        pending={mine(`keep:${entry.key}`)}
+                        disabled={waiting(`keep:${entry.key}`) || accessReason !== null}
                         onClick={() => keep(entry)}
                       >
                         Keep
@@ -262,7 +268,8 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
                     <Button
                       aria-label={`Remove ${copy.noun} ${entry.key}`}
                       aria-describedby={describedBy}
-                      disabled={busy || accessReason !== null}
+                      pending={mine(`remove:${entry.key}`)}
+                      disabled={waiting(`remove:${entry.key}`) || accessReason !== null}
                       onClick={() => remove(entry.key)}
                     >
                       Remove
@@ -333,8 +340,8 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
           <Button
             type="submit"
             variant="primary"
-            disabled={addReason !== null || busy}
-            aria-busy={busy}
+            disabled={addReason !== null || waiting("add")}
+            pending={mine("add")}
             aria-describedby={formReason === null ? undefined : ids.reason}
           >
             Add {copy.noun}
@@ -367,7 +374,8 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
                     <Button
                       aria-label={`Restore ${copy.noun} ${row.key}`}
                       aria-describedby={describedBy}
-                      disabled={busy || accessReason !== null}
+                      pending={mine(`restore:${row.id}`)}
+                      disabled={waiting(`restore:${row.id}`) || accessReason !== null}
                       onClick={() => restore(row)}
                     >
                       Restore
@@ -379,10 +387,20 @@ function MemoryBody({ copy, snapshot, fixture, reload }: { copy: ListCopy; snaps
           </ul>
         </details>
       )}
-      {/* One polite region per list, so a change in one list never overwrites another's answer unheard. */}
-      <div role="status" aria-live="polite" aria-label={`${copy.title} result`} className="settings-result">
-        {announcement?.kind === "ok" && <p>{announcement.text}</p>}
-        {announcement?.kind === "bad" && <Notice tone="bad">{announcement.text}</Notice>}
+      {/* One polite region per list, so a change in one list never overwrites another's answer unheard. A failure is an alert beside it. */}
+      <div className="settings-result">
+        <div role="status" aria-live="polite" aria-label={`${copy.title} result`}>
+          {action.state.phase === "pending" && <p className="ui-action-pending">{action.state.text}</p>}
+          {action.state.phase === "done" && action.state.outcome.kind !== "failed" && <p>{action.state.outcome.text}</p>}
+        </div>
+        {action.state.phase === "done" && action.state.outcome.kind === "failed" && (
+          <Notice tone="bad" role="alert">
+            {action.state.outcome.text}{" "}
+            <Button variant="quiet" onClick={action.retry}>
+              Retry
+            </Button>
+          </Notice>
+        )}
       </div>
     </>
   );
