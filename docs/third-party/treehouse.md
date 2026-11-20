@@ -29,8 +29,10 @@ install folder, beside `orchestrator-daemon`. The daemon finds it there in a rel
 
 Upstream publishes SHA-256 checksums (`checksums.txt`) and no signature. The staging script
 (`apps/desktop/scripts/prepare-treehouse-sidecar.mjs`) checks the archive's SHA-256 and the
-extracted binary's SHA-256 against the pin, and the binary's `--version` output, before it copies
-anything. It stops on the first mismatch.
+extracted binary's SHA-256 against the pin before it copies anything, then checks the staged
+copy's `--version` output. It stops on the first mismatch and removes a staged copy that fails.
+It never runs the extracted file, because on Windows a just-run executable stays locked briefly and
+the delete of the extract directory fails with `EBUSY`.
 
 Tauri re-signs an `externalBin` file when it bundles it, so the bytes that ship are not the
 upstream bytes. The pin therefore does not reach the installed file. The release smoke already
