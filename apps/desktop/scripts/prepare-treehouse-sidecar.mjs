@@ -7,7 +7,7 @@
 // treehouse[.exe] into DIR instead.
 //
 // Fails closed: the archive's SHA-256 and the extracted binary's SHA-256 must match sidecars/treehouse/treehouse-pin.json,
-// and the binary must report the pinned version, before anything is staged. Upstream publishes checksums but no
+// and the staged binary must report the pinned version (a failing copy is removed again). Upstream publishes checksums but no
 // signature, so this pin is the only check that these bytes are the upstream release. Tauri re-signs the staged file
 // when it bundles it, so the pin is enforced here, at staging, and not again later.
 import { spawnSync } from "node:child_process";
@@ -41,15 +41,18 @@ const archive = await ensureArchive(pin, platform, join(tmpdir(), "mcao-treehous
 const extractDir = mkdtempSync(join(tmpdir(), "mcao-treehouse-extract-"));
 try {
   const { binary } = extractRuntime(pin, platform, archive, extractDir);
-  const version = spawnSync(binary, ["--version"], { encoding: "utf8", env: { ...process.env, TREEHOUSE_NO_UPDATE_CHECK: "1" } });
-  if (version.status !== 0 || version.stdout.trim() !== `v${pin.version}`) {
-    fail(`staged treehouse reports ${version.stdout.trim() || version.stderr.trim()}, expected v${pin.version}`);
-  }
   mkdirSync(destDir, { recursive: true });
   copyFileSync(binary, staged);
   chmodSync(staged, 0o755);
 } finally {
+  // Never run the extracted file: on Windows a just-run executable stays locked for a moment (EBUSY on delete).
   rmSync(extractDir, { recursive: true, force: true });
+}
+// The version check runs the staged copy, which is kept. extractRuntime already matched its SHA-256 to the pin.
+const version = spawnSync(staged, ["--version"], { encoding: "utf8", env: { ...process.env, TREEHOUSE_NO_UPDATE_CHECK: "1" } });
+if (version.status !== 0 || version.stdout.trim() !== `v${pin.version}`) {
+  rmSync(staged, { force: true });
+  fail(`staged treehouse reports ${version.stdout.trim() || version.stderr.trim()}, expected v${pin.version}`);
 }
 
 console.log(`staged ${staged}`);

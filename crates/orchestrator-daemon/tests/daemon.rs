@@ -1,5 +1,8 @@
 #![cfg(unix)]
 
+#[path = "support/seed.rs"]
+mod seed;
+
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
 };
@@ -681,7 +684,7 @@ impl RunningAgentFixture {
         fs::write(
             &agent,
             format!(
-                "#!/bin/sh\nif [ \"$1\" = exec ] && [ \"$2\" = --help ]; then\n  printf '%s\\n' --json --sandbox --ignore-user-config --approve-for-me -c\n  exit 0\nfi\n\
+                "#!/bin/sh\nif [ \"$1\" = exec ] && [ \"$2\" = --help ]; then\n  printf '%s\\n' --json --sandbox --ignore-user-config --approve-for-me --add-dir -c\n  exit 0\nfi\n\
                  printf '{{\"type\":\"thread.started\",\"thread_id\":\"01a1b721-1f91-7393-ae1d-6aace8e4646a\"}}\\n'\nprintf '{{\"type\":\"turn.started\"}}\\n'\necho $$ > '{}'\nexec sleep 60\n",
                 pid_file.display()
             ),
@@ -715,6 +718,7 @@ impl RunningAgentFixture {
     }
 
     fn start_daemon_with(&self, passthrough: Option<&str>) -> Daemon {
+        seed::install_pstack_plugin(&self.data.join("no-home"));
         let mut command = Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"));
         command
             .arg("--data-dir")
