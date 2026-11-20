@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Approval } from "../../../daemon/types";
@@ -6,6 +6,7 @@ import { createFixtureChangeRequestSource } from "../../../review/sources";
 import { DIFF, approval, evidenceFor, evidenceSource, makeClient, taskRecord } from "../../../review/testing";
 import { createServices } from "../../createServices";
 import { ServicesProvider } from "../../services";
+import { holdRange } from "./holdDates";
 import { ReviewDecisionsView } from "./ReviewDecisionsView";
 
 afterEach(cleanup);
@@ -90,5 +91,16 @@ describe("Review view routing", () => {
     await waitFor(() => expect(client.callsOf("approvals.resolve")[0]).toMatchObject({ approval_id: "approval-1", decision: "approve" }));
     expect(await screen.findByRole("button", { name: "Request delivery" })).toBeTruthy();
     expect(client.callsOf("delivery.request")).toEqual([]);
+  });
+
+  it("says_what_a_hold_did_beside_its_control_on_the_candidate_page", async () => {
+    const { open } = setup();
+    await open("task-1");
+    await userEvent.click(await screen.findByRole("button", { name: /^Hold until… decisions for task task-1/ }));
+    fireEvent.change(screen.getByLabelText("Hold until"), { target: { value: holdRange(new Date()).max } });
+    const submit = screen.getByRole("button", { name: "Hold decision" });
+    await userEvent.click(submit);
+    expect(submit).toHaveAttribute("aria-busy", "true");
+    expect(await screen.findByText(/Held: task task-1 until/)).toBeTruthy();
   });
 });

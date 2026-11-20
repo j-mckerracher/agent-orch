@@ -4,6 +4,7 @@ import { APPROVER_REQUIRED_NOTICE, asDaemonError, type DaemonError } from "../..
 import { FIXTURE_HOLD_NOTICE } from "../../../sources/surfaces/holds";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import type { QuestionItem, QuestionReceipt } from "../../../sources/surfaces/types";
+import { type Action, type Outcome, useAction } from "../../action";
 import { useGate, useServices, useSurface } from "../../services";
 import { useRetained } from "../workspace/useRetained";
 import { formatHoldDay, holdErrorText } from "./holdDates";
@@ -26,7 +27,9 @@ export interface QuestionsModel {
   blocked: string | null;
   /** The question being changed now; null when idle. */
   busy: string | null;
-  /** The last result, or why it failed. Empty before the first change. */
+  /** The last answer or deferral: pending, then what happened. Render it with ActionStatus beside the controls. */
+  action: Action;
+  /** The last result's words, or "" before the first change. Read by TaskConversation (no failure role there yet). */
   announcement: string;
   /** Sends `text` exactly as given. Resolves true when the daemon confirmed it. */
   answer: (question: QuestionItem, text: string) => Promise<boolean>;
@@ -59,7 +62,7 @@ export function useQuestions(enabled = true): QuestionsModel {
   const active = enabled && supported;
   const [nonce, setNonce] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
-  const [announcement, setAnnouncement] = useState("");
+  const action = useAction();
 
   const loaded = useSurface(
     () =>
@@ -83,20 +86,23 @@ export function useQuestions(enabled = true): QuestionsModel {
   const change = useCallback(
     async (id: string, operation: "answer" | "defer", send: () => Promise<QuestionReceipt>, done: string): Promise<boolean> => {
       if (busy !== null) return false;
-      setBusy(id);
-      try {
-        const receipt = await send();
-        setAnnouncement(receipt.simulated ? `${done} ${FIXTURE_HOLD_NOTICE}` : done);
-        setNonce((value) => value + 1);
-        return true;
-      } catch (error) {
-        setAnnouncement(questionErrorText(asDaemonError(error), operation));
-        return false;
-      } finally {
-        setBusy(null);
-      }
+      let confirmed = false;
+      await action.run(operation === "answer" ? "Sending answer…" : "Deferring…", async (): Promise<Outcome> => {
+        setBusy(id);
+        try {
+          const receipt = await send();
+          setNonce((value) => value + 1);
+          confirmed = true;
+          return receipt.simulated ? { kind: "fixture", text: `${done} ${FIXTURE_HOLD_NOTICE}` } : { kind: "saved", text: done };
+        } catch (error) {
+          throw new Error(questionErrorText(asDaemonError(error), operation));
+        } finally {
+          setBusy(null);
+        }
+      });
+      return confirmed;
     },
-    [busy],
+    [action.run, busy],
   );
 
   const answer = useCallback(
@@ -126,7 +132,8 @@ export function useQuestions(enabled = true): QuestionsModel {
     fixture: !live,
     blocked,
     busy,
-    announcement,
+    action,
+    announcement: action.state.phase === "done" ? action.state.outcome.text : "",
     answer,
     defer,
   };

@@ -1,8 +1,10 @@
 import { act, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { DaemonError } from "../../../daemon/errors";
 import { createServices } from "../../createServices";
 import { ServicesProvider } from "../../services";
+import { holdErrorText } from "./holdDates";
 import { useHolds } from "./useHolds";
 
 describe("useHolds", () => {
@@ -22,5 +24,21 @@ describe("useHolds", () => {
       await result.current.release(held, "Task 1");
     });
     expect(refresh).toHaveBeenCalledTimes(2);
+  });
+
+  it("a_refused_hold_is_a_failed_action_that_says_why_and_keeps_the_held_list", async () => {
+    const services = createServices();
+    const refused = new DaemonError("not-found", "gone");
+    vi.spyOn(services.surfaces.holds, "set").mockRejectedValue(refused);
+    const wrapper = ({ children }: { children: ReactNode }) => <ServicesProvider services={services}>{children}</ServicesProvider>;
+    const { result } = renderHook(() => useHolds(), { wrapper });
+    const before = result.current.items;
+
+    await act(async () => {
+      expect(await result.current.hold("approval", "fixture:task-1", "2099-01-01", "Task 1")).toBe(false);
+    });
+    expect(result.current.action.state).toEqual({ phase: "done", outcome: { kind: "failed", text: holdErrorText(refused, "hold") } });
+    expect(result.current.items).toEqual(before);
+    expect(result.current.busy).toBeNull();
   });
 });
