@@ -69,21 +69,21 @@ Expected: the app window opens. The sidebar has Workspace, Workstreams, Agents, 
 
 ## 5. Register the projects
 
-1. In the app, open the Projects page. Use its add-project control and choose `$HOME/agent-orch-manual-test/projects/manual-test-project`.
-2. Name it `manual-test-project`.
+1. In the app, open **Settings**, then its **Repositories** page. Click **Add repository**.
+2. In the dialog, type `$HOME/agent-orch-manual-test/projects/manual-test-project` in **Repository path** and click **Register repository**. The project takes its name from the folder, `manual-test-project`. There is no name field.
 
-Expected: `manual-test-project` is listed. Register `other-project` the same way only when a test asks for it.
+Expected: "Repository registered." appears, and `manual-test-project` is listed. Register `other-project` the same way only when a test asks for it.
 
 ## 6. Settings, in this order
 
 Apply these at the start of every test file, in this order, and take the named screenshots.
 
-1. Open **Settings**. In **Agent dispatch defaults**, choose `Claude Code` as **Default provider**, `Sonnet (alias)` as **Claude Code model** and `medium` as **Claude Code effort**. Click **Save dispatch defaults**. The result reads "Saved. New tasks use these defaults." **Screenshot** `SETUP-<file number>-1`.
-2. In **Home directory**, enter `~/agent-orch-manual-test/projects/manual-test-project` and click **Save home directory**.
-3. In **Automatic replies**, check the defaults and change nothing: 20 replies per hour and 160 per day, per conversation, and no daily token budget.
-4. In **Checks on running work**, change nothing. Record the three values in `ENVIRONMENT.md`.
-5. In **Acting on its own**, for files `01` to `04`, clear the switch "Let the orchestrator act on its own" and click **Save acting on its own**; the result reads "Saved.". For files `05` to `11`, leave the switch on. **Screenshot** `SETUP-<file number>-2`.
-6. Open **Workspace** and choose **Global** in the target picker. Open the **Model settings** chip. Choose `Claude Code` as **Provider**, `Sonnet (alias)` as **Model** and `medium` as **Effort**. Leave the permission level at its default, Auto. The Monitoring chip reads `Monitoring: on`. **Screenshot** `SETUP-<file number>-3`.
+1. Open **Settings**, then the **Agents** page. In **Defaults for new tasks**, choose `Claude Code` as **Default provider**, `Sonnet (alias)` as **Default model** and `medium` as **Default effort**. Click **Save changes**. The result reads "Saved. New tasks use these defaults." **Screenshot** `SETUP-<file number>-1`.
+2. Open **Repositories**. In **Home directory**, enter `~/agent-orch-manual-test/projects/manual-test-project` and click **Save changes**.
+3. Open **Limits**. In **Automatic replies**, check the defaults and change nothing: **Replies per hour, per conversation** is `20`, **Replies per day, per conversation** is `160`, and **Daily token budget for automatic replies** is empty.
+4. On the same page, in **Checks on running work**, change nothing. Record the three values in `ENVIRONMENT.md`: **Check interval with one task running (minutes)**, **Fastest check interval (seconds)** and **Longest time a task may run before it is flagged (minutes)**.
+5. Open **Autonomy**. For files `01` to `04`, clear the switch "Let the orchestrator act on its own". It saves on click, and the result reads "Saved.". For files `05` to `12`, leave the switch on. **Screenshot** `SETUP-<file number>-2`.
+6. Open **Workspace** and choose **Global orchestrator** in the target picker. Open the **Model settings** chip. Choose `Claude Code` as **Provider**, `Sonnet (alias)` as **Model** and `medium` as **Effort**. Leave the permission level at its default, Auto. The Monitoring chip reads `Monitoring: on`. **Screenshot** `SETUP-<file number>-3`.
 
 The app remembers the Model settings choice for every conversation target. If a target shows another choice, set it back before you send.
 
@@ -133,8 +133,8 @@ The worker writes the status file through its file tools; the daemon grants it t
 | Situation | How |
 | --- | --- |
 | A task that keeps running | Before you send the message, start `sh docs/manual-tests/manual-test.sh hold HOLD-<n>` in its own terminal. It pauses the task run whose objective starts with `HOLD-<n>:` as soon as it starts, so the task stays `Running` and writes nothing. When the task page reads `Running`, stop the helper with Ctrl-C; the run stays paused. |
-| End a held task | Run `sh docs/manual-tests/manual-test.sh release HOLD-<n>`, then click **Request cancel** on the task page. Always release before you cancel: a paused process does not act on a cancel. |
-| A stalled task | Hold a task (above) and wait. After 5 minutes without output the daemon posts a stalled-task notice. A held task also counts against its wall-time limit (Settings, **Checks on running work**). |
+| End a held task | Run `sh docs/manual-tests/manual-test.sh release HOLD-<n>`, then click **Cancel** on the task page (open it from the card's **Open task**). Always release before you cancel: a paused process does not act on a cancel. |
+| A stalled task | Hold a task (above) and wait. The stall check waits the check interval, and never less than 5 minutes. At the default base of 10 minutes, a task with no output for about 10 minutes is stalled, and the daemon posts a notice that reads "`<task>` has been silent for N minutes." A held task also counts against its wall-time limit (Settings > Limits, **Checks on running work**, **Longest time a task may run before it is flagged (minutes)**). |
 | An unavailable agent | Quit the app and wait two minutes. Start it as in section 4 with `AGENT_ORCH_CLAUDE_PROGRAM="$HOME/agent-orch-manual-test/missing/claude"` added. Restart without it afterwards. |
 | Failing automatic turns | No trigger. The variables that make chat turns fail (`AGENT_ORCH_CONVERSATION_TIMEOUT_MS`, a missing program) take effect only after a daemon restart, need no running task, and also fail your own messages, so the orchestrator cannot start the tasks whose events would wake it. Tests that need this are `BLOCKED`. |
 | A quiet reply to a failure or a report | No trigger. A real model answers quietly only when nothing needs the user; it does not answer a failure or a report quietly on request. Tests that need this are `BLOCKED`. |
@@ -144,7 +144,7 @@ The worker writes the status file through its file tools; the daemon grants it t
 | Event | How |
 | --- | --- |
 | Failed task | A NO-CHANGE task (8b). The wake comes after the retry also fails. |
-| Stalled task | A held task (8c), then 5 minutes. |
+| Stalled task | A held task (8c), then about 10 minutes at the default base. |
 | Empty change set fails | A NO-CHANGE task. |
 | Candidate ready | A WRITE task. |
 | Task delivery waiting | A WRITE task; its LocalReview delivery waits for review. |

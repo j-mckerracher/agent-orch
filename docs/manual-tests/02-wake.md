@@ -6,14 +6,14 @@ Before TC-W-01, add a coordinator for `manual-test-project` (open the target pic
 
 UI parts used here, all on the **Workspace** page:
 
-- **Monitoring chip.** A chip in the Global header reading `Monitoring: <mode>`. Its accessible name is "Monitoring mode". Click it to open the mode menu.
-- **Wake badge.** A count on the Global entry in the target picker, such as "1 update".
-- **Wake notice.** A block in the Global conversation labelled "Update, not a reply to you".
-- **Open task.** A link inside a task notice that opens that task.
+- **Monitoring chip.** A button in the **Global orchestrator** header reading `Monitoring: <mode>`. Its accessible name is that text. Click it to open the mode menu, which is labelled "Monitoring mode".
+- **Wake badge.** A count on the **Global orchestrator** entry in the target picker, such as "1 update".
+- **Wake notice.** A block in the Global orchestrator conversation labelled "Update, not a reply to you".
+- **Open task.** A link inside a task notice. It opens the task's page, which has the tabs Conversation, Attempts and Timeline.
 
 Wake turns always run at Restricted permission. They run only when the Global conversation is not busy with a user turn.
 
-**Messages used here.** Send them to Global, word for word. Each makes Global propose one task; the step that sends one is **Model-dependent** (RUNNER.md rule 8). The objectives are from setup section 8b.
+**Messages used here.** Send them to **Global orchestrator**, word for word. Each makes Global propose one task; the step that sends one is **Model-dependent** (RUNNER.md rule 8). The objectives are from setup section 8b.
 
 - **Failing task message** (NO-CHANGE; the task ends `Failed`, after the daemon's one retry):
 
@@ -39,17 +39,17 @@ Replies to wake turns come from a real model. Judge the notices, badges and labe
 
 ## TC-W-01 Monitoring chip shows the mode
 
-**Source:** `monitoringModel.ts`; `orchestrator-actions.md` "Wake" (UI).
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **What the user sees**); `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`chipLabel`).
 **Real agent:** none. Cost: low.
-**Preconditions:** Global selected.
+**Preconditions:** Global orchestrator selected.
 
-1. Look at the Global header.
+1. Look at the **Global orchestrator** header.
 
 **Expected:** A chip reads `Monitoring: on` (or `quiet`, `off`, `away`). It is never blank. **Screenshot.**
 
 ## TC-W-02 Mode menu offers four modes
 
-**Source:** same.
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Modes**); `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`MODE_OPTIONS`).
 **Real agent:** none. Cost: low.
 **Preconditions:** TC-W-01.
 
@@ -67,78 +67,80 @@ Replies to wake turns come from a real model. Judge the notices, badges and labe
 
 ## TC-W-03 Changing the mode persists
 
-**Source:** same; RPC `monitoring.set`.
+**Source:** `apps/desktop/src/daemon/api.ts` (`monitoring.set`); `apps/desktop/src/ui/views/workspace/MonitoringChip.tsx`.
 **Real agent:** none. Cost: low.
 **Preconditions:** None.
 
 1. Click the chip and choose **Quiet**.
 2. Read the chip.
-3. Quit the app, wait two minutes, start the app, and open Global.
+3. Quit the app, wait two minutes, start the app, and open **Global orchestrator**.
 
 **Expected:** The chip reads `Monitoring: quiet` in both step 2 and step 3.
 
-**Reset:** set it back to **On**.
+**Reset:** choose **On** in the mode menu.
 
 ## TC-W-04 A failed task wakes Global with a reply
 
-**Source:** `orchestrator-actions.md` "Wake" (task failed or retries exhausted: model turn).
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (event table, row "Task failed, verification failed, retries exhausted").
 **Real agent:** Sonnet (alias), medium, for the chat turns and two task attempts. Cost: medium.
 **Preconditions:** Mode **On**.
 
-1. Send the failing task message to Global and click **Approve**.
+1. Send the failing task message to **Global orchestrator** and click **Approve**.
 2. Choose `manual-test-project` in the target picker and stay there.
 3. Wait until the task has failed (Agents page), then up to 5 minutes.
 4. Look at the target picker.
-5. Choose **Global**.
+5. Choose **Global orchestrator**.
 
 **Expected:**
 
-- Step 4: the Global entry has a badge reading "1 update" (or a larger count).
-- Step 5: the conversation ends with a wake notice labelled "Update, not a reply to you". It reports the failure and is followed by a reply from the orchestrator. Copy the reply; any wording passes.
+- Step 4: the **Global orchestrator** entry has a badge reading "1 update" (or a larger count).
+- Step 5: the conversation shows a wake notice labelled "Update, not a reply to you" that reports the failure. A reply from the orchestrator follows it. Copy the reply; any wording passes.
 - No message from you triggered it.
 
 **Screenshot** after steps 4 and 5.
 
 ## TC-W-05 Stalled task and waiting delivery give notices only
 
-**Source:** `orchestrator-actions.md` "Wake" (stalled: notice only, no model turn; delivery waiting: notice only).
-**Real agent:** Sonnet (alias), medium. Cost: medium (the repeat runs a WRITE task).
+**Source:** `crates/orchestrator-store/src/sqlite_wake.rs` (`needs_model`: "A stall is a notice only"); `crates/orchestrator-core/src/supervision.rs` (`STALL_QUIET_FLOOR`, `stalled`); `crates/orchestrator-daemon/src/wake_events.rs` (the "is ready for your approval." notice).
+**Real agent:** Sonnet (alias), medium, for the task runs. Cost: medium.
 **Preconditions:** Mode **On**. Prompt log running (setup section 7).
 
-1. Start the hold helper for `HOLD-1`. Send the held task message to Global and click **Approve**. When the task reads `Running`, stop the helper.
-2. Wait 8 minutes (RUNNER.md rule 7).
-3. Open Global.
+1. Start the hold helper for `HOLD-1` (setup section 8c). Send the held task message to **Global orchestrator** and click **Approve**. When the task reads `Running` on the **Agents** page, stop the helper.
+2. Wait up to 20 minutes for the stall notice. The stall needs 10 minutes of silence at the default base interval (the quiet window is `max(interval, 5 minutes)`), and checks run once per interval, so this test has its own limit.
+3. Open **Global orchestrator**.
 
-**Expected:** A deterministic notice says the task is stalled. It was not written by the model. No new assistant reply was generated for it. **Prompt log:** no turn entry is for the stall. A scheduled work-check turn for the running task may appear; it does not count.
+**Expected:** A deterministic notice reads `Task <id> (<objective>) has been silent for <N> minutes.` It was not written by the model. No new assistant reply was generated for it. **Prompt log:** no turn entry is for the stall. A scheduled work-check turn for the running task may appear; it does not count.
 
-**Reset:** release `HOLD-1` and click **Request cancel** on the task page.
+**Reset:** release `HOLD-1` (setup section 8c), then cancel the task on the **Agents** page with **Actions** > **Cancel attempt**.
 
-Repeat with the writing task message, so the task changes a file and a delivery waits for review. Expected: a notice says a delivery is waiting.
+Repeat with the writing task message, so the task changes a file and its delivery waits for review. Expected: a notice reads `Task <id> (<objective>) is ready for your approval.`
+
+**Reset for the repeat:** on the task page, choose **Discard changes** if the page offers it.
 
 ## TC-W-06 Quiet answer to a work check
 
-**Source:** `orchestrator-actions.md` "Output" (only heartbeat batches, work check and daemon start, may be answered quietly).
-**Real agent:** Sonnet (alias), medium. Cost: low; each work check is one turn.
-**Preconditions:** Mode **On**. Settings, **Checks on running work**: base interval `1` minute, saved. A held task: start the hold helper for `HOLD-1`, send the held task message, click **Approve**, and stop the helper when the task reads `Running`.
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Output**); `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`quietLine`).
+**Real agent:** Sonnet (alias), medium, for the work checks and the held task run. Cost: medium.
+**Preconditions:** Mode **On**. On the **Limits** page, section **Checks on running work**: **Check interval with one task running (minutes)** set to `1` and saved with **Save changes**. Then start the hold helper for `HOLD-1`, send the held task message to **Global orchestrator**, click **Approve**, and stop the helper when the task reads `Running`.
 
 1. Wait 3 minutes while the task runs. A work check runs about every minute.
-2. Open Global.
+2. Open **Global orchestrator**.
 
 **Expected:** One collapsed line reads "Checked N updates. Nothing needs you." N is the number of checks so far, at least 1; "Checked 1 update. Nothing needs you." is correct after one check. The token `MCAO_QUIET` is not shown. A stalled-task notice may also appear. It is a separate notice and does not change this result.
 
 **Model-dependent:** the model chooses whether a work check needs a reply. If a check got a text reply instead, count a miss and wait for the next check as the next attempt (no reset needed). Copy each reply.
 
-**Reset:** release `HOLD-1` and click **Request cancel**. Set the base interval back to `10` minutes.
+**Reset:** release `HOLD-1` and cancel the task on the **Agents** page with **Actions** > **Cancel attempt**. On the **Limits** page, set **Check interval with one task running (minutes)** back to `10` and click **Save changes**.
 
 ## TC-W-07 A user message cancels a running wake
 
-**Source:** `monitoringModel.ts` ("The orchestrator is checking an update. Sending cancels it.").
+**Source:** `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`WAKE_RUNNING_TEXT`).
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** Mode **On**.
 
-1. Send the failing task message to Global and click **Approve**. Stay on Global.
+1. Send the failing task message to **Global orchestrator** and click **Approve**. Stay on **Global orchestrator**.
 2. When the task has failed, watch the text near the message box. Read it as soon as it changes.
-3. While that text shows, type `Hello` and click **Send message to Global**.
+3. While that text shows, type `Hello` and click **Send message to Global orchestrator**.
 
 **Expected:**
 
@@ -149,31 +151,31 @@ Repeat with the writing task message, so the task changes a file and a delivery 
 
 ## TC-W-08 Reply limit pauses monitoring
 
-**Source:** `docs/settings.md` "Automatic replies"; `monitoringModel.ts`.
+**Source:** `docs/settings.md` "Automatic replies"; `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`PAUSED_TEXT`); `apps/desktop/src/ui/views/workspace/MonitoringChip.tsx` (the **Change limits** link).
 **Real agent:** Sonnet (alias), medium. Cost: medium (two failing tasks).
 **Preconditions:** None.
 
-1. Open Settings, group **Automatic replies**. Set the per-conversation hourly cap to `1`. Click **Save**.
-2. Send the failing task message to Global and click **Approve**. Wait for its wake notice.
+1. Open **Settings**, open the **Limits** page, and find the section **Automatic replies**. Set **Replies per hour, per conversation** to `1`. Click **Save changes**.
+2. Send the failing task message to **Global orchestrator** and click **Approve**. Wait for its wake notice.
 3. Send the failing task message again and click **Approve**. Wait until it has failed, then 5 minutes. Do not use work checks: a work check past half of the cap is not made at all, so it shows no notice.
-4. Open Global.
+4. Open **Global orchestrator**.
 
 **Expected:**
 
 - The first failure gets a reply.
-- The header shows "Monitoring paused: limit reached". It may end with ", resumes about `<time>`".
-- The second failure still shows a notice. The notice offers a link or text "Change limits" that leads to the Settings page.
+- The header shows "Monitoring paused: limit reached". It may end with ", resumes about `<time>`". Beside it, a **Change limits** link opens Settings.
+- The second failure still shows a notice, with the note "Monitoring paused: limit reached" and no reply.
 
-**Reset:** set the hourly cap back to `20` and click **Save**.
+**Reset:** on the **Limits** page, set **Replies per hour, per conversation** back to `20` and click **Save changes**.
 
 ## TC-W-09 Three failed wake turns pause automatic updates
 
-**Source:** `orchestrator-actions.md` "Wake" (agent failures).
-**Real agent:** none. Cost: none.
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Agent failures**); `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`skipText`).
+**Real agent:** Sonnet (alias), medium, for the task runs. Cost: medium.
 **Preconditions:** `BLOCKED`. No trigger makes automatic turns fail while your own messages and tasks still work (setup section 8c, "Failing automatic turns"). Record `BLOCKED` with that reason and do not run the steps.
 
-1. Cause three wake events that need a model turn, spaced at least 70 seconds apart (debounce).
-2. After each, open Global and read the notice.
+1. Cause three wake events that need a model turn, spaced at least 70 seconds apart (the debounce is 60 seconds).
+2. After each, open **Global orchestrator** and read the notice.
 3. Cause a fourth event.
 
 **Expected:**
@@ -183,27 +185,27 @@ Repeat with the writing task message, so the task changes a file and a delivery 
 
 ## TC-W-10 The pause lifts when the default agent changes
 
-**Source:** same ("or when the default agent changes in Settings").
-**Real agent:** none. Cost: none.
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Agent failures**: "as soon as Settings change the default agent").
+**Real agent:** Sonnet (alias), medium, for the task run. Cost: medium.
 **Preconditions:** `BLOCKED`: it needs the pause of TC-W-09.
 
-1. In Settings, change the default provider and click **Save dispatch defaults**.
+1. On **Settings**, page **Agents**, change **Default provider** and click **Save changes**.
 2. Cause another wake event.
 
 **Expected:** The event gets a model turn again. The pause notice no longer appears.
 
 ## TC-W-11 Away mode and return brief
 
-**Source:** `docs/m7-08-conversation-service.md` (away mode); `briefModel.ts`.
+**Source:** `docs/m7-08-conversation-service.md` "Away mode and the return brief"; `apps/desktop/src/ui/views/workspace/briefModel.ts`.
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** Mode **On**.
 
 1. Click the chip and choose **Away**.
-2. Send the failing task message to Global and click **Approve**. Wait until the task has failed, then 5 minutes.
-3. Open Global and read the notice.
+2. Send the failing task message to **Global orchestrator** and click **Approve**. Wait until the task has failed, then 5 minutes.
+3. Open **Global orchestrator** and read the notice.
 4. Click the chip and choose **On**.
-5. Look for a return brief in Global.
-6. Acknowledge the brief using its button.
+5. Look for a return brief in **Global orchestrator**.
+6. Click **Dismiss** on the brief.
 
 **Expected:**
 
@@ -213,57 +215,57 @@ Repeat with the writing task message, so the task changes a file and a delivery 
 
 ## TC-W-12 Check interval settings
 
-**Source:** `docs/settings.md` "Checks on running work".
+**Source:** `docs/settings.md` "Checks on running work"; `apps/desktop/src/ui/views/settings/supervisionModel.ts` (field labels and ranges).
 **Real agent:** none. Cost: low.
 **Preconditions:** None.
 
-1. Open Settings, group **Checks on running work**.
-2. Set base interval `10` minutes, fastest interval `60` seconds, wall-time limit `30` minutes. Click **Save**.
+1. Open **Settings**, open the **Limits** page, and find the section **Checks on running work**.
+2. Set **Check interval with one task running (minutes)** to `10`, **Fastest check interval (seconds)** to `60`, and **Longest time a task may run before it is flagged (minutes)** to `30`. Click **Save changes**.
 3. Reopen Settings after a restart.
 
-**Expected:** The saved values persist. Out-of-range values (base interval `0` or `241`) are refused with an error on the field. There is no "Check now" button anywhere in Workspace or Settings.
+**Expected:** The saved values persist. Out-of-range values (a check interval of `0` or `241` minutes) are refused with an error on the field. There is no "Check now" button anywhere in Workspace or Settings.
 
 ## TC-W-13 Wake badge clears when seen
 
-**Source:** `monitoringModel.ts`; `useMonitoring.ts`.
+**Source:** `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`badgeLabel`, `targetNameWithBadge`); `apps/desktop/src/ui/views/workspace/useMonitoring.ts`.
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** One unread wake notice: do TC-W-04 steps 1 to 4.
 
-1. Choose **Global** and keep it open for 10 seconds.
+1. Choose **Global orchestrator** and keep it open for 10 seconds.
 2. Switch to another target.
 
-**Expected:** The "1 update" badge on Global is gone. The badge's accessible name no longer has ", N new update(s)".
+**Expected:** The "1 update" badge on **Global orchestrator** is gone. The entry's accessible name is `Global orchestrator`, with no `, 1 new update` suffix.
 
 ## TC-W-14 Mode Off sends notices only
 
-**Source:** `orchestrator-actions.md` "Wake" (modes).
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Modes**); `apps/desktop/src/ui/views/workspace/monitoringModel.ts` (`skipText`: "Monitoring was off").
 **Real agent:** Sonnet (alias), medium, for the chat turn and the task. Cost: medium.
 **Preconditions:** None.
 
 1. Click the chip and choose **Off**.
-2. Send the failing task message to Global and click **Approve**. Wait until the task has failed, then 5 minutes.
-3. Open Global.
+2. Send the failing task message to **Global orchestrator** and click **Approve**. Wait until the task has failed, then 5 minutes.
+3. Open **Global orchestrator**.
 
 **Expected:** A deterministic notice for the failure exists. No model reply. The skip text reads "Monitoring was off".
 
-**Reset:** set the mode back to **On**.
+**Reset:** choose **On** in the mode menu.
 
 ## TC-W-15 An empty change set fails with a reason
 
-**Source:** `orchestrator-actions.md` "Output" (an Implement run that exits 0 and changes no files fails with a reason).
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Output**: "An Implement run that exits 0 and changes no files fails with a reason"); `crates/orchestrator-daemon/src/executor.rs` (the failure text and its "Last message:" suffix, lines 2842 to 2845).
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** Mode **On**.
 
-1. Send the failing task message to Global and click **Approve**.
-2. Choose `manual-test-project` and wait until the task has failed, then up to 5 minutes. Read the Global badge.
-3. Choose **Global** and read the notice.
-4. Click **Open task** in the notice.
+1. Send the failing task message to **Global orchestrator** and click **Approve**.
+2. Choose `manual-test-project` and wait until the task has failed, then up to 5 minutes. Read the **Global orchestrator** badge.
+3. Choose **Global orchestrator** and read the notice.
+4. Click **Open task** in the notice. On the task page, click its **Attempts N** tab (N is the number of attempts).
 
 **Expected:**
 
-- Step 2: the Global entry has the badge "1 update".
+- Step 2: the **Global orchestrator** entry has the badge "1 update".
 - Step 3: a notice says the task failed and gives the reason. It contains "The agent exited without changing any files." (It may continue with "Last message:" text.)
-- Step 4: the task is `Failed`. The task page reads "Failure reason: The agent exited without changing any files." It does not read "unavailable".
+- Step 4: the task is `Failed`. Its **Attempts** tab reads "Failure reason: The agent exited without changing any files." It does not read `unavailable.`
 
 **Model-dependent:** if the worker changed a file anyway, the task does not fail; count a miss.
 
@@ -271,19 +273,19 @@ Repeat with the writing task message, so the task changes a file and a delivery 
 
 ## TC-W-16 A candidate-ready update says what was done
 
-**Source:** `orchestrator-actions.md` event table ("Candidate ready": model turn, waits for review).
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (event table, row "Candidate ready (task Verifying)"); `crates/orchestrator-daemon/src/wake_events.rs` (`candidate_notice`).
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** Mode **On**.
 
-1. Send the writing task message to Global and click **Approve**.
-2. Choose `manual-test-project` and wait until the task is `Verifying`, then up to 5 minutes. Read the Global badge.
-3. Choose **Global** and read the notice and the reply.
+1. Send the writing task message to **Global orchestrator** and click **Approve**.
+2. Choose `manual-test-project` and wait until the task is `Verifying`, then up to 5 minutes. Read the **Global orchestrator** badge.
+3. Choose **Global orchestrator** and read the notice and the reply.
 4. Click **Open task** in the notice.
 
 **Expected:**
 
-- Step 2: the Global entry has the badge "1 update".
-- Step 3: a notice says the task finished with a candidate and gives its file count, `1`. A reply from the orchestrator follows it; any wording passes.
+- Step 2: the **Global orchestrator** entry has the badge "1 update".
+- Step 3: a notice reads `Task <id> (<objective>) finished with a candidate (1 files changed) and waits for review.` A reply from the orchestrator follows it; any wording passes.
 - Step 3: "No automatic explanation was given" does not appear.
 - Step 4: the task is `Verifying`, not `Failed`.
 
@@ -291,33 +293,33 @@ Repeat with the writing task message, so the task changes a file and a delivery 
 
 ## TC-W-17 A quiet reply does not hide a failure
 
-**Source:** `orchestrator-actions.md` "Output" (an outcome record a quiet reply does not cover stays visible as unanswered, with its notify flag).
-**Real agent:** none. Cost: none.
+**Source:** `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Output**: "stays visible as `unanswered`"); `apps/desktop/src/ui/views/workspace/WakeNotice.tsx` (`stateNote`).
+**Real agent:** Sonnet (alias), medium, for the task run. Cost: medium.
 **Preconditions:** `BLOCKED`. It needs a quiet reply to a failure, which a real model does not give on request (setup section 8c). Record `BLOCKED` with that reason and do not run the steps.
 
 1. Approve a failing task.
-2. Stay on `manual-test-project` and wait for the failure and the wake. Read the Global badge.
-3. Choose **Global** and read the notice.
+2. Stay on `manual-test-project` and wait for the failure and the wake. Read the **Global orchestrator** badge.
+3. Choose **Global orchestrator** and read the notice.
 
 **Expected:**
 
-- Step 2: the Global entry has the badge "1 update".
+- Step 2: the **Global orchestrator** entry has the badge "1 update".
 - Step 3: the failure notice stays visible. Directly under it reads "No automatic explanation was given. Open the task."
 - Step 3: no line reads "Checked 1 update. Nothing needs you." for this failure. The token `MCAO_QUIET` is not shown.
 - Step 3: the notice has an **Open task** link.
 
 ## TC-W-18 A report relay that gets quiet or failed replies twice
 
-**Source:** `orchestrator-actions.md` "Output" (a report relay that gets a quiet or failed reply is retried once, then a deterministic notice); `docs/m7-08-conversation-service.md` "Relay".
-**Real agent:** none. Cost: none.
+**Source:** `docs/m7-08-conversation-service.md` "Relay" (bullet **Relay.**); `docs/design/orchestrator-actions.md` "Wake-up loop: the daemon is the watcher" (bullet **Output**: a relay "is retried once"); `crates/orchestrator-daemon/src/wake_events.rs` (the relay-failed notice).
+**Real agent:** Sonnet (alias), medium, for the scout task run. Cost: medium.
 **Preconditions:** `BLOCKED`. It needs two quiet or failed replies to a report relay, and neither can be caused with a real model (setup section 8c). Record `BLOCKED` with that reason and do not run the steps.
 
 1. Approve a scout task (REPORT, setup section 8b). Stay on `manual-test-project`.
-2. Wait for the relay and its one retry.
-3. Choose **Global** and read the notice.
+2. Wait for the relay and its one retry. Read the **Global orchestrator** badge.
+3. Choose **Global orchestrator** and read the notice.
 
 **Expected:**
 
 - Step 3: a notice reads "Report from task `<task id>` is ready; automatic relay failed. Open the task to read it." Under it reads "The automatic reply failed." The notice has an **Open task** link.
-- Step 3: the Global entry had the badge "1 update" in step 2.
+- Step 2: the **Global orchestrator** entry has the badge "1 update".
 - Only two wake turns ran for this report.

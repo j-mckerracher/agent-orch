@@ -6,6 +6,7 @@
 #   sh docs/manual-tests/manual-test.sh hold <marker>     Pause task runs whose prompt has <marker>
 #                                                         until Ctrl-C. Paused runs stay paused.
 #   sh docs/manual-tests/manual-test.sh release <marker>  Let those task runs continue.
+#   sh docs/manual-tests/manual-test.sh settings-coverage Check that 12-settings.md names every setting in the source.
 #
 # Nothing here replaces or wraps an agent. The app starts the real CLI; these helpers only create
 # the fixture repositories, read process arguments, and pause or continue processes.
@@ -75,8 +76,32 @@ case "${1:-}" in
       echo "Continued $pid"
     done
     ;;
+  settings-coverage)
+    # Every Settings page and search entry, settings group, settings.* method and settings.set field in the source
+    # must be written in backticks in the matrix of 12-settings.md. Reads source files only; nothing else runs.
+    md=docs/manual-tests/12-settings.md
+    ui=apps/desktop/src
+    pages=$ui/ui/views/settings/settingsPages.tsx
+    # Only the coverage matrix counts: the part of the file before its first horizontal rule.
+    matrix=$(sed -n '/^## Coverage matrix/,/^---$/p' "$md")
+    missing=$(
+      {
+        sed -n -E 's/^ *\{ id: "[^"]+", label: "([^"]+)", intro: .*/\1/p' "$pages"
+        sed -n -E 's/^ *\{ page: "[^"]+", label: "([^"]+)".*/\1/p' "$pages"
+        sed -n '/^export interface GroupsPatch {/,/^}/p' $ui/sources/surfaces/types.ts | sed -n -E 's/^  ([a-zA-Z]+)\??: .*/\1/p'
+        grep -o -E '"settings\.[A-Za-z.]+" =>' crates/orchestrator-daemon/src/api.rs | sed -E 's/^"([^"]+)".*/\1/'
+        # idempotency_key is set by the app itself, so it is not a setting.
+        sed -n '/struct SetParams {/,/^}/p' crates/orchestrator-daemon/src/api_settings.rs \
+          | sed -n -E 's/^    ([a-z_]+): .*/\1/p' | grep -v '^idempotency_key$'
+      } | sort -u | while IFS= read -r item; do
+        printf '%s\n' "$matrix" | grep -q -F -- "\`$item\`" || echo "missing from the coverage matrix of $md: $item"
+      done
+    )
+    if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+    echo "settings-coverage: ok"
+    ;;
   *)
-    sed -n '2,8p' "$0"
+    sed -n '2,9p' "$0"
     exit 2
     ;;
 esac

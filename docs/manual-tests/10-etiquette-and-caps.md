@@ -1,6 +1,6 @@
 # 10 Etiquette, pull request links and wake caps
 
-Setup: [00-setup.md](00-setup.md), sections 6, 7 and 8. **Let the orchestrator act on its own** is on. Monitoring **On**.
+Setup: [00-setup.md](00-setup.md), sections 6, 7 and 8. In Settings > Autonomy, **Let the orchestrator act on its own** is on. Monitoring mode **On**: the chip reads `Monitoring: on`.
 
 Sources: `docs/chat.md` "How the orchestrator writes to you"; `docs/settings.md` "Automatic replies"; `docs/design/firstmate-behavior-decisions.md` "Phase 8".
 
@@ -23,7 +23,7 @@ Sources: `docs/chat.md` "How the orchestrator writes to you"; `docs/settings.md`
 ## TC-E-01 Every turn is told how to write to the user
 
 Purpose: the reply rules reach the agent on user and wake turns alike.
-**Source:** `docs/chat.md` ("Every reply, including automatic updates, follows the same rules"); Phase 8 items 1 and 2.
+**Source:** `docs/chat.md` ("Every reply, including automatic updates, follows the same rules"); `docs/design/firstmate-behavior-decisions.md` "Phase 8" items 1 and 2.
 **Real agent:** Sonnet (alias), medium, for the chat turns and two NO-CHANGE runs. Cost: medium.
 **Preconditions:** Prompt log running (setup section 7).
 
@@ -37,7 +37,7 @@ Purpose: the reply rules reach the agent on user and wake turns alike.
 ## TC-E-02 A link the reply types is not a recorded link
 
 Purpose: pull request links come from the app's records, never from the model's text.
-**Source:** `docs/chat.md` ("The app builds each link from its own records, not from the reply text"); Phase 8 items 6 and 7.
+**Source:** `docs/chat.md` ("The app builds each link from its own records, not from the reply text"); `docs/design/firstmate-behavior-decisions.md` "Phase 8" items 6 and 7.
 **Real agent:** Sonnet (alias), medium. Cost: low.
 **Preconditions:** None.
 
@@ -56,7 +56,7 @@ Purpose: pull request links come from the app's records, never from the model's 
 ## TC-E-03 A recorded pull request is listed under the reply
 
 Purpose: a turn that acts on or reports a task with a pull request shows its link.
-**Source:** `docs/chat.md` ("the links are listed under the reply as `Pull request 12: https://github.com/<owner>/<repo>/pull/12`"); Phase 8 items 4 to 7.
+**Source:** `docs/chat.md` ("the links are listed under the reply as `Pull request 12: https://github.com/<owner>/<repo>/pull/12`"); `docs/design/firstmate-behavior-decisions.md` "Phase 8" items 4 to 7.
 **Real agent:** Sonnet (alias), medium. Cost: medium.
 **Preconditions:** `BLOCKED` unless the person who asked for the run provides a GitHub repository you may push to, registered as a `direct-pr` project, with the GitHub command line signed in. A WRITE task (setup section 8b) in that project, delivered as a pull request MCAO recorded and bound to the repository, is then needed. The fixture projects have no remote. Without all of this, record `BLOCKED` with that reason and do not run the steps.
 
@@ -80,19 +80,19 @@ Purpose: a turn that acts on or reports a task with a pull request shows its lin
 
 Purpose: wake caps were raised for autonomous supervision.
 **Source:** `docs/settings.md` ("The defaults are 20 replies per hour and 160 per day, with no token budget").
-**Real agent:** none. Cost: low.
+**Real agent:** Sonnet (alias), medium (no turn is sent). Cost: low.
 **Preconditions:** A new data directory (setup section 9).
 
-1. Open **Settings > Automatic replies**.
+1. Open **Settings > Limits** and find the **Automatic replies** section.
 
-**Expected:** "Replies per hour, per conversation" reads `20`. "Replies per day, per conversation" reads `160`. The daily token budget is empty.
+**Expected:** "Replies per hour, per conversation" reads `20`. "Replies per day, per conversation" reads `160`. "Daily token budget for automatic replies" is empty.
 
 ## TC-E-05 Work checks use only half of each cap
 
 Purpose: periodic checks cannot spend the cap that outcome events need.
-**Source:** `docs/settings.md` ("Checks on running work may use only half of each limit. Once they have, the next check is not made, and no notice is shown for it; events such as a failed task … still get a reply from the other half"); Phase 8 item 10.
+**Source:** `docs/settings.md` ("Checks on running work may use only half of each limit. Once they have, the next check is not made, and no notice is shown for it; events such as a failed task … still get a reply from the other half"); `docs/design/firstmate-behavior-decisions.md` "Phase 8" item 10.
 **Real agent:** Sonnet (alias), medium, for the chat turns, one work check and four NO-CHANGE runs. Cost: medium.
-**Preconditions:** **Settings > Automatic replies**: replies per hour `2`, saved with **Save reply limits**. **Checks on running work**: base interval `1` minute, saved with **Save check settings**. Acting on its own on.
+**Preconditions:** In **Settings > Limits**, set **Replies per hour, per conversation** to `2` and **Check interval with one task running (minutes)** to `1`, then click **Save changes** (one save covers both sections). The Autonomy switch **Let the orchestrator act on its own** is on.
 
 1. Start the hold helper for `HOLD-1`. Send the held task message. Stop the helper when the task reads `Running`.
 2. Wait five minutes. Read Global.
@@ -106,16 +106,5 @@ Purpose: periodic checks cannot spend the cap that outcome events need.
 - Step 4: the failure notice is followed by a reply from the orchestrator; any wording passes.
 - Step 5: the second failure still shows its notice, but no reply. The header reads "Monitoring paused: limit reached" (it may end with ", resumes about" and a time).
 
-**Reset:** release `HOLD-1` and cancel the task. Set the caps back to `20` and `160` and the base interval to `10`.
+**Reset:** release `HOLD-1` (setup section 8c), then click **Cancel** on the task page (open it from the card's **Open task**). In **Settings > Limits**, set **Replies per hour, per conversation** to `20`, **Replies per day, per conversation** to `160` and **Check interval with one task running (minutes)** to `10`, then click **Save changes**.
 **Known limitations:** caps are counted per conversation. Each workstream and each active coordinator has its own 20 and 160.
-
-## TC-E-06 A quiet automatic update shows nothing but the fold
-
-Purpose: an update with nothing to tell the user posts no reply text.
-**Source:** `docs/chat.md` ("An automatic update about running work posts nothing when there is nothing to tell you"); Phase 8 item 3.
-**Real agent:** Sonnet (alias), medium. Cost: low.
-**Preconditions:** As TC-W-06, in this file's clean data directory.
-
-1. Run TC-W-06 (`02-wake.md`), including its Reset. Acting on its own is on in this file, so the held task starts on its own: there is no card to approve.
-
-**Expected:** As TC-W-06: only the collapsed line "Checked N updates. Nothing needs you.", and the token `MCAO_QUIET` is never shown. TC-W-17 and TC-W-18, which check that a quiet reply never hides a failure or a report, are `BLOCKED` with a real agent.
