@@ -340,7 +340,7 @@ describe("Accept / Reject", () => {
       await screen.findByText(/Decision failed\./);
       expect(screen.getByText(/Decision failed\./).closest("[role=alert]")).not.toBeNull();
       expect(accept().disabled).toBe(true);
-      if (kind === "timeout") expect(screen.getByText(/may or may not have applied/)).toBeTruthy();
+      if (kind === "timeout") expect(screen.getByText(/The outcome is unknown/)).toBeTruthy();
       await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
       await waitFor(() => expect(accept().disabled).toBe(false));
       await userEvent.click(accept());

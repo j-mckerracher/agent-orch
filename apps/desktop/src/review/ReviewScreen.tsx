@@ -2,12 +2,12 @@
 // workspaces.diff, approvals.resolve (approve/reject only), delivery.request. DUMMY behind injected interfaces:
 // ReviewEvidenceSource (D7), ChangeRequestSource (D8). It sits inside the app shell's `<main>`, so it adds no landmark.
 import { useState, type ReactNode } from "react";
-import { DaemonError, presentError } from "../daemon/errors";
+import { DaemonError } from "../daemon/errors";
 import { ActionStatus, useAction } from "../ui/action";
 import { basename } from "../ui/format";
 import { WsTabs } from "../ui/views/workstreams/WsTabs";
 import { Button, Disclosure } from "../ui/theme";
-import { Notice } from "../ui/widgets";
+import { Notice, failureText } from "../ui/widgets";
 import { digestHex, deliveryKindOf } from "./binding";
 import { ChangeRequestHistoryList, RequestChangesForm, useChangeRequests } from "./ChangeRequestPanel";
 import { EvidencePanel } from "./EvidencePanel";
@@ -59,11 +59,9 @@ function MutationStatus<T>({
       </Notice>
     );
   }
-  const { reason } = presentError(new DaemonError(view.kind, view.message));
   return (
     <Notice tone="bad" role="alert">
-      {label} failed. {reason} {view.indeterminate ? "The daemon may or may not have applied it. " : ""}Refresh before trying again; the
-      retry reuses the same request, so it cannot apply twice.
+      {failureText(label, new DaemonError(view.kind, view.message))} Refresh before trying again.
     </Notice>
   );
 }
