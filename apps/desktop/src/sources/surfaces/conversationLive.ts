@@ -10,9 +10,11 @@
  *   failure as a status line and never produces reply text of its own.
  * - There is no push stream. Replies arrive by cursor reads; the caller polls
  *   while the latest turn is `running`.
- * - The transcript is re-read every time, with no client cursor. The log is persisted
- *   by the daemon, so a reconnect or a daemon restart needs no saved state. A very long
- *   log shows its newest entries; the oldest are cut and the result says so.
+ * - The log is persisted by the daemon, so a reconnect or a daemon restart needs no saved state.
+ *   A read starts from the beginning, except while the latest turn runs: then it continues from
+ *   the last cursor and appends, and starts over when a clear or an unknown cursor says the
+ *   entries read so far are stale. A very long log shows its newest entries; the oldest are cut
+ *   and the result says so.
  */
 import type { ConnectionManager } from "../../daemon/connection";
 import { agentDisplayName } from "../../daemon/agentDisplayNames";
@@ -26,9 +28,11 @@ import type {
   ConversationWireEntry,
   ConversationWireTarget,
   ConversationWireTurn,
+  LiveActivityWire,
   WakeRecordWire,
 } from "../../daemon/types";
 import { RESOLVE_METHOD, createLiveResolve, mapProposal } from "./actionProposals";
+import { addActivity, mapLive, type ToolSlot } from "./activityItems";
 import { liveRead } from "./liveSupport";
 import { notOk, observation } from "./result";
 import type {
@@ -245,19 +249,24 @@ export function pullRequestLinks(entry: ConversationWireEntry): PullRequestLink[
 
 /**
  * Maps wire entries to view entries. Reply chunks of one turn become a single
- * reply that stays `streaming` until the daemon records the end of the turn;
- * its thinking chunks become one `thinking` entry before the reply, `streaming` until the reply starts or the turn ends;
- * a failed, canceled or empty turn becomes a `status` line, never a reply.
+ * reply that stays `streaming` until the daemon records the end of the turn or other activity follows it. Its thinking
+ * and tool rows become `activity` entries in the order they were recorded, each `streaming` until a reply starts or the
+ * turn ends; a failed, canceled or empty turn becomes a `status` line, never a reply.
  * `withProposals` holds the turns that proposed actions (DPES-1105); one of
  * those with no reply says so instead.
  */
 export function mapEntries(wire: readonly ConversationWireEntry[], withProposals?: ReadonlySet<string>): ConversationEntry[] {
   const out: ConversationEntry[] = [];
   const replies = new Map<string, ConversationEntry>();
-  const thoughts = new Map<string, ConversationEntry>();
-  const endThinking = (turnId: string) => {
-    const thought = thoughts.get(turnId);
-    if (thought) thought.streaming = false;
+  // The entry last added for each turn. A reply chunk joins the reply only when nothing else came after it.
+  const lastOf = new Map<string, ConversationEntry>();
+  // The activity run of each turn that no reply has followed yet.
+  const runs = new Map<string, ConversationEntry>();
+  const tools = new Map<string, Map<string, ToolSlot>>();
+  const endActivity = (turnId: string) => {
+    const run = runs.get(turnId);
+    if (run) run.streaming = false;
+    runs.delete(turnId);
   };
   const status = (entry: ConversationWireEntry, text: string): ConversationEntry => ({
     id: entry.id,
@@ -283,35 +292,48 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
           ...(entry.origin === "wake" ? { origin: "wake" as const } : {}),
         });
         break;
-      case "thinking_chunk": {
-        const thought = thoughts.get(entry.turn_id);
-        if (thought) {
-          thought.text += entry.body;
-          thought.sequence = entry.sequence;
-        } else {
-          const created: ConversationEntry = {
-            id: `${entry.turn_id}:thinking`,
-            kind: "thinking",
-            role: "coordinator",
-            text: entry.body,
-            at: entry.created_at,
-            turnId: entry.turn_id,
-            sequence: entry.sequence,
-            streaming: true,
-          };
-          thoughts.set(entry.turn_id, created);
-          out.push(created);
+      case "thinking_chunk":
+      case "tool_started":
+      case "tool_finished": {
+        let turnTools = tools.get(entry.turn_id);
+        if (!turnTools) tools.set(entry.turn_id, (turnTools = new Map()));
+        const run = runs.get(entry.turn_id);
+        if (entry.kind === "tool_finished") {
+          addActivity([], turnTools, entry.sequence, entry.kind, entry.body);
+          break;
         }
+        const items = run?.items ?? [];
+        if (!addActivity(items, turnTools, entry.sequence, entry.kind, entry.body)) break;
+        if (run) {
+          run.sequence = entry.sequence;
+          break;
+        }
+        // The reply before this run is done: later reply text is another bubble, below the run.
+        if (reply && lastOf.get(entry.turn_id) === reply) reply.streaming = false;
+        const created: ConversationEntry = {
+          id: `${entry.turn_id}:activity:${entry.sequence}`,
+          kind: "activity",
+          role: "coordinator",
+          text: "",
+          at: entry.created_at,
+          turnId: entry.turn_id,
+          sequence: entry.sequence,
+          items,
+          streaming: true,
+        };
+        runs.set(entry.turn_id, created);
+        lastOf.set(entry.turn_id, created);
+        out.push(created);
         break;
       }
       case "reply_chunk":
-        endThinking(entry.turn_id);
-        if (reply) {
+        endActivity(entry.turn_id);
+        if (reply && lastOf.get(entry.turn_id) === reply) {
           reply.text += entry.body;
           reply.sequence = entry.sequence;
         } else {
           const created: ConversationEntry = {
-            id: `${entry.turn_id}:reply`,
+            id: reply ? `${entry.turn_id}:reply:${entry.sequence}` : `${entry.turn_id}:reply`,
             kind: "message",
             role: "coordinator",
             text: entry.body,
@@ -321,11 +343,12 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
             streaming: true,
           };
           replies.set(entry.turn_id, created);
+          lastOf.set(entry.turn_id, created);
           out.push(created);
         }
         break;
       case "turn_completed": {
-        endThinking(entry.turn_id);
+        endActivity(entry.turn_id);
         let ended: ConversationEntry;
         if (reply) {
           reply.streaming = false;
@@ -344,12 +367,12 @@ export function mapEntries(wire: readonly ConversationWireEntry[], withProposals
         break;
       }
       case "turn_failed":
-        endThinking(entry.turn_id);
+        endActivity(entry.turn_id);
         if (reply) reply.streaming = false;
         out.push(status(entry, failureText(entry.error_code, entry.runtime)));
         break;
       case "turn_cancelled":
-        endThinking(entry.turn_id);
+        endActivity(entry.turn_id);
         if (reply) reply.streaming = false;
         out.push(status(entry, "This turn was canceled."));
         break;
@@ -410,6 +433,37 @@ async function retryWhileStarting<T>(attempt: () => Promise<T>): Promise<T> {
   }
 }
 
+/** What a later read of a running turn continues from: the wire entries read so far and the cursor after them. */
+interface Resume {
+  entries: ConversationWireEntry[];
+  epoch: string;
+  generation: number | undefined;
+  cursor: number;
+  truncated: boolean;
+}
+
+const sameJson = (a: unknown, b: unknown): boolean => {
+  if (a === b) return true;
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((key) => sameJson((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]));
+};
+
+/**
+ * Gives each entry of `next` the identity of the same entry in `prev` when nothing changed in it, and each unchanged
+ * item of a changed activity entry its old identity, so a poll that adds one line re-renders only that line.
+ */
+function reuseEntries(prev: readonly ConversationEntry[] | undefined, next: ConversationEntry[]): ConversationEntry[] {
+  if (!prev) return next;
+  const before = new Map(prev.map((entry) => [entry.id, entry]));
+  return next.map((entry) => {
+    const old = before.get(entry.id);
+    if (!old) return entry;
+    if (entry.items && old.items) entry.items = entry.items.map((item, i) => (old.items![i] && sameJson(old.items![i], item) ? old.items![i]! : item));
+    return sameJson(old, entry) ? old : entry;
+  });
+}
+
 export function createLiveConversation(
   connection: ConnectionManager,
   provenance: Provenance,
@@ -427,22 +481,29 @@ export function createLiveConversation(
   };
   // The unverified versions already warned about in this app session. Kept in memory only, never stored.
   const warned = new Set<string>();
+  // Per conversation, kept only while its latest turn runs, and the entries last shown (for `reuseEntries`).
+  const resumes = new Map<string, Resume>();
+  const shown = new Map<string, ConversationEntry[]>();
 
   return {
     async transcript(target) {
       if (fixtureTarget(target)) {
         return notOk(provenance, "unsupported", "Fixture ids have no daemon conversation.", observation(now()));
       }
-      const readOnce = async () => {
+      const scope = scopeOf(target);
+      const readOnce = async (resume?: Resume) => {
           requireSupported(target);
           const api = connection.api();
           const wire = toWireTarget(target);
-          let entries: ConversationWireEntry[] = [];
-          let after: number | undefined;
-          let epoch: string | undefined;
-          let generation: number | undefined;
+          // A copy, so two overlapping reads never append to the same array.
+          let entries: ConversationWireEntry[] = resume ? resume.entries.slice() : [];
+          let after: number | undefined = resume?.cursor;
+          let cursor = resume?.cursor ?? 0;
+          let epoch: string | undefined = resume?.epoch;
+          let generation: number | undefined = resume?.generation;
           let more = false;
           let turn: ConversationWireTurn | null = null;
+          let activity: LiveActivityWire | null | undefined;
           // Every page carries the scope's proposals; the last page read is the newest (DPES-1105).
           let proposals: ActionProposalWire[] | undefined;
           let proposalsMore: boolean | undefined;
@@ -463,6 +524,7 @@ export function createLiveConversation(
             if (result.clear_generation !== generation) throw new HistoryChanged();
             entries.push(...result.entries);
             turn = result.turn;
+            activity = result.activity;
             proposals = result.proposals;
             proposalsMore = result.proposals_more;
             wakeRecords = result.wake_records;
@@ -470,6 +532,7 @@ export function createLiveConversation(
             routedIn = result.routed_in;
             coordinator = result.coordinator;
             more = result.more;
+            cursor = result.next_after_sequence;
             if (!more) break;
             after = result.next_after_sequence;
             const windowStart = result.latest_sequence - MAX_LIVE_SEQUENCE_SPAN;
@@ -479,16 +542,24 @@ export function createLiveConversation(
             }
           }
           // A jump discards entries already read, so it always means older entries are not shown.
-          const truncated = more || jumpedTo !== null;
+          const truncated = (resume?.truncated ?? false) || more || jumpedTo !== null;
           if (truncated) entries = dropPartialLeadingTurn(entries);
+          if (turn?.state === "running") {
+            resumes.set(scope, { entries, epoch: epoch ?? "", generation, cursor, truncated });
+          } else {
+            resumes.delete(scope);
+          }
           const mapped = (proposals ?? []).map(mapProposal);
+          const mappedEntries = reuseEntries(shown.get(scope), mapEntries(entries, new Set(mapped.map((proposal) => proposal.turnId))));
+          shown.set(scope, mappedEntries);
           return {
             target,
-            entries: mapEntries(entries, new Set(mapped.map((proposal) => proposal.turnId))),
+            entries: mappedEntries,
             repliesExpected: true,
             clearGeneration: generation ?? 0,
             truncated,
             turn: turn === null ? null : turnInfo(turn),
+            ...(activity ? { activity: mapLive(activity, now()) } : {}),
             proposals: mapped,
             proposalsMore: proposalsMore ?? false,
             actionBlocks: actionBlocksOf(entries, turn),
@@ -498,7 +569,21 @@ export function createLiveConversation(
             ...(coordinator ? { coordinator: mapCoordinator(coordinator) } : {}),
           };
       };
-      return liveRead(provenance, now, () => restartOnHistoryChange(readOnce), describeNotFound(target));
+      // While the latest turn runs, continue from the last cursor. A clear or a cursor the daemon no longer knows
+      // means what was read is stale, so the read starts over from the beginning.
+      const read = async () => {
+        const resume = resumes.get(scope);
+        if (resume) {
+          try {
+            return await readOnce(resume);
+          } catch (error) {
+            resumes.delete(scope);
+            if (!(error instanceof HistoryChanged || (error instanceof DaemonError && error.kind === "replay-gap"))) throw error;
+          }
+        }
+        return restartOnHistoryChange(() => readOnce());
+      };
+      return liveRead(provenance, now, read, describeNotFound(target));
     },
 
     async send(target, text, selection, permission) {

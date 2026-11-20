@@ -69,7 +69,7 @@ export const WINDOWS = {
   // With main merged (DPES-1106): one real-daemon test and the agent_thinking store binary (5) plus one store lib test; re-synced from CI.
   // DPES-1106 adds one portable daemon test (tasks.message, api_authority_tests): 738 becomes 739, unit binary 633 becomes 634.
   // The wake brief keeps a worker's note (line cap 512) and adds one portable daemon test: 739 becomes 740, unit binary 634 becomes 635.
-  daemon: { passed: 748, ignored: 1, sequence: [643, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 758, ignored: 1, sequence: [650, 93, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -120,7 +120,7 @@ export const WINDOWS = {
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 413.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 418.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 428 becomes 430, worker_status 11 becomes 13.
-  store: { passed: 410, ignored: 0, sequence: [106, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+  store: { passed: 419, ignored: 0, sequence: [106, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 19 },
@@ -180,7 +180,7 @@ export const MACOS = {
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
   // DPES-1106 adds one portable daemon test and one unix-only executor test: 882 becomes 884, unit binary 750 becomes 752.
   // The wake brief adds one portable daemon test: 884 becomes 885, unit binary 752 becomes 753.
-  daemon: { passed: 895, ignored: 1, sequence: [763, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  daemon: { passed: 908, ignored: 1, sequence: [773, 98, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
@@ -188,7 +188,8 @@ export const MACOS = {
   // 978 passed and none ignored. The CLI help probe test of PR #229 (orchestrator-agents) makes 979, as the macOS
   // workspace-tests gate measured on this branch (CI run 44565723305). After PR #224 (DPES-1108), main's whole-workspace
   // pin is 2467 passed and 2 ignored; minus daemon 882+1, store 432+1 and ipc 121 that is 1032 passed and none ignored.
-  workspace: { passed: 1054, ignored: 1 },
+  // A cancelled waiting task no longer blocks the restart gate: one engine test, so 1054 becomes 1055.
+  workspace: { passed: 1073, ignored: 1 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
@@ -216,7 +217,7 @@ export const MACOS = {
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 417.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 422.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 432 becomes 434, worker_status 11 becomes 13.
-  store: { passed: 412, ignored: 0, sequence: [107, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+  store: { passed: 421, ignored: 0, sequence: [107, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 17 },
@@ -298,13 +299,15 @@ export const NODE_SELF_TESTS = { passed: 167 };
 // The Waiting and Finished tabs in Agents & Sessions (DPES-1044) add 4 tests in existing files: 2480, as a full `npx vitest run` counted them.
 // DPES-1044 desktop update prompt adds DesktopUpdates.test.tsx (1 file, 15 tests): 134 files, 2495 tests.
 // The two-screen Workstreams page (DPES-1044) replaces and adds 14 tests in existing files: 2509, as a full `npx vitest run` counted them.
-// The calm shell (DPES-1044) drops the sidebar tree, four-count line and strip-while-healthy tests, and adds the need-you, nav badge, strip and Appearance tests (one new file): 135 files, 2503, as a full `npx vitest run` counted them.
-// The Workspace redesign (DPES-1044) removes the activity popover tests and adds LimitsMachineLoadSection.test.tsx plus the workspace header, brief, card and picker tests: 135 files, 2473, as a full `npx vitest run` counted them.
-// The Agents redesign (DPES-1044) replaces the Agents view tests and adds AgentsInventorySection.test.tsx and inventoryModel.test.ts (net 3 fewer tests, 2 new files): 137 files, 2470 tests, as a full `npx vitest run` counted them.
-// The Review queue (DPES-1044) folds six Review view test files into three and adds Settings notifications tests (net 2 fewer files, 45 fewer tests): 135 files, 2425 tests, as a full `npx vitest run` counted them (the Boise timezone test fails only locally).
-// Simplified Project and Task screens (DPES-1044) add AgentDetectionSection.test.tsx and net 16 tests in existing files: 136 files, 2441 tests.
-// The Settings redesign (DPES-1044) replaces the three switch section tests with AutonomySection.test.tsx, adds SettingsPages.test.tsx and tests for the page route, the Add dialogs, the one Save bar, notifications and agent detection on their pages: 135 files, 2455 tests, as a full `npx vitest run` counted them (the Boise timezone test fails only locally).
-export const VITEST = { files: 135, tests: 2455 };
+// Live agent activity (DPES-1044) adds 3 files and 30 tests net: 137 files, 2539 tests, as a full `npx vitest run` counted them.
+// Force start (DPES-1044) adds 2 tests in an existing file: 2543, as a full `npx vitest run` counted them.
+// The calm shell (DPES-1044) drops the sidebar tree, four-count line and strip-while-healthy tests, and adds the need-you, nav badge, strip and Appearance tests (one new file): 138 files, 2537, as a full `npx vitest run` counted them.
+// The Workspace redesign (DPES-1044) removes the activity popover tests and adds LimitsMachineLoadSection.test.tsx plus the workspace header, brief, card and picker tests: 138 files, 2507, as a full `npx vitest run` counted them.
+// The Agents redesign (DPES-1044) replaces the Agents view tests and adds AgentsInventorySection.test.tsx and inventoryModel.test.ts (2 new files): 140 files, 2505, as a full `npx vitest run` counted them.
+// The Review queue (DPES-1044) folds six Review view test files into three and adds Settings notifications tests (net 2 fewer files, 45 fewer tests): 138 files, 2460 tests, as a full `npx vitest run` counted them (the Boise timezone test fails only locally).
+// Simplified Project and Task screens (DPES-1044) add AgentDetectionSection.test.tsx and net 16 tests in existing files: 139 files, 2476 tests, as a full `npx vitest run` counted them.
+// The Settings redesign (DPES-1044) replaces the three switch section tests with AutonomySection.test.tsx and adds SettingsPages.test.tsx and page, dialog and Save tests: 138 files, 2490 tests, as a full `npx vitest run` counted them.
+export const VITEST = { files: 138, tests: 2490 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
@@ -312,7 +315,8 @@ export const VITEST = { files: 135, tests: 2455 };
 // DPES-1105 approval card (PR #118) adds one real-daemon e2e test (CI run 43994386560: 51 tests in 10 files): 51.
 // DPES-1105 approver credential adds one real-daemon e2e test (CI run 44023050296: 52 tests): 52.
 // Project coordinator replies add one real-daemon UI scenario.
-export const E2E_TESTS = 53;
+// Live agent activity (DPES-1044) adds one real-daemon e2e test: 54.
+export const E2E_TESTS = 54;
 
 // The harness-free lifecycle test prints `STEP 1` .. `STEP n`, then `lifecycle: PASS`.
 export const LIFECYCLE_STEPS = 8;

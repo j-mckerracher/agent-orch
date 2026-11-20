@@ -163,6 +163,38 @@ impl DaemonApi {
             },
         )
     }
+
+    /// Whether a pass would start `task_id` if the user forced it: the task is queued and its
+    /// dependencies, open questions, project registration and worktree allow it. Only the worker
+    /// caps and the load gate are what a force skips.
+    pub(super) fn can_start_forced(&self, task_id: &str) -> Result<bool, RpcError> {
+        let reading = self.consistent_reading()?;
+        let registered: BTreeSet<&str> = reading
+            .projects
+            .iter()
+            .map(|project| project.id.as_str())
+            .collect();
+        let authorization = |project_id: &str, _task_id: &str| registered.contains(project_id);
+        let cursor = self
+            .executor
+            .as_ref()
+            .and_then(|executor| executor.dispatch_state().0);
+        let snapshots = task_snapshots(&reading);
+        let forced = BTreeSet::from([task_id.to_owned()]);
+        let plan = Scheduler::new(
+            SchedulerSnapshot {
+                tasks: &snapshots,
+                last_started_project: cursor.as_deref(),
+            },
+            self.config.limits,
+        )
+        .map_err(|_| RpcError::Internal)?
+        .with_open_questions(&reading.open_questions)
+        .with_resumable(&reading.resumable)
+        .with_forced(&forced)
+        .schedule(Some(&authorization));
+        Ok(plan.started.iter().any(|started| started == task_id))
+    }
 }
 
 /// Reads with `read(sequence_before)` until the journal sequence is the same
@@ -185,16 +217,8 @@ pub(super) fn settle<T>(
     last.ok_or(RpcError::Internal)
 }
 
-pub(super) fn build_snapshot(
-    reading: &Reading,
-    epoch: String,
-    limits: SchedulerLimits,
-    cursor: Option<&str>,
-    dispatch_blocked: bool,
-    gate: StartGate,
-    authorization: &dyn Fn(&str, &str) -> bool,
-) -> Result<QueueSnapshot, RpcError> {
-    let snapshots: Vec<_> = reading
+fn task_snapshots(reading: &Reading) -> Vec<TaskSnapshot<'_>> {
+    reading
         .tasks
         .iter()
         .map(|task| TaskSnapshot {
@@ -206,7 +230,19 @@ pub(super) fn build_snapshot(
                 .rev()
                 .find(|workspace| workspace.task_id == task.contract.id),
         })
-        .collect();
+        .collect()
+}
+
+pub(super) fn build_snapshot(
+    reading: &Reading,
+    epoch: String,
+    limits: SchedulerLimits,
+    cursor: Option<&str>,
+    dispatch_blocked: bool,
+    gate: StartGate,
+    authorization: &dyn Fn(&str, &str) -> bool,
+) -> Result<QueueSnapshot, RpcError> {
+    let snapshots = task_snapshots(reading);
     let plan_with = |limits: SchedulerLimits, gate: StartGate| {
         Scheduler::new(
             SchedulerSnapshot {

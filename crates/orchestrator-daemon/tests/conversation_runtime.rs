@@ -4395,3 +4395,160 @@ fn thinking_is_stored_before_the_reply_and_never_enters_history() {
     assert!(!reply(&page).contains("fake thinking"), "{}", reply(&page));
     stop(&layout, daemon, chat);
 }
+
+/// What `fake_agent` plants in a tool command and a tool result (DPES-1044).
+const PLANTED: [&str; 2] = ["ghp_PLANTED0123456789abcdefghij", "hunter2-planted"];
+
+fn assert_no_planted_secret(label: &str, value: &Value) {
+    let text = value.to_string();
+    for secret in PLANTED {
+        assert!(!text.contains(secret), "{label} carries {secret}: {text}");
+    }
+}
+
+/// Every entry body of the global conversation as the store kept it.
+fn stored_bodies(layout: &Layout) -> Value {
+    let page = store_after_stop(layout)
+        .conversation_page(&ConversationTarget::Global, 0, 1000)
+        .unwrap();
+    json!(page
+        .entries
+        .iter()
+        .map(|entry| entry.body.clone())
+        .collect::<Vec<_>>())
+}
+
+fn tool_kinds(page: &Value) -> Vec<String> {
+    kinds(page)
+        .into_iter()
+        .filter(|kind| kind.starts_with("tool_"))
+        .collect()
+}
+
+#[test]
+fn tool_rows_and_the_live_snapshot_show_while_a_turn_runs_and_cancel_stays_prompt() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[("AGENT_ORCH_CONVERSATION_TIMEOUT_MS", "600000")]);
+    let mut chat = Chat::open(&layout);
+    let sent = chat.send(&global(), "[fake:tool-hang]", "tool-1");
+    let turn_id = sent["turn"]["id"].as_str().unwrap().to_owned();
+    let deadline = Instant::now() + WAIT;
+    let page = loop {
+        let page = chat.get(&global(), 0);
+        if tool_kinds(&page).len() == 3 && page["activity"]["phase"] == "tool" {
+            break page;
+        }
+        assert!(Instant::now() < deadline, "no live tool row: {page}");
+        thread::sleep(Duration::from_millis(30));
+    };
+    // Thinking is flushed before each tool row, so the order is the order the agent worked.
+    assert_eq!(
+        kinds(&page),
+        [
+            "user_message",
+            "thinking_chunk",
+            "tool_started",
+            "tool_finished",
+            "thinking_chunk",
+            "tool_started"
+        ],
+        "{page}"
+    );
+    let entries = page["entries"].as_array().unwrap();
+    let body = |at: usize| -> Value {
+        serde_json::from_str(entries[at]["body"].as_str().unwrap()).unwrap()
+    };
+    assert_eq!(body(2)["name"], "shell");
+    assert_eq!(body(2)["summary"], "ls src");
+    assert_eq!(body(3)["ok"], true);
+    assert_eq!(body(5)["id"], "tool_2");
+    assert_eq!(page["activity"]["tool"]["id"], "tool_2");
+    assert_eq!(page["activity"]["tool"]["name"], "shell");
+    assert!(page["activity"]["phase_ms"].is_u64() && page["activity"]["idle_ms"].is_u64());
+    assert_no_planted_secret("conversations.get", &page);
+
+    let began = Instant::now();
+    let cancelled = chat.call(
+        "conversations.cancel",
+        json!({"target": global(), "turn_id": turn_id, "idempotency_key": "c-tool"}),
+    );
+    assert!(began.elapsed() < Duration::from_secs(5), "cancel was slow");
+    assert_eq!(
+        cancelled["result"]["turn"]["state"], "cancelled",
+        "{cancelled}"
+    );
+    let after = chat.get(&global(), 0);
+    assert_eq!(after["turn"]["state"], "cancelled");
+    assert!(after.get("activity").is_none(), "{after}");
+    // The unfinished tool has a start and no end.
+    assert_eq!(
+        tool_kinds(&after),
+        ["tool_started", "tool_finished", "tool_started"]
+    );
+    assert_no_planted_secret("conversations.get", &after);
+    stop(&layout, daemon, chat);
+    assert_no_planted_secret("store", &stored_bodies(&layout));
+}
+
+#[test]
+fn a_timeout_mid_tool_fails_the_turn_and_leaves_the_tool_unfinished() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[("AGENT_ORCH_CONVERSATION_TIMEOUT_MS", "12000")]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "[fake:tool-hang]", "tool-2");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "failed", "{page}");
+    assert_eq!(page["turn"]["error_code"], "runtime_timeout");
+    assert_eq!(
+        tool_kinds(&page),
+        ["tool_started", "tool_finished", "tool_started"]
+    );
+    assert!(page.get("activity").is_none(), "{page}");
+    assert_no_planted_secret("conversations.get", &page);
+    stop(&layout, daemon, chat);
+    assert_no_planted_secret("store", &stored_bodies(&layout));
+}
+
+#[test]
+fn a_finished_tool_turn_keeps_redacted_tool_rows_and_no_snapshot() {
+    let layout = Layout::new();
+    let daemon = start(&layout, &[]);
+    let mut chat = Chat::open(&layout);
+    chat.send(&global(), "[fake:tools]", "tool-3");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(
+        tool_kinds(&page),
+        [
+            "tool_started",
+            "tool_finished",
+            "tool_started",
+            "tool_finished"
+        ]
+    );
+    assert_eq!(reply(&page), "fake reply after tools");
+    assert!(page.get("activity").is_none(), "{page}");
+    let started: Value = serde_json::from_str(
+        page["entries"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|entry| entry["kind"] == "tool_started")
+            .nth(1)
+            .unwrap()["body"]
+            .as_str()
+            .unwrap(),
+    )
+    .unwrap();
+    assert!(started["summary"]
+        .as_str()
+        .unwrap()
+        .starts_with("deploy --token"));
+    assert_no_planted_secret("conversations.get", &page);
+    // The turn's tool rows never reach the next turn's history.
+    chat.send(&global(), "[fake:echo]", "tool-4");
+    let page = chat.settled(&global());
+    assert!(!reply(&page).contains("deploy"), "{}", reply(&page));
+    stop(&layout, daemon, chat);
+    assert_no_planted_secret("store", &stored_bodies(&layout));
+}

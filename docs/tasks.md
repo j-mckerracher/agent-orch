@@ -44,15 +44,15 @@ Open the task to see attempts, sessions, and the timeline. Click Review candidat
 
 ## Conversation
 
-The task page shows the agent's conversation as a chat, like the Orchestrator Workspace. The thread holds the session's thinking, its retained output as plain text, and the messages and answers you send from the page. Type in the box at the bottom and press Enter to send, or Shift+Enter for a new line. The box is off, with the reason shown under it, unless the task is waiting for a reply.
+The task page shows the agent's conversation as a chat, like the Orchestrator Workspace. The thread holds the session's live activity, its retained output as plain text, and the messages and answers you send from the page. Type in the box at the bottom and press Enter to send, or Shift+Enter for a new line. The box is off, with the reason shown under it, unless the task is waiting for a reply.
 
-## Thinking
+## Live activity
 
-Open a task and open Thinking in its Conversation, or pick a session in Agents and open Thinking under Recent output. It refreshes about every 2 seconds while the session runs. Copy thinking copies the full text. Empty means nothing was recorded.
+Open a task, or pick a session in Agents and open Activity. While the session runs, the block shows its thinking and a timeline of its tool calls, and a status line such as "Running Bash · 12 s" or "No activity for 30 s". It refreshes every second. Once the session ends the block shows the recorded history and no status line. It is the same block as in [the Orchestrator Workspace chat](chat.md#live-activity), including the tool call marks and the result preview. The task conversation also has Jump to latest. Copy thinking copies the full text. Empty means nothing was recorded.
 
-The panel shows everything the provider exposes. Newer Claude and GitHub Copilot models return summarized thinking. Codex returns raw reasoning only on models that support it. Sessions from before this feature have no thinking.
+Sessions from before this feature have thinking only. A task page connected to an older daemon shows thinking only.
 
-Thinking is capped at 8 MiB per task session. When the cap is reached, the text ends with "[thinking truncated: limit reached]" and the panel says the log hit its size limit.
+Limits. Thinking is capped at 8 MiB per task session. When the cap is reached, the text ends with "[thinking truncated: limit reached]" and the panel says the log hit its size limit. Thinking is not redacted. Tool summaries and result previews are redacted and cut to 160 and 400 characters, and a session keeps at most 400 tool calls.
 
 ## Workflow agent
 
