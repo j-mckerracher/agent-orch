@@ -301,6 +301,7 @@ function DiffText({ text }: { text: string }) {
 function PathRequest({ onRequest }: { onRequest: (path: string) => void }) {
   return (
     <form
+      className="rv-path"
       onSubmit={(e) => {
         e.preventDefault();
         const value = new FormData(e.currentTarget).get("path");
