@@ -1,9 +1,8 @@
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 use crate::branch_prefix::BranchPrefix;
 use crate::error::{stderr_detail, Error};
-use crate::git::{git, LONG_PATHS};
+use crate::git::{git, slot_git, slot_git_command};
 use crate::git_path;
 use crate::repository::Repository;
 use crate::treehouse::{Released, Treehouse, MAX_TREES};
@@ -237,10 +236,8 @@ fn create_branch(
 /// not depend on the user's locale.
 fn switch_to_new_branch(path: &Path, branch: &str, sha: &str) -> Result<(), Error> {
     // `-c` names the start point, so git never guesses a branch from `sha`.
-    let output = Command::new("git")
-        .current_dir(path)
+    let output = slot_git_command(path)
         .env("LC_ALL", "C")
-        .args(LONG_PATHS)
         .args(["switch", "-c"])
         .arg(branch)
         .arg(sha)
@@ -269,7 +266,7 @@ fn is_name_collision(stderr: &str) -> bool {
 }
 
 fn verify_head(path: &Path, sha: &str) -> Result<(), Error> {
-    let head = git("verify worktree head", path, ["rev-parse", "HEAD"])?;
+    let head = slot_git("verify worktree head", path, ["rev-parse", "HEAD"])?;
     if head != sha {
         return Err(Error::HeadMismatch {
             path: path.to_path_buf(),
@@ -278,6 +275,70 @@ fn verify_head(path: &Path, sha: &str) -> Result<(), Error> {
         });
     }
     Ok(())
+}
+
+/// The Git directories a slot is granted at launch: the shared Git directory the slot is attached
+/// to, and the directories an agent's commit on `branch` writes. Read from Git before any agent
+/// runs, so they are the trusted values later checks compare against.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SlotDirs {
+    /// The shared Git directory (`--git-common-dir`) of the repository the slot belongs to.
+    pub common: PathBuf,
+    /// The slot's own Git directory, the shared object store, and the branch's ref and reflog
+    /// directories. Git writes a lock file beside a ref, so the branch's directory is the
+    /// narrowest grant that lets a commit land. Never the shared config, hooks or info.
+    pub grants: Vec<PathBuf>,
+}
+
+/// Reads the slot's Git directories for `branch` and creates the branch's ref directories if Git
+/// has not yet. Fails when Git cannot read the slot.
+pub fn slot_git_dirs(worktree: &Path, branch: &str) -> Result<SlotDirs, Error> {
+    let gitdir = slot_git(
+        "read slot git directory",
+        worktree,
+        ["rev-parse", "--path-format=absolute", "--git-dir"],
+    )?;
+    let common = PathBuf::from(slot_git(
+        "read shared git directory",
+        worktree,
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )?);
+    let branch_dir = Path::new(branch).parent().unwrap_or(Path::new(""));
+    let refs = common.join("refs/heads").join(branch_dir);
+    let reflogs = common.join("logs/refs/heads").join(branch_dir);
+    // Git creates a branch's directory only for a loose ref, so an empty one may be missing.
+    for dir in [&refs, &reflogs] {
+        std::fs::create_dir_all(dir)?;
+    }
+    let grants = vec![PathBuf::from(gitdir), common.join("objects"), refs, reflogs];
+    Ok(SlotDirs { common, grants })
+}
+
+/// Whether the slot at `worktree` is still attached to the repository whose shared Git directory
+/// is `common`, and carries no per-worktree config. It reads the slot's files and runs no Git: an
+/// agent may have rewritten them, and a Git command would then read another repository's config,
+/// or a per-worktree config whose filter drivers run on `git add`.
+pub fn slot_attached_to(worktree: &Path, common: &Path) -> bool {
+    let Ok(pointer) = std::fs::read_to_string(worktree.join(".git")) else {
+        return false;
+    };
+    let Some(gitdir) = pointer.trim().strip_prefix("gitdir:") else {
+        return false;
+    };
+    let gitdir = worktree.join(gitdir.trim());
+    if gitdir.join("config.worktree").exists() {
+        return false;
+    }
+    let Ok(shared) = std::fs::read_to_string(gitdir.join("commondir")) else {
+        return false;
+    };
+    match (
+        std::fs::canonicalize(gitdir.join(shared.trim())),
+        std::fs::canonicalize(common),
+    ) {
+        (Ok(attached), Ok(expected)) => attached == expected,
+        _ => false,
+    }
 }
 
 /// Sanitize a task id into a git-ref-safe fragment: no `~`, `..`, spaces,
@@ -983,5 +1044,144 @@ mod tests {
             shown.contains("fatal: a") && shown.contains("second"),
             "{shown:?}"
         );
+    }
+
+    #[test]
+    fn slot_git_dirs_grant_the_slot_objects_and_the_branch_refs_only() {
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let prefix = BranchPrefix::default();
+        let wt = create_task_worktree(
+            &repo,
+            "grant",
+            "HEAD",
+            &wts,
+            &prefix,
+            &treehouse,
+            "grant-workspace-1",
+        )
+        .unwrap();
+        let dirs = slot_git_dirs(wt.path(), wt.branch()).unwrap();
+        let common = PathBuf::from(git(
+            wt.path(),
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ));
+        let gitdir = PathBuf::from(git(
+            wt.path(),
+            &["rev-parse", "--path-format=absolute", "--git-dir"],
+        ));
+        // The prefix directory comes from the same `BranchPrefix` the worktree was created with,
+        // so a changed default cannot leave the grant pointing at a directory no branch uses.
+        let branch_dir = Path::new(prefix.as_str());
+        assert_eq!(dirs.common, common);
+        assert_eq!(
+            dirs.grants,
+            vec![
+                gitdir,
+                common.join("objects"),
+                common.join("refs/heads").join(branch_dir),
+                common.join("logs/refs/heads").join(branch_dir),
+            ]
+        );
+        for dir in &dirs.grants {
+            assert!(dir.is_dir(), "{dir:?}");
+            for denied in ["config", "hooks", "info"] {
+                assert!(!dir.ends_with(denied), "{dir:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn slot_git_dirs_grant_the_configured_prefix_the_branch_was_created_under() {
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let prefix = BranchPrefix::parse("team1/").unwrap();
+        let wt =
+            create_task_worktree(&repo, "t", "HEAD", &wts, &prefix, &treehouse, "t-1").unwrap();
+        assert_eq!(wt.branch(), "team1/t");
+
+        let dirs = slot_git_dirs(wt.path(), wt.branch()).unwrap();
+
+        let ref_dir = dirs.common.join("refs/heads/team1");
+        let log_dir = dirs.common.join("logs/refs/heads/team1");
+        assert!(dirs.grants.contains(&ref_dir), "{:?}", dirs.grants);
+        assert!(dirs.grants.contains(&log_dir), "{:?}", dirs.grants);
+        assert!(!dirs.grants.contains(&dirs.common.join("refs/heads")));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn slot_git_runs_no_hook_the_agent_pointed_git_at() {
+        let (_tmp, wts, repo, treehouse) = fixture();
+        let wt = create_task_worktree(
+            &repo,
+            "hooked",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "hooked-workspace-1",
+        )
+        .unwrap();
+        let marker = wt.path().join("hook-ran");
+        let hooks = wt.path().join("agent-hooks");
+        std::fs::create_dir_all(&hooks).unwrap();
+        std::fs::write(
+            hooks.join("pre-commit"),
+            format!("#!/bin/sh\ntouch '{}'\n", marker.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(
+            hooks.join("pre-commit"),
+            std::os::unix::fs::PermissionsExt::from_mode(0o755),
+        )
+        .unwrap();
+        git(
+            wt.path(),
+            &["config", "core.hooksPath", hooks.to_str().unwrap()],
+        );
+        std::fs::write(wt.path().join("new.txt"), "new\n").unwrap();
+        git(wt.path(), &["add", "new.txt"]);
+
+        let commit = slot_git_command(wt.path())
+            .args(["commit", "-m", "daemon"])
+            .output()
+            .unwrap();
+
+        assert!(commit.status.success(), "{commit:?}");
+        assert!(!marker.exists(), "the agent's pre-commit hook ran");
+    }
+
+    #[test]
+    fn a_slot_whose_commondir_points_at_another_repository_is_not_attached() {
+        let (tmp, wts, repo, treehouse) = fixture();
+        let wt = create_task_worktree(
+            &repo,
+            "attached",
+            "HEAD",
+            &wts,
+            &BranchPrefix::default(),
+            &treehouse,
+            "attached-workspace-1",
+        )
+        .unwrap();
+        let common = PathBuf::from(git(
+            wt.path(),
+            &["rev-parse", "--path-format=absolute", "--git-common-dir"],
+        ));
+        assert!(slot_attached_to(wt.path(), &common));
+
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&other).unwrap();
+        init_repo(&other);
+        let gitdir = PathBuf::from(git(
+            wt.path(),
+            &["rev-parse", "--path-format=absolute", "--git-dir"],
+        ));
+        std::fs::write(
+            gitdir.join("commondir"),
+            other.join(".git").display().to_string(),
+        )
+        .unwrap();
+
+        assert!(!slot_attached_to(wt.path(), &common));
     }
 }

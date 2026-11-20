@@ -436,12 +436,16 @@ fn check_worktree(
     // A treehouse slot is named after the repository, not the task, so the branch carries the
     // task identity.
     task_branch_suffix(request.task_id, &workspace.branch)?;
+    // Checked before any Git runs in the slot: the agent may have pointed it at another repository.
+    if !crate::worktree::slot_attached_to(&recorded_path, repository.git_common_dir()) {
+        return Err("worktree is attached to a different Git repository".into());
+    }
     if !registered_worktree(repository, &recorded_path, &workspace.branch)
         .map_err(|error| error.to_string())?
     {
         return Err("path and branch are not registered as this repository's worktree".into());
     }
-    let current_branch = crate::git::git(
+    let current_branch = crate::git::slot_git(
         "read verification branch",
         &recorded_path,
         ["branch", "--show-current"],
@@ -453,7 +457,7 @@ fn check_worktree(
             workspace.branch
         ));
     }
-    let worktree_common_dir = crate::git::git(
+    let worktree_common_dir = crate::git::slot_git(
         "read worktree common directory",
         &recorded_path,
         ["rev-parse", "--git-common-dir"],
@@ -539,7 +543,7 @@ fn check_candidate(
     repository: &Repository,
     request: &VerificationRequest<'_>,
 ) -> (Option<String>, CheckOutcome) {
-    let candidate = match crate::git::git(
+    let candidate = match crate::git::slot_git(
         "resolve verification candidate",
         request.worktree_path,
         ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
@@ -565,7 +569,7 @@ fn check_candidate(
             )),
         );
     }
-    match crate::git::git(
+    match crate::git::slot_git(
         "check verification worktree cleanliness",
         request.worktree_path,
         ["status", "--porcelain=v1", "--untracked-files=all"],
@@ -893,7 +897,7 @@ fn check_candidate_unchanged(
     expected_branch: &str,
     expected_commit: &str,
 ) -> CheckOutcome {
-    let branch = match crate::git::git(
+    let branch = match crate::git::slot_git(
         "recheck verification branch",
         worktree_path,
         ["branch", "--show-current"],
@@ -906,7 +910,7 @@ fn check_candidate_unchanged(
             "branch moved from {expected_branch:?} to {branch:?} during verification"
         ));
     }
-    let commit = match crate::git::git(
+    let commit = match crate::git::slot_git(
         "recheck verification candidate",
         worktree_path,
         ["rev-parse", "--verify", "--quiet", "HEAD^{commit}"],
@@ -919,7 +923,7 @@ fn check_candidate_unchanged(
             "branch moved from candidate {expected_commit} to {commit} during verification"
         ));
     }
-    let status = match crate::git::git(
+    let status = match crate::git::slot_git(
         "recheck verification worktree cleanliness",
         worktree_path,
         ["status", "--porcelain=v1", "--untracked-files=all"],
@@ -933,7 +937,7 @@ fn check_candidate_unchanged(
             status.replace('\n', "; ")
         ));
     }
-    let common_dir = match crate::git::git(
+    let common_dir = match crate::git::slot_git(
         "recheck worktree common directory",
         worktree_path,
         ["rev-parse", "--git-common-dir"],
