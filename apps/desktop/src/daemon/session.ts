@@ -53,6 +53,7 @@ const METHOD_CAPABILITY: Record<string, Capability> = {
   "tasks.cancel": "tasks",
   "tasks.archive": "tasks",
   "tasks.discard": "tasks",
+  "tasks.message": "tasks",
   "sessions.list": "sessions",
   "sessions.get": "sessions",
   "sessions.events": "sessions",

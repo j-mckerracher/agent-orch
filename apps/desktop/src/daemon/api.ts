@@ -41,6 +41,7 @@ import type {
   SessionEventsPage,
   SessionOutputTail,
   SessionThinkingPage,
+  TaskMessageWire,
   TaskRecord,
   TaskSubmission,
   WorkspaceDiff,
@@ -220,6 +221,18 @@ export class DaemonApi {
   async tasksDiscard(taskId: string, idempotencyKey: string): Promise<{ task_id: string; discarded: boolean }> {
     return this.session.request("tasks.discard", {
       task_id: realId(taskId),
+      idempotency_key: idempotencyKey,
+    });
+  }
+
+  /**
+   * DPES-1106. Queues the user's message for a Waiting task; the worker resumes with it. User-only.
+   * Conflict when the task is not waiting or already holds the most messages.
+   */
+  async tasksMessage(taskId: string, text: string, idempotencyKey: string): Promise<TaskMessageWire> {
+    return this.session.request("tasks.message", {
+      task_id: realId(taskId),
+      text,
       idempotency_key: idempotencyKey,
     });
   }

@@ -67,7 +67,9 @@ export const WINDOWS = {
   // DPES-1108 phase 7 coordinators adds 8 daemon unit tests: 732 in the phase 9 integration, re-synced from CI.
   // DPES-1108 phase 8 adds 4 daemon unit tests: 736 in the phase 9 integration, re-synced from CI.
   // With main merged (DPES-1106): one real-daemon test and the agent_thinking store binary (5) plus one store lib test; re-synced from CI.
-  daemon: { passed: 739, ignored: 1, sequence: [634, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  // DPES-1106 adds one portable daemon test (tasks.message, api_authority_tests): 738 becomes 739, unit binary 633 becomes 634.
+  // The wake brief keeps a worker's note (line cap 512) and adds one portable daemon test: 739 becomes 740, unit binary 634 becomes 635.
+  daemon: { passed: 740, ignored: 1, sequence: [635, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -117,7 +119,8 @@ export const WINDOWS = {
   // DPES-1108 phase 6 replaces the 5 orchestrator_notes tests with the 7 memory_documents tests (CI run 44507155149): 405.
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 413.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 418.
-  store: { passed: 428, ignored: 1, sequence: [115, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 9, 8, 11, 3, 7, 14, 3, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 11, 15, 0] },
+  // DPES-1106 adds two worker_status tests (the author split and migration 0073): 428 becomes 430, worker_status 11 becomes 13.
+  store: { passed: 430, ignored: 1, sequence: [115, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 9, 8, 11, 3, 7, 14, 3, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 114 },
@@ -175,7 +178,9 @@ export const MACOS = {
   // DPES-1108 phase 6 preferences adds 7 daemon tests: 866 in the phase 9 integration, re-synced from CI.
   // DPES-1108 phase 7 coordinators adds 8 daemon unit tests: 874 in the phase 9 integration, re-synced from CI.
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
-  daemon: { passed: 883, ignored: 1, sequence: [751, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // DPES-1106 adds one portable daemon test and one unix-only executor test: 882 becomes 884, unit binary 750 becomes 752.
+  // The wake brief adds one portable daemon test: 884 becomes 885, unit binary 752 becomes 753.
+  daemon: { passed: 885, ignored: 1, sequence: [753, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
@@ -210,7 +215,8 @@ export const MACOS = {
   // DPES-1108 phase 6 replaces the 5 orchestrator_notes tests with the 7 memory_documents tests (CI run 44507155149): 409.
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 417.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 422.
-  store: { passed: 432, ignored: 1, sequence: [117, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 9, 8, 11, 3, 7, 14, 4, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 11, 15, 0] },
+  // DPES-1106 adds two worker_status tests (the author split and migration 0073): 432 becomes 434, worker_status 11 becomes 13.
+  store: { passed: 434, ignored: 1, sequence: [117, 6, 7, 31, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 9, 8, 11, 3, 7, 14, 4, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 116 },
@@ -287,7 +293,8 @@ export const NODE_SELF_TESTS = { passed: 149 };
 // conversationLive.test.ts: 128 files, 2385 tests, as a full local `npx vitest run` counted them.
 // Together in the phase 9 integration: 131 files, 2438 tests, as a full local `npx vitest run` counted them.
 // With main (DPES-1106 agent thinking) merged in: 133 files, 2458 tests, as a full local `npx vitest run` counted them.
-export const VITEST = { files: 133, tests: 2458 };
+// DPES-1106 task window: 133 files, 2474 tests, as the desktop-vitest gate measured them on macOS and Windows in CI run 44640878437.
+export const VITEST = { files: 133, tests: 2474 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

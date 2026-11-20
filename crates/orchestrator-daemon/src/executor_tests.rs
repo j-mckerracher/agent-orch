@@ -3449,12 +3449,49 @@ fn a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it() {
             &task_id,
             "msg-1",
             "The database is back; run the suite again.",
+            orchestrator_store::MessageAuthor::Orchestrator,
         )
         .unwrap();
     wait_state(&api, &task_id, "Succeeded");
     let resumed_argv = fs::read_to_string(&resumed).unwrap();
     assert!(
         resumed_argv.contains("Message: The database is back; run the suite again."),
+        "{resumed_argv}"
+    );
+    assert!(resumed_argv.lines().any(|line| line == FIXTURE_THREAD));
+    api.shutdown();
+}
+
+#[test]
+fn a_user_message_resumes_a_waiting_task_under_the_users_heading() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(
+        &fixture,
+        &first,
+        &resumed,
+        &["blocked the fixture database is down"],
+    );
+    let api = fixture.api(&program);
+    let task_id = fixture.submit(&api, "user-message-1", 0);
+    wait_state(&api, &task_id, "Waiting");
+    api.dispatch(
+        "tasks.message",
+        json!({"task_id": task_id, "text": "Use the scratch database.", "idempotency_key": "reply-1"}),
+    )
+    .unwrap();
+    wait_state(&api, &task_id, "Succeeded");
+    let resumed_argv = fs::read_to_string(&resumed).unwrap();
+    assert!(
+        resumed_argv.contains("## The user's message\n"),
+        "{resumed_argv}"
+    );
+    assert!(
+        resumed_argv.contains("Message: Use the scratch database."),
+        "{resumed_argv}"
+    );
+    assert!(
+        !resumed_argv.contains("MCAO's orchestrator"),
         "{resumed_argv}"
     );
     assert!(resumed_argv.lines().any(|line| line == FIXTURE_THREAD));
