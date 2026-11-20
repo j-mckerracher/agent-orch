@@ -467,24 +467,6 @@ fn submit(data: &Path, project_id: &str, key: &str) -> String {
     submitted["contract"]["id"].as_str().unwrap().to_owned()
 }
 
-fn install_plugin(home: &Path) {
-    let plugin = home.join("pstack");
-    fs::create_dir_all(plugin.join("agents")).unwrap();
-    fs::create_dir_all(plugin.join("workflow-router")).unwrap();
-    fs::write(
-        plugin.join("agents/workflow-agent.md"),
-        "---\nname: workflow-agent\n---\n\nRead the workflow-router skill first.\n",
-    )
-    .unwrap();
-    fs::write(plugin.join("workflow-router/SKILL.md"), "# Router\n").unwrap();
-    let registry = home.join(".claude/plugins/installed_plugins.json");
-    fs::create_dir_all(registry.parent().unwrap()).unwrap();
-    let installed = json!({
-        "plugins": { "pstack@mayo-skills": [{ "installPath": plugin.display().to_string() }] }
-    });
-    fs::write(registry, installed.to_string()).unwrap();
-}
-
 fn target_ref(task_id: &str) -> String {
     format!("refs/heads/orchestrator/review/{task_id}")
 }
@@ -549,7 +531,7 @@ fn scenario(options: &Options) -> Value {
         home: work.join("home"),
         work: work.clone(),
     };
-    install_plugin(&env.home);
+    seed::install_pstack_plugin(&env.home);
     let _stop_agents = StopAgents(env.pid_file.with_extension(AGENT_STOP_EXTENSION));
     LOG.set(env.log.clone()).ok();
     fs::create_dir_all(&env.data).unwrap();
