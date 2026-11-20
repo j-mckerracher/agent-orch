@@ -5,19 +5,24 @@
 // Environment: CARGO_TARGET_DIR (required, absolute, outside the checkout), signing secrets named
 // in signing.mjs, REQUIRE_SIGNING=true to fail instead of skipping when none are set (a `v*` tag
 // build requires signing unless ALLOW_UNSIGNED_RELEASE=true), WINDOWS_TIMESTAMP_URL (optional,
-// not secret). Runs the same `npm run package:mac|win` as the CI gate, then collects the
-// artifact, a SHA256SUMS file and release-info.json into --out.
+// not secret). Runs the same `apps/desktop/scripts/package.mjs` as the CI gate's `npm run package:mac|win`,
+// then collects the artifact, a SHA256SUMS file and release-info.json into --out.
+// MCAO_UPDATES_ENABLED=true (a `v*` tag run only, see release.yml) also needs MCAO_UPDATER_PUBLIC_KEY,
+// TAURI_SIGNING_PRIVATE_KEY and TAURI_SIGNING_PRIVATE_KEY_PASSWORD; it adds the updater payload and its
+// signature to --out and an `updater` record to release-info.json. SHA256SUMS still lists the manual artifact only.
 // Secrets are never logged. The Windows certificate and password are removed from this process's
 // environment before anything is spawned and reach only the PowerShell step that imports the
-// certificate; the build child gets the certificate thumbprint through TAURI_CONFIG instead.
+// certificate; the build child gets the certificate thumbprint through the Tauri --config argument instead.
+// The updater key and password are removed the same way and reattached to the build child alone, which
+// hands them to the Tauri build and not to the sidecar staging scripts.
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   appendFileSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync,
 } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { buildChildEnv, resolveTargetDir, takeWindowsSecrets } from "./env.mjs";
+import { buildChildEnv, resolveTargetDir, takeUpdaterSecrets, takeWindowsSecrets, tauriConfigOverride, updaterDecision } from "./env.mjs";
 import { signingDecision } from "./signing.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -54,6 +59,19 @@ if (decision.mode === "error") {
 }
 console.log(`::${decision.mode === "signed" ? "notice" : "warning"} title=Signing ${platform}::${decision.message}`);
 
+let updater;
+try {
+  updater = updaterDecision(process.env, "package");
+} catch (error) {
+  console.error(`::error title=Updater configuration::${error.message}`);
+  process.exit(1);
+}
+const expectedArch = platform === "macos" ? "arm64" : "x64";
+if (updater.enabled && process.arch !== expectedArch) {
+  console.error(`::error::updater artifacts are built for ${platform} ${expectedArch} only, this host is ${process.arch}`);
+  process.exit(1);
+}
+
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, { stdio: "inherit", shell: win && /^np[mx]$/.test(command), ...options });
   if (result.error) throw result.error;
@@ -70,6 +88,7 @@ const powershell = (script, extraEnv) => {
 
 // From here on nothing this process spawns inherits the Windows certificate or password.
 let windowsSecrets = platform === "windows" ? takeWindowsSecrets(process.env) : {};
+const updaterSecrets = takeUpdaterSecrets(process.env);
 const childEnv = { ...buildChildEnv(platform, process.env, decision), CARGO_TARGET_DIR: targetDir };
 
 const version = JSON.parse(readFileSync(join(desktop, "src-tauri", "tauri.conf.json"), "utf8")).version;
@@ -82,6 +101,15 @@ mkdirSync(out, { recursive: true });
 const label = decision.sign ? "signed" : "unsigned";
 const artifacts = [];
 let certThumbprint = null;
+let updaterRecord = null;
+// Copies a Tauri output beside the manual artifact and returns its name and digest.
+const stage = (source, name) => {
+  if (!existsSync(source)) throw new Error(`updater output missing: ${source}`);
+  const target = join(out, name);
+  copyFileSync(source, target);
+  return { file: name, sha256: sha256(target) };
+};
+const stageSignature = (source, payload) => stage(`${source}.sig`, `${payload.file}.sig`);
 
 try {
   if (platform === "windows" && decision.sign) {
@@ -99,17 +127,20 @@ try {
       windowsSecrets = {};
     }
     if (!/^[0-9A-Fa-f]{40}$/.test(certThumbprint)) throw new Error("certificate import did not return a thumbprint");
-    // The Tauri CLI merges TAURI_CONFIG into the config; the thumbprint is not a secret.
-    childEnv.TAURI_CONFIG = JSON.stringify({
-      bundle: { windows: {
-        certificateThumbprint: certThumbprint,
-        digestAlgorithm: "sha256",
-        timestampUrl: process.env.WINDOWS_TIMESTAMP_URL || "http://timestamp.digicert.com",
-      } },
-    });
   }
 
-  run("npm", ["run", platform === "macos" ? "package:mac" : "package:win"], { cwd: desktop, env: childEnv });
+  const config = tauriConfigOverride({
+    windows: certThumbprint && {
+      certificateThumbprint: certThumbprint,
+      digestAlgorithm: "sha256",
+      timestampUrl: process.env.WINDOWS_TIMESTAMP_URL || "http://timestamp.digicert.com",
+    },
+    updaterPublicKey: updater.publicKey,
+  });
+  // Node runs the script directly, not through npm: on Windows npm needs a shell, which would mangle the JSON.
+  run(process.execPath, [join(desktop, "scripts", "package.mjs"), platform === "macos" ? "app" : "nsis", ...(config ? ["--config", config] : [])], {
+    cwd: desktop, env: { ...childEnv, ...(updater.enabled && updaterSecrets) },
+  });
 
   if (platform === "macos") {
     const app = join(targetDir, "release", "bundle", "macos", "MCAO.app");
@@ -132,6 +163,11 @@ try {
     const zip = join(out, `MCAO-${version}-macos-${process.arch}-${label}.zip`);
     run("ditto", ["-c", "-k", "--keepParent", app, zip]);
     artifacts.push(zip);
+    if (updater.enabled) {
+      const archive = join(targetDir, "release", "bundle", "macos", "MCAO.app.tar.gz");
+      const payload = stage(archive, `MCAO-${version}-macos-${process.arch}-${label}.app.tar.gz`);
+      updaterRecord = { platformKey: "darwin-aarch64", payload, signature: stageSignature(archive, payload) };
+    }
   } else {
     const installer = join(targetDir, "release", "bundle", "nsis", `MCAO_${version}_x64-setup.exe`);
     if (!existsSync(installer)) throw new Error(`installer missing: ${installer}`);
@@ -142,6 +178,11 @@ try {
     const copy = join(out, `MCAO-${version}-windows-x64-${label}-setup.exe`);
     copyFileSync(installer, copy);
     artifacts.push(copy);
+    if (updater.enabled) {
+      // Tauri signs the installer itself, so the manual installer is the update payload.
+      const payload = { file: basename(copy), sha256: sha256(copy) };
+      updaterRecord = { platformKey: "windows-x86_64", payload, signature: stageSignature(installer, payload) };
+    }
   }
 } finally {
   if (certThumbprint && /^[0-9A-Fa-f]{40}$/.test(certThumbprint)) {
@@ -154,6 +195,7 @@ const info = {
   version, platform, signed: decision.sign, notarized: decision.notarize,
   commit: process.env.GITHUB_SHA || git.stdout.trim(),
   artifacts: artifacts.map((a) => ({ file: a.slice(out.length + 1), sha256: sha256(a) })),
+  ...(updaterRecord && { updater: updaterRecord }),
 };
 writeFileSync(join(out, "release-info.json"), `${JSON.stringify(info, null, 2)}\n`);
 writeFileSync(join(out, "SHA256SUMS"), info.artifacts.map((a) => `${a.sha256}  ${a.file}`).join("\n") + "\n");

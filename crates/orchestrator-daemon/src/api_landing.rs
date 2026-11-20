@@ -527,6 +527,10 @@ impl DaemonApi {
     /// no longer approved. Returns how many approved proposals it looked at. Never inside the
     /// idempotency gate.
     pub(super) fn merge_pending(&self, now_ms: u64) -> usize {
+        // A merge acts on the remote: hold the stop gate open for the whole pass.
+        let Some(_serving) = crate::executor::serving(&self.stop_gate) else {
+            return 0;
+        };
         let approved = match self.store.approved_action_proposals() {
             Ok(approved) => approved,
             Err(_) => {

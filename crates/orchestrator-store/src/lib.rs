@@ -46,8 +46,6 @@
 //! processes can overwrite each other's records and must not share a data
 //! directory. It does not sync the record file or parent directory. A failed
 //! write may leave an ignored `<id>.<pid>.tmp` file.
-mod data_lock;
-pub use data_lock::{DataDirectoryLock, DataDirectoryLockError};
 // Owner-only permissions (0700/0600 on Unix, a protected owner-only DACL on
 // Windows) live in their own crate so the desktop host shares them.
 pub use orchestrator_private_fs::{create_private_dir, create_private_file, restrict_to_owner};

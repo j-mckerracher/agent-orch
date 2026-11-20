@@ -36,7 +36,7 @@ impl DataDirectoryLock {
     /// Creates `data_dir` owner-only (an existing one loses other users'
     /// access) and acquires its exclusive process lock.
     pub fn acquire(data_dir: impl AsRef<Path>) -> Result<Self, DataDirectoryLockError> {
-        orchestrator_private_fs::create_private_dir(data_dir.as_ref())?;
+        crate::create_private_dir(data_dir.as_ref())?;
         let path = data_dir.as_ref().join(LOCK_FILE_NAME);
         let pid = std::process::id();
         let start_identity = process_start_identity(pid)?
@@ -82,7 +82,7 @@ fn create_lock(
     // On Windows the new file starts with an inherited, unprotected DACL. Make
     // it owner-only before anything is written; a file that cannot be protected
     // is removed rather than published with a wider ACL.
-    if let Err(error) = orchestrator_private_fs::restrict_to_owner(&staging) {
+    if let Err(error) = crate::restrict_to_owner(&staging) {
         drop(file);
         let _ = fs::remove_file(&staging);
         return Err(error);
@@ -785,14 +785,14 @@ mod tests {
         let path = data.join(LOCK_FILE_NAME);
 
         let lock = DataDirectoryLock::acquire(&data).unwrap();
-        assert!(orchestrator_private_fs::is_owner_only(&path).unwrap());
+        assert!(crate::is_owner_only(&path).unwrap());
         drop(lock);
 
         // A stale lock written without protection (inherited ACL on Windows,
         // the process umask on Unix) is replaced by an owner-only one.
         fs::write(&path, format!("pid={}\nstart=x\ntoken=t\n", i32::MAX)).unwrap();
         let _lock = DataDirectoryLock::acquire(&data).unwrap();
-        assert!(orchestrator_private_fs::is_owner_only(&path).unwrap());
+        assert!(crate::is_owner_only(&path).unwrap());
     }
 
     #[cfg(unix)]

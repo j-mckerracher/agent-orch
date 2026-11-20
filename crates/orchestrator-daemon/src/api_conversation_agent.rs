@@ -724,6 +724,10 @@ impl ConversationRuntime for AgentRuntime {
         self.versions.wait_idle(VERSION_SHUTDOWN_GRACE);
     }
 
+    fn has_active_turns(&self) -> bool {
+        self.running.load(Ordering::Acquire) != 0
+    }
+
     fn identity(&self, choice: Option<&Choice>) -> RuntimeIdentity {
         match self.current(choice) {
             Some(Selection::Ready(selected)) => selected.identity,
@@ -2670,6 +2674,17 @@ except the user's preferences listed there",
         assert!(Slot::take(&running).is_none());
         drop(slots);
         assert!(Slot::take(&running).is_some());
+    }
+
+    #[test]
+    fn update_idle_sees_a_turn_from_its_slot_until_the_slot_drops() {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = settings_runtime(dir.path(), store_in(dir.path()));
+        assert!(!runtime.has_active_turns());
+        let slot = Slot::take(&runtime.running).expect("slot");
+        assert!(runtime.has_active_turns());
+        drop(slot);
+        assert!(!runtime.has_active_turns());
     }
 
     /// A runtime that reads its default from `store`, with no environment selection.

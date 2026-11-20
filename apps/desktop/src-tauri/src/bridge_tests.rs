@@ -299,3 +299,57 @@ fn a_daemon_that_exits_at_once_shows_the_redacted_end_of_its_log() {
     assert!(error.message.contains("daemon_failed"), "{error:?}");
     assert!(!error.message.contains("SECRETVALUE"), "{error:?}");
 }
+
+#[test]
+fn opens_are_refused_while_an_update_installs_and_work_again_afterwards() {
+    let dir = TempDir::new().unwrap();
+    let daemon = serve(dir.path());
+    let bridge = Bridge::new(Some(dir.path().to_path_buf()), None);
+    let (first, _frames) = open(&bridge, "main");
+
+    let guard = bridge.begin_install().unwrap();
+    let (emit, _frames) = collector();
+    let error = bridge
+        .open("main", &[Capability::Events], emit)
+        .unwrap_err();
+    assert_eq!(error.code, "daemon-unavailable");
+    assert!(error.message.contains("update"), "{error:?}");
+    assert_eq!(
+        bridge.begin_install().err().map(|error| error.code),
+        Some("daemon-unavailable")
+    );
+    // The connection that already exists is untouched.
+    bridge
+        .send("main", first.connection_id, subscribe())
+        .unwrap();
+
+    drop(guard);
+    let (second, _frames) = open(&bridge, "main");
+    assert_ne!(second.connection_id, first.connection_id);
+    bridge.close_window("main");
+    stop(dir.path(), daemon);
+}
+
+#[test]
+fn the_install_guard_is_set_under_the_launch_mutex_and_can_stay_closed() {
+    let bridge = Bridge::new(None, None);
+    // An open in flight holds the launch mutex; the install must wait for it.
+    let open_in_flight = bridge.launch_gate();
+    let (sender, receiver) = mpsc::channel();
+    let installer = {
+        let bridge = bridge.clone();
+        thread::spawn(move || sender.send(bridge.begin_install()).unwrap())
+    };
+    assert!(receiver.recv_timeout(Duration::from_millis(200)).is_err());
+    assert!(!*open_in_flight);
+
+    drop(open_in_flight);
+    let guard = receiver.recv_timeout(WAIT).unwrap().unwrap();
+    installer.join().unwrap();
+    assert!(*bridge.launch_gate());
+
+    drop(guard);
+    assert!(!*bridge.launch_gate());
+    bridge.begin_install().unwrap().keep_closed();
+    assert!(*bridge.launch_gate());
+}

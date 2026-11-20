@@ -139,15 +139,18 @@ impl DaemonApi {
                 let Some(api) = weak.upgrade() else {
                     return;
                 };
-                let now_ms = crate::executor::unix_now_ms();
-                let passed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    api.merge_pending(now_ms);
-                    api.landing_tick(now_ms);
-                }));
-                if passed.is_err() {
-                    api.config
-                        .diagnostics
-                        .error(LOG, "landing_pass_panicked", &[]);
+                // No guard held here: only the phases that act take one (see `landing_tick`).
+                if crate::executor::serving(&api.stop_gate).is_some() {
+                    let now_ms = crate::executor::unix_now_ms();
+                    let passed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        api.merge_pending(now_ms);
+                        api.landing_tick(now_ms);
+                    }));
+                    if passed.is_err() {
+                        api.config
+                            .diagnostics
+                            .error(LOG, "landing_pass_panicked", &[]);
+                    }
                 }
                 drop(api);
                 let (flag, wake) = &*signal;
@@ -188,7 +191,9 @@ impl DaemonApi {
 
     /// One poll at `now_ms`, when one is due. Reads the pull request of each watched task,
     /// stores what changed and supersedes the merge cards that no longer match. Never starts an
-    /// agent, never writes to a remote.
+    /// agent, never writes to a remote. The reads hold no stop gate, so a poll in flight never
+    /// makes an idle shutdown refuse; each store write holds a read guard and a closed gate
+    /// ends the tick.
     pub(super) fn landing_tick(&self, now_ms: u64) -> PollReport {
         let mut report = PollReport::default();
         {
@@ -240,7 +245,18 @@ impl DaemonApi {
             let Some(repo) = repo else {
                 continue;
             };
-            match self.observe_one(&task, &repo, now_ms, &mut report.calls) {
+            let observed = match self.read_one(&task, &repo, &mut report.calls) {
+                Ok(Some((number, view))) => {
+                    let Some(_serving) = crate::executor::serving(&self.stop_gate) else {
+                        return report;
+                    };
+                    self.store_one(&task, &repo, number, &view, now_ms)
+                        .map(Some)
+                }
+                Ok(None) => Ok(None),
+                Err(error) => Err(error),
+            };
+            match observed {
                 Ok(Some(change)) => {
                     report.polled += 1;
                     if matches!(
@@ -361,9 +377,8 @@ impl DaemonApi {
         self.github.repo_of(&repository)
     }
 
-    /// Reads one task's pull request once and stores what changed. Finds the pull request by
-    /// the task's branch when none is stored. `Ok(None)`: no pull request yet, which is no
-    /// error, because the user may not have opened it. Counts each `GitHub` call in `calls`.
+    /// Reads one task's pull request once and stores what changed, for a caller that already
+    /// holds the stop gate. See [`Self::read_one`] and [`Self::store_one`].
     pub(super) fn observe_one(
         &self,
         task: &Watched,
@@ -371,6 +386,21 @@ impl DaemonApi {
         now_ms: u64,
         calls: &mut usize,
     ) -> Result<Option<PullRequestChange>, GitHubError> {
+        match self.read_one(task, repo, calls)? {
+            Some((number, view)) => self.store_one(task, repo, number, &view, now_ms).map(Some),
+            None => Ok(None),
+        }
+    }
+
+    /// Reads one task's pull request from the host and stores nothing. Finds the pull request
+    /// by the task's branch when none is stored. `Ok(None)`: no pull request yet, which is no
+    /// error, because the user may not have opened it. Counts each `GitHub` call in `calls`.
+    fn read_one(
+        &self,
+        task: &Watched,
+        repo: &RepoRef,
+        calls: &mut usize,
+    ) -> Result<Option<(u64, PullRequestView)>, GitHubError> {
         let number = match task.number {
             Some(number) => number,
             None => {
@@ -382,8 +412,19 @@ impl DaemonApi {
             }
         };
         *calls += 1;
-        let view = self.github.view(repo, number)?;
-        let seen = seen_of(task, number, &view);
+        Ok(Some((number, self.github.view(repo, number)?)))
+    }
+
+    /// Stores what a read found and supersedes the merge cards it outdates.
+    fn store_one(
+        &self,
+        task: &Watched,
+        repo: &RepoRef,
+        number: u64,
+        view: &PullRequestView,
+        now_ms: u64,
+    ) -> Result<PullRequestChange, GitHubError> {
+        let seen = seen_of(task, number, view);
         let now = i64::try_from(now_ms).unwrap_or(i64::MAX);
         let change = self
             .store
@@ -398,9 +439,9 @@ impl DaemonApi {
             change,
             PullRequestChange::Created | PullRequestChange::Changed
         ) {
-            self.supersede_stale_merges(&task.task_id, number, &view);
+            self.supersede_stale_merges(&task.task_id, number, view);
         }
-        Ok(Some(change))
+        Ok(change)
     }
 
     /// Moves the pending `delivery.merge` cards of this pull request that are bound to another

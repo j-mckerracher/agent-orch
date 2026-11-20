@@ -309,6 +309,14 @@ pub trait RpcHandler: Send + Sync + 'static {
     fn keep_alive(&self) -> bool {
         false
     }
+
+    /// Atomically decides to stop an idle server. Returning `true` means the
+    /// handler now refuses new work, so the server may exit; `false` changes
+    /// nothing. The server calls it with its own activity lock held, so it
+    /// must not block.
+    fn try_begin_idle_shutdown(&self) -> bool {
+        !self.keep_alive()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

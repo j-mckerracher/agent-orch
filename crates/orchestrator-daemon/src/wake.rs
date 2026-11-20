@@ -51,7 +51,7 @@ use super::wake_events::{
     classify, coordinator_report_notice, proposal_notice, report_relay_failed_notice,
     routed_request_notice, stall_candidate, Candidate,
 };
-use crate::executor::SessionPulse;
+use crate::executor::{serving, SessionPulse, StopGate};
 
 const LOG: &str = "wake";
 const GLOBAL_SCOPE: &str = "conversation:global";
@@ -199,6 +199,8 @@ pub(crate) struct WakeService {
     state: Mutex<State>,
     stop: Arc<(Mutex<bool>, Condvar)>,
     thread: Mutex<Option<JoinHandle<()>>>,
+    /// Closed by an accepted idle shutdown; the loop then skips its passes.
+    stop_gate: StopGate,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -226,7 +228,14 @@ impl WakeService {
             state: Mutex::new(State::default()),
             stop: Arc::new((Mutex::new(false), Condvar::new())),
             thread: Mutex::new(None),
+            stop_gate: StopGate::default(),
         }
+    }
+
+    /// Shares the daemon's idle-shutdown gate. Call before [`Self::start`].
+    pub(crate) fn with_stop_gate(mut self, stop_gate: StopGate) -> Self {
+        self.stop_gate = stop_gate;
+        self
     }
 
     /// The injected clock's time, in Unix ms. `monitoring.get` reads pauses against it.
@@ -343,17 +352,21 @@ impl WakeService {
                 let Some(service) = weak.upgrade() else {
                     return;
                 };
-                let ticked =
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| service.tick()));
-                match ticked {
-                    Ok(Ok(_)) => {}
-                    Ok(Err(reason)) => {
-                        service
-                            .diagnostics
-                            .warn(LOG, "wake_tick_failed", &[("reason", &reason)]);
-                    }
-                    Err(_) => {
-                        service.diagnostics.error(LOG, "wake_tick_panicked", &[]);
+                if let Some(_serving) = serving(&service.stop_gate) {
+                    let ticked =
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| service.tick()));
+                    match ticked {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(reason)) => {
+                            service.diagnostics.warn(
+                                LOG,
+                                "wake_tick_failed",
+                                &[("reason", &reason)],
+                            );
+                        }
+                        Err(_) => {
+                            service.diagnostics.error(LOG, "wake_tick_panicked", &[]);
+                        }
                     }
                 }
                 drop(service);
