@@ -81,6 +81,10 @@ jobs:
           node-version: 22.20.0
           package-manager-cache: false
 
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
+
       - name: Harness self-tests
         run: node --test "scripts/**/*.test.mjs"
 
@@ -180,6 +184,10 @@ jobs:
           node apps/desktop/scripts/prepare-treehouse-sidecar.mjs --dest "$GITHUB_WORKSPACE/target/treehouse"
           exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
           echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
+
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
 
       - name: Native gates
         run: |
@@ -285,6 +293,10 @@ jobs:
           exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
           echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
 
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -389,6 +401,10 @@ jobs:
           exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
           echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
 
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -484,6 +500,10 @@ jobs:
       # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
       - name: Touch the local sources after the cache restore
         run: find crates apps/desktop/src-tauri -type f -exec touch {} +
+
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
 
       - name: Native gates
         run: |
@@ -589,6 +609,10 @@ jobs:
           exe=""; if [ "$RUNNER_OS" = "Windows" ]; then exe=".exe"; fi
           echo "AGENT_ORCH_TREEHOUSE_PROGRAM=$GITHUB_WORKSPACE/target/treehouse/treehouse$exe" >> "$GITHUB_ENV"
 
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -622,11 +646,16 @@ jobs:
           retention-days: 30
 
   desktop:
-    name: "windows: desktop"
+    name: "windows: desktop (${{ matrix.shard }}/3)"
     needs: changes
     if: needs.changes.outputs.desktop == 'true'
     runs-on: windows-2025
     timeout-minutes: 60
+    # The vitest suite is CPU-bound on the two-core Windows runner: three shards run it in about a third of the time.
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     permissions:
       contents: read
     defaults:
@@ -634,6 +663,7 @@ jobs:
         shell: bash
     env:
       CI: "true"
+      VITEST_SHARD: ${{ matrix.shard }}/3
     steps:
       - name: Configure git
         run: |
@@ -652,6 +682,11 @@ jobs:
           node-version: 22.20.0
           package-manager-cache: false
 
+      # Real-time scanning of the checkout and node_modules slows every file read of a test run.
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
+
       - name: Native gates
         run: |
           node scripts/ci/run-gates.mjs \
@@ -664,7 +699,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: gate-evidence-windows-desktop
+          name: gate-evidence-windows-desktop-${{ matrix.shard }}
           path: ${{ runner.temp }}/evidence
           if-no-files-found: warn
           retention-days: 30
@@ -732,6 +767,10 @@ jobs:
       # saved after this checkout, so the local sources are touched after the restore: the checkout is always the newest.
       - name: Touch the local sources after the cache restore
         run: find crates apps/desktop/src-tauri -type f -exec touch {} +
+
+      - name: Exclude the workspace from Defender scanning
+        shell: pwsh
+        run: Add-MpPreference -ExclusionPath $env:GITHUB_WORKSPACE, $env:RUNNER_TEMP
 
       - name: Native gates
         run: |

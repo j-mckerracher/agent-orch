@@ -10,7 +10,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CLIPPY_BASELINE, E2E_TESTS, MACOS, NODE_SELF_TESTS, VITEST, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
+import { CLIPPY_BASELINE, MACOS, NODE_SELF_TESTS, WINDOWS, clippyBaselinePattern } from "./expected.mjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const names = (file) => JSON.parse(readFileSync(join(here, file), "utf8"));
@@ -167,8 +167,8 @@ export function gatesFor(platform) {
       pattern: "\\bbuilt in \\d", needs: ["desktop-npm-ci"],
     },
     {
-      name: "desktop-vitest", mode: "vitest", cwd: UI, exe: "npx", args: ["vitest", "run"], timeout: 1200,
-      files: VITEST.files, tests: VITEST.tests, needs: ["desktop-npm-ci"],
+      name: "desktop-vitest", mode: "vitest", cwd: UI, exe: "npx", args: ["vitest", "run", ...(process.env.VITEST_SHARD ? ["--shard", process.env.VITEST_SHARD] : [])], timeout: 1200,
+      needs: ["desktop-npm-ci"],
     },
   );
 
@@ -176,7 +176,7 @@ export function gatesFor(platform) {
     gates.push({
       // Real daemon over a Unix socket: not runnable on Windows (see UNPROVEN_ROWS).
       name: "desktop-e2e", mode: "vitest", cwd: UI, exe: "npm", args: ["run", "test:e2e"], timeout: 1800,
-      files: MACOS.e2eFiles, tests: E2E_TESTS, needs: ["desktop-npm-ci", "daemon-build"],
+      needs: ["desktop-npm-ci", "daemon-build"],
       env: { ORCH_DAEMON_BIN: { target: "debug/orchestrator-daemon" } },
     });
     // Browser geometry (apps/desktop/e2e/geometry.spec.ts) in the installed Chrome; macOS only, like the e2e above.

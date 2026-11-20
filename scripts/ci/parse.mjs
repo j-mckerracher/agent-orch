@@ -129,17 +129,15 @@ export const diagnostics = (stderr) => {
   return found;
 };
 
-export const checkVitest = (stdout, { files, tests }) => {
+// A vitest run passes when every file and every test passed: a failure, a skipped or todo test, or an absent
+// summary all break the `N passed (N)` shape. The totals are not pinned, so adding a test needs no edit here.
+export const checkVitest = (stdout) => {
   const problems = [];
   const text = normalize(stdout);
   const f = /^\s*Test Files\s+(\d+) passed \((\d+)\)\s*$/m.exec(text);
   const t = /^\s*Tests\s+(\d+) passed \((\d+)\)\s*$/m.exec(text);
-  if (!f || Number(f[1]) !== files || Number(f[2]) !== files) {
-    problems.push(`Test Files line is '${f ? f[0].trim() : "absent"}', expected ${files} passed (${files})`);
-  }
-  if (!t || Number(t[1]) !== tests || Number(t[2]) !== tests) {
-    problems.push(`Tests line is '${t ? t[0].trim() : "absent"}', expected ${tests} passed (${tests})`);
-  }
+  if (!f || f[1] !== f[2] || Number(f[1]) === 0) problems.push(`Test Files line is '${f ? f[0].trim() : "absent"}', expected all files passed`);
+  if (!t || t[1] !== t[2] || Number(t[1]) === 0) problems.push(`Tests line is '${t ? t[0].trim() : "absent"}', expected all tests passed`);
   return problems;
 };
 

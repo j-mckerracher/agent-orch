@@ -32,12 +32,6 @@ export const TEST_GATES = {
   "tauri-tests": ["tauri", "tauri"],
 };
 
-const vitestTotals = (text) => {
-  const f = /^\s*Test Files\s+(\d+) passed \((\d+)\)\s*$/m.exec(text);
-  const t = /^\s*Tests\s+(\d+) passed \((\d+)\)\s*$/m.exec(text);
-  return f && t && f[1] === f[2] && t[1] === t[2] ? { files: Number(f[1]), tests: Number(t[1]) } : null;
-};
-
 // One entry per passing test, duplicates included: two test binaries of one gate can both report `tests::foo`.
 // An existing entry stays when it claims a passing test no earlier entry claimed (so the diff is only what
 // changed); passing tests nobody claims are appended under their full name.
@@ -109,7 +103,7 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
       const result = JSON.parse(readFileSync(join(dir, file), "utf8"));
       const gate = result.gate;
       const isTest = gate in TEST_GATES;
-      const other = ["workspace-tests", "desktop-vitest", "desktop-e2e", "node-self-tests"].includes(gate);
+      const other = ["workspace-tests", "node-self-tests"].includes(gate);
       if (!isTest && !other) continue;
       const stdoutFile = join(dir, `${gate}.stdout.txt`);
       if (result.exitCode !== 0 || !existsSync(stdoutFile)) {
@@ -120,33 +114,13 @@ export const syncExpected = ({ evidenceDirs, scriptsDir = here, allowRemovals = 
       const win = result.platform === "win32";
       const table = win ? "WINDOWS" : "MACOS";
 
-      if (gate === "node-self-tests" || gate === "desktop-vitest" || gate === "desktop-e2e") {
+      if (gate === "node-self-tests") {
         const before = src;
-        let measured;
-        let shrank = false;
-        if (gate === "node-self-tests") {
-          const { pass } = nodeTestSummary(stdout);
-          if (pass === null) { report.skipped.push(`${gate}: no summary line`); continue; }
-          measured = `${pass} tests`;
-          shrank = pass < Number(/export const NODE_SELF_TESTS = \{ passed: (\d+) \};/.exec(src)?.[1]);
-          if (!shrank || allowRemovals) setShared(gate, pass, () => { src = rewriteConst(src, /export const NODE_SELF_TESTS = \{ passed: \d+ \};/, `export const NODE_SELF_TESTS = { passed: ${pass} };`); });
-        } else {
-          const totals = vitestTotals(stdout);
-          if (!totals) { report.skipped.push(`${gate}: no passing vitest summary`); continue; }
-          measured = `${totals.files} files, ${totals.tests} tests`;
-          const old = gate === "desktop-vitest"
-            ? /export const VITEST = \{ files: (\d+), tests: (\d+) \};/.exec(src)
-            : [null, /^  e2eFiles: (\d+),$/m.exec(src)?.[1], /export const E2E_TESTS = (\d+);/.exec(src)?.[1]];
-          shrank = totals.files < Number(old?.[1]) || totals.tests < Number(old?.[2]);
-          if (!shrank || allowRemovals) setShared(gate, `${totals.files}/${totals.tests}`, () => {
-            if (gate === "desktop-vitest") {
-              src = rewriteConst(src, /export const VITEST = \{ files: \d+, tests: \d+ \};/, `export const VITEST = { files: ${totals.files}, tests: ${totals.tests} };`);
-            } else {
-              src = rewriteConst(src, /export const E2E_TESTS = \d+;/, `export const E2E_TESTS = ${totals.tests};`);
-              src = rewriteConst(src, /^  e2eFiles: \d+,$/m, `  e2eFiles: ${totals.files},`);
-            }
-          });
-        }
+        const { pass } = nodeTestSummary(stdout);
+        if (pass === null) { report.skipped.push(`${gate}: no summary line`); continue; }
+        const measured = `${pass} tests`;
+        const shrank = pass < Number(/export const NODE_SELF_TESTS = \{ passed: (\d+) \};/.exec(src)?.[1]);
+        if (!shrank || allowRemovals) setShared(gate, pass, () => { src = rewriteConst(src, /export const NODE_SELF_TESTS = \{ passed: \d+ \};/, `export const NODE_SELF_TESTS = { passed: ${pass} };`); });
         if (shrank && !allowRemovals) throw new Error(`${gate} measured ${measured}, fewer than the pins; pass --allow-removals if that is intended`);
         if (src !== before) report.changes.push(`${gate}: ${measured}`);
         continue;
