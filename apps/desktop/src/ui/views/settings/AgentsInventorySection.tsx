@@ -1,43 +1,38 @@
-/** Configured adapter inventory: flags are shown exactly as reported, unknown stays unknown. */
-import { Disclosure } from "../../theme";
-import { FlagPill, LoadRegion, PlaceholderMark } from "./common";
-import type { InventoryRow } from "./inventoryModel";
-import type { Load } from "./useAgentsData";
+/** Settings > Agents: which adapters are installed and what each reports. Flags are shown as reported; unknown stays unknown. */
+import { useId } from "react";
+import { useServices } from "../../services";
+import { Pill, type Tone } from "../../theme";
+import { PlaceholderBadge } from "../../widgets";
+import { LoadRegion } from "../agents/common";
+import type { Flag } from "./inventoryModel";
+import { useAgentsInventory } from "./useAgentsInventory";
 
-const USAGE_TEXT = "Unknown (the daemon does not report usage)";
+const FLAG_TEXT: Record<Flag, { tone: Tone; text: string }> = {
+  yes: { tone: "ok", text: "Yes" },
+  no: { tone: "neutral", text: "No" },
+  unknown: { tone: "warn", text: "Unknown" },
+};
 
-/** Shown on the collapsed summary, so a load that is not ready is visible without opening the disclosure. */
-function inventoryCount(inventory: Load<InventoryRow[]>): string {
-  switch (inventory.status) {
-    case "ready":
-      return `${inventory.data.length} adapters`;
-    case "empty":
-      return "none reported";
-    case "loading":
-    case "unavailable":
-    case "error":
-      return inventory.status;
-  }
+function FlagPill({ flag }: { flag: Flag }) {
+  const { tone, text } = FLAG_TEXT[flag];
+  return (
+    <Pill tone={tone} className="settings-flag">
+      {text}
+    </Pill>
+  );
 }
 
-export function Inventory({
-  inventory,
-  live,
-  onRetry,
-}: {
-  inventory: Load<InventoryRow[]>;
-  live: boolean;
-  onRetry: () => void;
-}) {
+export function AgentsInventorySection() {
+  const headingId = useId();
+  const { sources } = useServices();
+  const { live, inventory, reload } = useAgentsInventory();
   return (
-    <Disclosure
-      summary="Configured inventory and discovered capabilities"
-      count={inventoryCount(inventory)}
-      data-testid="agents-inventory"
-    >
+    <section aria-labelledby={headingId} className="settings-section settings-agents" data-testid="agents-inventory">
+      <h2 id={headingId}>Agents</h2>
+      <p className="settings-intro">The adapters this machine can run.</p>
       {!live && (
         <p>
-          <PlaceholderMark id="D1" />
+          <PlaceholderBadge provenance={sources.agents.provenance} />
         </p>
       )}
       <LoadRegion
@@ -45,18 +40,17 @@ export function Inventory({
         load={inventory}
         emptyTitle="No adapters reported"
         emptyDescription="The daemon returned an empty agents.capabilities list."
-        onRetry={onRetry}
+        onRetry={reload}
       >
         {(rows) => (
-          <div className="agents-scroll" role="region" aria-label="Adapter inventory table" tabIndex={0}>
+          <div className="settings-table-scroll" role="region" aria-label="Adapter inventory table" tabIndex={0}>
             <table aria-label="Adapter inventory">
               <thead>
                 <tr>
-                  <th scope="col">Configured adapter</th>
-                  <th scope="col">Assignment availability</th>
+                  <th scope="col">Adapter</th>
+                  <th scope="col">Availability</th>
                   <th scope="col">Resume</th>
                   <th scope="col">Interactive input</th>
-                  <th scope="col">Usage reporting</th>
                   <th scope="col">Capabilities as reported</th>
                 </tr>
               </thead>
@@ -69,11 +63,11 @@ export function Inventory({
                     <td>
                       {row.assignment}
                       {live && (
-                        <span className="agents-sub">
+                        <small className="settings-hint">
                           installed: {row.installed}; launchable: {row.launchable}
-                        </span>
+                        </small>
                       )}
-                      {row.note && <span className="agents-sub">{row.note}</span>}
+                      {row.note && <small className="settings-hint">{row.note}</small>}
                     </td>
                     <td>
                       <FlagPill flag={row.resume} />
@@ -81,14 +75,13 @@ export function Inventory({
                     <td>
                       <FlagPill flag={row.interactive} />
                     </td>
-                    <td>{USAGE_TEXT}</td>
                     <td>
                       {row.capabilities === null ? (
                         "Not reported"
                       ) : row.capabilities.length === 0 ? (
                         "None reported"
                       ) : (
-                        <ul className="agents-flags" aria-label={`${row.name} capabilities`}>
+                        <ul className="settings-flags" aria-label={`${row.name} capabilities`}>
                           {row.capabilities.map((c) => (
                             <li key={c.label}>
                               {c.label}: {c.flag === "yes" ? "Yes" : c.flag === "no" ? "No" : "Unknown"}
@@ -104,6 +97,6 @@ export function Inventory({
           </div>
         )}
       </LoadRegion>
-    </Disclosure>
+    </section>
   );
 }

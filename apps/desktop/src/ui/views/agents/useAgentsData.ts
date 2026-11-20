@@ -1,9 +1,7 @@
-/** Data for the Agents & Sessions view: one shape for daemon-backed (live) and fixture mode. */
-import { useMemo, useState } from "react";
-import { asDaemonError, presentError } from "../../../daemon/errors";
+/** Data for the Agents view: one shape for daemon-backed (live) and fixture mode. */
+import { useMemo } from "react";
 import type { SourceResult } from "../../../sources/types";
 import { useGate, useServices, useSource, useStore } from "../../services";
-import { inventoryFromDaemon, inventoryFromPreview, type InventoryRow } from "./inventoryModel";
 import { rowsFromDaemon, rowsFromPreview, type WorkRow } from "./model";
 
 export type Load<T> =
@@ -17,12 +15,10 @@ export interface AgentsData {
   /** True when the sources are daemon-backed; wireframe and fixture values never appear then. */
   live: boolean;
   work: Load<WorkRow[]>;
-  inventory: Load<InventoryRow[]>;
   reloadWork: () => void;
-  reloadInventory: () => void;
 }
 
-const asLoad = <T, U>(result: { state: "loading" } | SourceResult<T>, map: (data: T) => U): Load<U> => {
+export const asLoad = <T, U>(result: { state: "loading" } | SourceResult<T>, map: (data: T) => U): Load<U> => {
   switch (result.state) {
     case "loading":
       return { status: "loading" };
@@ -38,34 +34,15 @@ const asLoad = <T, U>(result: { state: "loading" } | SourceResult<T>, map: (data
 };
 
 export function useAgentsData(): AgentsData {
-  const { data, sources, connection } = useServices();
+  const { data, sources } = useServices();
   const snapshot = useStore(data);
   const gate = useGate();
   const live = sources.execution.provenance.kind === "daemon";
-  const [nonce, setNonce] = useState(0);
 
   const preview = useSource(
     () => (live ? Promise.resolve({ state: "empty" } as SourceResult<never>) : sources.execution.listPreviewTasks()),
     `agents-preview:${live}`,
     sources.execution.provenance,
-  );
-
-  const inventorySource = useSource<InventoryRow[]>(
-    async () => {
-      if (!live) {
-        const result = await sources.agents.listAgents();
-        return result.state === "ready" ? { state: "ready", data: inventoryFromPreview(result.data) } : result;
-      }
-      try {
-        const entries = await connection.api().agentsCapabilities();
-        return entries.length === 0 ? { state: "empty" } : { state: "ready", data: inventoryFromDaemon(entries) };
-      } catch (error) {
-        const failed = asDaemonError(error);
-        return { state: "error", message: `${presentError(failed).reason} (${failed.kind}: ${failed.message})` };
-      }
-    },
-    `agents-inventory:${live}:${nonce}`,
-    sources.agents.provenance,
   );
 
   const work = useMemo<Load<WorkRow[]>>(() => {
@@ -88,8 +65,6 @@ export function useAgentsData(): AgentsData {
   return {
     live,
     work,
-    inventory: asLoad(inventorySource, (list) => list),
     reloadWork: () => void data.refreshAll(),
-    reloadInventory: () => setNonce((n) => n + 1),
   };
 }

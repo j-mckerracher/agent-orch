@@ -369,18 +369,6 @@ test("dragging the splitter resizes the sidebar and the toggle collapses it out 
   await expect(sidebar).toBeVisible();
 });
 
-test("agents split columns follow the wireframe 1150 breakpoint", async ({ page }) => {
-  const trackCount = (selector: string) =>
-    page.locator(selector).evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
-
-  await page.setViewportSize({ width: 1150, height: viewport.height });
-  await page.goto("/?fixture=1#/agents");
-  await expect(page.locator(".agents-layout")).toBeVisible();
-  expect(await trackCount(".agents-layout"), "agents stacks at 1150 px").toBe(1);
-  await page.setViewportSize({ width: 1151, height: viewport.height });
-  expect(await trackCount(".agents-layout"), "agents splits above 1150 px").toBe(2);
-});
-
 test("workstream rows stay inside the page and titles wrap at words, at 960 and 760 px", async ({ page }) => {
   await page.goto("/?fixture=1#/workstreams");
   for (const width of [960, 760]) {
@@ -404,16 +392,28 @@ test("workstream rows stay inside the page and titles wrap at words, at 960 and 
   }
 });
 
-test("agents split is 1.1 to 1 at desktop width, with the first running task selected", async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 900 });
+test("agents rows stay inside the page at 960 and 760 px, and a task opens as its own view", async ({ page }) => {
   await page.goto("/?fixture=1#/agents");
-  const detail = page.getByRole("complementary", { name: "Selected task / session detail" });
-  await expect(detail).toContainText("fixture:task-running");
-  const work = await page.getByRole("region", { name: "Assigned work and sessions" }).boundingBox();
-  const selected = await detail.boundingBox();
-  expect(work).not.toBeNull();
-  expect(selected).not.toBeNull();
-  expect(selected!.width / work!.width).toBeCloseTo(1 / 1.1, 2);
+  for (const width of [960, 760]) {
+    await page.setViewportSize({ width, height: viewport.height });
+    await expect(page.getByTestId("agents-row").first()).toBeVisible();
+    const list = await page.getByTestId("agents-view").locator(".ws-items").first().boundingBox();
+    expect(list, "the row list is laid out").toBeTruthy();
+    const rights = await page.getByTestId("agents-row").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().right));
+    for (const right of rights) {
+      expect(right, `a row stays inside the list at ${width} px`).toBeLessThanOrEqual(list!.x + list!.width + 1);
+    }
+    expect(
+      await page.getByTestId("agents-view").evaluate((el) => el.scrollWidth <= el.clientWidth),
+      `the agents page does not scroll sideways at ${width} px`,
+    ).toBe(true);
+  }
+  await page.getByTestId("agents-row").first().click();
+  await expect(page).toHaveURL(/#\/agents\?task=/);
+  await expect(page.getByTestId("agents-detail")).toBeVisible();
+  await expect(page.getByTestId("agents-row")).toHaveCount(0);
+  await page.locator(".ws-back").click();
+  await expect(page).toHaveURL(/#\/agents$/);
 });
 
 // The activity column is gone: the conversation uses the whole main column, with the target picker as its title.

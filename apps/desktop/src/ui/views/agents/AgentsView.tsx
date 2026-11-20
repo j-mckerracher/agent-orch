@@ -1,96 +1,55 @@
-/** M7-14 Agents & Sessions (`#/agents`). Rendered inside the shell's `main` landmark, so it adds none. */
-import { useState } from "react";
-import { Pill } from "../../theme";
-import { Inventory } from "./Inventory";
-import { LaterScope } from "./LaterScope";
-import { SessionDetail } from "./SessionDetail";
-import { SessionList } from "./SessionList";
-import { DisabledAction, PlaceholderMark } from "./common";
-import { headline, isActive, type TabId } from "./model";
+/** Agents (`#/agents`): the task list, and one task's own view at `#/agents?task=<id>`. Rendered inside the shell's `main` landmark, so it adds none. */
+import { useServices, useStore } from "../../services";
+import { PlaceholderBadge } from "../../widgets";
+import { EmptyState } from "../../theme";
+import { summaryLine } from "./model";
+import { TaskDetail } from "./TaskDetail";
+import { TaskList } from "./TaskList";
 import { useAgentsData } from "./useAgentsData";
+import "../workstreams/workstreams.css";
 import "./agents.css";
 
 export function AgentsView() {
   const model = useAgentsData();
-  const [tab, setTab] = useState<TabId>("active");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { router, sources } = useServices();
+  const route = useStore(router);
+  const taskId = route.name === "global" ? route.taskId : undefined;
+  const open = (id?: string) => router.navigate({ name: "global", view: "agents", ...(id === undefined ? {} : { taskId: id }) });
   const rows = model.work.status === "ready" ? model.work.data : null;
-  // The first running task is selected until the operator picks another, as in the wireframe (T12).
-  const selected = rows?.find((row) => row.id === selectedId) ?? rows?.find(isActive) ?? null;
-  const stats = rows ? headline(rows) : null;
+  const selected = taskId === undefined ? null : (rows?.find((row) => row.id === taskId) ?? null);
+
+  let body;
+  if (taskId !== undefined && selected) {
+    body = <TaskDetail key={selected.id} initial={selected} live={model.live} onBack={() => open()} />;
+  } else if (taskId !== undefined && rows) {
+    body = (
+      <>
+        <button type="button" className="ws-back" onClick={() => open()}>
+          <span aria-hidden="true">←</span> Agents
+        </button>
+        <EmptyState title="Task not found" description={`No task ${taskId} is in the task list.`} />
+      </>
+    );
+  } else {
+    body = (
+      <>
+        <header className="ws-head">
+          <div className="ws-head-title">
+            <div className="ws-title-row">
+              <h1>Agents</h1>
+              {rows && <span className="ws-subtle">{summaryLine(rows)}</span>}
+              {!model.live && <PlaceholderBadge provenance={sources.execution.provenance} compact />}
+            </div>
+          </div>
+        </header>
+        <TaskList work={model.work} live={model.live} onOpen={open} onRetry={model.reloadWork} />
+      </>
+    );
+  }
 
   return (
-    <div className="agents-view" data-testid="agents-view">
-      <header className="agents-head agents-head-row">
-        <div>
-          <p className="agents-eyebrow">Execution inventory / S5</p>
-          <h1>Agents &amp; Sessions</h1>
-          <p>A task persists through failed attempts, new assignments, and changed strategies.</p>
-        </div>
-        <DisabledAction
-          label="Configure providers"
-          reason="Provider configuration is not available: the daemon has no method to change adapters."
-        />
-      </header>
-
-      <section aria-label="Execution status" className="agents-status">
-        {stats ? (
-          <ul className="agents-plain agents-status-list">
-            <li>
-              <Pill tone="info">
-                {stats.runningTasks} running task(s), {stats.runningSessions ?? "unknown"} running session(s)
-              </Pill>
-            </li>
-            <li>
-              <Pill>
-                {stats.queued} tasks queued ({stats.readyQueued} ready)
-              </Pill>
-            </li>
-            <li>
-              <Pill tone={stats.waiting > 0 ? "warn" : "neutral"}>{stats.waiting} tasks waiting for a reply</Pill>
-            </li>
-            <li>
-              <Pill tone={stats.blocked > 0 ? "warn" : "neutral"}>{stats.blocked} tasks blocked</Pill>
-            </li>
-            <li>
-              <Pill tone="warn">Disconnected sessions not available</Pill>
-              <span className="agents-sub"> Not counted: the daemon has no method that reports them (D3).</span>
-            </li>
-            <li>
-              <span className="agents-sub">Historical failures retained separately</span>
-            </li>
-            {!model.live && (
-              <li>
-                <PlaceholderMark id="D2" /> <PlaceholderMark id="D3" />
-              </li>
-            )}
-          </ul>
-        ) : (
-          <p role="status">
-            {model.work.status === "loading"
-              ? "Loading execution status…"
-              : "Execution status is unknown because the task list is not available."}
-          </p>
-        )}
-        {stats && <p className="agents-sub">Counts cover {rows?.length ?? 0} task(s). The Queued tab lists every queued task, blocked ones included.</p>}
-      </section>
-
-      <Inventory inventory={model.inventory} live={model.live} onRetry={model.reloadInventory} />
-
-      <div className="agents-layout">
-        <SessionList
-          work={model.work}
-          live={model.live}
-          tab={tab}
-          onTab={setTab}
-          selectedId={selectedId}
-          onSelect={setSelectedId}
-          onRetry={model.reloadWork}
-        />
-        <SessionDetail row={selected} live={model.live} />
-      </div>
-
-      <LaterScope />
-    </div>
+    <section className="ws-view agents-view" aria-label="Agents" data-testid="agents-view">
+      {body}
+    </section>
   );
 }

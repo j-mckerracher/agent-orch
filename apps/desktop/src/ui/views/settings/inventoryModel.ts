@@ -1,4 +1,4 @@
-/** Adapter inventory derivations for the Agents & Sessions view (M7-14). */
+/** Adapter inventory derivations for Settings > Agents (M7-14). */
 import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import type { AgentCapabilityEntry } from "../../../daemon/types";
 import type { AgentCapability } from "../../../sources/types";

@@ -30,6 +30,7 @@ import {
 } from "./settingsModel";
 import { SaveButton, useSaveGuard } from "./SaveBar";
 import { AppearanceSection } from "./AppearanceSection";
+import { AgentsInventorySection } from "./AgentsInventorySection";
 import { AutonomousActionsSection } from "./AutonomousActionsSection";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
@@ -202,6 +203,7 @@ export function SettingsView() {
         {!model.live && <Badge tone="placeholder">Fixture data</Badge>}
       </header>
       <DispatchDefaultsSection model={model} />
+      <AgentsInventorySection />
       <section aria-labelledby={headingId} className="settings-section">
         <h2 id={headingId}>Machine load limits</h2>
         <p className="settings-intro">{INTRO_TEXT}</p>

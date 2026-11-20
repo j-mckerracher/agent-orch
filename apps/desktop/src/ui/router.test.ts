@@ -50,6 +50,14 @@ describe("global routes", () => {
     expect(parseRoute("#/workstreams")).toEqual({ name: "global", view: "workstreams" });
     expect(formatRoute({ name: "global", view: "workspace", workstreamId: "ws-1" })).toBe("#/workspace");
   });
+
+  it("formats and parses a selected task on the agents view, and keeps the old bare link", () => {
+    const route: Route = { name: "global", view: "agents", taskId: "t 1" };
+    expect(formatRoute(route)).toBe("#/agents?task=t%201");
+    expect(parseRoute(formatRoute(route))).toEqual(route);
+    expect(parseRoute("#/agents")).toEqual({ name: "global", view: "agents" });
+    expect(formatRoute({ name: "global", view: "review", taskId: "t" })).toBe("#/review");
+  });
 });
 
 describe("legacy routes are unchanged", () => {

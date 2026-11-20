@@ -221,3 +221,33 @@
   gap: 8px;
   font-weight: 600;
 }
+
+/* Agents inventory: a wide table, so the section spans every column. */
+.settings-agents {
+  column-span: all;
+}
+
+.settings-agents table {
+  font-size: 13px;
+}
+
+.settings-table-scroll {
+  overflow-x: auto;
+}
+
+.settings-agents small {
+  display: block;
+}
+
+.settings-flags {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 12px;
+}
+
+/* A one-word flag must never split mid-word. */
+.settings-flag {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
