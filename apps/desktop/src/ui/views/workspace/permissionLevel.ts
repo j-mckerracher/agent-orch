@@ -39,7 +39,7 @@ export type PermissionSurface = "chat" | "task";
 
 const EXTENDED_BLOCK: Record<PermissionSurface, string> = {
   chat: "not available for chat yet",
-  task: "not available for tasks yet",
+  task: "Extended can run only read-only git commands, so it can't build, test or commit. Choose Auto or Full for tasks.",
 };
 
 /** Why a level cannot be chosen on a surface, or null. Extended is refused on every agent for now (PR A). */

@@ -61,7 +61,9 @@ describe("which levels a chat can choose", () => {
   });
 
   it("refuses Extended for tasks too, and names tasks in the reason", () => {
-    expect(choiceBlock("extended", true, "task")).toBe("not available for tasks yet");
+    expect(choiceBlock("extended", true, "task")).toBe(
+      "Extended can run only read-only git commands, so it can't build, test or commit. Choose Auto or Full for tasks.",
+    );
     expect(choiceBlock("auto", true, "task")).toBeNull();
   });
 });
