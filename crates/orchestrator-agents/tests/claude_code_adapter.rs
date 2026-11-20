@@ -81,6 +81,7 @@ async fn spawn_fake(mode: &str) -> orchestrator_agents::Result<Box<dyn AgentHand
     orchestrator_agents::ClaudeCodeAdapter::new()
         .with_program(program.clone())
         .spawn(AgentLaunchRequest {
+            git_guard: false,
             program,
             args: vec![mode.to_owned()],
             working_dir: WORKDIR.clone(),

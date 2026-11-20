@@ -76,6 +76,10 @@ pub struct LaunchRequest {
     /// these names, and the user's `AGENT_ORCH_ENV_PASSTHROUGH` list; see
     /// `orchestrator_git::env_policy`. Names only, never values.
     pub env_names: Vec<String>,
+    /// Whether to set `orchestrator_git::TASK_GIT_GUARD_ENV` after the allowlist. Only a task
+    /// launch below Full sets it: no credential prompt or helper, no hooks, and the daemon's
+    /// commit identity. Every other launch leaves it false.
+    pub git_guard: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -243,6 +247,9 @@ impl ChildSupervisor {
             .kill_on_drop(true)
             .env_clear()
             .envs(EnvPolicy::for_launch(&request.env_names).from_process_env());
+        if request.git_guard {
+            cmd.envs(orchestrator_git::TASK_GIT_GUARD_ENV);
+        }
 
         #[cfg(unix)]
         // Own process group: PGID 0 means "use the child's own PID as the
@@ -575,6 +582,7 @@ mod tests {
 
     fn request(program: &str) -> LaunchRequest {
         LaunchRequest {
+            git_guard: false,
             program: PathBuf::from(program),
             args: Vec::new(),
             working_dir: std::env::current_dir().expect("current directory"),

@@ -168,6 +168,7 @@ fn launch_request(
         args.push(argument.to_owned());
     }
     AgentLaunchRequest {
+        git_guard: false,
         program: child.program.clone(),
         args,
         working_dir: child.directory().to_path_buf(),
@@ -356,6 +357,7 @@ async fn launch(adapter: Adapter, child: &FakeChild) {
     );
 
     let request = AgentLaunchRequest {
+        git_guard: false,
         program: child.directory().join("missing-executable"),
         args: vec!["verbatim argument".to_owned()],
         working_dir: child.directory().to_path_buf(),

@@ -154,6 +154,7 @@ fn process_plan_order_is_deterministic() {
 #[tokio::test]
 async fn supervisor_exposes_identity_captured_at_launch() {
     let mut supervisor = ChildSupervisor::launch(&LaunchRequest {
+        git_guard: false,
         program: "/bin/sleep".into(),
         args: vec!["0.2".into()],
         working_dir: std::env::current_dir().expect("current directory"),

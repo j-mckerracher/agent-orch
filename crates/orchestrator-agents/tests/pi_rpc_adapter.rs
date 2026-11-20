@@ -202,6 +202,7 @@ fn with_runtime<F: Future>(future: F) -> F::Output {
 async fn spawn_fake(mode: &str) -> orchestrator_agents::pi_rpc_adapter::PiRpcHandle {
     PiRpcAdapter::new()
         .spawn_rpc(AgentLaunchRequest {
+            git_guard: false,
             program: fake_executable(),
             args: vec![mode.to_string()],
             working_dir: WORKDIR.path().to_path_buf(),

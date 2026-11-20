@@ -27,7 +27,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock, RwLockReadGuard};
 use std::thread::{self, JoinHandle};
@@ -58,8 +58,8 @@ use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::verify::{pending_verifications, verify_attempt, Verified};
 use orchestrator_git::{
-    create_task_worktree, is_safe_branch_name, release_task_worktree, BranchPrefix,
-    Error as GitError, Released, Repository, Treehouse,
+    create_task_worktree, is_safe_branch_name, release_task_worktree, slot_attached_to,
+    BranchPrefix, Error as GitError, Released, Repository, SlotDirs, Treehouse,
 };
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
@@ -993,6 +993,8 @@ impl Inner {
             model_selection: task.contract.model_selection.clone(),
             permission: task.contract.permission,
             worktree: PathBuf::new(),
+            base_commit: String::new(),
+            slot: None,
             in_place: false,
             status_dir: worker_status::status_dir(&self.config.data_dir, &task_id, number),
             session: JobSession::New(uuid::Uuid::new_v4().hyphenated().to_string()),
@@ -1102,16 +1104,23 @@ impl Inner {
                 (reason, format!("cannot create worktree: {error}"))
             })
             .and_then(|checkout| {
-                worker_status::prepare(&job.status_dir)
-                    .map(|file| (checkout, file))
-                    .map_err(|error| {
-                        (
-                            STATUS_FILE_FAILED,
-                            format!("cannot prepare the status file: {error}"),
-                        )
-                    })
+                let file = worker_status::prepare(&job.status_dir).map_err(|error| {
+                    (
+                        STATUS_FILE_FAILED,
+                        format!("cannot prepare the status file: {error}"),
+                    )
+                })?;
+                let launch = worker_environment::prepare_launch(
+                    &job,
+                    &checkout,
+                    task.contract.kind,
+                    (self.config.locate_workflow_agent)(),
+                    task.contract.work_item.as_ref(),
+                )
+                .map_err(|reason| (reason, format!("the launch was refused: {reason}")))?;
+                Ok((checkout, file, launch))
             });
-        let (checkout, status_file) = match prepared {
+        let (checkout, status_file, launch) = match prepared {
             Ok(prepared) => prepared,
             Err((reason, detail)) => {
                 // No process exists yet: take the attempt through Running so
@@ -1132,10 +1141,19 @@ impl Inner {
             }
         };
         job.worktree = checkout.path.clone();
+        job.base_commit = checkout.base_commit.clone();
+        job.slot = launch.slot;
+        let plugin_dir = job.status_dir.join(worker_environment::PLUGIN_DIR);
         // The agent launches with the brief, never the bare objective (DPES-1108).
         job.objective = orchestrator_core::brief::render(
             &task.contract,
-            (!in_place).then_some(checkout.path.as_path()),
+            &orchestrator_core::brief::Environment {
+                level: job.permission,
+                shell: worker_environment::shell_access(&job.agent, job.permission),
+                worktree: (!in_place).then_some(checkout.path.as_path()),
+                plugin_dir: Some(&plugin_dir),
+                inputs: &launch.inputs,
+            },
             &status_file,
         );
         let path = checkout.path.display().to_string();
@@ -1252,7 +1270,7 @@ impl Inner {
             return fail("its worktree is no longer recorded");
         };
         let number = target.attempt_number;
-        let job = Job {
+        let mut job = Job {
             task_id: task_id.clone(),
             attempt_id: target.attempt_id.clone(),
             session_id: format!("{task_id}-session-{number}-{}", target.sessions + 1),
@@ -1261,12 +1279,28 @@ impl Inner {
             model_selection: contract.model_selection.clone(),
             permission: contract.permission,
             worktree: PathBuf::from(&workspace.path),
+            base_commit: workspace.base_commit.clone(),
+            slot: None,
             in_place: workspace.is_in_place(),
             status_dir: worker_status::status_dir(&self.config.data_dir, &task_id, number),
             session: JobSession::Resume(agent_session_id.clone()),
             diag: self.config.diagnostics.clone(),
             output: self.output.clone(),
         };
+        // The same checks a first launch passed, against the status directory and slot it kept.
+        match worker_environment::check_resume(
+            &job,
+            contract.kind,
+            &workspace.branch,
+            &contract.project_id,
+        ) {
+            Ok(slot) => job.slot = slot,
+            Err(reason) => {
+                return store
+                    .fail_waiting_task(&task_id, reason)
+                    .map_err(|error| format!("cannot fail the waiting task: {error}"));
+            }
+        }
         let reply_ids: Vec<i64> = replies.iter().map(|reply| reply.id).collect();
         store
             .begin_resume(
@@ -1355,6 +1389,10 @@ struct Job {
     model_selection: Option<ModelSelection>,
     permission: PermissionLevel,
     worktree: PathBuf,
+    /// The commit the worktree was created from. Empty for an in-place task.
+    base_commit: String,
+    /// The slot's Git directories, from launch. `None` for an in-place task.
+    slot: Option<SlotDirs>,
     /// The task runs in its project's directory, not a worktree: nothing to commit.
     in_place: bool,
     /// The attempt's status directory, the one path outside the worktree the agent may write.
@@ -1378,9 +1416,16 @@ impl Job {
 /// Paths `git status` reports as changed or untracked in a worktree, or `None`
 /// when it cannot be inspected. Used only to say how much work a failed or
 /// interrupted run left behind; the worktree itself is never removed.
-fn uncommitted_paths(worktree: &Path) -> Option<usize> {
+fn uncommitted_paths(job: &Job) -> Option<usize> {
+    let worktree = job.worktree.as_path();
     if worktree.as_os_str().is_empty() {
         return None;
+    }
+    // A slot the agent re-attached is not inspected: a Git command there would run its filters.
+    if let Some(slot) = &job.slot {
+        if !slot_attached_to(worktree, &slot.common) {
+            return None;
+        }
     }
     git_checked(
         worktree,
@@ -1393,8 +1438,8 @@ fn uncommitted_paths(worktree: &Path) -> Option<usize> {
 /// The preserved-work facts every failure event carries.
 fn preserved_work(job: &Job) -> (String, String) {
     let worktree = job.worktree.display().to_string();
-    let uncommitted = uncommitted_paths(&job.worktree)
-        .map_or_else(|| "unknown".to_owned(), |count| count.to_string());
+    let uncommitted =
+        uncommitted_paths(job).map_or_else(|| "unknown".to_owned(), |count| count.to_string());
     (worktree, uncommitted)
 }
 
@@ -1514,6 +1559,7 @@ pub(crate) fn submit_channel(status_dir: &Path, support: ChannelSupport) -> RunC
             .session
             .then_some(TaskSession::New(SESSION_PLACEHOLDER)),
         in_place: false,
+        git_dirs: &[],
     }
 }
 
@@ -1568,6 +1614,20 @@ pub(crate) struct RunChannel<'a> {
     pub(crate) status_dir: Option<&'a Path>,
     pub(crate) session: Option<TaskSession<'a>>,
     pub(crate) in_place: bool,
+    /// The slot's git directories a commit writes: its gitdir, `objects`, and the branch refs.
+    /// Never the common `config`, `hooks` or `info`.
+    pub(crate) git_dirs: &'a [PathBuf],
+}
+
+impl RunChannel<'_> {
+    /// Every directory beyond the worktree the run may write: the status directory, then the
+    /// git directories.
+    fn write_dirs(&self) -> Vec<&Path> {
+        self.status_dir
+            .into_iter()
+            .chain(self.git_dirs.iter().map(PathBuf::as_path))
+            .collect()
+    }
 }
 
 /// The program and argument vector the daemon launches for `agent`, or `None`
@@ -1593,6 +1653,7 @@ pub(crate) fn agent_command(
                 .codex_program
                 .clone()
                 .unwrap_or_else(|| PathBuf::from("codex"));
+            let write_dirs = channel.write_dirs();
             if let Some(TaskSession::Resume(id)) = channel.session {
                 let args = CodexAdapter::args_for_resume(
                     permission,
@@ -1601,16 +1662,19 @@ pub(crate) fn agent_command(
                     model,
                     effort,
                     workflow_agent,
-                    channel.status_dir,
+                    &write_dirs,
                     channel.in_place,
                 )?;
                 return Some((program, args));
             }
             let mut args =
                 CodexAdapter::args_for_task(permission, objective, model, effort, workflow_agent)?;
-            if let Some(dir) = channel.status_dir {
+            if !write_dirs.is_empty() {
                 let separator = args.iter().rposition(|arg| arg == "--")?;
-                args.splice(separator..separator, task_session::status_dir_args(dir));
+                args.splice(
+                    separator..separator,
+                    task_session::add_dir_args(&write_dirs),
+                );
             }
             // `codex exec` refuses a directory that is not a Git repository unless told otherwise.
             if channel.in_place {
@@ -1626,9 +1690,7 @@ pub(crate) fn agent_command(
                 effort,
                 workflow_agent,
             );
-            if let Some(dir) = channel.status_dir {
-                args.extend(task_session::status_dir_args(dir));
-            }
+            args.extend(task_session::add_dir_args(&channel.write_dirs()));
             if let Some(session) = channel.session {
                 args.extend(task_session::claude_session_args(session));
             }
@@ -1672,21 +1734,32 @@ fn extend_copilot_channel(
     permission: PermissionLevel,
     channel: RunChannel<'_>,
 ) {
-    if let Some(dir) = channel.status_dir {
-        args.extend(task_session::copilot_status_args(dir, permission));
-    }
+    args.extend(task_session::copilot_dir_args(
+        &channel.write_dirs(),
+        permission,
+    ));
     if let Some(session) = channel.session {
         args.push(task_session::copilot_session_arg(session));
     }
 }
 
 impl Job {
+    /// Whether the child gets the task git guard. Only a task below Full: Full is unrestricted by
+    /// definition, and chat never comes through here.
+    fn git_guard(&self) -> bool {
+        self.permission != PermissionLevel::Full
+    }
+
     /// The run's channel, limited to what the CLI offers.
     fn channel(&self, support: ChannelSupport) -> RunChannel<'_> {
         RunChannel {
             status_dir: support.status_dir.then_some(self.status_dir.as_path()),
             session: support.session.then(|| self.session.as_task_session()),
             in_place: self.in_place,
+            git_dirs: self
+                .slot
+                .as_ref()
+                .map_or(&[], |slot| slot.grants.as_slice()),
         }
     }
 }
@@ -1772,6 +1845,7 @@ async fn spawn_copilot(
         .check_launch(&job.agent, &program, &executable, &args)
         .await?;
     let request = AgentLaunchRequest {
+        git_guard: job.git_guard(),
         program,
         args,
         working_dir: job.worktree.clone(),
@@ -1807,21 +1881,10 @@ impl From<&str> for LaunchFailure {
     }
 }
 
-/// The workflow agent for one launch. A missing agent only warns on the attempt;
-/// the attempt still launches, without it.
-fn launch_workflow_agent(inner: &Inner, job: &Job) -> Option<WorkflowAgent> {
-    let agent = (inner.config.locate_workflow_agent)();
-    if agent.is_none() {
-        job.diag.warn(
-            LOG,
-            "workflow_agent_missing",
-            &job.event_fields(&[(
-                "reason",
-                "pstack workflow agent not found; launching without it",
-            )]),
-        );
-    }
-    agent
+/// The workflow agent a run launches with: the copy the preflight staged in the status
+/// directory, never the shared plugin cache.
+fn launch_workflow_agent(job: &Job) -> Option<WorkflowAgent> {
+    workflow_agent::plugin_at(&job.status_dir.join(worker_environment::PLUGIN_DIR))
 }
 
 /// Says the installed CLI cannot take the workflow agent, so the attempt launches plain.
@@ -1905,6 +1968,7 @@ async fn spawn_agent(
         .check_launch(&job.agent, &program, &executable, &args)
         .await?;
     let request = AgentLaunchRequest {
+        git_guard: job.git_guard(),
         program,
         args,
         working_dir: job.worktree.clone(),
@@ -1925,9 +1989,11 @@ enum AdapterChoice {
 
 async fn run_agent(inner: &Inner, job: &Job) -> Result<(), String> {
     let store = &*inner.store;
-    let (mut handle, support) = match spawn_agent(inner, job, launch_workflow_agent(inner, job))
-        .await
-    {
+    let Some(workflow) = launch_workflow_agent(job) else {
+        fail_before_agent_exit(store, job, Some(worker_environment::STAGED_PLUGIN_MISSING));
+        return Ok(());
+    };
+    let (mut handle, support) = match spawn_agent(inner, job, Some(workflow)).await {
         Ok(spawned) => spawned,
         Err(error) => {
             let (reason, detail) = match error {
@@ -2575,7 +2641,15 @@ fn finish(
             let committed = if job.in_place {
                 Ok(None)
             } else {
-                commit_candidate(&job.worktree, &job.task_id)
+                match &job.slot {
+                    Some(slot) => commit_candidate(
+                        &job.worktree,
+                        &job.task_id,
+                        &job.base_commit,
+                        &slot.common,
+                    ),
+                    None => Err("the worktree's Git directories were never read".to_owned()),
+                }
             };
             let changed = match committed {
                 Ok(changed) => changed,
@@ -2951,11 +3025,10 @@ fn fail_records(
     );
 }
 
+/// Runs Git in an agent's slot with the slot guard, so no hook or fsmonitor the agent wrote runs.
 fn git(cwd: &Path, args: &[&str]) -> Result<std::process::Output, String> {
-    Command::new("git")
-        .args(["-c", "core.longpaths=true"])
+    orchestrator_git::slot_git_command(cwd)
         .args(args)
-        .current_dir(cwd)
         .stdin(Stdio::null())
         .output()
         .map_err(|error| format!("cannot run git {}: {error}", args.join(" ")))
@@ -2974,45 +3047,57 @@ fn git_checked(cwd: &Path, args: &[&str]) -> Result<std::process::Output, String
     }
 }
 
-/// Commits whatever the agent left in the worktree so the candidate is a
-/// stable commit on the task branch. Never touches the primary checkout.
-/// Returns how many files the commit holds, or `None` when the agent changed nothing.
-fn commit_candidate(worktree: &Path, task_id: &str) -> Result<Option<usize>, String> {
+/// Makes the candidate a stable commit on the task branch, never touching the primary checkout.
+/// The agent may have committed on the branch already: those commits are the candidate, and any
+/// files it left uncommitted are committed on top. Returns how many files the candidate changes
+/// from `base`, or `None` when it changes none.
+fn commit_candidate(
+    worktree: &Path,
+    task_id: &str,
+    base: &str,
+    common: &Path,
+) -> Result<Option<usize>, String> {
+    if !slot_attached_to(worktree, common) {
+        return Err("worktree is attached to a different Git repository".to_owned());
+    }
     let status = git_checked(
         worktree,
         &["status", "--porcelain", "--untracked-files=all"],
     )?;
-    if status.stdout.is_empty() {
-        return Ok(None);
-    }
-    git_checked(worktree, &["add", "--all", "--"])?;
-    if git(worktree, &["diff", "--cached", "--quiet"])?
-        .status
-        .success()
-    {
-        return Ok(None);
+    if !status.stdout.is_empty() {
+        git_checked(worktree, &["add", "--all", "--"])?;
+        if !git(worktree, &["diff", "--cached", "--quiet"])?
+            .status
+            .success()
+        {
+            let message = format!("agent-orch candidate {task_id}");
+            let name = format!("user.name={}", orchestrator_git::AGENT_NAME);
+            let email = format!("user.email={}", orchestrator_git::AGENT_EMAIL);
+            git_checked(
+                worktree,
+                &["-c", &name, "-c", &email, "commit", "-m", &message],
+            )?;
+        }
     }
     // NUL-terminated names, so a file name that contains a newline still counts as one file.
-    let staged = git_checked(worktree, &["diff", "--cached", "--name-only", "-z"])?;
-    let files = staged
+    let changed = git_checked(
+        worktree,
+        &[
+            "diff",
+            "--no-renames",
+            "--name-only",
+            "-z",
+            base,
+            "HEAD",
+            "--",
+        ],
+    )?;
+    let files = changed
         .stdout
         .split(|byte| *byte == 0)
         .filter(|name| !name.is_empty())
         .count();
-    let message = format!("agent-orch candidate {task_id}");
-    git_checked(
-        worktree,
-        &[
-            "-c",
-            "user.name=Agent Orchestrator",
-            "-c",
-            "user.email=agent-orch@localhost",
-            "commit",
-            "-m",
-            &message,
-        ],
-    )?;
-    Ok(Some(files))
+    Ok((files > 0).then_some(files))
 }
 
 /// Terminates agents whose owner daemon is gone, using only an exact identity
@@ -3137,6 +3222,9 @@ pub(crate) mod output_ring;
 
 #[path = "worker_status.rs"]
 pub(crate) mod worker_status;
+
+#[path = "worker_environment.rs"]
+pub(crate) mod worker_environment;
 
 #[cfg(all(test, unix))]
 #[path = "executor_tests.rs"]

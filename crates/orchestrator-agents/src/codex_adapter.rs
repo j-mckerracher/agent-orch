@@ -92,6 +92,7 @@ impl AgentAdapter for CodexAdapter {
         // `detect` is the capability gate; a spawn of a missing binary
         // fails at launch and is reported as a launch error, not silently.
         let sup = ChildSupervisor::launch(&LaunchRequest {
+            git_guard: request.git_guard,
             program: request.program,
             args: request.args,
             working_dir: request.working_dir,

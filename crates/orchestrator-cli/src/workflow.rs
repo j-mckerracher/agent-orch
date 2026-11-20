@@ -464,6 +464,7 @@ pub async fn run_task(
     let wrapper_args = capture_args(&agent_path, &task_paths, objective, workflow_agent.as_ref())?;
     let handle = match adapter
         .spawn(AgentLaunchRequest {
+            git_guard: false,
             program: wrapper,
             args: wrapper_args,
             working_dir: metadata.worktree.clone(),

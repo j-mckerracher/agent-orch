@@ -871,6 +871,7 @@ impl ConversationRuntime for AgentRuntime {
                 selected.effort.as_deref(),
             ));
             let launch = AgentLaunchRequest {
+                git_guard: false,
                 program: selected.program.clone(),
                 args,
                 working_dir: run.cwd(),
@@ -889,6 +890,7 @@ impl ConversationRuntime for AgentRuntime {
             )
             .ok_or(RuntimeFailure::LevelUnsupported)?;
             let launch = AgentLaunchRequest {
+                git_guard: false,
                 program: selected.program.clone(),
                 args,
                 working_dir: turn_dir.path().to_path_buf(),

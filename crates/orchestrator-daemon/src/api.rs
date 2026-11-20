@@ -1039,8 +1039,8 @@ impl DaemonApi {
             .transition(&contract.id, TaskEvent::Admit)
             .map_err(map_store_error)?;
         self.wake_executor();
-        serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(&contract.id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 
     /// Queues a new attempt for a `Failed` or `VerificationFailed` task. The
@@ -1084,8 +1084,8 @@ impl DaemonApi {
             .transition(task_id, TaskEvent::RetryRequested)
             .map_err(map_store_error)?;
         self.wake_executor();
-        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(task_id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 
     /// `tasks.force_start` (user-only): the user's word that a queued task starts now, past the
@@ -1284,14 +1284,16 @@ impl DaemonApi {
             .map_err(map_store_error)?
             .into_iter()
             .filter(|task| !archived.contains(&task.contract.id))
-            .collect();
-        serde_json::to_value(tasks).map_err(|_| RpcError::Internal)
+            .map(|task| crate::task_view::task_view(&task))
+            .collect::<Result<_, _>>()
+            .map_err(|_| RpcError::Internal)?;
+        Ok(Value::Array(tasks))
     }
 
     fn get_task(&self, params: Value) -> Result<Value, RpcError> {
         let params: TaskIdParams = parse_params(params)?;
-        serde_json::to_value(self.store.get(&params.task_id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(&params.task_id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 }
 
@@ -1462,8 +1464,8 @@ impl DaemonApi {
     /// task is cancelled at once; its worktree stays as any cancelled task's does.
     pub(super) fn cancel_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
         self.cancel_task_record(task_id)?;
-        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(task_id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 
     fn cancel_task_record(&self, task_id: &str) -> Result<(), RpcError> {

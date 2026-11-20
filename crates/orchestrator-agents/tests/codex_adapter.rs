@@ -183,6 +183,7 @@ async fn spawn_adapter(mode: &str) -> orchestrator_agents::Result<Box<dyn AgentH
     let adapter = orchestrator_agents::CodexAdapter::new().with_program(fake_exe());
     adapter
         .spawn(AgentLaunchRequest {
+            git_guard: false,
             program: fake_exe(),
             args: vec![mode.to_string()],
             working_dir: WORKDIR.clone(),
@@ -275,6 +276,7 @@ fn oversized_stdout_and_stderr_lines_are_truncated_with_a_marker() {
 
     with_runtime(async {
         let mut sup = ChildSupervisor::launch(&LaunchRequest {
+            git_guard: false,
             program: fake_exe(),
             args: vec!["oversized".into()],
             working_dir: WORKDIR.clone(),
@@ -312,6 +314,7 @@ fn stream_lines_are_not_returned_after_exit_when_a_descendant_keeps_pipes_open()
         let temp = tempfile::tempdir().expect("tempdir");
         let marker = temp.path().join("release-descendant");
         let mut sup = ChildSupervisor::launch(&LaunchRequest {
+            git_guard: false,
             program: fake_exe(),
             args: vec![
                 "exit-with-descendant".into(),
@@ -449,6 +452,7 @@ fn supervisor_cancel_kills_descendants() {
     // blocks. Canceling must kill the whole tree, not just the child.
     with_runtime(async {
         let mut sup = ChildSupervisor::launch(&LaunchRequest {
+            git_guard: false,
             program: fake_exe(),
             args: vec!["hang-spawn".into()],
             working_dir: WORKDIR.clone(),

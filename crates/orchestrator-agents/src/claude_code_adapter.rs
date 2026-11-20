@@ -131,6 +131,7 @@ impl AgentAdapter for ClaudeCodeAdapter {
 
     async fn spawn(&self, request: AgentLaunchRequest) -> Result<Box<dyn AgentHandle>> {
         let supervisor = ChildSupervisor::launch(&LaunchRequest {
+            git_guard: request.git_guard,
             program: request.program,
             args: request.args,
             working_dir: request.working_dir,

@@ -35,6 +35,9 @@ pub struct AgentLaunchRequest {
     pub args: Vec<String>,
     /// Explicit working directory for the child.
     pub working_dir: PathBuf,
+    /// Set only for a task launch below Full, so the child gets the task git guard. See
+    /// `orchestrator_runtime::LaunchRequest::git_guard`.
+    pub git_guard: bool,
 }
 
 /// Actual feature support of a detected adapter. Unsupported capabilities

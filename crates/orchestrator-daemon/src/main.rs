@@ -17,6 +17,7 @@ mod idempotency;
 mod mcp_relay;
 #[allow(dead_code)]
 mod mcp_server;
+mod task_view;
 
 use api::DaemonApi;
 use executor::ExecutorConfig;

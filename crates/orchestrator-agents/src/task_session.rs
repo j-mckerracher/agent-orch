@@ -38,8 +38,8 @@ pub enum TaskSession<'a> {
 pub fn resume_refusal(agent: &str, level: PermissionLevel) -> Option<&'static str> {
     match (agent, level) {
         ("codex", PermissionLevel::Auto) => Some(
-            "Codex cannot continue an Auto task's session at the same permission level, \
-             because `codex exec resume` has no --approve-for-me",
+            "Codex cannot continue an Auto task's session: `codex exec resume` has no \
+             --approve-for-me, and its `-c` equivalent is not verified live yet",
         ),
         ("codex", PermissionLevel::Extended) => {
             Some("Codex has no mapping for the Extended permission level")
@@ -53,20 +53,28 @@ fn path_text(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
-/// `--add-dir <dir>`: the one directory outside the worktree a run may write. Claude, Codex
-/// `exec` and Copilot all take this form.
-pub fn status_dir_args(status_dir: &Path) -> [String; 2] {
-    ["--add-dir".to_owned(), path_text(status_dir)]
+/// `--add-dir <dir>` for each directory a run may write beyond its worktree: the status
+/// directory, then the git directories a slot commits through. Claude, Codex `exec` and Copilot
+/// all take this form.
+pub fn add_dir_args(dirs: &[&Path]) -> Vec<String> {
+    dirs.iter()
+        .flat_map(|dir| ["--add-dir".to_owned(), path_text(dir)])
+        .collect()
 }
 
-/// Copilot below Full also needs a write rule for the status directory; `--allow-all` covers
-/// it at Full. The session flag is meant to follow, so the variadic `--allow-tool` list ends at
-/// a flag.
-pub fn copilot_status_args(status_dir: &Path, level: PermissionLevel) -> Vec<String> {
-    let mut args = status_dir_args(status_dir).to_vec();
-    if level != PermissionLevel::Full {
-        args.push("--allow-tool".to_owned());
-        args.push(format!("write({}/**)", path_text(status_dir)));
+/// Copilot's `--add-dir` for each directory, plus below Full a write rule for it; `--allow-all`
+/// covers it at Full. The session flag is meant to follow, so the variadic `--allow-tool` list
+/// ends at a flag.
+pub fn copilot_dir_args(dirs: &[&Path], level: PermissionLevel) -> Vec<String> {
+    let mut args = Vec::new();
+    for dir in dirs {
+        args.extend(["--add-dir".to_owned(), path_text(dir)]);
+        if level != PermissionLevel::Full {
+            args.extend([
+                "--allow-tool".to_owned(),
+                format!("write({}/**)", path_text(dir)),
+            ]);
+        }
     }
     args
 }
@@ -90,13 +98,14 @@ pub fn copilot_session_arg(session: TaskSession<'_>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn claude_and_copilot_name_a_new_session_and_continue_it_with_the_same_id() {
         let dir = Path::new("/data/task-status/t-1/1");
         assert_eq!(
-            status_dir_args(dir),
-            ["--add-dir".to_owned(), "/data/task-status/t-1/1".to_owned()]
+            add_dir_args(&[dir]),
+            ["--add-dir", "/data/task-status/t-1/1"]
         );
         assert_eq!(
             claude_session_args(TaskSession::New("u-1")),
@@ -107,7 +116,7 @@ mod tests {
             ["--resume".to_owned(), "u-1".to_owned()]
         );
         assert_eq!(
-            copilot_status_args(dir, PermissionLevel::Restricted),
+            copilot_dir_args(&[dir], PermissionLevel::Restricted),
             [
                 "--add-dir",
                 "/data/task-status/t-1/1",
@@ -116,7 +125,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            copilot_status_args(dir, PermissionLevel::Full),
+            copilot_dir_args(&[dir], PermissionLevel::Full),
             ["--add-dir", "/data/task-status/t-1/1"]
         );
         assert_eq!(
@@ -147,5 +156,47 @@ mod tests {
             );
         }
         assert!(resume_refusal("pi", PermissionLevel::Restricted).is_some());
+    }
+
+    #[test]
+    fn git_grants_are_the_slot_gitdir_and_the_refs_and_objects_only() {
+        let status = Path::new("/data/task-status/t-1/1");
+        let git = [
+            PathBuf::from("/repo/.git/worktrees/slot-1"),
+            PathBuf::from("/repo/.git/objects"),
+            PathBuf::from("/repo/.git/refs/heads"),
+            PathBuf::from("/repo/.git/logs/refs/heads"),
+        ];
+        let dirs: Vec<&Path> = std::iter::once(status)
+            .chain(git.iter().map(PathBuf::as_path))
+            .collect();
+        assert_eq!(
+            add_dir_args(&dirs),
+            [
+                "--add-dir",
+                "/data/task-status/t-1/1",
+                "--add-dir",
+                "/repo/.git/worktrees/slot-1",
+                "--add-dir",
+                "/repo/.git/objects",
+                "--add-dir",
+                "/repo/.git/refs/heads",
+                "--add-dir",
+                "/repo/.git/logs/refs/heads",
+            ]
+        );
+        assert_eq!(
+            copilot_dir_args(&dirs[..2], PermissionLevel::Auto),
+            [
+                "--add-dir",
+                "/data/task-status/t-1/1",
+                "--allow-tool",
+                "write(/data/task-status/t-1/1/**)",
+                "--add-dir",
+                "/repo/.git/worktrees/slot-1",
+                "--allow-tool",
+                "write(/repo/.git/worktrees/slot-1/**)",
+            ]
+        );
     }
 }

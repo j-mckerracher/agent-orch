@@ -125,6 +125,7 @@ impl PiRpcAdapter {
         .collect();
         let mut handle = self
             .spawn_rpc(AgentLaunchRequest {
+                git_guard: false,
                 program,
                 args,
                 working_dir,
@@ -170,6 +171,7 @@ impl PiRpcAdapter {
     pub async fn spawn_rpc(&self, mut request: AgentLaunchRequest) -> Result<PiRpcHandle> {
         ensure_rpc_mode(&mut request.args)?;
         let launch = LaunchRequest {
+            git_guard: request.git_guard,
             program: request.program,
             args: request.args,
             working_dir: request.working_dir,
@@ -634,6 +636,7 @@ fn ensure_rpc_mode(args: &mut Vec<String>) -> Result<()> {
 
 async fn read_cli_version(program: &Path, working_dir: &Path) -> Result<String> {
     let mut supervisor = ChildSupervisor::launch(&LaunchRequest {
+        git_guard: false,
         program: program.to_path_buf(),
         args: vec!["--version".to_owned()],
         working_dir: working_dir.to_path_buf(),

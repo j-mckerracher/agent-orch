@@ -74,6 +74,7 @@ pub(crate) async fn probe_version(
     limit: Duration,
 ) -> std::result::Result<String, String> {
     let mut supervisor = ChildSupervisor::launch(&LaunchRequest {
+        git_guard: false,
         program: program.to_path_buf(),
         args: vec!["--version".to_owned()],
         working_dir: std::env::temp_dir(),
@@ -204,7 +205,8 @@ impl CopilotAdapter {
     /// under the worktree and has no URL or memory tool. Restricted has no shell.
     /// Extended allows shell only for read-only git commands, and an unmatched
     /// shell request is denied in `-p` with no judge. Auto sends a shell request
-    /// with no allow rule to the judge, and denies `git push` by rule. Full passes
+    /// with no allow rule to the judge, and denies `git push`, `git remote`, `git credential`,
+    /// `git config` and `gh` by rule. Full passes
     /// `--allow-all`, the user's per-task choice.
     ///
     /// `agent`, when given, adds its plugin dir and runs it as the workflow
@@ -241,7 +243,16 @@ impl CopilotAdapter {
                 ("--deny-tool", "url"),
                 ("--deny-tool", "memory"),
             ]),
-            PermissionLevel::Auto => auto_flags(worktree),
+            PermissionLevel::Auto => {
+                let mut flags = auto_flags(worktree);
+                flags.extend(pairs(&[
+                    ("--deny-tool", "shell(git remote)"),
+                    ("--deny-tool", "shell(git credential)"),
+                    ("--deny-tool", "shell(git config)"),
+                    ("--deny-tool", "shell(gh:*)"),
+                ]));
+                flags
+            }
             PermissionLevel::Full => vec!["--allow-all".to_owned()],
         };
         let mut args = base_args(objective, usage_file, worktree, level, credit_cap);
@@ -335,6 +346,7 @@ impl CopilotAdapter {
             return SignInRecord::refused(error.to_string());
         }
         let request = AgentLaunchRequest {
+            git_guard: false,
             program,
             args,
             working_dir,
@@ -368,6 +380,7 @@ fn spawn_copilot_handle(
     run: Option<CopilotRun>,
 ) -> Result<CopilotHandle> {
     let sup = ChildSupervisor::launch(&LaunchRequest {
+        git_guard: request.git_guard,
         program: request.program,
         args: request.args,
         working_dir: request.working_dir,
