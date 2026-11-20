@@ -299,11 +299,13 @@ export function ActivityPanel() {
   const stopNoteId = useId();
   const [receipts, setReceipts] = useState<SurfaceReceipt[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeFailed, setNoticeFailed] = useState(false);
   const [error, setError] = useState<DaemonError | null>(null);
   const noticeRef = useRef<HTMLParagraphElement>(null);
   const [noticeFocus, setNoticeFocus] = useState(0);
-  const announce = (text: string) => {
+  const announce = (text: string, failed = false) => {
     setNotice(text);
+    setNoticeFailed(failed);
     setNoticeFocus((n) => n + 1);
   };
   useEffect(() => {
@@ -353,7 +355,7 @@ export function ActivityPanel() {
         return false;
       }
       if (isFixtureId(taskId)) {
-        announce("Sample tasks cannot be stopped.");
+        announce("Sample tasks cannot be stopped.", true);
         return true;
       }
       const result = await data.cancelTask(taskId);
@@ -452,7 +454,7 @@ export function ActivityPanel() {
           </p>
         )}
         {notice && (
-          <p ref={noticeRef} tabIndex={-1} role="status" className="activity-note" data-testid="activity-notice">
+          <p key={noticeFailed ? "alert" : "status"} ref={noticeRef} tabIndex={-1} role={noticeFailed ? "alert" : "status"} className="activity-note" data-testid="activity-notice">
             {notice}
           </p>
         )}

@@ -41,7 +41,8 @@ export function TaskQueueStatus({ taskId, agent }: { taskId: string; agent: stri
   return (
     <section aria-label="Queue status" className="ps-section">
       <h2>Waiting to start</h2>
-      <Notice tone={activity.status === "loading" && gate.connected ? "info" : "warn"} role={failed ? "alert" : "status"}>
+      {/* Keyed by role: a status turned into an alert must be inserted fresh for screen readers to announce it. */}
+      <Notice key={failed ? "alert" : "status"} tone={activity.status === "loading" && gate.connected ? "info" : "warn"} role={failed ? "alert" : "status"}>
         {detail}
       </Notice>
       {nextStep && <p><strong>Next step:</strong> {nextStep}</p>}
