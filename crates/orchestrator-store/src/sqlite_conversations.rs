@@ -49,7 +49,7 @@ use crate::sqlite_history::{
     count_coordinator_entries, record_audit, require_project, set_clear_gate,
     tombstone_conversation_sends, wipe_coordinator, ClearOutcome,
 };
-use crate::sqlite_thinking::THINKING_TRUNCATED_MARKER;
+use crate::sqlite_thinking::{tool_finished_body, tool_started_body, THINKING_TRUNCATED_MARKER};
 use crate::sqlite_turn_links::record_turn_links;
 use crate::sqlite_wake::delete_scope_wake_records;
 use crate::{SqliteStore, StoreError};
@@ -63,6 +63,9 @@ pub const MAX_REPLY_BYTES_PER_TURN: usize = 256 * 1024;
 /// Largest total thinking for one turn, in bytes. Thinking has its own budget so it never
 /// takes room from the reply.
 pub const MAX_THINKING_BYTES_PER_TURN: usize = 1024 * 1024;
+/// Most `tool_started` entries one turn or session stores. The next start stores one
+/// `{"truncated": true}` marker entry and every later start is dropped.
+pub const MAX_TOOL_STARTS: usize = 400;
 /// Largest accepted workstream identifier, in bytes.
 pub const MAX_WORKSTREAM_ID_BYTES: usize = 128;
 
@@ -169,8 +172,8 @@ pub struct ConversationEntry {
     pub id: String,
     pub conversation_id: String,
     pub turn_id: String,
-    /// `user_message`, `reply_chunk`, `thinking_chunk`, `turn_completed`,
-    /// `turn_failed`, or `turn_cancelled`.
+    /// `user_message`, `reply_chunk`, `thinking_chunk`, `tool_started`, `tool_finished`,
+    /// `turn_completed`, `turn_failed`, or `turn_cancelled`.
     pub kind: String,
     /// `user`, `orchestrator`, or `system`.
     pub author: String,
@@ -566,6 +569,125 @@ impl SqliteStore {
             .await?;
             transaction.commit().await?;
             Ok(entry)
+        })
+    }
+
+    /// Append a `tool_started` entry to a running turn. Returns `None` when the entry was
+    /// not stored: the tool id was already stored, or the turn hit [`MAX_TOOL_STARTS`] (the
+    /// first start past it stores one `{"truncated": true}` marker instead).
+    pub fn append_tool_started(
+        &self,
+        turn_id: &str,
+        tool_id: &str,
+        name: &str,
+        summary: &str,
+    ) -> Result<Option<ConversationEntry>, ConversationError> {
+        let body = tool_started_body(tool_id, name, summary)
+            .ok_or(ConversationError::InvalidInput("tool call"))?;
+        let (turn_id, tool_id) = (turn_id.to_owned(), tool_id.to_owned());
+        conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let turn = load_turn(&mut transaction, &turn_id)
+                .await?
+                .ok_or(ConversationError::TurnNotFound)?;
+            if turn.state != TurnState::Running {
+                return Err(ConversationError::TurnNotRunning(turn.state));
+            }
+            let count: i64 =
+                sqlx::query_scalar("SELECT activity_count FROM conversation_turns WHERE id = ?")
+                    .bind(&turn_id)
+                    .fetch_one(&mut *transaction)
+                    .await?;
+            let limit = MAX_TOOL_STARTS as i64;
+            if count > limit {
+                return Ok(None);
+            }
+            let (id, body) = if count == limit {
+                (
+                    format!("{turn_id}:tool:truncated"),
+                    r#"{"truncated":true}"#.to_owned(),
+                )
+            } else {
+                (format!("{turn_id}:tool:start:{tool_id}"), body)
+            };
+            let stored: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM conversation_entries WHERE id = ?)",
+            )
+            .bind(&id)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if stored {
+                return Ok(None);
+            }
+            let entry = insert_entry(
+                &mut transaction,
+                &id,
+                &turn.conversation_id,
+                &turn_id,
+                "tool_started",
+                "orchestrator",
+                &body,
+                None,
+            )
+            .await?;
+            sqlx::query(
+                "UPDATE conversation_turns SET activity_count = activity_count + 1, \
+                 updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+            )
+            .bind(&turn_id)
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            Ok(Some(entry))
+        })
+    }
+
+    /// Append a `tool_finished` entry to a running turn. Returns `None` unless the matching
+    /// `tool_started` entry was stored and has no finish yet.
+    pub fn append_tool_finished(
+        &self,
+        turn_id: &str,
+        tool_id: &str,
+        ok: bool,
+        summary: &str,
+    ) -> Result<Option<ConversationEntry>, ConversationError> {
+        let body = tool_finished_body(tool_id, ok, summary)
+            .ok_or(ConversationError::InvalidInput("tool call"))?;
+        let (turn_id, tool_id) = (turn_id.to_owned(), tool_id.to_owned());
+        conversation_call(self, move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            let turn = load_turn(&mut transaction, &turn_id)
+                .await?
+                .ok_or(ConversationError::TurnNotFound)?;
+            if turn.state != TurnState::Running {
+                return Err(ConversationError::TurnNotRunning(turn.state));
+            }
+            let started = format!("{turn_id}:tool:start:{tool_id}");
+            let finished = format!("{turn_id}:tool:end:{tool_id}");
+            let ready: bool = sqlx::query_scalar(
+                "SELECT EXISTS (SELECT 1 FROM conversation_entries WHERE id = ?) \
+                 AND NOT EXISTS (SELECT 1 FROM conversation_entries WHERE id = ?)",
+            )
+            .bind(&started)
+            .bind(&finished)
+            .fetch_one(&mut *transaction)
+            .await?;
+            if !ready {
+                return Ok(None);
+            }
+            let entry = insert_entry(
+                &mut transaction,
+                &finished,
+                &turn.conversation_id,
+                &turn_id,
+                "tool_finished",
+                "orchestrator",
+                &body,
+                None,
+            )
+            .await?;
+            transaction.commit().await?;
+            Ok(Some(entry))
         })
     }
 

@@ -162,7 +162,7 @@ struct Fixture {
     _directory: tempfile::TempDir,
     api: DaemonApi,
     clock: Arc<ManualClock>,
-    pulse: Arc<SessionPulse>,
+    pulse: Arc<ActivityBoard>,
     probe: Arc<Probe>,
     wake: Arc<WakeService>,
 }
@@ -186,7 +186,7 @@ fn fixture() -> Fixture {
         })
         .unwrap();
     let clock = Arc::new(ManualClock::new(crate::executor::unix_now_ms()));
-    let pulse = Arc::new(SessionPulse::default());
+    let pulse = Arc::new(ActivityBoard::default());
     let wake = Arc::new(service(&api, &clock, &pulse));
     api.wake = Some(wake.clone());
     Fixture {
@@ -199,7 +199,7 @@ fn fixture() -> Fixture {
     }
 }
 
-fn service(api: &DaemonApi, clock: &Arc<ManualClock>, pulse: &Arc<SessionPulse>) -> WakeService {
+fn service(api: &DaemonApi, clock: &Arc<ManualClock>, pulse: &Arc<ActivityBoard>) -> WakeService {
     WakeService::new(
         api.store.clone(),
         api.conversations.clone(),

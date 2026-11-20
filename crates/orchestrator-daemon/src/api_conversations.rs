@@ -24,7 +24,7 @@ use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_store::{
     ActionBlockOutcome, ConversationEntry, ConversationError, ConversationTarget, ConversationTurn,
-    TurnTrigger, MAX_CONVERSATION_MESSAGE_BYTES,
+    TurnState, TurnTrigger, MAX_CONVERSATION_MESSAGE_BYTES,
 };
 
 use super::conversation_runtime::{Choice, RuntimeIdentity};
@@ -312,6 +312,16 @@ impl DaemonApi {
             "wake_records_more": wake_records_more,
             "epoch": epoch
         });
+        // The live snapshot of a running latest turn (DPES-1044). Absent otherwise.
+        if let Some(turn) = page
+            .latest_turn
+            .as_ref()
+            .filter(|turn| turn.state == TurnState::Running)
+        {
+            if let Some(activity) = self.conversations.board().snapshot(&turn.id) {
+                result["activity"] = activity;
+            }
+        }
         if let (true, ConversationTarget::Workstream(workstream_id)) = (actions, &target) {
             let routed = self.routed_in_wire(workstream_id)?;
             if !routed.is_empty() {

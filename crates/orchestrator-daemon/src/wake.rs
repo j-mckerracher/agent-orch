@@ -51,7 +51,8 @@ use super::wake_events::{
     classify, coordinator_report_notice, proposal_notice, report_relay_failed_notice,
     routed_request_notice, stall_candidate, Candidate,
 };
-use crate::executor::{serving, SessionPulse, StopGate};
+use crate::activity::ActivityBoard;
+use crate::executor::{serving, StopGate};
 
 const LOG: &str = "wake";
 const GLOBAL_SCOPE: &str = "conversation:global";
@@ -191,7 +192,7 @@ pub(crate) struct TickReport {
 pub(crate) struct WakeService {
     store: Arc<SqliteStore>,
     conversations: ConversationService,
-    pulse: Arc<SessionPulse>,
+    pulse: Arc<ActivityBoard>,
     clock: Arc<dyn Clock>,
     load: Arc<LoadHandle>,
     diagnostics: Diagnostics,
@@ -211,7 +212,7 @@ impl WakeService {
     pub(crate) fn new(
         store: Arc<SqliteStore>,
         conversations: ConversationService,
-        pulse: Arc<SessionPulse>,
+        pulse: Arc<ActivityBoard>,
         clock: Arc<dyn Clock>,
         load: Arc<LoadHandle>,
         diagnostics: Diagnostics,
