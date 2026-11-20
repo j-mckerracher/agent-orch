@@ -380,8 +380,8 @@ fn waiting_task(api: &DaemonApi, key: &str) -> String {
     id
 }
 
-/// `tasks.message` queues the user's words for a waiting task with no open question, and the
-/// same key queues once.
+/// `tasks.message` queues the user's words for any task that is not busy, and the same key
+/// queues once. A running task is refused.
 #[test]
 fn tasks_message_takes_a_waiting_task_and_refuses_the_rest() {
     let (_directory, api) = new_api();
@@ -392,6 +392,17 @@ fn tasks_message_takes_a_waiting_task_and_refuses_the_rest() {
             &api,
             "tasks.message",
             json!({"task_id": queued, "text": "Hello.", "idempotency_key": "m-1"})
+        )
+        .unwrap(),
+        json!({"task_id": queued, "queued": true}),
+        "a task that has not started keeps the message for its launch"
+    );
+    let running = running_task(&api, "running-1");
+    assert_eq!(
+        call(
+            &api,
+            "tasks.message",
+            json!({"task_id": running, "text": "Hello.", "idempotency_key": "m-0"})
         ),
         Err(RpcError::Conflict)
     );
@@ -447,6 +458,24 @@ fn tasks_message_takes_a_waiting_task_and_refuses_the_rest() {
     assert_eq!(replies.len(), 1, "{replies:?}");
     assert_eq!(replies[0].kind, ReplyKind::UserMessage);
     assert_eq!(replies[0].text, "Use the other branch.");
+}
+
+/// A finished task takes the user's message: it goes back to waiting under a new attempt. The
+/// agent's own refusal (Codex at Auto) is checked first, so the task stays as it was.
+#[test]
+fn tasks_message_reopens_a_finished_task_unless_its_agent_cannot_resume() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let task = waiting_task(&api, "finished-1");
+    api.store
+        .record_agent_session_id(&task, "session-1", "abc-123")
+        .unwrap();
+    api.store.fail_waiting_task(&task, "gone").unwrap();
+    let sent = |key: &str| json!({"task_id": task, "text": "Add a test.", "idempotency_key": key});
+    // The fixture task is Codex at the default level, which cannot resume.
+    let refused = call(&api, "tasks.message", sent("f-1"));
+    assert_eq!(refused, Err(RpcError::Conflict), "{refused:?}");
+    assert_eq!(api.store.get(&task).unwrap().state, TaskState::Failed);
 }
 
 /// The switch is on by default, read by `settings.get`, and turned off by `settings.set`.

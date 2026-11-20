@@ -61,6 +61,13 @@ pub struct WorkerQuestion {
 pub struct ResumeTarget {
     pub attempt_id: String,
     pub attempt_number: u32,
+    /// The attempt number whose status directory the run reports to: its own, or for a
+    /// follow-up the one it continues, so the agent keeps the path it was told.
+    pub status_attempt_number: u32,
+    /// Whether the attempt is a follow-up to a finished one.
+    pub follow_up: bool,
+    /// Whether the follow-up needs a new slot, the one it continues having been returned.
+    pub fresh_workspace: bool,
     /// Sessions the attempt has had, so the next one can be named.
     pub sessions: u32,
     /// The agent CLI's own id of the attempt's newest session that recorded one.
@@ -132,6 +139,8 @@ pub enum WaitError {
     UnknownReply,
     /// A worker question or a status line breaks a rule of the core parser.
     BadLine,
+    /// A finished task has no agent session to continue: no run of it ever reported one.
+    NoSession,
 }
 
 impl fmt::Display for WaitError {
@@ -143,6 +152,7 @@ impl fmt::Display for WaitError {
             Self::ReplyChanged => "the task's replies changed before its resume started",
             Self::UnknownReply => "a reply is not an undelivered reply of the task",
             Self::BadLine => "a status line or a worker question is not accepted",
+            Self::NoSession => "the task has no agent session to continue",
         })
     }
 }
@@ -215,17 +225,93 @@ impl SqliteStore {
         })
     }
 
+    /// The agent session a finished task would continue: the newest attempt's, or the one it
+    /// continued. `None` when no run of the task ever reported one.
+    pub fn continuable_session(&self, task_id: &str) -> Result<Option<String>, StoreError> {
+        let task_id = task_id.to_owned();
+        self.call(move |pool| async move {
+            let newest: Option<String> = sqlx::query_scalar(
+                "SELECT id FROM attempts WHERE task_id = ? ORDER BY attempt_number DESC LIMIT 1",
+            )
+            .bind(&task_id)
+            .fetch_optional(&pool)
+            .await?;
+            match newest {
+                Some(attempt) => last_agent_session(&pool, &task_id, &attempt).await,
+                None => Ok(None),
+            }
+        })
+    }
+
+    /// How many of a task's attempts are follow-ups to a finished attempt. They are not
+    /// retries or repairs, so the bounds on those leave them out.
+    pub fn follow_up_attempts(&self, task_id: &str) -> Result<u32, StoreError> {
+        let task_id = task_id.to_owned();
+        self.call(move |pool| async move {
+            let count: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM attempts WHERE task_id = ? AND continues_attempt_id IS NOT NULL",
+            )
+            .bind(&task_id)
+            .fetch_one(&pool)
+            .await?;
+            Ok(u32::try_from(count).unwrap_or(u32::MAX))
+        })
+    }
+
+    /// Marks the named replies of a task that has not started as delivered by its launch
+    /// session, once the brief that carries them is recorded.
+    pub fn mark_launch_replies_delivered(
+        &self,
+        task_id: &str,
+        session_id: &str,
+        reply_ids: &[i64],
+    ) -> Result<(), StoreError> {
+        validate_task_id(task_id)?;
+        let (task_id, session_id, reply_ids) = (
+            task_id.to_owned(),
+            session_id.to_owned(),
+            reply_ids.to_vec(),
+        );
+        self.call(move |pool| async move {
+            let mut transaction = pool.begin_with("BEGIN IMMEDIATE").await?;
+            for id in &reply_ids {
+                let marked = sqlx::query(
+                    "UPDATE task_messages SET delivered_session_id = ? \
+                     WHERE id = ? AND task_id = ? AND delivered_session_id IS NULL",
+                )
+                .bind(&session_id)
+                .bind(id)
+                .bind(&task_id)
+                .execute(&mut *transaction)
+                .await?
+                .rows_affected();
+                if marked != 1 {
+                    return Err(WaitError::UnknownReply.into());
+                }
+            }
+            transaction.commit().await?;
+            Ok(())
+        })
+    }
+
     /// The last stored line number of an attempt's status file, or 0. A new session reads the
     /// file from the line after it.
     pub fn last_status_line(&self, task_id: &str, attempt_id: &str) -> Result<u32, StoreError> {
         let (task_id, attempt_id) = (task_id.to_owned(), attempt_id.to_owned());
         self.call(move |pool| async move {
+            // A follow-up shares the status file of the attempt it continues, so it reads on
+            // from the lines that attempt, and the ones before it, left.
             let last: i64 = sqlx::query_scalar(
-                "SELECT COALESCE(MAX(line_no), 0) FROM task_status_events \
-                 WHERE task_id = ? AND attempt_id = ?",
+                "WITH RECURSIVE chain(id) AS ( \
+                     SELECT ? UNION \
+                     SELECT a.continues_attempt_id FROM attempts a JOIN chain c ON a.id = c.id \
+                     WHERE a.task_id = ? AND a.continues_attempt_id IS NOT NULL) \
+                 SELECT COALESCE(MAX(line_no), 0) FROM task_status_events \
+                 WHERE task_id = ? AND attempt_id IN (SELECT id FROM chain)",
             )
-            .bind(&task_id)
             .bind(&attempt_id)
+            .bind(&task_id)
+            .bind(&task_id)
             .fetch_one(&pool)
             .await?;
             u32::try_from(last).map_err(|_| corrupt("status line number out of range".to_owned()))
@@ -324,18 +410,24 @@ impl SqliteStore {
             .bind(&attempt_id)
             .fetch_one(&pool)
             .await?;
-            let agent_session_id: Option<String> = sqlx::query_scalar(
-                "SELECT agent_session_id FROM sessions WHERE task_id = ? AND attempt_id = ? \
-                 AND agent_session_id IS NOT NULL ORDER BY sequence DESC LIMIT 1",
+            let agent_session_id = last_agent_session(&pool, &task_id, &attempt_id).await?;
+            let (status_number, follow_up) = status_root(&pool, &task_id, &attempt_id).await?;
+            let fresh_workspace = sqlx::query_scalar::<_, i64>(
+                "SELECT fresh_workspace FROM attempts WHERE task_id = ? AND id = ?",
             )
             .bind(&task_id)
             .bind(&attempt_id)
-            .fetch_optional(&pool)
-            .await?;
+            .fetch_one(&pool)
+            .await?
+                == 1;
             Ok(Some(ResumeTarget {
                 attempt_id,
                 attempt_number: u32::try_from(number)
                     .map_err(|_| corrupt("attempt number out of range".to_owned()))?,
+                status_attempt_number: u32::try_from(status_number)
+                    .map_err(|_| corrupt("attempt number out of range".to_owned()))?,
+                follow_up,
+                fresh_workspace,
                 sessions: u32::try_from(sessions).unwrap_or(u32::MAX),
                 agent_session_id,
             }))
@@ -407,13 +499,28 @@ impl SqliteStore {
     /// Queues a `task.message` for a waiting task under `key`, the execution key of the
     /// approved action or the client's key for `tasks.message`: a second call with the same key
     /// queues nothing. The text follows the reply rules. Refused unless the task waits, or when
-    /// the author's queue is full.
+    /// the author's queue is full. The user's own message also reaches a task that has not
+    /// started (the launch delivers it) and a finished one (it is reopened to resume).
     pub fn queue_task_message(
         &self,
         task_id: &str,
         key: &str,
         text: &str,
         author: MessageAuthor,
+    ) -> Result<(), StoreError> {
+        self.queue_message(task_id, key, text, author, false)
+    }
+
+    /// [`Self::queue_task_message`] with the caller's word on whether the task's slot has been
+    /// returned to the pool (archived, or its pull request merged): a finished task reopened
+    /// then needs a new slot.
+    pub fn queue_message(
+        &self,
+        task_id: &str,
+        key: &str,
+        text: &str,
+        author: MessageAuthor,
+        slot_returned: bool,
     ) -> Result<(), StoreError> {
         validate_task_id(task_id)?;
         orchestrator_core::question::check_reply(text).map_err(|_| WaitError::BadLine)?;
@@ -426,8 +533,22 @@ impl SqliteStore {
             if message_queued(&mut transaction, &key).await? {
                 return Ok(());
             }
-            let Some(attempt_id) = waiting_attempt(&mut transaction, &task_id).await? else {
-                return Err(WaitError::NotWaiting.into());
+            let state = current_task_state(&mut transaction, &task_id).await?;
+            let attempt_id = match state {
+                TaskState::Waiting => waiting_attempt(&mut transaction, &task_id).await?,
+                // Only the user reaches past a wait: the orchestrator's messages go to a waiting
+                // worker alone. A task that has not started has no attempt yet; the launch
+                // delivers the message with the brief.
+                TaskState::Created | TaskState::Queued if author == MessageAuthor::User => None,
+                TaskState::Succeeded
+                | TaskState::Failed
+                | TaskState::VerificationFailed
+                | TaskState::Cancelled
+                    if author == MessageAuthor::User =>
+                {
+                    Some(reopen_finished(&mut transaction, &task_id, slot_returned).await?)
+                }
+                _ => return Err(WaitError::NotWaiting.into()),
             };
             // A worker resumes only once its questions close (`tasks_ready_to_resume`), so a
             // user's message sent now would wait behind the question. Refuse it instead.
@@ -684,6 +805,139 @@ impl SqliteStore {
             Ok(())
         })
     }
+}
+
+/// The attempt number of the status directory an attempt reports to, and whether the attempt is
+/// a follow-up: follows `continues_attempt_id` back to the attempt that made the directory.
+async fn status_root(
+    pool: &sqlx::SqlitePool,
+    task_id: &str,
+    attempt_id: &str,
+) -> Result<(i64, bool), StoreError> {
+    let mut attempt = attempt_id.to_owned();
+    let mut follow_up = false;
+    loop {
+        let (number, previous): (i64, Option<String>) = sqlx::query_as(
+            "SELECT attempt_number, continues_attempt_id FROM attempts \
+             WHERE task_id = ? AND id = ?",
+        )
+        .bind(task_id)
+        .bind(&attempt)
+        .fetch_one(pool)
+        .await?;
+        match previous {
+            Some(previous) => {
+                follow_up = true;
+                attempt = previous;
+            }
+            None => return Ok((number, follow_up)),
+        }
+    }
+}
+
+/// The agent session an attempt last ran. A follow-up attempt has run nothing yet, so it takes
+/// the session of the attempt it continues, and so on back along the chain.
+async fn last_agent_session(
+    pool: &sqlx::SqlitePool,
+    task_id: &str,
+    attempt_id: &str,
+) -> Result<Option<String>, StoreError> {
+    let mut attempt = attempt_id.to_owned();
+    loop {
+        let session: Option<String> = sqlx::query_scalar(
+            "SELECT agent_session_id FROM sessions WHERE task_id = ? AND attempt_id = ? \
+             AND agent_session_id IS NOT NULL ORDER BY sequence DESC LIMIT 1",
+        )
+        .bind(task_id)
+        .bind(&attempt)
+        .fetch_optional(pool)
+        .await?;
+        if session.is_some() {
+            return Ok(session);
+        }
+        let previous: Option<Option<String>> = sqlx::query_scalar(
+            "SELECT continues_attempt_id FROM attempts WHERE task_id = ? AND id = ?",
+        )
+        .bind(task_id)
+        .bind(&attempt)
+        .fetch_optional(pool)
+        .await?;
+        match previous.flatten() {
+            Some(previous) => attempt = previous,
+            None => return Ok(None),
+        }
+    }
+}
+
+/// Parks a finished task for a user's message, in the caller's transaction: a new `Waiting`
+/// attempt that continues the newest attempt's agent session, the task back to `Waiting`, and
+/// the task visible again if it was archived. Returns the new attempt's id. A task whose runs
+/// never reported an agent session has nothing to continue ([`WaitError::NoSession`]).
+async fn reopen_finished(
+    transaction: &mut Transaction<'_, Sqlite>,
+    task_id: &str,
+    slot_returned: bool,
+) -> Result<String, StoreError> {
+    let (previous, number): (String, i64) = sqlx::query_as(
+        "SELECT id, attempt_number FROM attempts WHERE task_id = ? \
+         ORDER BY attempt_number DESC LIMIT 1",
+    )
+    .bind(task_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or(WaitError::NoSession)?;
+    let mut cursor = Some(previous.clone());
+    let mut has_session = false;
+    while let Some(attempt) = cursor {
+        has_session = sqlx::query_scalar::<_, i64>(
+            "SELECT EXISTS (SELECT 1 FROM sessions WHERE task_id = ? AND attempt_id = ? \
+             AND agent_session_id IS NOT NULL)",
+        )
+        .bind(task_id)
+        .bind(&attempt)
+        .fetch_one(&mut **transaction)
+        .await?
+            == 1;
+        if has_session {
+            break;
+        }
+        cursor = sqlx::query_scalar::<_, Option<String>>(
+            "SELECT continues_attempt_id FROM attempts WHERE task_id = ? AND id = ?",
+        )
+        .bind(task_id)
+        .bind(&attempt)
+        .fetch_one(&mut **transaction)
+        .await?;
+    }
+    if !has_session {
+        return Err(WaitError::NoSession.into());
+    }
+    let attempt_id = format!("{task_id}-attempt-{}", number + 1);
+    sqlx::query(
+        "INSERT INTO attempts \
+         (id, task_id, attempt_number, state, continues_attempt_id, fresh_workspace) \
+         VALUES (?, ?, ?, ?, ?, ?)",
+    )
+    .bind(&attempt_id)
+    .bind(task_id)
+    .bind(number + 1)
+    .bind(encode(&AttemptState::Waiting)?)
+    .bind(&previous)
+    .bind(i64::from(slot_returned))
+    .execute(&mut **transaction)
+    .await?;
+    let payload = serde_json::json!({
+        "attempt_id": &attempt_id,
+        "attempt_number": number + 1,
+        "state": AttemptState::Waiting,
+    });
+    append_durable_event(transaction, task_id, None, "attempt.created", &payload).await?;
+    apply_task_event_in(transaction, task_id, TaskEvent::FollowUpRequested).await?;
+    sqlx::query("UPDATE tasks SET archived_at = NULL WHERE id = ?")
+        .bind(task_id)
+        .execute(&mut **transaction)
+        .await?;
+    Ok(attempt_id)
 }
 
 async fn message_queued(

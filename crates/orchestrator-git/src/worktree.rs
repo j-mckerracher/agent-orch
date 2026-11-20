@@ -107,6 +107,57 @@ pub fn create_task_worktree(
     created
 }
 
+/// Lease a treehouse slot for a finished task that is being continued, after its own slot went
+/// back to the pool, and check out `branch` in it. A branch that is gone (deleted once its pull
+/// request merged) is made again at the repository's `HEAD`, which holds the merged work.
+/// `base_sha` is the commit the task first started from, kept as the new workspace's base so a
+/// later diff still measures the whole task. On failure the lease is returned, as
+/// [`create_task_worktree`] does.
+pub fn reopen_task_worktree(
+    repo: &Repository,
+    branch: &str,
+    base_sha: &str,
+    worktrees_root: &Path,
+    treehouse: &Treehouse,
+    lease_holder: &str,
+) -> Result<TaskWorktree, Error> {
+    repo.worktrees_root_is_outside(worktrees_root)?;
+    let worktrees_root = &git_path::for_git(worktrees_root);
+    ensure_worktree_path_fits(
+        &deepest_slot_path(worktrees_root, repo.path()),
+        cfg!(windows).then_some(WINDOWS_MAX_WORKTREE_PATH),
+    )?;
+    let path = treehouse.get(worktrees_root, repo.path(), None, lease_holder)?;
+    let branch_exists = git(
+        "check task branch",
+        repo.path(),
+        [
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
+    )
+    .is_ok();
+    let switched = if branch_exists {
+        slot_git("switch to task branch", &path, ["switch", branch]).map(drop)
+    } else {
+        repo.resolve_base_ref("HEAD")
+            .and_then(|head| switch_to_new_branch(&path, branch, &head))
+    };
+    match switched {
+        Ok(()) => Ok(TaskWorktree {
+            path,
+            branch: branch.to_owned(),
+            base_sha: base_sha.to_owned(),
+        }),
+        Err(error) => {
+            let _ = release_task_worktree(treehouse, worktrees_root, &path, lease_holder);
+            Err(error)
+        }
+    }
+}
+
 /// Return the slot at `path` to the treehouse pool, while `lease_holder` still
 /// holds it. `path` must lie under `worktrees_root`.
 ///

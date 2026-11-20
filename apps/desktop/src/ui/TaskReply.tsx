@@ -1,10 +1,9 @@
-/** Reply box on the task window (DPES-1106): answers the agent's open question, or sends it a message while it waits. */
+/** Reply box on the task window (DPES-1106): answers the agent's open question, or sends it a message unless it is working or being verified. */
 import { useState } from "react";
 import { APPROVER_REQUIRED_NOTICE, type DaemonError } from "../daemon/errors";
 import type { TaskState } from "../daemon/types";
 import type { QuestionItem } from "../sources/surfaces/types";
 import { ChatComposer } from "./chat/ChatComposer";
-import { TERMINAL_STATES } from "./format";
 import { type Gate, useGate, useServices, useStore } from "./services";
 import { Button } from "./theme";
 import { ErrorNotice } from "./widgets";
@@ -18,11 +17,12 @@ export interface Turn {
   at: string;
 }
 
-/** What the reply box can do right now: why it is off, the open question it answers, and the question list behind both. */
+/** What the reply box can do right now: why it is off, the open question it answers, the question list, and the task's state. */
 export interface TaskReplyModel {
   reason: string | null;
   question: QuestionItem | undefined;
   questions: QuestionsModel;
+  state: TaskState;
 }
 
 /** The first reason the reply box is off, or null. Runs before the question list is read, so a non-approver never reaches `decisions.list`. */
@@ -30,22 +30,28 @@ function blockedReason(gate: Gate, state: TaskState): string | null {
   if (!gate.connected) return "Reconnect to the daemon to reply to the agent.";
   if (!gate.connection.approver) return APPROVER_REQUIRED_NOTICE;
   if (!gate.can("tasks")) return "This daemon does not support replies to tasks.";
-  if (state === "Waiting") return null;
   if (state === "Running") return "The agent is working. You can reply when it waits for you. Live steering is not available yet.";
-  if (TERMINAL_STATES.has(state)) return "This task is finished. The agent cannot be messaged.";
-  return "The agent is not waiting for a reply, so it cannot be messaged yet.";
+  if (state === "Verifying") return "The agent's work is being verified. You can reply when verification finishes.";
+  return null;
 }
 
 export function useTaskReply(taskId: string, state: TaskState): TaskReplyModel {
   const base = blockedReason(useGate(), state);
   const questions = useQuestions(base === null);
-  if (base !== null) return { reason: base, question: undefined, questions };
+  if (base !== null) return { reason: base, question: undefined, questions, state };
   // Without the list the app cannot tell whether a question is open, so a message could queue behind one.
   const unknown = !questions.supported
     ? "This daemon does not report open questions, so the app cannot tell whether one is open."
     : (questions.unavailable ?? (questions.loading ? "Checking whether a question is open." : null));
   const question = unknown === null ? questions.items.find((item) => item.taskId === taskId && item.state === "open") : undefined;
-  return { reason: unknown, question, questions };
+  return { reason: unknown, question, questions, state };
+}
+
+/** What the person is told once the daemon accepts a message. The wording follows the task's state when it was sent. */
+function sentNotice(state: TaskState): string {
+  if (state === "Waiting") return "Sent. The agent resumes shortly.";
+  if (state === "Created" || state === "Queued") return "Sent. The agent reads it when it starts.";
+  return "Sent. The agent picks the task back up shortly.";
 }
 
 let nextMessage = 0;
@@ -56,13 +62,13 @@ let nextMessage = 0;
  */
 export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: TaskReplyModel; onTurns: (turns: Turn[]) => void }) {
   const { data, drafts } = useServices();
-  const { reason, question, questions } = reply;
+  const { reason, question, questions, state } = reply;
   // The draft outlives this box: a message is kept per task, an answer per question, so neither is lost by leaving the window.
   const draftKey = question?.id ?? taskId;
   const text = useStore(drafts).task?.[draftKey] ?? "";
   const setText = (value: string) => drafts.setTaskDraft(draftKey, value);
   const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [sent, setSent] = useState<string | null>(null);
   const [error, setError] = useState<DaemonError | null>(null);
   const busy = question ? questions.busy !== null : sending;
   // A different text would mint a new key while the old send may still have queued, so the text stays put until it settles.
@@ -81,14 +87,14 @@ export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: T
       return;
     }
     setSending(true);
-    setSent(false);
+    setSent(null);
     setError(null);
     const result = await data.messageTask(taskId, text);
     setSending(false);
     if (result.ok) {
       onTurns([{ key: `message-${nextMessage++}`, from: "you", text, at: new Date().toISOString() }]);
       setText("");
-      setSent(true);
+      setSent(sentNotice(state));
     } else {
       setError(result.error);
     }
@@ -118,7 +124,7 @@ export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: T
         blocked={reason}
       />
       <div aria-live="polite" className="ws-feedback">
-        {sent && <p role="status">Sent. The agent resumes shortly.</p>}
+        {sent && <p role="status">{sent}</p>}
         {error && <SendError error={error} />}
       </div>
     </>
@@ -139,8 +145,8 @@ function SendError({ error }: { error: DaemonError }) {
     case "conflict":
       return (
         <p role="alert">
-          The task is no longer waiting, is waiting on a question, or already has the most messages it can hold. Nothing was
-          changed.
+          The agent is busy, is waiting on a question, cannot be resumed (it has no saved session, or its permission level does
+          not allow resuming), or already has the most messages it can hold. Nothing was changed.
         </p>
       );
     default:

@@ -414,7 +414,7 @@ export class AppData extends Store<AppDataSnapshot> {
     }
   }
 
-  /** Sends the user's message to a Waiting task (DPES-1106). User-only; the key is reused only while the outcome is unknown. */
+  /** Sends the user's message to a task that is not running or being verified (DPES-1106). User-only; the key is reused only while the outcome is unknown. */
   async messageTask(taskId: string, text: string): Promise<MutationResult<boolean>> {
     const scope = `message:${taskId}`;
     const key = this.tracker.keyFor(scope, text);

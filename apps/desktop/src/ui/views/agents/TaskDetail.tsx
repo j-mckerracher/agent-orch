@@ -107,7 +107,7 @@ export function TaskDetail({ initial, live, onBack }: { initial: WorkRow; live: 
               <>
                 {row.sessions === null && <p role="status">Sessions unknown: this task's session list has not loaded.</p>}
                 {/* The session picker above picks the thread. `tasks.message` addresses the task: the daemon queues the
-                    text for its one waiting session and has no per-session or live-steering message. */}
+                    text for the task's next run and has no per-session or live-steering message. */}
                 <TaskConversation
                   taskId={row.id}
                   state={row.state}

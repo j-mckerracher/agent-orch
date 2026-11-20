@@ -1077,7 +1077,13 @@ impl DaemonApi {
             TaskState::VerificationFailed => task.contract.max_repairs,
             _ => return Err(RpcError::Conflict),
         };
-        if u32::try_from(task.attempts.len()).map_or(true, |attempts| attempts > bound) {
+        // A follow-up to a finished attempt is neither a retry nor a repair.
+        let follow_ups = self
+            .store
+            .follow_up_attempts(task_id)
+            .map_err(map_store_error)? as usize;
+        if u32::try_from(task.attempts.len() - follow_ups).map_or(true, |attempts| attempts > bound)
+        {
             return Err(RpcError::Conflict);
         }
         self.store
@@ -1384,17 +1390,70 @@ impl DaemonApi {
             &key,
             &request,
             || {
-                self.store.get(&request.task_id).map_err(map_store_error)?;
+                let task = self.store.get(&request.task_id).map_err(map_store_error)?;
+                let finished = matches!(
+                    task.state,
+                    TaskState::Succeeded
+                        | TaskState::Failed
+                        | TaskState::VerificationFailed
+                        | TaskState::Cancelled
+                );
+                let mut slot_returned = false;
+                if finished {
+                    // Refused here, not at the resume: a resume that cannot run fails the task.
+                    if orchestrator_agents::resume_refusal(
+                        &task.contract.agent,
+                        task.contract.permission,
+                    )
+                    .is_some()
+                    {
+                        return Err(RpcError::Conflict);
+                    }
+                    slot_returned = self.slot_returned(&request.task_id)?;
+                    if slot_returned {
+                        let session = self
+                            .store
+                            .continuable_session(&request.task_id)
+                            .map_err(map_store_error)?;
+                        let workspace = self
+                            .store
+                            .list_workspaces()
+                            .map_err(map_store_error)?
+                            .into_iter()
+                            .rev()
+                            .find(|workspace| workspace.task_id == request.task_id);
+                        // A saved conversation that cannot follow the task to a new slot is
+                        // refused now, so the finished task stays as it is.
+                        let followable = match (session, workspace) {
+                            (Some(session), Some(workspace)) => {
+                                workspace.is_in_place()
+                                    || crate::executor::session_transcript::has_transcript(
+                                        &task.contract.agent,
+                                        Path::new(&workspace.path),
+                                        &session,
+                                    )
+                            }
+                            _ => false,
+                        };
+                        if !followable {
+                            return Err(RpcError::Conflict);
+                        }
+                    }
+                }
                 self.store
-                    .queue_task_message(
+                    .queue_message(
                         &request.task_id,
                         &request.idempotency_key,
                         &request.text,
                         MessageAuthor::User,
+                        slot_returned,
                     )
                     .map_err(|error| match WaitError::of(&error) {
                         Some(
-                            WaitError::NotWaiting | WaitError::QueueFull | WaitError::QuestionOpen,
+                            WaitError::NotWaiting
+                            | WaitError::QueueFull
+                            | WaitError::QuestionOpen
+                            | WaitError::NoSession,
                         ) => RpcError::Conflict,
                         Some(WaitError::BadLine) => RpcError::InvalidParams,
                         _ => map_store_error(error),

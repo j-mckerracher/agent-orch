@@ -418,18 +418,46 @@ describe("Agents, the task view", () => {
     });
 
     it.each([
-      ["t-run", /Live steering is not available yet/],
-      ["t-done", /This task is finished\. The agent cannot be messaged\./],
-    ])("disables the composer of %s and says why, while the thread stays readable", async (taskId, reason) => {
-      const { services } = await liveView();
+      ["t-queued", "Sent. The agent reads it when it starts."],
+      ["t-done", "Sent. The agent picks the task back up shortly."],
+    ])("sends a message to %s and says what happens next", async (taskId, notice) => {
+      const fake = seeded();
+      fake.stub("decisions.list", { questions: [] });
+      const { user, services } = await liveView(fake);
       services.router.navigate({ name: "global", view: "agents", taskId });
+      const detail = within(await screen.findByTestId("agents-detail"));
+      const box = await detail.findByRole("textbox", { name: "Message to the agent" });
+      await waitFor(() => expect(box).toBeEnabled());
+      await user.type(box, "Check it{Enter}");
+      expect(await detail.findByText(notice)).toBeInTheDocument();
+      expect(fake.messages).toEqual([{ task_id: taskId, text: "Check it" }]);
+    });
+
+    it("disables the composer of a running task and says why, while the thread stays readable", async () => {
+      const { services } = await liveView();
+      services.router.navigate({ name: "global", view: "agents", taskId: "t-run" });
       const detail = within(await screen.findByTestId("agents-detail"));
       const box = await detail.findByRole("textbox", { name: "Message to the agent" });
       expect(box).toBeDisabled();
       expect(detail.getByRole("button", { name: "Send message" })).toBeDisabled();
-      expect(detail.getByText(reason)).toBeInTheDocument();
-      expect(box).toHaveAccessibleDescription(reason);
+      expect(detail.getByText(/Live steering is not available yet/)).toBeInTheDocument();
+      expect(box).toHaveAccessibleDescription(/Live steering is not available yet/);
       expect(detail.getByRole("log", { name: /^Conversation with/ })).toBeInTheDocument();
+    });
+
+    it("disables the composer of a verifying task and says why", async () => {
+      const fake = seeded();
+      fake.tasks.push(mkTask("t-verify", REPO, { state: "Verifying" }));
+      // Verifying counts as running, so the tab reads "Running 2" here, not "Running 1".
+      const { services } = await mountAgents(fake, { live: true });
+      await screen.findByRole("tab", { name: "Running 2" });
+      services.router.navigate({ name: "global", view: "agents", taskId: "t-verify" });
+      const detail = within(await screen.findByTestId("agents-detail"));
+      const box = await detail.findByRole("textbox", { name: "Message to the agent" });
+      expect(box).toBeDisabled();
+      expect(detail.getByRole("button", { name: "Send message" })).toBeDisabled();
+      expect(detail.getByText(/The agent's work is being verified\. You can reply when verification finishes\./)).toBeInTheDocument();
+      expect(fake.callsTo("tasks.message")).toHaveLength(0);
     });
   });
 

@@ -58,8 +58,8 @@ use orchestrator_diagnostics::Diagnostics;
 use orchestrator_engine::reconcile::reconcile_before_scheduling_with;
 use orchestrator_engine::verify::{pending_verifications, verify_attempt, Verified};
 use orchestrator_git::{
-    create_task_worktree, is_safe_branch_name, release_task_worktree, slot_attached_to,
-    BranchPrefix, Error as GitError, Released, Repository, SlotDirs, Treehouse,
+    create_task_worktree, is_safe_branch_name, release_task_worktree, reopen_task_worktree,
+    slot_attached_to, BranchPrefix, Error as GitError, Released, Repository, SlotDirs, Treehouse,
 };
 use orchestrator_runtime::reconcile::{capture_exact_process_identity, capture_process_identity};
 use orchestrator_store::{
@@ -1144,6 +1144,12 @@ impl Inner {
         job.base_commit = checkout.base_commit.clone();
         job.slot = launch.slot;
         let plugin_dir = job.status_dir.join(worker_environment::PLUGIN_DIR);
+        // What the user wrote before the task started goes with its first instructions.
+        let early = store
+            .pending_replies(&task_id)
+            .map_err(|error| format!("cannot read the user's messages: {error}"))?;
+        let early_ids: Vec<i64> = early.iter().map(|reply| reply.id).collect();
+        let early: Vec<_> = early.iter().map(reply_for_worker).collect();
         // The agent launches with the brief, never the bare objective (DPES-1108).
         job.objective = orchestrator_core::brief::render(
             &task.contract,
@@ -1156,6 +1162,8 @@ impl Inner {
             },
             &status_file,
         );
+        job.objective
+            .push_str(&orchestrator_core::brief::render_launch_messages(&early));
         let path = checkout.path.display().to_string();
         let workspace = if in_place {
             Workspace::in_place(workspace_id, task_id.clone(), path)
@@ -1188,6 +1196,9 @@ impl Inner {
                 },
             )
             .map_err(|error| format!("cannot record session: {error}"))?;
+        store
+            .mark_launch_replies_delivered(&task_id, &job.session_id, &early_ids)
+            .map_err(|error| format!("cannot mark the user's messages delivered: {error}"))?;
         self.start_supervisor(job)
     }
 
@@ -1228,6 +1239,42 @@ impl Inner {
         }
     }
 
+    /// Leases a new slot for a finished task that is continuing after its own went back to the
+    /// pool, on the task's branch, and records it as the task's newest workspace.
+    fn reopen_workspace(
+        &self,
+        previous: &Workspace,
+        workspace_id: &str,
+        contract: &orchestrator_core::contract::TaskContract,
+    ) -> Result<Workspace, String> {
+        let repository = Repository::new(Path::new(&contract.project_id))
+            .map_err(|error| format!("its repository cannot be opened: {error}"))?;
+        std::fs::create_dir_all(&self.config.worktrees_root)
+            .map_err(|error| format!("the worktree folder cannot be made: {error}"))?;
+        let root = std::fs::canonicalize(&self.config.worktrees_root)
+            .map_err(|error| format!("the worktree folder cannot be read: {error}"))?;
+        let worktree = reopen_task_worktree(
+            &repository,
+            &previous.branch,
+            &previous.base_commit,
+            &root,
+            &self.treehouse,
+            workspace_id,
+        )
+        .map_err(|error| format!("a new worktree cannot be leased: {error}"))?;
+        let workspace = Workspace {
+            id: workspace_id.to_owned(),
+            task_id: previous.task_id.clone(),
+            path: worktree.path().display().to_string(),
+            branch: worktree.branch().to_owned(),
+            base_commit: worktree.base_sha().to_owned(),
+        };
+        self.store
+            .add_workspace(&workspace)
+            .map_err(|error| format!("the new worktree cannot be recorded: {error}"))?;
+        Ok(workspace)
+    }
+
     fn prepare_resume(self: &Arc<Self>, task: &TaskRecord) -> Result<(), String> {
         let store = &*self.store;
         let contract = &task.contract;
@@ -1255,12 +1302,18 @@ impl Inner {
             .pending_replies(&task_id)
             .map_err(|error| format!("cannot read the replies: {error}"))?;
         let rendered: Vec<_> = replies.iter().map(reply_for_worker).collect();
-        let Some(prompt) = orchestrator_core::brief::render_resume(&rendered) else {
+        let prompt = if target.follow_up {
+            orchestrator_core::brief::render_follow_up(&rendered)
+        } else {
+            orchestrator_core::brief::render_resume(&rendered)
+        };
+        let Some(prompt) = prompt else {
             return fail("the replies are too long to send in one turn");
         };
+        let number = target.attempt_number;
         // A missing worktree is permanent, so it fails the task instead of being planned again
         // on every pass. Only a store read that failed is retried.
-        let Some(workspace) = store
+        let Some(mut workspace) = store
             .list_workspaces()
             .map_err(|error| format!("cannot read the worktree: {error}"))?
             .into_iter()
@@ -1269,7 +1322,24 @@ impl Inner {
         else {
             return fail("its worktree is no longer recorded");
         };
-        let number = target.attempt_number;
+        // The task's slot went back to the pool, so this attempt continues in a new one. A
+        // retried pass finds the workspace its first try recorded.
+        let new_workspace = format!("{task_id}-workspace-{number}");
+        if target.fresh_workspace && workspace.id != new_workspace && !workspace.is_in_place() {
+            let previous = workspace;
+            workspace = match self.reopen_workspace(&previous, &new_workspace, contract) {
+                Ok(workspace) => workspace,
+                Err(reason) => return fail(&reason),
+            };
+            if let Err(reason) = session_transcript::follow(
+                &contract.agent,
+                Path::new(&previous.path),
+                Path::new(&workspace.path),
+                &agent_session_id,
+            ) {
+                return fail(reason);
+            }
+        }
         let mut job = Job {
             task_id: task_id.clone(),
             attempt_id: target.attempt_id.clone(),
@@ -1282,7 +1352,12 @@ impl Inner {
             base_commit: workspace.base_commit.clone(),
             slot: None,
             in_place: workspace.is_in_place(),
-            status_dir: worker_status::status_dir(&self.config.data_dir, &task_id, number),
+            // A follow-up reports to the status file it was first told about.
+            status_dir: worker_status::status_dir(
+                &self.config.data_dir,
+                &task_id,
+                target.status_attempt_number,
+            ),
             session: JobSession::Resume(agent_session_id.clone()),
             diag: self.config.diagnostics.clone(),
             output: self.output.clone(),
@@ -3225,6 +3300,9 @@ pub(crate) mod worker_status;
 
 #[path = "worker_environment.rs"]
 pub(crate) mod worker_environment;
+
+#[path = "session_transcript.rs"]
+pub(crate) mod session_transcript;
 
 #[cfg(all(test, unix))]
 #[path = "executor_tests.rs"]
