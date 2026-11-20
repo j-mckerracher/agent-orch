@@ -298,51 +298,37 @@ impl Service {
         publish(&self.0, &snapshot)
     }
 
-    pub fn set(&self, input: Value) -> Status {
+    /// Saves the settings. A rejected or unsaved change is an `Err` with a reason the person can act on, so the
+    /// caller's button can say why (DPES-1170); the snapshot's `error` stays for background faults.
+    pub fn set(&self, input: Value) -> Result<Status, String> {
         let mut durable = self.0.durable.lock().unwrap_or_else(|e| e.into_inner());
-        let request = match update_settings(&self.0.path, &mut durable, input) {
-            Ok(request) => request,
-            Err(message) => {
-                drop(durable);
-                return fail_status(&self.0, message);
-            }
-        };
+        let request = update_settings(&self.0.path, &mut durable, input).map_err(str::to_owned)?;
         drop(durable);
-        let mut runtime = self.0.runtime.lock().unwrap_or_else(|e| e.into_inner());
-        if runtime.error.as_deref() == Some("Unable to save notification settings.") {
-            runtime.error = None;
-        }
-        drop(runtime);
+        let mut failed = None;
         if request.request_permission {
-            let permission = match self.0.app.notification().request_permission() {
-                Ok(state) => permission(state),
-                Err(_) => {
-                    set_error(
-                        &self.0,
-                        Some("Unable to request OS notification permission."),
-                    );
-                    Permission::Unavailable
+            match self.0.app.notification().request_permission() {
+                Ok(state) => {
+                    self.0
+                        .runtime
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .permission = permission(state);
                 }
-            };
-            self.0
-                .runtime
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .permission = permission;
+                // The settings are saved; only the OS prompt failed. Publish them, then report the failure.
+                Err(_) => failed = Some("Unable to request OS notification permission.".to_owned()),
+            }
         }
         refresh_permission(&self.0);
         let snapshot = status(&self.0);
-        publish(&self.0, &snapshot)
+        let snapshot = publish(&self.0, &snapshot);
+        failed.map_or(Ok(snapshot), Err)
     }
 }
 
 impl Service {
     /// Local acknowledge/defer of the current notice. Touches only the private reminder state.
-    pub fn notice(&self, input: Value) -> Status {
-        let action = match parse_notice_request(input) {
-            Ok(action) => action,
-            Err(message) => return fail_status(&self.0, message),
-        };
+    pub fn notice(&self, input: Value) -> Result<Status, String> {
+        let action = parse_notice_request(input).map_err(str::to_owned)?;
         let mut durable = self.0.durable.lock().unwrap_or_else(|e| e.into_inner());
         let pending = self
             .0
@@ -354,14 +340,13 @@ impl Service {
         let mut next = durable.clone();
         if apply_notice_action(&mut next.markers, &pending, action, unix_now()) {
             if save_state(&self.0.path, &next).is_err() {
-                drop(durable);
-                return fail_status(&self.0, "Unable to save notification history.");
+                return Err("Unable to save notification history.".to_owned());
             }
             *durable = next;
         }
         drop(durable);
         let snapshot = status(&self.0);
-        publish(&self.0, &snapshot)
+        Ok(publish(&self.0, &snapshot))
     }
 }
 
@@ -387,10 +372,10 @@ pub fn decision_notifications_get(service: tauri::State<'_, Result<Service, Stri
 pub fn decision_notifications_set(
     service: tauri::State<'_, Result<Service, String>>,
     settings: Value,
-) -> Status {
+) -> Result<Status, String> {
     match service.inner() {
         Ok(service) => service.set(settings),
-        Err(error) => unavailable_status(error),
+        Err(error) => Ok(unavailable_status(error)),
     }
 }
 
@@ -398,10 +383,10 @@ pub fn decision_notifications_set(
 pub fn decision_notifications_notice(
     service: tauri::State<'_, Result<Service, String>>,
     notice: Value,
-) -> Status {
+) -> Result<Status, String> {
     match service.inner() {
         Ok(service) => service.notice(notice),
-        Err(error) => unavailable_status(error),
+        Err(error) => Ok(unavailable_status(error)),
     }
 }
 
@@ -535,13 +520,6 @@ fn status(inner: &Inner) -> Status {
         pending_count: runtime.pending_count,
         error: runtime.error.clone(),
     }
-}
-
-fn fail_status(inner: &Inner, message: &str) -> Status {
-    set_error(inner, Some(message));
-    let snapshot = status(inner);
-    publish(inner, &snapshot);
-    snapshot
 }
 
 fn set_error(inner: &Inner, message: Option<&str>) {
