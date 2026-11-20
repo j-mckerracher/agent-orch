@@ -91,7 +91,8 @@ test("diagnostics keep the message and location", () => {
 
 test("vitest summary lines", () => {
   const out = " Test Files  15 passed (15)\n      Tests  287 passed (287)\n";
-  assert.deepEqual(checkVitest(out, { files: 15, tests: 287 }), []);
-  assert.equal(checkVitest(out, { files: 15, tests: 288 }).length, 1);
-  assert.equal(checkVitest(" Test Files  1 failed | 14 passed (15)\n", { files: 15, tests: 287 }).length, 2);
+  assert.deepEqual(checkVitest(out), []);
+  assert.equal(checkVitest(" Test Files  1 failed | 14 passed (15)\n").length, 2);
+  assert.equal(checkVitest(" Test Files  15 passed (15)\n      Tests  280 passed | 7 skipped (287)\n").length, 1);
+  assert.equal(checkVitest("").length, 2);
 });
