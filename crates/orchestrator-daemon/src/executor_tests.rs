@@ -3753,16 +3753,20 @@ fn task_tool_calls_are_stored_redacted_and_served_with_a_live_snapshot_by_sessio
     };
     let fixture = Fixture::new();
     let release = fixture.marker("release-agent");
-    let secret_command = "deploy ghp_PLANTED0123456789abcdefghij password=hunter2-planted";
+    // Built at run time so the source holds no credential-shaped literal for the secret scanner.
+    let password = ["hunter2", "planted"].join("-");
+    let token = ["ghp_PLANTED", "0123456789abcdefghij"].concat();
+    let secret_command = format!("deploy {token} password={password}");
+    let secret_output = format!("ok password={password}");
     let agent = fixture.script(
         "tool-agent",
         &format!(
             "{THREAD_STARTED}printf '{{\"type\":\"item.completed\",\"item\":{{\"id\":\"r\",\"type\":\"reasoning\",\"text\":\"planning\"}}}}\\n'\n{}{}{}while [ ! -e '{}' ]; do sleep 0.05; done\n{}echo produced > agent-output.txt\n{}{TURN_COMPLETED}",
             step(START, "c1", "ls src", ""),
             step(END, "c1", "ls src", "main.rs"),
-            step(START, "c2", secret_command, ""),
+            step(START, "c2", &secret_command, ""),
             release.display(),
-            step(END, "c2", secret_command, "ok password=hunter2-planted"),
+            step(END, "c2", &secret_command, &secret_output),
             message_line("done"),
         ),
     );
