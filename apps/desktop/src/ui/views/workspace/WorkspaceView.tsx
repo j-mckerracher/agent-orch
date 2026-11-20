@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { isFixtureId } from "../../../daemon/api";
 import { PROJECT_CONVERSATIONS_REQUIRED } from "../../../sources/surfaces/conversationLive";
@@ -16,6 +16,8 @@ import type { Route } from "../../router";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
+import { ChatComposer } from "../../chat/ChatComposer";
+import { ChatLog } from "../../chat/ChatLog";
 import { Badge, Bubble, Button, CopyButton, EmptyState, Markdown } from "../../theme";
 import { PullRequestLinks } from "./PullRequestLinks";
 import { ErrorNotice, Notice } from "../../widgets";
@@ -386,7 +388,6 @@ function Conversation({
   } | null>(null);
   const notice = feedback?.key === option.key ? feedback.notice : null;
   const error = feedback?.key === option.key ? feedback.error : null;
-  const logRef = useRef<HTMLDivElement>(null);
   const { target } = option;
 
   const loaded = useSurface(
@@ -411,10 +412,6 @@ function Conversation({
   const awaitingDaemon = shownProposals.some((p) => p.state === "approved");
 
   const lines = transcript.status === "ok" ? transcript.data.entries.length + simulated.length : simulated.length;
-  useEffect(() => {
-    const log = logRef.current;
-    if (log) log.scrollTop = log.scrollHeight;
-  }, [lines, transcript.status]);
 
   // The daemon has no push stream: read again while the latest turn is still running.
   const turn = transcript.status === "ok" ? (transcript.data.turn ?? null) : null;
@@ -569,23 +566,13 @@ function Conversation({
     }
   };
 
-  const onSubmit = (event: FormEvent) => {
-    event.preventDefault();
+  // Enter in the model picker confirms its choice; it never sends the message.
+  const onSend = () => {
     if (document.activeElement instanceof HTMLElement && document.activeElement.closest(".ws-model-root")) return;
-    void send();
-  };
-  // Enter sends. Shift+Enter keeps the default newline; Ctrl/Cmd+Enter also sends. Enter that confirms an IME
-  // composition is left to the IME. A send that is not allowed does nothing, and the newline is still
-  // suppressed, so Enter never adds a line the user did not ask for.
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.key !== "Enter" || event.nativeEvent.isComposing || event.keyCode === 229) return;
-    if (event.shiftKey && !event.ctrlKey && !event.metaKey) return;
-    event.preventDefault();
     void send();
   };
 
   const headingId = `${ids}-heading`;
-  const sendId = `${ids}-send-reason`;
   const modelLoaded = useSurface(
     () => surfaces.models.catalog(),
     `workspace-models#${modelNonce}`,
@@ -691,13 +678,7 @@ function Conversation({
         {target.kind !== "project" && <ReturnBrief />}
       </header>
 
-      <div
-        ref={logRef}
-        className="ws-log"
-        role="log"
-        aria-label={`Conversation with ${option.label}`}
-        tabIndex={0}
-      >
+      <ChatLog label={`Conversation with ${option.label}`} scrollKey={`${lines}:${transcript.status}`}>
         <TranscriptBody
           transcript={transcript}
           label={option.label}
@@ -707,7 +688,7 @@ function Conversation({
           leading={leading}
           taskRoute={taskRoute}
         />
-      </div>
+      </ChatLog>
 
       {runtimeUnavailable && turn && (
         <p role="status" className="ws-note ws-runtime">
@@ -773,68 +754,58 @@ function Conversation({
         />
       )}
 
-      <form className="ws-composer" onSubmit={onSubmit} aria-label={`Message ${option.label}`}>
-        <textarea
-          id={`${ids}-draft`}
-          aria-label={`Message ${option.label}`}
-          rows={1}
-          value={draft}
-          placeholder={COMPOSER_PLACEHOLDER}
-          aria-describedby={blocked ? sendId : undefined}
-          onChange={(event) => onDraft(event.target.value)}
-          onKeyDown={onKeyDown}
-        />
-        <div className="ws-composer-row">
-          <ConversationTargetPicker
-            options={options}
-            selectedKey={option.key}
-            onSelect={onSelect}
-            addCoordinator={addCoordinator}
-            globalUnseen={monitoring.supported ? unseenFor(monitoring.state, GLOBAL_TARGET) : 0}
-          />
-          <ModelPicker
-            catalog={modelCatalog}
-            provenance={surfaces.models.provenance}
-            validate={surfaces.models.validate}
-            copilotSignIn={surfaces.models}
-            onRetry={retryModels}
-            onChoiceChange={setChoice}
-            onChoiceBlocked={setChoiceBlocked}
-            selectionSupported={!live || !gate.connected || gate.can("conversation_selection")}
-            permission={permissionControl}
-          />
-          <Button
-            type="submit"
-            variant="primary"
-            className="ws-send"
-            disabled={!canSend}
-            aria-label={`Send message to ${option.label}`}
-            aria-describedby={blocked ? sendId : undefined}
-          >
-            {busy ? "…" : "↑"}
-          </Button>
-        </div>
-        {target.kind !== "project" && (
-          <PermissionLevelNotes
-            olderDaemon={olderDaemon}
-            lastTurn={
-              live && turn
-                ? {
-                    daemonLevel: turn.permissionLevel ?? null,
-                    sentLevel: sentLevels.current.get(turn.id) ?? null,
-                    trigger: turn.trigger,
-                  }
-                : null
-            }
-          />
-        )}
-        {actionsLevelNote && <p className="ws-small">{ACTIONS_LEVEL_NOTE}</p>}
-        {blocked && (
-          <p id={sendId} className="ws-small ws-blocked">
-            Sending is disabled. {blocked}
-          </p>
-        )}
-      </form>
+      <ChatComposer
+        label={`Message ${option.label}`}
+        sendLabel={`Send message to ${option.label}`}
+        value={draft}
+        onChange={onDraft}
+        onSend={onSend}
+        canSend={canSend}
+        busy={busy}
+        placeholder={COMPOSER_PLACEHOLDER}
+        blocked={blocked}
+        controls={
+          <>
+            <ConversationTargetPicker
+              options={options}
+              selectedKey={option.key}
+              onSelect={onSelect}
+              addCoordinator={addCoordinator}
+              globalUnseen={monitoring.supported ? unseenFor(monitoring.state, GLOBAL_TARGET) : 0}
+            />
+            <ModelPicker
+              catalog={modelCatalog}
+              provenance={surfaces.models.provenance}
+              validate={surfaces.models.validate}
+              copilotSignIn={surfaces.models}
+              onRetry={retryModels}
+              onChoiceChange={setChoice}
+              onChoiceBlocked={setChoiceBlocked}
+              selectionSupported={!live || !gate.connected || gate.can("conversation_selection")}
+              permission={permissionControl}
+            />
+          </>
+        }
+        notes={
+          <>
+            {target.kind !== "project" && (
+              <PermissionLevelNotes
+                olderDaemon={olderDaemon}
+                lastTurn={
+                  live && turn
+                    ? {
+                        daemonLevel: turn.permissionLevel ?? null,
+                        sentLevel: sentLevels.current.get(turn.id) ?? null,
+                        trigger: turn.trigger,
+                      }
+                    : null
+                }
+              />
+            )}
+            {actionsLevelNote && <p className="ws-small">{ACTIONS_LEVEL_NOTE}</p>}
+          </>
+        }
+      />
       {/* A changing trailing space makes a repeat of the same sentence read again. */}
       <p role="status" aria-live="polite" className="ws-visually-hidden">
         {announced > 0 ? `${NEW_UPDATE_TEXT}${announced % 2 === 0 ? "\u00a0" : ""}` : ""}
