@@ -49,9 +49,11 @@ use crate::mcp_server::McpView;
 pub(crate) const QUIET_TOKEN: &str = "MCAO_QUIET";
 /// Marks a wake exchange in the history the next turn is shown.
 const WAKE_HISTORY_PREFIX: &str = "[automatic update] ";
-/// Most event lines, and bytes per line, in the opening text of a wake turn.
+/// Most event lines, and bytes per line, in the opening text of a wake turn. The line cap is the
+/// store's 512-byte notice limit: a worker-wait notice (64-byte id, 80-byte objective, 160-byte
+/// note) runs to about 400 bytes, and a smaller cap cut the worker's note off.
 const WAKE_BRIEF_LINES: usize = 20;
-const WAKE_BRIEF_LINE_BYTES: usize = 200;
+pub(crate) const WAKE_BRIEF_LINE_BYTES: usize = 512;
 
 /// Name reported while no agent is selected.
 pub(crate) const UNAVAILABLE_RUNTIME_NAME: &str = "unavailable";
@@ -99,7 +101,7 @@ pub(crate) struct Evidence {
 }
 
 impl WakeBrief {
-    /// The opening entry of the turn: the lines, at most 20 of at most 200 bytes.
+    /// The opening entry of the turn: the lines, at most 20 of at most 512 bytes.
     fn opening_text(&self) -> String {
         self.events
             .iter()

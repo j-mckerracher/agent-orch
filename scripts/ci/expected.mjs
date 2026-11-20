@@ -68,7 +68,8 @@ export const WINDOWS = {
   // DPES-1108 phase 8 adds 4 daemon unit tests: 736 in the phase 9 integration, re-synced from CI.
   // With main merged (DPES-1106): one real-daemon test and the agent_thinking store binary (5) plus one store lib test; re-synced from CI.
   // DPES-1106 adds one portable daemon test (tasks.message, api_authority_tests): 738 becomes 739, unit binary 633 becomes 634.
-  daemon: { passed: 739, ignored: 1, sequence: [634, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  // The wake brief keeps a worker's note (line cap 512) and adds one portable daemon test: 739 becomes 740, unit binary 634 becomes 635.
+  daemon: { passed: 740, ignored: 1, sequence: [635, 90, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -178,7 +179,8 @@ export const MACOS = {
   // DPES-1108 phase 7 coordinators adds 8 daemon unit tests: 874 in the phase 9 integration, re-synced from CI.
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
   // DPES-1106 adds one portable daemon test and one unix-only executor test: 882 becomes 884, unit binary 750 becomes 752.
-  daemon: { passed: 884, ignored: 1, sequence: [752, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  // The wake brief adds one portable daemon test: 884 becomes 885, unit binary 752 becomes 753.
+  daemon: { passed: 885, ignored: 1, sequence: [753, 95, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
