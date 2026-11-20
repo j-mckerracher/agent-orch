@@ -188,7 +188,8 @@ export const MACOS = {
   // 978 passed and none ignored. The CLI help probe test of PR #229 (orchestrator-agents) makes 979, as the macOS
   // workspace-tests gate measured on this branch (CI run 44565723305). After PR #224 (DPES-1108), main's whole-workspace
   // pin is 2467 passed and 2 ignored; minus daemon 882+1, store 432+1 and ipc 121 that is 1032 passed and none ignored.
-  workspace: { passed: 1054, ignored: 1 },
+  // A cancelled waiting task no longer blocks the restart gate: one engine test, so 1054 becomes 1055.
+  workspace: { passed: 1055, ignored: 1 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
   gitLib: { passed: 105, sequence: [105] },
