@@ -11,6 +11,7 @@ use std::sync::MutexGuard;
 use orchestrator_core::charter::ReportVerb;
 use orchestrator_core::memory::{self, MemoryKind, MemoryScope};
 use orchestrator_core::orchestrator_action::{Action, AutonomyRefusal, ProposeTask, ReviseTask};
+use orchestrator_core::permission::TASK_DEFAULT_PERMISSION;
 use orchestrator_core::task::AuditEvent;
 use orchestrator_core::task_envelope::{check_task, CHAT_TASK_MAX_REPAIRS, CHAT_TASK_MAX_RETRIES};
 use orchestrator_core::workstream::{WorkstreamRuleError, WorkstreamState};
@@ -1632,10 +1633,9 @@ impl DaemonApi {
     }
 
     /// The new task a `task.revise` stands for. Agent, kind, delivery and dependencies
-    /// copy from the old contract; autonomy and verification come from the fixed chat
-    /// envelope and no permission is set, so the new task takes the daemon default
-    /// (Restricted) and never the level a hand-made task ran at. The new objective is the
-    /// old one, a blank line, a fixed heading and the added instruction. It joins the old
+    /// copy from the old contract, and so does the level. Autonomy and verification come
+    /// from the fixed chat envelope, never the chat turn's level. The new objective is the old
+    /// one, a blank line, a fixed heading and the added instruction. It joins the old
     /// task's workstream and objective. The old task may be finished by now, so its state
     /// is not read here: `ReviseTaskExec::preflight` reads it when nothing is made yet.
     fn revise_execution(
@@ -1701,7 +1701,7 @@ impl DaemonApi {
                         max_retries: CHAT_TASK_MAX_RETRIES,
                         max_repairs: CHAT_TASK_MAX_REPAIRS,
                         model_selection: old.contract.model_selection,
-                        permission: None,
+                        permission: Some(old.contract.permission),
                         work_item: None,
                         work_class: None,
                     },
@@ -1738,8 +1738,8 @@ impl DaemonApi {
 
     /// The `tasks.submit` request a `task.propose` stands for. Autonomy and verification
     /// come from the project's envelope (the fixed chat envelope unless the project has a
-    /// pull-request mode), attempt limits are constants, and no permission is set, so the
-    /// task takes the daemon default (Restricted). A proposal can raise none of them.
+    /// pull-request mode), attempt limits are constants, and the level is the task default,
+    /// never the chat turn's. A proposal can raise none of them.
     /// `parent` is the `workstream.create` a `workstream_ref` names.
     fn propose_execution(
         &self,
@@ -1813,7 +1813,7 @@ impl DaemonApi {
                     max_retries: CHAT_TASK_MAX_RETRIES,
                     max_repairs: CHAT_TASK_MAX_REPAIRS,
                     model_selection: None,
-                    permission: None,
+                    permission: Some(TASK_DEFAULT_PERMISSION),
                     work_item: None,
                     work_class: None,
                 },

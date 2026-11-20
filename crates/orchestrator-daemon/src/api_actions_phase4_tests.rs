@@ -17,7 +17,7 @@ use orchestrator_store::{
 use super::actions::{lineage_write_error, project_code, ActionError};
 use super::actions_task_tests::{
     assert_executed, assert_failed, chat_submit, failed_task, proposed_task_id, register_project,
-    running_task, submit_queued, task_count, verifying_task, ALPHA,
+    running_task, submit_queued, submit_queued_at, task_count, verifying_task, ALPHA,
 };
 use super::actions_tests::{call, create_workstream, new_api, proposal, propose, resolve};
 use super::holds::civil_from_days;
@@ -137,13 +137,13 @@ fn approving_task_revise_stops_the_old_task_and_queues_a_linked_new_one() {
     assert_eq!(task_count(&api), 2);
 
     // The new objective is the old one, a fixed heading and the instruction. The new task
-    // takes the daemon default permission, whatever the old task ran at.
+    // keeps the old task's level, which is the task default here.
     let task = api.store.get(&new).unwrap();
     assert_eq!(
         task.contract.objective,
         format!("{OLD_OBJECTIVE}\n\nAdded instruction from the user:\n{INTENT}")
     );
-    assert_eq!(task.contract.permission, PermissionLevel::Restricted);
+    assert_eq!(task.contract.permission, PermissionLevel::Auto);
     assert_eq!(task.contract.project_id, ALPHA);
     assert_eq!(task.contract.agent, "codex");
 
@@ -157,6 +157,26 @@ fn approving_task_revise_stops_the_old_task_and_queues_a_linked_new_one() {
     // The same key replays the answer and makes nothing more.
     assert_eq!(resolve(&api, &ids[0], "approve", "k-1").unwrap(), result);
     assert_eq!(task_count(&api), 2);
+}
+
+/// A revise keeps the level of the task it revises, whether that level was named (Restricted
+/// included) or raised.
+#[test]
+fn a_revise_keeps_the_level_of_the_task_it_revises() {
+    let (_directory, api) = new_api();
+    register_project(&api, ALPHA);
+    let restricted = submit_queued_at(&api, "s-1", OLD_OBJECTIVE, Some("restricted"));
+    let full = submit_queued_at(&api, "s-2", OLD_OBJECTIVE, Some("full"));
+    for (turn, old, level) in [
+        ("t1", &restricted, PermissionLevel::Restricted),
+        ("t2", &full, PermissionLevel::Full),
+    ] {
+        let ids = propose(&api, turn, &revise_action(old, INTENT));
+        let result = resolve(&api, &ids[0], "approve", &format!("k-{turn}")).unwrap();
+        let new = proposed_task_id(&ids[0]);
+        assert_executed(&result, &new);
+        assert_eq!(api.store.get(&new).unwrap().contract.permission, level);
+    }
 }
 
 /// A task whose candidate is being verified is stopped like a queued one, and its replacement

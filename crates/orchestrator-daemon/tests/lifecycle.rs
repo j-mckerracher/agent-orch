@@ -58,7 +58,7 @@ fn main() {
 /// next to the pid file for the failure diagnostics.
 fn agent(pid_file: &Path) {
     if std::env::args().skip(1).eq(["exec", "--help"]) {
-        println!("  --json\n  --sandbox <MODE>\n  --ignore-user-config\n  -c <KEY=VALUE>");
+        println!("  --json\n  --sandbox <MODE>\n  --approve-for-me\n  --add-dir <DIR>\n  --ignore-user-config\n  -c <KEY=VALUE>");
         return;
     }
     if std::env::args().any(|arg| arg == "--version") {
@@ -367,6 +367,23 @@ fn scenario(base: &Path) {
     } else {
         agent
     };
+    // The pstack workflow agent the daemon finds through the home's plugin registry.
+    let home = base.join("no-home");
+    let plugin = base.join("pstack");
+    fs::create_dir_all(plugin.join("agents")).unwrap();
+    fs::create_dir_all(plugin.join("workflow-router")).unwrap();
+    fs::write(
+        plugin.join("agents/workflow-agent.md"),
+        "---\nname: workflow-agent\n---\n\nRead the workflow-router skill first.\n",
+    )
+    .unwrap();
+    fs::write(plugin.join("workflow-router/SKILL.md"), "# Router\n").unwrap();
+    let registry = home.join(".claude/plugins/installed_plugins.json");
+    fs::create_dir_all(registry.parent().unwrap()).unwrap();
+    let installed = json!({
+        "plugins": { "pstack@mayo-skills": [{ "installPath": plugin.display().to_string() }] }
+    });
+    fs::write(&registry, installed.to_string()).unwrap();
     let daemon_log = base.join("daemon.log");
     let log = fs::File::create(&daemon_log).unwrap();
     evidence(|slot| {
@@ -382,8 +399,8 @@ fn scenario(base: &Path) {
             .arg(&data)
             // The real machine load must not decide whether a test task starts (DPES-1105 part 2c).
             .env("AGENT_ORCH_LOAD_GATE", "off")
-            .env("HOME", base.join("no-home"))
-            .env("USERPROFILE", base.join("no-home"))
+            .env("HOME", &home)
+            .env("USERPROFILE", &home)
             .env("AGENT_ORCH_CODEX_PROGRAM", &agent)
             .env("AGENT_ORCH_CLAUDE_PROGRAM", &nonexistent)
             .env("AGENT_ORCH_PI_PROGRAM", &nonexistent)

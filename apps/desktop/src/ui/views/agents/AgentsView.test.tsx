@@ -182,6 +182,33 @@ describe("Agents, the task list", () => {
     expect(within(list).getByText("Blocked")).toBeInTheDocument();
   });
 
+  it("shows each task's level on its card and page, and the tools its worker lacked beside the outcome", async () => {
+    const fake = seeded();
+    fake.tasks = [
+      mkTask("t-ok", REPO, {
+        state: "Succeeded",
+        permission_level: "auto",
+        tools_notice: { kind: "lacked_tools", tools: ["Bash", "Edit"], reason: "denied 3×" },
+      }),
+      mkTask("t-old", REPO, { state: "Succeeded", contract: { permission: "full" } }),
+      mkTask("t-none", REPO, { state: "Succeeded" }),
+    ];
+    const { user } = await mountAgents(fake, { live: true });
+    await user.click(await screen.findByRole("tab", { name: "Finished 3" }));
+    const list = screen.getByRole("list", { name: "finished tasks" });
+    const card = within(list).getByRole("button", { name: /objective of t-ok/ });
+    expect(within(card).getByText("Auto")).toBeInTheDocument();
+    expect(within(card).getByText("Worker lacked tools: Bash, Edit (denied 3×)")).toBeInTheDocument();
+    const older = within(list).getByRole("button", { name: /objective of t-old/ });
+    expect(within(older).getByText("Full")).toBeInTheDocument();
+    expect(within(older).queryByText(/Worker lacked tools/)).not.toBeInTheDocument();
+    expect(within(within(list).getByRole("button", { name: /objective of t-none/ })).getByText("Restricted")).toBeInTheDocument();
+
+    const detail = within(await openTask(user, "t-ok"));
+    expect(detail.getByText("Auto")).toBeInTheDocument();
+    expect(detail.getByText("Worker lacked tools: Bash, Edit (denied 3×)")).toBeInTheDocument();
+  });
+
   it("shows a retryable error when the task list cannot load", async () => {
     const fake = seeded();
     fake.failNext("tasks.list", { code: -32603, message: "list failed" }, 50);

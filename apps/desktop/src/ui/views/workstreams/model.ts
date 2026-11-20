@@ -17,6 +17,7 @@ import { presentError } from "../../../daemon/errors";
 import type { Approval, SessionEntry, TaskContract, TaskRecord, TaskState } from "../../../daemon/types";
 import type {
   Measured,
+  PermissionLevel,
   Workstream,
   WorkstreamLifecycle,
   WorkstreamObjective,
@@ -26,6 +27,7 @@ import type { Provenance } from "../../../sources/types";
 import { pendingApprovals } from "../../format";
 import type { Tone } from "../../theme";
 import { useGate, useServices, useStore, useSurface } from "../../services";
+import { taskPermissionLevel } from "../workspace/permissionLevel";
 
 export interface WsWorker {
   sessionId: string;
@@ -54,6 +56,8 @@ export interface WsTask {
   openable: boolean;
   /** The loaded task contract (kind and policy) that plan edits start from; null when no record is loaded. */
   contract: TaskContract | null;
+  /** The level the task ran with, from its record; null when no record is loaded. Plan edits start from it. */
+  permission: PermissionLevel | null;
 }
 
 export interface WsGroup {
@@ -205,6 +209,7 @@ function wsTaskOf(
     pendingDecision: pendingApprovals(approvals ?? []).some((approval) => approval.action.task_id === base.id),
     openable: !isFixtureId(base.id),
     contract: record?.contract ?? null,
+    permission: record ? taskPermissionLevel(record) : null,
   };
 }
 
@@ -285,6 +290,7 @@ export function groupsFromSource(workstreams: readonly Workstream[]): WsGroup[] 
       pendingDecision: false,
       openable: false,
       contract: null,
+      permission: null,
     })),
     counts: ws.counts,
     objectives: ws.objectives,

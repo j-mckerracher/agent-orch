@@ -73,6 +73,22 @@ fn a_failed_launch_is_explained_in_the_log_without_the_credential() {
         .unwrap()
         .join(format!("token={SECRET}"));
     let token_file = layout.data.join("daemon.token");
+    // A launch is refused before the agent starts unless the home holds the pstack plugin.
+    let plugin = layout.home.join("pstack");
+    fs::create_dir_all(plugin.join("agents")).unwrap();
+    fs::create_dir_all(plugin.join("workflow-router")).unwrap();
+    fs::write(
+        plugin.join("agents/workflow-agent.md"),
+        "---\nname: workflow-agent\n---\n\nRead the workflow-router skill first.\n",
+    )
+    .unwrap();
+    fs::write(plugin.join("workflow-router/SKILL.md"), "# Router\n").unwrap();
+    let registry = layout.home.join(".claude/plugins/installed_plugins.json");
+    fs::create_dir_all(registry.parent().unwrap()).unwrap();
+    let installed = json!({
+        "plugins": { "pstack@mayo-skills": [{ "installPath": plugin.display().to_string() }] }
+    });
+    fs::write(&registry, installed.to_string()).unwrap();
 
     let daemon = Daemon::start_with_env(&layout, &[("AGENT_ORCH_CODEX_PROGRAM", &missing)]);
     let token = fs::read_to_string(&token_file).unwrap().trim().to_owned();

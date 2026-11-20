@@ -40,7 +40,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 
-use orchestrator_core::permission::PermissionLevel;
+use orchestrator_core::permission::{PermissionLevel, TASK_DEFAULT_PERMISSION};
 
 use crate::executor::{
     agent_command, placeholder_status_dir, serving, submit_channel, ChannelSupport, Executor,
@@ -122,8 +122,8 @@ struct TaskSubmission {
     max_repairs: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model_selection: Option<ModelSelection>,
-    /// The permission level (DPES-1105). Absent means Restricted, and an absent
-    /// field is omitted from the request, so its idempotency key is unchanged.
+    /// The permission level (DPES-1105). Absent means [`TASK_DEFAULT_PERMISSION`], and an
+    /// absent field is omitted from the request, so its idempotency key is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     permission: Option<PermissionLevel>,
     /// A work class (DPES-677) whose settings fill in the agent, model and effort the
@@ -784,7 +784,7 @@ impl DaemonApi {
         budget: Duration,
     ) -> Result<(), RpcError> {
         use orchestrator_agents::cli_compat::{CompatibilityError, Executable};
-        let permission = submission.permission.unwrap_or_default();
+        let permission = submission.permission.unwrap_or(TASK_DEFAULT_PERMISSION);
         // An agent without a daemon launcher has no CLI to check, so it is accepted before its
         // executable is looked up or read.
         let status_dir = placeholder_status_dir(&self.config);
@@ -958,10 +958,14 @@ impl DaemonApi {
         if matches!(request.contract.autonomy, AutonomyPolicy::ReadOnly) {
             return Err(RpcError::Forbidden);
         }
-        let permission = request.contract.permission.unwrap_or_default();
+        let permission = request
+            .contract
+            .permission
+            .unwrap_or(TASK_DEFAULT_PERMISSION);
         // A level the agent has no task mapping for is refused, so no task is
-        // created for it. Restricted always takes the existing path, so an
-        // agent with no launcher still fails at launch, as before.
+        // created for it. This includes the task default for an agent with no
+        // mapping at any level, such as Pi. Restricted always takes the existing
+        // path, so an explicit Restricted task for such an agent still fails at launch.
         if permission != PermissionLevel::Restricted
             && orchestrator_agents::permission::task_profile(&request.contract.agent, permission)
                 .is_none()
@@ -1035,8 +1039,8 @@ impl DaemonApi {
             .transition(&contract.id, TaskEvent::Admit)
             .map_err(map_store_error)?;
         self.wake_executor();
-        serde_json::to_value(self.store.get(&contract.id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(&contract.id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 
     /// Queues a new attempt for a `Failed` or `VerificationFailed` task. The
@@ -1080,8 +1084,8 @@ impl DaemonApi {
             .transition(task_id, TaskEvent::RetryRequested)
             .map_err(map_store_error)?;
         self.wake_executor();
-        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(task_id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 
     /// `tasks.force_start` (user-only): the user's word that a queued task starts now, past the
@@ -1280,14 +1284,16 @@ impl DaemonApi {
             .map_err(map_store_error)?
             .into_iter()
             .filter(|task| !archived.contains(&task.contract.id))
-            .collect();
-        serde_json::to_value(tasks).map_err(|_| RpcError::Internal)
+            .map(|task| crate::task_view::task_view(&task))
+            .collect::<Result<_, _>>()
+            .map_err(|_| RpcError::Internal)?;
+        Ok(Value::Array(tasks))
     }
 
     fn get_task(&self, params: Value) -> Result<Value, RpcError> {
         let params: TaskIdParams = parse_params(params)?;
-        serde_json::to_value(self.store.get(&params.task_id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(&params.task_id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 }
 
@@ -1458,8 +1464,8 @@ impl DaemonApi {
     /// task is cancelled at once; its worktree stays as any cancelled task's does.
     pub(super) fn cancel_task_inner(&self, task_id: &str) -> Result<Value, RpcError> {
         self.cancel_task_record(task_id)?;
-        serde_json::to_value(self.store.get(task_id).map_err(map_store_error)?)
-            .map_err(|_| RpcError::Internal)
+        let record = self.store.get(task_id).map_err(map_store_error)?;
+        crate::task_view::task_view(&record).map_err(|_| RpcError::Internal)
     }
 
     fn cancel_task_record(&self, task_id: &str) -> Result<(), RpcError> {

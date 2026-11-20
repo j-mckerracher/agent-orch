@@ -164,6 +164,14 @@ fn copilot_task_argv_per_level_is_exact() {
                 "memory",
                 "--deny-tool",
                 "shell(git push)",
+                "--deny-tool",
+                "shell(git remote)",
+                "--deny-tool",
+                "shell(git credential)",
+                "--deny-tool",
+                "shell(git config)",
+                "--deny-tool",
+                "shell(gh:*)",
             ],
         ),
         (PermissionLevel::Full, vec!["--allow-all"]),
@@ -538,12 +546,22 @@ async fn the_catalog_lists_the_models_and_levels_the_cli_reports() {
         .models
         .items
         .iter()
-        .map(|m| (m.id.as_str(), m.efforts.as_slice(), m.default_effort.as_deref()))
+        .map(|m| {
+            (
+                m.id.as_str(),
+                m.efforts.as_slice(),
+                m.default_effort.as_deref(),
+            )
+        })
         .collect();
     let levels = ["low".to_owned(), "high".to_owned()];
     assert_eq!(
         listed,
-        [("auto", &[][..], None), ("gpt-a", &levels[..], Some("high")), ("mini", &[][..], None)]
+        [
+            ("auto", &[][..], None),
+            ("gpt-a", &levels[..], Some("high")),
+            ("mini", &[][..], None)
+        ]
     );
     // Levels are per model, so the adapter-wide list says so and offers none.
     assert_eq!(catalog.efforts.state, CatalogState::Unsupported);
@@ -582,7 +600,10 @@ async fn a_signed_out_account_is_not_asked_for_models() {
         .await;
     assert_eq!(catalog.state, CatalogState::AuthenticationFailed);
     assert_eq!(catalog.models.state, CatalogState::Unknown);
-    assert!(!marker.exists(), "the model read started for a signed-out account");
+    assert!(
+        !marker.exists(),
+        "the model read started for a signed-out account"
+    );
 }
 
 #[test]
@@ -749,6 +770,7 @@ async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
     let run = CopilotRun::create(dir.path()).unwrap();
     let cwd = run.cwd();
     let request = AgentLaunchRequest {
+        git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
             PermissionLevel::Restricted,
@@ -816,6 +838,7 @@ async fn a_leading_dash_prompt_reaches_the_child_as_one_argument() {
     )
     .unwrap();
     let request = AgentLaunchRequest {
+        git_guard: false,
         program,
         args: args.clone(),
         working_dir: run.cwd(),
@@ -886,6 +909,7 @@ async fn a_replayed_completed_run_exits_completed_and_marks_sign_in_ready() {
     let program = fake_copilot(dir.path(), "copilot", "1.0.109", &replay_body(&stream, 0));
     let run = CopilotRun::create(dir.path()).unwrap();
     let request = AgentLaunchRequest {
+        git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
             PermissionLevel::Restricted,
@@ -1304,6 +1328,7 @@ async fn a_replayed_bogus_model_run_exits_failed_with_the_message() {
     let run = CopilotRun::create(dir.path()).unwrap();
     let cwd = run.cwd();
     let request = AgentLaunchRequest {
+        git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
             PermissionLevel::Restricted,
@@ -1340,6 +1365,7 @@ async fn cancelling_a_running_turn_reports_cancelled_not_completed() {
     );
     let run = CopilotRun::create(dir.path()).unwrap();
     let request = AgentLaunchRequest {
+        git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
             PermissionLevel::Restricted,

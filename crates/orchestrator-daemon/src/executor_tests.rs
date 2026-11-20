@@ -17,6 +17,7 @@ use serde_json::{json, Value};
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::process::{CommandExt, ExitStatusExt};
+use std::process::Command;
 use std::sync::atomic::AtomicU32;
 use std::time::Instant;
 use tempfile::TempDir;
@@ -131,6 +132,11 @@ impl Fixture {
         self.submit_full(api, key, "codex", max_retries, &[])
     }
 
+    /// A Codex task at Restricted, the only level at which Codex can wait and be resumed.
+    fn submit_restricted(&self, api: &DaemonApi, key: &str, max_retries: u32) -> String {
+        self.submit_at(api, key, "codex", max_retries, &[], Some("restricted"))
+    }
+
     fn submit_full(
         &self,
         api: &DaemonApi,
@@ -138,6 +144,19 @@ impl Fixture {
         agent: &str,
         max_retries: u32,
         dependencies: &[&str],
+    ) -> String {
+        self.submit_at(api, key, agent, max_retries, dependencies, None)
+    }
+
+    /// `permission` of `None` leaves the task default (Auto).
+    fn submit_at(
+        &self,
+        api: &DaemonApi,
+        key: &str,
+        agent: &str,
+        max_retries: u32,
+        dependencies: &[&str],
+        permission: Option<&str>,
     ) -> String {
         let task = api
             .dispatch(
@@ -155,7 +174,8 @@ impl Fixture {
                         "delivery": "ReportOnly",
                         "autonomy": "WorkspaceWrites",
                         "max_retries": max_retries,
-                        "max_repairs": 0
+                        "max_repairs": 0,
+                        "permission": permission
                     }
                 }),
             )
@@ -165,11 +185,10 @@ impl Fixture {
 }
 
 /// The workflow agent every launch gets unless a test overrides the seam.
+/// A real plugin root, so a launch can stage it. Its files are the minimum the workflow agent needs.
 fn fixture_workflow_agent() -> Option<WorkflowAgent> {
-    Some(WorkflowAgent {
-        plugin_dir: PathBuf::from("/fixture/pstack"),
-        codex_instructions: "fixture instructions".to_owned(),
-    })
+    let plugin = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pstack");
+    workflow_agent::plugin_at(&plugin)
 }
 
 fn no_workflow_agent() -> Option<WorkflowAgent> {
@@ -180,10 +199,31 @@ fn no_workflow_agent() -> Option<WorkflowAgent> {
 /// flags.
 const FIXTURE_AGENT_FLAGS: [&str; 4] = [
     "--plugin-dir",
-    "/fixture/pstack",
+    "<status>/plugin",
     "--agent",
     "pstack:workflow-agent",
 ];
+
+/// The Codex developer instructions the fixture workflow agent sends: its body, then the staged
+/// skill path under the status directory (`<status>` after normalization).
+const FIXTURE_CODEX_INSTRUCTIONS: &str = "developer_instructions=\"Read the workflow-router skill first.\\n\\nThe workflow-router skill is at <status>/plugin/workflow-router/SKILL.md; read it in full first.\"";
+
+/// The constants above describe the real fixture plugin: its body and the skill path the
+/// workflow agent points at. A change to the fixture fails here, not in every argv test.
+#[test]
+fn fixture_workflow_agent_matches_the_argv_constants() {
+    let agent = fixture_workflow_agent().expect("the fixture plugin loads");
+    let argv =
+        CodexAdapter::args_for_task(PermissionLevel::Restricted, "x", None, None, Some(&agent))
+            .unwrap();
+    let instructions = argv
+        .iter()
+        .find(|arg| arg.starts_with("developer_instructions="))
+        .unwrap();
+    // The launch passes the staged copy, so the source path stands for `<status>/plugin`.
+    let staged = instructions.replace(&agent.plugin_dir.display().to_string(), "<status>/plugin");
+    assert_eq!(staged, FIXTURE_CODEX_INSTRUCTIONS);
+}
 
 fn with_flags<'a>(mut argv: Vec<&'a str>, flags: &[&'a str]) -> Vec<&'a str> {
     argv.extend_from_slice(flags);
@@ -308,23 +348,27 @@ fn submitted_task_runs_to_succeeded_with_every_transition_journaled() {
 }
 
 #[test]
-fn a_missing_workflow_agent_warns_on_the_attempt_and_still_launches_plain() {
+fn a_missing_workflow_agent_refuses_the_launch_with_a_cannot_start_reason() {
     let fixture = Fixture::new();
-    let mut diagnostics = None;
-    let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
+    let record = fixture.marker("argv");
+    let api = fixture.api_with(&recording_agent(&fixture, &record), |config| {
         config.locate_workflow_agent = no_workflow_agent;
-        diagnostics = Some(config.diagnostics.clone());
     });
     let task_id = fixture.submit(&api, "no-workflow-agent", 0);
 
-    let done = wait_state(&api, &task_id, "Succeeded");
-    assert_eq!(done["attempts"][0]["state"], "Succeeded");
-    let lines = diagnostics.unwrap().lines().join("\n");
-    assert!(
-        lines.contains("\"event\":\"workflow_agent_missing\"")
-            && lines.contains(&format!("\"task_id\":\"{task_id}\"")),
-        "{lines}"
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["state"], "Failed");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(
+        attempt.failure_reason.as_deref(),
+        Some(worker_environment::PLUGIN_MISSING)
     );
+    assert!(
+        !record.exists(),
+        "the agent must not start without its plugin"
+    );
+    api.shutdown();
 }
 
 #[test]
@@ -541,6 +585,192 @@ fn a_candidate_records_its_changed_file_count_and_last_message() {
     let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
     assert_eq!(attempt.changed_files, Some(2));
     assert_eq!(attempt.summary.as_deref(), Some("Added both files."));
+    api.shutdown();
+}
+
+#[test]
+fn a_commit_the_agent_made_is_the_candidate_when_its_tree_is_clean() {
+    let fixture = Fixture::new();
+    let agent = fixture.script(
+        "self-committing-agent",
+        &format!(
+            "{THREAD_STARTED}echo one > one.txt\ngit add one.txt\n\
+             git -c user.name=Agent -c user.email=agent@example.com commit -q -m agent-work\n\
+             {TURN_COMPLETED}"
+        ),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "self-commit-1", 0);
+
+    wait_state(&api, &task_id, "Succeeded");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(attempt.changed_files, Some(1));
+    api.shutdown();
+}
+
+#[test]
+fn the_daemons_git_calls_in_a_slot_run_no_hook_the_agent_wrote() {
+    let fixture = Fixture::new();
+    let marker = fixture.marker("hook-ran");
+    let agent = fixture.script(
+        "hooking-agent",
+        &format!(
+            "{THREAD_STARTED}mkdir hooks\n\
+             printf '%s\\n' '#!/bin/sh' \"touch '{0}'\" > hooks/pre-commit\n\
+             chmod +x hooks/pre-commit\n\
+             git config core.hooksPath \"$PWD/hooks\"\n\
+             echo dirty > dirty.txt\n{TURN_COMPLETED}",
+            marker.display()
+        ),
+    );
+    let api = fixture.api(&agent);
+    let task_id = fixture.submit(&api, "hooked-1", 0);
+
+    wait_state(&api, &task_id, "Succeeded");
+    assert!(
+        !marker.exists(),
+        "the agent's pre-commit hook ran under the daemon"
+    );
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    // dirty.txt, and the hooks/pre-commit script the agent wrote, are both candidate files.
+    assert_eq!(attempt.changed_files, Some(2));
+    api.shutdown();
+}
+
+#[test]
+fn a_restricted_implement_task_is_refused_before_its_agent_starts() {
+    let fixture = Fixture::new();
+    let record = fixture.marker("argv");
+    let program = recording_agent(&fixture, &record);
+    let api = fixture.api_with(&program, |config| {
+        config.claude_program = Some(program.clone());
+    });
+    let mut contract = launch_contract(&fixture, "claude-code");
+    contract["permission"] = json!("restricted");
+    let task = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "restricted-implement", "contract": contract}),
+        )
+        .unwrap();
+    let task_id = task["contract"]["id"].as_str().unwrap().to_owned();
+
+    let failed = wait_state(&api, &task_id, "Failed");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(
+        attempt.failure_reason.as_deref(),
+        Some(worker_environment::RESTRICTED_NO_SHELL)
+    );
+    assert!(!record.exists(), "the agent must not start without a shell");
+    // The desktop reads the level and the notice at the top level of the record.
+    assert_eq!(failed["permission_level"], "restricted");
+    assert_eq!(failed["tools_notice"]["kind"], "lacked_tools");
+    assert_eq!(failed["tools_notice"]["tools"], json!(["shell"]));
+    let listed = api.dispatch("tasks.list", Value::Null).unwrap();
+    let listed = listed
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|task| task["contract"]["id"] == task_id.as_str())
+        .unwrap();
+    assert_eq!(listed["tools_notice"]["kind"], "lacked_tools");
+    api.shutdown();
+}
+
+#[test]
+fn a_task_view_states_its_level_and_a_read_only_task_has_no_notice() {
+    let fixture = Fixture::new();
+    let api = fixture.api(&succeeding_agent(&fixture));
+    let mut contract = launch_contract(&fixture, "codex");
+    contract["kind"] = json!("Investigate");
+    contract["permission"] = json!("restricted");
+    let task = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "scout-restricted", "contract": contract}),
+        )
+        .unwrap();
+    let task_id = task["contract"]["id"].as_str().unwrap().to_owned();
+
+    let done = wait_state(&api, &task_id, "Succeeded");
+    assert_eq!(done["permission_level"], "restricted");
+    assert_eq!(done["tools_notice"], Value::Null);
+    api.shutdown();
+}
+
+/// A contract whose work item names `input`, so the launch must copy it.
+fn contract_naming_input(fixture: &Fixture, input: &Path) -> Value {
+    let mut contract = launch_contract(fixture, "codex");
+    contract["work_item"] = json!({
+        "source": {"kind": "text", "reference": null},
+        "title": "Spec",
+        "ask": format!("Match the spec at {}.", input.display()),
+        "acceptance_criteria": [{"text": "Matches the spec.", "drafted": false, "confirmed": true}]
+    });
+    contract
+}
+
+#[test]
+fn a_named_input_is_copied_into_the_status_directory_and_the_source_is_untouched() {
+    let fixture = Fixture::new();
+    let input = fixture.data().join("spec.md");
+    fs::write(&input, "the spec\n").unwrap();
+    let agent = fixture.script(
+        "staging-agent",
+        &format!("echo staged > agent-output.txt\n{THREAD_STARTED}{TURN_COMPLETED}"),
+    );
+    let api = fixture.api(&agent);
+    let contract = contract_naming_input(&fixture, &input);
+    let task = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": "staged-input", "contract": contract}),
+        )
+        .unwrap();
+    let task_id = task["contract"]["id"].as_str().unwrap().to_owned();
+
+    wait_state(&api, &task_id, "Succeeded");
+    let status = fixture.data().join("task-status").join(&task_id).join("1");
+    assert_eq!(
+        fs::read_to_string(status.join("inputs/1-spec.md")).unwrap(),
+        "the spec\n"
+    );
+    assert!(status.join("plugin/workflow-router/SKILL.md").is_file());
+    assert_eq!(fs::read_to_string(&input).unwrap(), "the spec\n");
+    api.shutdown();
+}
+
+#[test]
+fn a_named_input_that_is_missing_refuses_the_launch_with_a_cannot_start_reason() {
+    let fixture = Fixture::new();
+    let record = fixture.marker("argv");
+    let api = fixture.api(&recording_agent(&fixture, &record));
+    let input = fixture.data().join("missing-spec.md");
+    let task = api
+        .dispatch(
+            "tasks.submit",
+            json!({
+                "idempotency_key": "missing-input",
+                "contract": contract_naming_input(&fixture, &input)
+            }),
+        )
+        .unwrap();
+    let task_id = task["contract"]["id"].as_str().unwrap().to_owned();
+
+    wait_state(&api, &task_id, "Failed");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(
+        attempt.failure_reason.as_deref(),
+        Some(worker_environment::INPUT_MISSING)
+    );
+    assert!(
+        !record.exists(),
+        "the agent must not start without its input"
+    );
     api.shutdown();
 }
 
@@ -1173,11 +1403,25 @@ fn output_tail_of_a_session_the_daemon_has_no_output_for_is_empty_and_flagged() 
     restarted.shutdown();
 }
 
+/// Pi has no task mapping at any level, so a task without a level (Auto) is refused at submit.
+/// These tests check the launch of a Pi task, so they name Restricted, which skips the mapping.
+fn submit_pi_restricted(fixture: &Fixture, api: &DaemonApi, key: &str) -> String {
+    let mut contract = launch_contract(fixture, "pi");
+    contract["permission"] = json!("restricted");
+    let task = api
+        .dispatch(
+            "tasks.submit",
+            json!({"idempotency_key": key, "contract": contract}),
+        )
+        .unwrap();
+    task["contract"]["id"].as_str().unwrap().to_owned()
+}
+
 #[test]
 fn unlaunchable_task_fails_with_a_recorded_attempt_instead_of_hanging() {
     let fixture = Fixture::new();
     let api = fixture.api(&succeeding_agent(&fixture));
-    let unlaunchable = fixture.submit_full(&api, "pi-1", "pi", 0, &[]);
+    let unlaunchable = submit_pi_restricted(&fixture, &api, "pi-1");
     let failed = wait_state(&api, &unlaunchable, "Failed");
     assert_eq!(failed["attempts"][0]["state"], "Failed");
     api.shutdown();
@@ -1190,8 +1434,8 @@ fn an_agent_without_a_launcher_is_accepted_at_submit_when_its_cli_is_absent() {
         config.pi_program = Some(fixture.root.path().join("no-such-pi"));
     });
     // Pi has no daemon launcher, so the submit-time check has no CLI to read or probe.
-    // submit_full panics on a refusal, so a returned id is the acceptance.
-    fixture.submit_full(&api, "no-launcher", "pi", 0, &[]);
+    // The dispatch unwraps, so a returned id is the acceptance.
+    submit_pi_restricted(&fixture, &api, "no-launcher");
     api.shutdown();
 }
 
@@ -1297,10 +1541,53 @@ fn strs(argv: &[String]) -> Vec<&str> {
     argv.iter().map(String::as_str).collect()
 }
 
-/// Submits one task for `agent` at `permission` (`None` leaves the field out)
-/// and returns the argv the run launched with. The Copilot usage file and
-/// worktree differ per run, so they are replaced by fixed names here.
+/// The argv a task run at `permission` launched with, without the slot's git grants: each
+/// level's expected flags are pinned without them, and `task_launches_grant_the_slot_git_dirs`
+/// checks the grants on their own.
 fn launched_argv(
+    agent: &str,
+    permission: Option<&str>,
+    adjust: impl FnOnce(&mut ExecutorConfig),
+) -> Vec<String> {
+    without_git_grants(launched_argv_with_grants(agent, permission, adjust))
+}
+
+/// Whether a path is inside a repository's Git directory. The test repository is a normal
+/// repository, so its slot grants all sit under `.git/`.
+fn is_git_dir(path: &str) -> bool {
+    path.contains("/.git/")
+}
+
+/// The slot's git directories a launch grants: the `--add-dir` values inside `.git/`.
+fn slot_git_grants(argv: &[String]) -> Vec<&str> {
+    argv.windows(2)
+        .filter(|pair| pair[0] == "--add-dir" && is_git_dir(&pair[1]))
+        .map(|pair| pair[1].as_str())
+        .collect()
+}
+
+/// `argv` with each git grant removed: its `--add-dir` pair, and Copilot's write rule for it.
+fn without_git_grants(argv: Vec<String>) -> Vec<String> {
+    let mut kept = Vec::with_capacity(argv.len());
+    let mut rest = argv.into_iter().peekable();
+    while let Some(arg) = rest.next() {
+        let grant = rest.peek().is_some_and(|value| {
+            is_git_dir(value)
+                && (arg == "--add-dir" || (arg == "--allow-tool" && value.starts_with("write(")))
+        });
+        if grant {
+            rest.next();
+        } else {
+            kept.push(arg);
+        }
+    }
+    kept
+}
+
+/// Submits one task for `agent` at `permission` (`None` leaves the field out)
+/// and returns the argv the run launched with, its git grants included. The Copilot usage file
+/// and worktree differ per run, so they are replaced by fixed names here.
+fn launched_argv_with_grants(
     agent: &str,
     permission: Option<&str>,
     adjust: impl FnOnce(&mut ExecutorConfig),
@@ -1316,6 +1603,11 @@ fn launched_argv(
     let mut contract = launch_contract(&fixture, agent);
     if let Some(level) = permission {
         contract["permission"] = json!(level);
+        // Preflight refuses an Implement task that has no shell at its level (Restricted, and
+        // Extended for Claude and Copilot), so those launches are an Investigate task.
+        if matches!(level, "restricted" | "extended") {
+            contract["kind"] = json!("Investigate");
+        }
     }
     api.dispatch(
         "tasks.submit",
@@ -1373,6 +1665,155 @@ const COPILOT_CHANNEL: [&str; 5] = [
 /// At Full, `--allow-all` already covers the status directory.
 const COPILOT_FULL_CHANNEL: [&str; 3] = ["--add-dir", "<status>", "--session-id=<session>"];
 
+/// Values after each `--add-dir`, in order.
+fn add_dirs(args: &[String]) -> Vec<String> {
+    args.windows(2)
+        .filter(|pair| pair[0] == "--add-dir")
+        .map(|pair| pair[1].clone())
+        .collect()
+}
+
+/// The write rules Copilot receives for the status and git directories, in order. The worktree's
+/// own rule is left out: every Auto and Restricted vector carries it.
+fn copilot_write_rules(args: &[String]) -> Vec<String> {
+    args.windows(2)
+        .filter(|pair| {
+            pair[0] == "--allow-tool"
+                && pair[1].starts_with("write(")
+                && !pair[1].contains("<task-worktree>")
+        })
+        .map(|pair| pair[1].clone())
+        .collect()
+}
+
+/// The directories a task channel grants on launch and resume: the status directory, then a
+/// slot's gitdir, `objects` and branch refs. The common `config`, `hooks` and `info` are never
+/// among them.
+#[test]
+fn task_channel_grants_the_status_and_git_dirs_on_launch_and_resume() {
+    let fixture = Fixture::new();
+    let config = fixture.config(&fixture.data(), Path::new("/unused/agent"));
+    let status = PathBuf::from("/data/task-status/task-1/1");
+    let git = [
+        "/repo/.git/worktrees/slot-1",
+        "/repo/.git/objects",
+        "/repo/.git/refs/heads",
+        "/repo/.git/logs/refs/heads",
+    ]
+    .map(PathBuf::from);
+    let granted: Vec<String> = std::iter::once(&status)
+        .chain(git.iter())
+        .map(|dir| dir.to_string_lossy().into_owned())
+        .collect();
+    let argv = |agent: &str, permission, session| {
+        let channel = RunChannel {
+            status_dir: Some(status.as_path()),
+            session: Some(session),
+            in_place: false,
+            git_dirs: &git,
+        };
+        agent_command(&config, agent, "do it", None, permission, None, channel)
+            .map(|(_, args)| args)
+    };
+    let new = TaskSession::New("u-1");
+    let resume = TaskSession::Resume("u-1");
+
+    // Launch: every agent grants exactly the status directory and the git directories.
+    for agent in ["codex", "claude-code", COPILOT_AGENT] {
+        let args = argv(agent, PermissionLevel::Auto, new).unwrap();
+        assert_eq!(add_dirs(&args), granted, "{agent}");
+    }
+    let copilot = argv(COPILOT_AGENT, PermissionLevel::Auto, new).unwrap();
+    let rules: Vec<String> = granted
+        .iter()
+        .map(|dir| format!("write({dir}/**)"))
+        .collect();
+    assert_eq!(copilot_write_rules(&copilot), rules);
+    let full = argv(COPILOT_AGENT, PermissionLevel::Full, new).unwrap();
+    assert!(
+        copilot_write_rules(&full).is_empty(),
+        "Full has no write rules"
+    );
+    assert_eq!(add_dirs(&full), granted);
+
+    // Resume: Codex repeats the grants as writable roots at Restricted and Full. Auto and
+    // Extended cannot resume, so they have no argv.
+    let roots = format!(
+        "sandbox_workspace_write.writable_roots=[{}]",
+        granted
+            .iter()
+            .map(|dir| format!("\"{dir}\""))
+            .collect::<Vec<_>>()
+            .join(",")
+    );
+    for level in [PermissionLevel::Restricted, PermissionLevel::Full] {
+        let args = argv("codex", level, resume).unwrap();
+        assert!(args.contains(&roots), "{level:?}");
+    }
+    for level in [PermissionLevel::Auto, PermissionLevel::Extended] {
+        assert!(argv("codex", level, resume).is_none(), "{level:?}");
+    }
+
+    // Resume for Claude and Copilot repeats the same grants with the session flag, and keeps
+    // the level's tools.
+    let claude = argv("claude-code", PermissionLevel::Auto, resume).unwrap();
+    assert_eq!(add_dirs(&claude), granted);
+    assert!(claude.windows(2).any(|pair| pair == ["--resume", "u-1"]));
+    assert!(claude.contains(&"--disallowedTools".to_owned()));
+    let copilot = argv(COPILOT_AGENT, PermissionLevel::Auto, resume).unwrap();
+    assert_eq!(copilot_write_rules(&copilot), rules);
+    assert!(copilot.contains(&"--resume=u-1".to_owned()));
+}
+
+/// The git guard reaches a task below Full only. Full is unrestricted, and chat's launch sets
+/// `git_guard: false` where it builds its request.
+#[test]
+fn the_git_guard_is_for_tasks_below_full_only() {
+    let job = |permission| Job {
+        task_id: "t".into(),
+        attempt_id: "a".into(),
+        session_id: "s".into(),
+        agent: "claude-code".into(),
+        objective: "o".into(),
+        model_selection: None,
+        permission,
+        worktree: PathBuf::from("."),
+        in_place: false,
+        base_commit: String::new(),
+        slot: None,
+        status_dir: PathBuf::new(),
+        session: JobSession::New(String::new()),
+        diag: orchestrator_diagnostics::Diagnostics::memory(),
+        output: Default::default(),
+    };
+    for permission in [
+        PermissionLevel::Restricted,
+        PermissionLevel::Extended,
+        PermissionLevel::Auto,
+    ] {
+        assert!(job(permission).git_guard(), "{permission:?}");
+    }
+    assert!(!job(PermissionLevel::Full).git_guard());
+}
+
+/// A launched task grants its slot's four git directories at every level, and never the shared
+/// config, hooks or info. The per-level tests pin everything else without them.
+#[test]
+fn task_launches_grant_the_slot_git_dirs_and_nothing_more() {
+    for agent in ["codex", "claude-code", COPILOT_AGENT] {
+        for permission in ["restricted", "auto", "full"] {
+            let argv = launched_argv_with_grants(agent, Some(permission), |_| {});
+            let grants = slot_git_grants(&argv);
+            let label = format!("{agent} at {permission}: {argv:?}");
+            assert_eq!(grants.len(), 4, "{label}");
+            assert!(grants[0].contains("/.git/worktrees/"), "{label}");
+            assert!(grants[1].ends_with("/.git/objects"), "{label}");
+            assert!(grants[2].contains("/.git/refs/heads"), "{label}");
+            assert!(grants[3].contains("/.git/logs/refs/heads"), "{label}");
+        }
+    }
+}
+
 fn launch_contract(fixture: &Fixture, agent: &str) -> Value {
     json!({
         "project_id": fixture.project_id(),
@@ -1419,7 +1860,7 @@ fn codex_task_argv_per_level_is_exact() {
         "workspace-write",
         "--ignore-user-config",
         "-c",
-        "developer_instructions=\"fixture instructions\"",
+        FIXTURE_CODEX_INSTRUCTIONS,
         "-c",
         "show_raw_agent_reasoning=true",
         "-c",
@@ -1429,20 +1870,20 @@ fn codex_task_argv_per_level_is_exact() {
         "--",
         objective,
     ];
-    // A task with no level is Restricted, so an existing Codex task changes.
-    assert_eq!(strs(&argv(None)), restricted);
+    // A task with no level runs at Auto, so it launches the Auto vector below.
+    assert_eq!(strs(&argv(None)), strs(&argv(Some("auto"))));
     assert_eq!(strs(&argv(Some("restricted"))), restricted);
     assert_eq!(
         strs(&argv(Some("auto"))),
         [
             "exec",
             "--json",
-            "--sandbox",
-            "workspace-write",
             "--approve-for-me",
             "--ignore-user-config",
             "-c",
-            "developer_instructions=\"fixture instructions\"",
+            "sandbox_workspace_write.network_access=true",
+            "-c",
+            FIXTURE_CODEX_INSTRUCTIONS,
             "-c",
             "show_raw_agent_reasoning=true",
             "-c",
@@ -1459,30 +1900,7 @@ fn codex_task_argv_per_level_is_exact() {
             "exec",
             "--json",
             "-c",
-            "developer_instructions=\"fixture instructions\"",
-            "-c",
-            "show_raw_agent_reasoning=true",
-            "-c",
-            "model_reasoning_summary=\"detailed\"",
-            "--add-dir",
-            "<status>",
-            "--",
-            objective,
-        ]
-    );
-    // Without a workflow agent the vector is the one Codex launched before, plus the status
-    // directory.
-    let plain = launched_argv("codex", None, |config| {
-        config.locate_workflow_agent = no_workflow_agent
-    });
-    assert_eq!(
-        strs(&plain),
-        [
-            "exec",
-            "--json",
-            "--sandbox",
-            "workspace-write",
-            "--ignore-user-config",
+            FIXTURE_CODEX_INSTRUCTIONS,
             "-c",
             "show_raw_agent_reasoning=true",
             "-c",
@@ -1530,20 +1948,17 @@ fn claude_task_argv_per_level_is_exact() {
     };
     let mut restricted = CLAUDE_TASK_HEAD.to_vec();
     restricted.extend(["Read,Edit,Write", "--allowedTools", "Read,Edit,Write"]);
-    // Every level ends with the fixture workflow agent's flags. Without one, Absent and
-    // Restricted launch the vector a Claude task has always had.
+    // Every level ends with the fixture workflow agent's flags. Without the plugin the agent never
+    // starts: `a_missing_workflow_agent_refuses_the_launch_with_a_cannot_start_reason` pins that.
     let restricted_agent = with_flags(
         with_flags(restricted.clone(), &FIXTURE_AGENT_FLAGS),
         &CLAUDE_CHANNEL,
     );
-    assert_eq!(strs(&claude(None, |_| {})), restricted_agent);
-    assert_eq!(strs(&claude(Some("restricted"), |_| {})), restricted_agent);
     assert_eq!(
-        strs(&claude(Some("restricted"), |config| {
-            config.locate_workflow_agent = no_workflow_agent
-        })),
-        with_flags(restricted, &CLAUDE_CHANNEL)
+        strs(&claude(None, |_| {})),
+        strs(&claude(Some("auto"), |_| {}))
     );
+    assert_eq!(strs(&claude(Some("restricted"), |_| {})), restricted_agent);
 
     let mut extended = CLAUDE_TASK_HEAD.to_vec();
     extended.extend([
@@ -1579,6 +1994,10 @@ fn claude_task_argv_per_level_is_exact() {
         "Read,Edit,Write",
         "--disallowedTools",
         "Bash(git push *)",
+        "Bash(git * push *)",
+        "Bash(git remote *)",
+        "Bash(git credential *)",
+        "Bash(git config *)",
         "Bash(gh *)",
     ];
     assert_eq!(
@@ -1649,20 +2068,12 @@ fn copilot_task_argv_per_level_is_exact() {
     );
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, None, |_| {})),
-        restricted_agent
+        strs(&launched_argv(COPILOT_AGENT, Some("auto"), |_| {}))
     );
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("restricted"), |_| {})),
         restricted_agent
     );
-    let plain = launched_argv(COPILOT_AGENT, None, |config| {
-        config.locate_workflow_agent = no_workflow_agent
-    });
-    assert_eq!(
-        strs(&plain),
-        with_flags(restricted.clone(), &COPILOT_CHANNEL)
-    );
-
     let mut extended = head.clone();
     extended.extend([
         "--allow-tool",
@@ -1700,6 +2111,14 @@ fn copilot_task_argv_per_level_is_exact() {
         "memory",
         "--deny-tool",
         "shell(git push)",
+        "--deny-tool",
+        "shell(git remote)",
+        "--deny-tool",
+        "shell(git credential)",
+        "--deny-tool",
+        "shell(git config)",
+        "--deny-tool",
+        "shell(gh:*)",
     ]);
     assert_eq!(
         strs(&launched_argv(COPILOT_AGENT, Some("auto"), |_| {})),
@@ -2077,7 +2496,7 @@ fn task_launch_refuses_a_replaced_cli_without_required_permission_options() {
     assert!(task(&api, &task_id)["attempts"][0]["failure_reason"]
         .as_str()
         .unwrap()
-        .contains("--sandbox"));
+        .contains("--approve-for-me"));
     assert!(!launched.exists());
 }
 
@@ -2438,7 +2857,7 @@ fn rpc_failures_are_reported_by_method_and_class_but_never_with_parameters() {
     let api = fixture.api_with(&succeeding_agent(&fixture), |config| {
         config.diagnostics = diag.clone()
     });
-    let waiting = fixture.submit_full(&api, "dep-parent", "pi", 0, &[]);
+    let waiting = fixture.submit_at(&api, "dep-parent", "pi", 0, &[], Some("restricted"));
     let second = fixture.submit_full(&api, "dep-child", "codex", 5, &[&waiting]);
     assert_eq!(
         api.dispatch(
@@ -2928,6 +3347,8 @@ mod usage_paths {
             permission: Default::default(),
             worktree: PathBuf::new(),
             in_place: false,
+            base_commit: String::new(),
+            slot: None,
             status_dir: PathBuf::new(),
             session: JobSession::New(String::new()),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
@@ -3150,6 +3571,8 @@ mod usage_paths {
             permission: PermissionLevel::Restricted,
             worktree: PathBuf::from("."),
             in_place: false,
+            base_commit: String::new(),
+            slot: None,
             status_dir: PathBuf::new(),
             session: JobSession::New(String::new()),
             diag: orchestrator_diagnostics::Diagnostics::memory(),
@@ -3462,7 +3885,7 @@ fn status_agent(fixture: &Fixture, first: &Path, resumed: &Path, lines: &[&str])
              echo plain > agent-output.txt\n{THREAD_STARTED}{TURN_COMPLETED}exit 0;;\nesac\n\
              printf '%s\\n' \"$@\" > '{first}.tmp' && mv '{first}.tmp' '{first}'\n\
              dir=''\nprev=''\n\
-             for arg in \"$@\"; do if [ \"$prev\" = --add-dir ]; then dir=\"$arg\"; fi; prev=\"$arg\"; done\n\
+             for arg in \"$@\"; do if [ \"$prev\" = --add-dir ] && [ -z \"$dir\" ]; then dir=\"$arg\"; fi; prev=\"$arg\"; done\n\
              {THREAD_STARTED}printf '%s\\n'{lines} >> \"$dir/status\"\n{TURN_COMPLETED}",
             first = first.display(),
             resumed = resumed.display(),
@@ -3488,7 +3911,7 @@ fn a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_w
         ],
     );
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "asks-1", 0);
+    let task_id = fixture.submit_restricted(&api, "asks-1", 0);
 
     let waiting = wait_state(&api, &task_id, "Waiting");
     assert_eq!(waiting["attempts"][0]["state"], "Waiting");
@@ -3568,6 +3991,40 @@ fn a_worker_that_needs_a_decision_waits_at_no_cost_and_resumes_its_own_session_w
 }
 
 #[test]
+fn a_resume_whose_staged_plugin_is_gone_fails_with_a_cannot_start_reason() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(
+        &fixture,
+        &first,
+        &resumed,
+        &["needs-decision [key=db] SQLite or Postgres?"],
+    );
+    let api = fixture.api(&program);
+    let task_id = fixture.submit_restricted(&api, "resume-plugin-1", 0);
+    wait_state(&api, &task_id, "Waiting");
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let question = store.open_questions().unwrap().pop().unwrap();
+    let status_dir = worker_status::status_dir(&fixture.data(), &task_id, 1);
+    fs::remove_dir_all(status_dir.join("plugin")).unwrap();
+
+    api.dispatch(
+        "decisions.answer",
+        json!({"question_id": question.id, "answer": "Postgres.", "idempotency_key": "gone-1"}),
+    )
+    .unwrap();
+    let failed = wait_state(&api, &task_id, "Failed");
+    assert_eq!(failed["attempts"][0]["state"], "Failed");
+    let attempt = &store.attempts_for_task(&task_id).unwrap()[0];
+    assert_eq!(
+        attempt.failure_reason.as_deref(),
+        Some(worker_environment::STAGED_PLUGIN_MISSING)
+    );
+    assert!(!resumed.exists(), "the resumed agent must not start");
+    api.shutdown();
+}
+
+#[test]
 fn a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it() {
     let fixture = Fixture::new();
     let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
@@ -3578,7 +4035,7 @@ fn a_blocked_worker_waits_through_a_restart_and_a_task_message_resumes_it() {
         &["blocked the fixture database is down"],
     );
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "blocked-1", 0);
+    let task_id = fixture.submit_restricted(&api, "blocked-1", 0);
     wait_state(&api, &task_id, "Waiting");
     let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
     assert!(store.open_questions().unwrap().is_empty());
@@ -3634,7 +4091,7 @@ fn a_user_message_resumes_a_waiting_task_under_the_users_heading() {
         &["blocked the fixture database is down"],
     );
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "user-message-1", 0);
+    let task_id = fixture.submit_restricted(&api, "user-message-1", 0);
     wait_state(&api, &task_id, "Waiting");
     api.dispatch(
         "tasks.message",
@@ -3665,7 +4122,7 @@ fn a_waiting_task_is_cancelled_without_an_owner() {
     let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
     let program = status_agent(&fixture, &first, &resumed, &["blocked no access"]);
     let api = fixture.api(&program);
-    let task_id = fixture.submit(&api, "cancel-wait", 0);
+    let task_id = fixture.submit_restricted(&api, "cancel-wait", 0);
     wait_state(&api, &task_id, "Waiting");
     api.dispatch(
         "tasks.cancel",
@@ -3717,7 +4174,7 @@ fn a_failed_report_fails_the_attempt_and_a_done_claim_does_not_make_a_candidate(
         "failing-reporter",
         &format!(
             "dir=''\nprev=''\n\
-             for arg in \"$@\"; do if [ \"$prev\" = --add-dir ]; then dir=\"$arg\"; fi; prev=\"$arg\"; done\n\
+             for arg in \"$@\"; do if [ \"$prev\" = --add-dir ] && [ -z \"$dir\" ]; then dir=\"$arg\"; fi; prev=\"$arg\"; done\n\
              case \"$*\" in *'objective of claims'*)\n\
              printf 'done all finished\\n' >> \"$dir/status\";;\n\
              *) echo partial > agent-output.txt\n\

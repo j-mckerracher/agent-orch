@@ -10,20 +10,27 @@ import {
   OLDER_DAEMON_NOTICE,
   PERMISSION_LEVELS,
   agentTexts,
-  chatChoiceBlock,
+  choiceBlock,
   permissionLabel,
+  type PermissionSurface,
 } from "./permissionLevel";
 import "./PermissionLevelPicker.css";
 
+const FULL_TITLE: Record<PermissionSurface, string> = {
+  chat: "Run this chat at Full?",
+  task: "Run this task at Full?",
+};
+
 /**
- * The level control in the model picker's panel (DPES-1105). Choosing Full opens a confirmation first, and the
- * level changes only when the user confirms. Extended and, on an older daemon, everything but Restricted
- * stay listed with the reason they cannot be chosen.
+ * The level control in the model picker's panel (DPES-1105) and in the task form (DPES-1126). Choosing Full opens
+ * a confirmation first, and the level changes only when the user confirms. Extended and, on an older daemon,
+ * everything but Restricted stay listed with the reason they cannot be chosen.
  */
 export function PermissionLevelPicker({
   level,
   daemonAdvertises,
   agent,
+  surface,
   onChange,
   closePanel,
 }: {
@@ -31,12 +38,13 @@ export function PermissionLevelPicker({
   daemonAdvertises: boolean;
   /** The agent the message names, or undefined when the daemon routes it. */
   agent: string | undefined;
+  surface: PermissionSurface;
   onChange: (level: PermissionLevel) => void;
   /**
    * Closes the panel before the Full confirmation opens. The panel is hidden while the dialog is up, so the dialog
-   * would otherwise have no visible control to return focus to.
+   * would otherwise have no visible control to return focus to. A surface with no panel leaves it out.
    */
-  closePanel: () => void;
+  closePanel?: () => void;
 }) {
   const [confirmingFull, setConfirmingFull] = useState(false);
   const pick = (next: PermissionLevel) => {
@@ -44,7 +52,7 @@ export function PermissionLevelPicker({
       onChange(next);
       return;
     }
-    closePanel();
+    closePanel?.();
     setConfirmingFull(true);
   };
   return (
@@ -53,7 +61,7 @@ export function PermissionLevelPicker({
         Permission level
         <select value={level} onChange={(event) => pick(event.target.value as PermissionLevel)}>
           {PERMISSION_LEVELS.map((item) => {
-            const block = chatChoiceBlock(item, daemonAdvertises);
+            const block = choiceBlock(item, daemonAdvertises, surface);
             return (
               <option key={item} value={item} disabled={block !== null}>
                 {permissionLabel(item)}
@@ -65,7 +73,7 @@ export function PermissionLevelPicker({
       </label>
       {confirmingFull && (
         <Dialog
-          title="Run this chat at Full?"
+          title={FULL_TITLE[surface]}
           onClose={() => setConfirmingFull(false)}
           footer={
             <>

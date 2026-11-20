@@ -285,6 +285,7 @@ async fn read_help(agent: &str, program: &Path, limit: Duration) -> Option<Arc<C
         &["--help"]
     };
     let mut child = ChildSupervisor::launch(&LaunchRequest {
+        git_guard: false,
         program: program.to_path_buf(),
         args: args.iter().map(|arg| (*arg).to_owned()).collect(),
         working_dir: std::env::temp_dir(),

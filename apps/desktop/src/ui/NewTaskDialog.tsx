@@ -2,11 +2,14 @@
 import { useId, useState } from "react";
 import type { DaemonError } from "../daemon/errors";
 import type { AutonomyPolicy, DeliveryPolicy, TaskKind } from "../daemon/types";
+import type { PermissionLevel } from "../sources/surfaces/types";
 import { Dialog } from "./Dialog";
 import { buildSubmission } from "./submission";
 import { useGate, useServices, useStore } from "./services";
 import { Button, Disclosure } from "./theme";
 import { ErrorNotice } from "./widgets";
+import { PermissionLevelNotes, PermissionLevelPicker } from "./views/workspace/PermissionLevelPicker";
+import { TASK_PREFERENCE_KEY, browserStorage, permissionForSend, readSavedLevel, saveLevel } from "./views/workspace/permissionLevel";
 
 export function NewTaskDialog({ projectId, inPlace, onClose }: { projectId: string; inPlace: boolean; onClose: () => void }) {
   const { data, router, drafts } = useServices();
@@ -16,11 +19,20 @@ export function NewTaskDialog({ projectId, inPlace, onClose }: { projectId: stri
   const [errors, setErrors] = useState<string[]>([]);
   const [failure, setFailure] = useState<DaemonError | null>(null);
   const [busy, setBusy] = useState(false);
+  const [permission, setPermission] = useState<PermissionLevel>(() => readSavedLevel(browserStorage(), TASK_PREFERENCE_KEY));
+  // An older daemon predates permission levels and runs a task at Restricted, so the form reads Restricted (DPES-1105).
+  const olderDaemon = gate.connected && !gate.can("permission_levels");
+  const shownLevel: PermissionLevel = olderDaemon ? "restricted" : permission;
+  const permissionOnWire = permissionForSend(permission, !olderDaemon);
+  const choosePermission = (next: PermissionLevel) => {
+    saveLevel(next, browserStorage(), TASK_PREFERENCE_KEY);
+    setPermission(next);
+  };
   const set = (patch: Parameters<typeof drafts.patchSubmit>[1]) => drafts.patchSubmit(projectId, patch);
 
   const submit = async () => {
     setFailure(null);
-    const built = buildSubmission(projectId, inPlace ? { ...draft, delivery: "ReportOnly" } : draft);
+    const built = buildSubmission(projectId, inPlace ? { ...draft, delivery: "ReportOnly" } : draft, permissionOnWire);
     if (!built.ok) {
       setErrors(built.errors);
       return;
@@ -92,6 +104,14 @@ export function NewTaskDialog({ projectId, inPlace, onClose }: { projectId: stri
         )}
         <Disclosure summary="More options" className="ps-wide">
           <div className="ps-form">
+            <PermissionLevelPicker
+              level={shownLevel}
+              daemonAdvertises={!olderDaemon}
+              agent={draft.agent.trim() || undefined}
+              surface="task"
+              onChange={choosePermission}
+            />
+            <PermissionLevelNotes olderDaemon={olderDaemon} lastTurn={null} />
             <label>
               Autonomy
               <select value={draft.autonomy} onChange={(e) => set({ autonomy: e.target.value as AutonomyPolicy })}>

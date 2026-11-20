@@ -15,6 +15,7 @@ function picker(
       level={level}
       daemonAdvertises={options.daemonAdvertises ?? true}
       agent={options.agent}
+      surface="chat"
       onChange={onChange}
       closePanel={options.closePanel ?? vi.fn()}
     />,

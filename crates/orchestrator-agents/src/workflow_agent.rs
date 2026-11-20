@@ -1,6 +1,7 @@
 //! The pstack workflow agent every work attempt runs as, whatever the provider.
 
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 
 use serde_json::Value;
@@ -73,8 +74,32 @@ fn cached_dirs(home: &Path) -> Vec<PathBuf> {
     versions.into_iter().map(|(_, path)| path).collect()
 }
 
+/// Copies `plugin` into `dest` and returns the copy as the workflow agent, so a run reads a
+/// directory the daemon owns and the shared plugin cache is never a path an agent can reach.
+/// The source is only read.
+pub fn stage(plugin: &WorkflowAgent, dest: &Path) -> io::Result<WorkflowAgent> {
+    copy_tree(&plugin.plugin_dir, dest)?;
+    plugin_at(dest).ok_or_else(|| io::Error::other("the staged plugin lacks a required file"))
+}
+
+/// Copies the files and directories under `from` into `to`. `fs::copy` refuses a link to a
+/// directory, so the copy never follows a cycle.
+fn copy_tree(from: &Path, to: &Path) -> io::Result<()> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_tree(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
+}
+
 /// A plugin root, only when both files the agent and its router read exist.
-fn plugin_at(dir: &Path) -> Option<WorkflowAgent> {
+pub fn plugin_at(dir: &Path) -> Option<WorkflowAgent> {
     let agent = fs::read_to_string(dir.join(AGENT_FILE)).ok()?;
     let skill = dir.join(SKILL_FILE);
     if !skill.is_file() {
@@ -143,6 +168,33 @@ mod tests {
 
         let agent = locate_in(home.path()).unwrap();
         assert_eq!(agent.plugin_dir, cache.join("0.10.0"));
+    }
+
+    #[test]
+    fn stage_copies_the_plugin_and_leaves_the_source_untouched() {
+        let home = tempfile::tempdir().unwrap();
+        let source = home.path().join("cache/0.10.0");
+        write_plugin(&source);
+        fs::create_dir_all(source.join("workflow-router/nested")).unwrap();
+        fs::write(source.join("workflow-router/nested/extra.md"), "extra\n").unwrap();
+        let plugin = plugin_at(&source).unwrap();
+        let dest = home.path().join("status/plugin");
+
+        let staged = stage(&plugin, &dest).unwrap();
+
+        assert_eq!(staged.plugin_dir, dest);
+        assert!(staged
+            .codex_instructions
+            .contains(&dest.join(SKILL_FILE).display().to_string()));
+        assert_eq!(
+            fs::read_to_string(dest.join("workflow-router/nested/extra.md")).unwrap(),
+            "extra\n"
+        );
+        fs::write(dest.join(SKILL_FILE), "# Edited copy\n").unwrap();
+        assert_eq!(
+            fs::read_to_string(source.join(SKILL_FILE)).unwrap(),
+            "# Router\n"
+        );
     }
 
     #[test]

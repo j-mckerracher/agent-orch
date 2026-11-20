@@ -288,6 +288,7 @@ mod tests {
         // spawn attempt would report `Launch`, so `CommandLineTooLong` shows
         // the check ran first.
         let request = LaunchRequest {
+            git_guard: false,
             program: PathBuf::from("no-such-program-for-command-line-test"),
             args: args(&"x".repeat(2 * 1024 * 1024)),
             working_dir: std::env::current_dir().unwrap(),

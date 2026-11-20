@@ -1,5 +1,5 @@
 import type { SubmitDraft } from "./drafts";
-import type { TaskSubmission } from "../daemon/types";
+import type { PermissionLevelWire, TaskSubmission } from "../daemon/types";
 import { isFixtureId } from "../daemon/api";
 
 export type SubmissionResult = { ok: true; submission: TaskSubmission } | { ok: false; errors: string[] };
@@ -36,7 +36,7 @@ function canonicalAgentId(value: string): "codex" | "claude-code" | null {
 }
 
 /** Validates the form locally; the daemon remains the authority on the contract. */
-export function buildSubmission(projectId: string, draft: SubmitDraft): SubmissionResult {
+export function buildSubmission(projectId: string, draft: SubmitDraft, permission?: PermissionLevelWire): SubmissionResult {
   const errors: string[] = [];
   if (draft.objective.trim() === "") errors.push("Objective is required.");
   const agent = canonicalAgentId(draft.agent);
@@ -73,6 +73,7 @@ export function buildSubmission(projectId: string, draft: SubmitDraft): Submissi
       autonomy: draft.autonomy,
       max_retries: maxRetries,
       max_repairs: maxRepairs,
+      ...(permission === undefined ? {} : { permission }),
     },
   };
 }

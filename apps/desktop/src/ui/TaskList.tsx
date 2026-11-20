@@ -3,7 +3,9 @@ import { FILTER_LABELS, taskBucket } from "./format";
 import type { TaskFilter } from "./router";
 import { agentDisplayName } from "../daemon/agentDisplayNames";
 import { QueueWaitNote, useQueueWaits } from "./QueueWaitNote";
+import { TaskPermissionBadge, ToolsNotice } from "./TaskPermission";
 import { useGate, useServices, useSource, useStore } from "./services";
+import { taskPermissionLevel } from "./views/workspace/permissionLevel";
 import { NavLink } from "./shell/NavLink";
 import { Button, Disclosure, Pill } from "./theme";
 import { LoadableRegion, SourceSection, StateText, TableWrap } from "./widgets";
@@ -72,8 +74,11 @@ export function TaskList({ projectId, filter }: { projectId: string; filter: Tas
                       <td>
                         {taskBucket(task, approvalList) === "review" ? <Pill tone="warn">Awaiting review</Pill> : <StateText state={task.state} />}
                         <QueueWaitNote state={task.state} wait={waits.get(task.contract.id)} />
+                        <ToolsNotice notice={task.tools_notice} />
                       </td>
-                      <td>{agentDisplayName(task.contract.agent)}</td>
+                      <td>
+                        {agentDisplayName(task.contract.agent)} <TaskPermissionBadge level={taskPermissionLevel(task)} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>

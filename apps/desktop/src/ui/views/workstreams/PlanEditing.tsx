@@ -462,7 +462,7 @@ function PolicyFields({ group, controls, submit, task }: FormProps & { task: WsT
   const contract = task.contract;
   // Unknown fields (no loaded contract) start at "keep current" and are sent only when chosen.
   const initial = {
-    permission: contract ? (contract.permission ?? "restricted") : KEEP,
+    permission: task.permission ?? KEEP,
     autonomy: contract?.autonomy ?? KEEP,
     delivery: contract?.delivery ?? KEEP,
     maxRetries: contract ? String(contract.max_retries) : KEEP,

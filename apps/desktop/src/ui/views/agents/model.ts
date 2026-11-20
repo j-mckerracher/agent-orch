@@ -1,7 +1,9 @@
 /** Pure derivations for the Agents view (M7-14). No React, no I/O. */
-import type { Approval, SessionEntry, TaskRecord, TaskState } from "../../../daemon/types";
+import type { Approval, SessionEntry, TaskRecord, TaskState, ToolsNoticeWire } from "../../../daemon/types";
 import type { PreviewTask, TaskRef } from "../../../sources/types";
+import type { PermissionLevel } from "../../../sources/surfaces/types";
 import { basename, matchesFilter } from "../../format";
+import { taskPermissionLevel } from "../workspace/permissionLevel";
 
 /** Tabs whose rows are tasks, picked by task state alone. */
 export type TaskTab = "running" | "waiting" | "queued" | "failed" | "finished";
@@ -40,6 +42,10 @@ export interface WorkRow {
   /** Null until the daemon's session list has loaded: session counts and rows are then unknown, never zero. */
   sessions: WorkSession[] | null;
   blocked: boolean;
+  /** The level the task ran with; null for a preview task, which has none. */
+  permission: PermissionLevel | null;
+  /** Tools the worker lacked; null when there were none, and always null for a preview task. */
+  toolsNotice: ToolsNoticeWire | null;
   /** D2 preview events; empty for daemon tasks, whose feed comes from `sessions.events`. */
   timeline: Array<{ at: string; kind: string; detail: string }>;
 }
@@ -80,6 +86,8 @@ export function rowFromTask(task: TaskRecord, entries: readonly SessionEntry[] |
     attempts: task.attempts.map((a) => ({ id: a.id, state: a.state, number: a.attempt_number })),
     sessions: entries === null ? null : [...sessions.values()],
     blocked,
+    permission: taskPermissionLevel(task),
+    toolsNotice: task.tools_notice ?? null,
     timeline: [],
   };
 }
@@ -103,6 +111,8 @@ export function rowsFromPreview(previews: readonly PreviewTask[]): WorkRow[] {
     attempts: task.attempts.map((a, index) => ({ id: a.id, state: a.state, number: index + 1 })),
     sessions: task.sessions.map((s) => ({ id: s.id, state: s.state, adapter: null, attemptId: null })),
     blocked: false,
+    permission: null,
+    toolsNotice: null,
     timeline: task.timeline,
   }));
 }

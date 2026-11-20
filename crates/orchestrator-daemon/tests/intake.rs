@@ -162,7 +162,7 @@ fn start_with_fake_agent(layout: &Layout) -> Daemon {
             &program,
             "#!/bin/sh\n\
              if [ \"$1\" = exec ] && [ \"$2\" = --help ]; then\n\
-               printf '%s\\n' --json --sandbox --ignore-user-config -c\n\
+               printf '%s\\n' --json --sandbox --ignore-user-config --approve-for-me -c\n\
                exit 0\n\
              fi\n\
              printf '{\"type\":\"thread.started\",\"thread_id\":\"01a1b721-1f91-7393-ae1d-6aace8e4646a\"}\\n'\n\

@@ -13,6 +13,7 @@ fn env_dump_request(env_names: &[&str]) -> LaunchRequest {
     #[cfg(windows)]
     let (program, args) = ("cmd.exe", vec!["/C".to_owned(), "set".to_owned()]);
     LaunchRequest {
+        git_guard: false,
         program: PathBuf::from(program),
         args,
         working_dir: std::env::current_dir().expect("current directory"),
@@ -81,4 +82,30 @@ async fn children_receive_only_the_allowlisted_environment() {
     assert!(!has(&names, "M6_PROVIDER_KEY"), "{names:?}");
     assert!(!has(&names, "M6_USER_PASSED"), "{names:?}");
     assert!(!has(&names, "M6_UNLISTED_API_TOKEN"), "{names:?}");
+}
+
+/// The task git guard reaches a child only when the launch asks for it. Chat and Full task
+/// launches pass `git_guard: false` and get none of it.
+#[tokio::test]
+async fn the_task_git_guard_reaches_only_a_guarded_launch() {
+    let mut guarded = env_dump_request(&[]);
+    guarded.git_guard = true;
+    let names = child_environment(&guarded).await;
+    for wanted in [
+        "GIT_TERMINAL_PROMPT",
+        "GIT_CONFIG_KEY_1",
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+    ] {
+        assert!(
+            has(&names, wanted),
+            "guarded launch lacks {wanted}: {names:?}"
+        );
+    }
+
+    let plain = child_environment(&env_dump_request(&[])).await;
+    assert!(!has(&plain, "GIT_CONFIG_KEY_1"), "{plain:?}");
+    assert!(!has(&plain, "GIT_AUTHOR_NAME"), "{plain:?}");
 }

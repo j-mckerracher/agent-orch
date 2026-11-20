@@ -3,6 +3,7 @@ import { useState } from "react";
 import { agentDisplayName } from "../../../daemon/agentDisplayNames";
 import type { QueueWait } from "../../../sources/surfaces/types";
 import { QueueWaitNote, useQueueWaits } from "../../QueueWaitNote";
+import { TaskPermissionBadge, ToolsNotice } from "../../TaskPermission";
 import { EmptyState, Pill } from "../../theme";
 import { WsTabs } from "../workstreams/WsTabs";
 import { LoadRegion, stateTone } from "./common";
@@ -47,8 +48,10 @@ function TaskRow({ row, wait, onOpen }: { row: WorkRow; wait?: QueueWait; onOpen
           <span className="ws-row-name">{row.objective}</span>
           <small>{taskSubtitle(row)}</small>
           <QueueWaitNote state={row.state} wait={wait} />
+          <ToolsNotice notice={row.toolsNotice} />
         </span>
         {row.blocked && <Pill tone="warn">Blocked</Pill>}
+        <TaskPermissionBadge level={row.permission} />
         <span aria-hidden="true">›</span>
       </button>
     </li>

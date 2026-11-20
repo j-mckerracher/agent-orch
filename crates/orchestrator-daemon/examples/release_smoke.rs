@@ -192,7 +192,7 @@ fn agent(pid_file: &Path) {
     }
     // The daemon refuses a task until the CLI's `exec --help` advertises the options it passes.
     if std::env::args().skip(1).eq(["exec", "--help"]) {
-        println!("  --json\n  --sandbox <MODE>\n  --ignore-user-config\n  -c <KEY=VALUE>");
+        println!("  --json\n  --sandbox <MODE>\n  --approve-for-me\n  --ignore-user-config\n  -c <KEY=VALUE>");
         return;
     }
     let mut stdout = std::io::stdout();

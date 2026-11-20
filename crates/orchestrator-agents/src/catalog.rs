@@ -899,9 +899,9 @@ impl CodexAdapter {
     ///
     /// Restricted writes only inside the workspace sandbox, and an approval
     /// request has no reviewer. Auto adds `--approve-for-me`, so approval
-    /// requests go to automatic review. Both pin the sandbox and ignore the
-    /// user's config. Full adds no sandbox or approval flag, so the user's
-    /// `~/.codex/config.toml` decides.
+    /// requests go to automatic review, and turns the network on. Both pin the
+    /// sandbox and ignore the user's config. Full adds no sandbox or approval
+    /// flag, so the user's `~/.codex/config.toml` decides.
     ///
     /// `agent`, when given, sends its instructions as `developer_instructions`
     /// at every level. A `-c` override still applies under `--ignore-user-config`.
@@ -916,11 +916,12 @@ impl CodexAdapter {
             PermissionLevel::Restricted => {
                 &["--sandbox", "workspace-write", "--ignore-user-config"]
             }
+            // Codex rejects `--sandbox` together with `--approve-for-me`, which already selects workspace-write.
             PermissionLevel::Auto => &[
-                "--sandbox",
-                "workspace-write",
                 "--approve-for-me",
                 "--ignore-user-config",
+                "-c",
+                "sandbox_workspace_write.network_access=true",
             ],
             PermissionLevel::Full => &[],
             PermissionLevel::Extended => return None,
@@ -941,17 +942,21 @@ impl CodexAdapter {
 
     /// Arguments that continue task session `session_id` with `prompt` at `level`, or `None`
     /// when Codex cannot resume at that level (DPES-1108 phase 4). `codex exec resume` offers
-    /// none of `--sandbox`, `--add-dir`, `-C` and `--approve-for-me`, so:
+    /// none of `--sandbox`, `--add-dir`, `-C` and `--approve-for-me`, so each one is repeated as
+    /// a `-c` override, under `--ignore-user-config` as at launch:
     ///
-    /// - Restricted pins the same `workspace-write` sandbox through `-c sandbox_mode` and
-    ///   grants the status directory, when given, through
-    ///   `-c sandbox_workspace_write.writable_roots`, under `--ignore-user-config` as at launch. Whether `exec resume` applies these over the
-    ///   sandbox the session was started with is not shown by `--help`. Either way the run is
-    ///   never wider than workspace-write; at worst the status file is not writable.
-    /// - Full adds no sandbox flag, as at launch, so the user's config decides. The status
-    ///   directory is not granted: a `-c` root list would replace the user's own.
-    /// - Auto has no way to route approvals to automatic review, and Extended has no Codex
-    ///   mapping: both return `None`, and the daemon fails the task instead of resuming.
+    /// - Restricted pins `workspace-write` through `-c sandbox_mode`.
+    /// - Full adds no sandbox flag, as at launch, so the user's config decides.
+    /// - Restricted and Full grant `write_dirs` (the status and git directories) through
+    ///   `-c sandbox_workspace_write.writable_roots`. That key replaces the user's own roots, so
+    ///   at Full it narrows them to these directories.
+    /// - Auto returns `None`. Its `-c` equivalent of `--approve-for-me` (`approvals_reviewer`
+    ///   `auto_review`, `approval_policy`, `sandbox_mode`) is shown only by the Codex 0.171.0
+    ///   binary and offline rendering, so the daemon fails the task instead of resuming until a
+    ///   live `exec resume` run confirms it. Extended has no Codex mapping and also returns `None`.
+    ///
+    /// Whether `exec resume` applies these over the sandbox the session started with is not
+    /// shown by `--help`. The launch's policy is the worst case, and it is no wider than these.
     ///
     /// The process must run in the task's worktree: `exec resume` has no `-C`.
     #[allow(clippy::too_many_arguments)]
@@ -962,27 +967,32 @@ impl CodexAdapter {
         model: Option<&str>,
         effort: Option<&str>,
         agent: Option<&WorkflowAgent>,
-        status_dir: Option<&Path>,
+        write_dirs: &[&Path],
         in_place: bool,
     ) -> Option<Vec<String>> {
         let mut args: Vec<String> = ["exec", "resume", "--json"].map(str::to_owned).into();
-        match level {
-            PermissionLevel::Restricted => {
-                args.extend([
-                    "--ignore-user-config".to_owned(),
-                    "-c".to_owned(),
-                    "sandbox_mode=\"workspace-write\"".to_owned(),
-                ]);
-                if let Some(dir) = status_dir {
-                    let root = toml_basic_string(&dir.to_string_lossy());
-                    args.extend([
-                        "-c".to_owned(),
-                        format!("sandbox_workspace_write.writable_roots=[{root}]"),
-                    ]);
-                }
-            }
-            PermissionLevel::Full => {}
+        let flags: &[&str] = match level {
+            PermissionLevel::Restricted => &[
+                "--ignore-user-config",
+                "-c",
+                "sandbox_mode=\"workspace-write\"",
+            ],
+            PermissionLevel::Full => &[],
             PermissionLevel::Auto | PermissionLevel::Extended => return None,
+        };
+        args.extend(flags.iter().map(|flag| (*flag).to_owned()));
+        if !write_dirs.is_empty() {
+            let roots: Vec<String> = write_dirs
+                .iter()
+                .map(|dir| toml_basic_string(&dir.to_string_lossy()))
+                .collect();
+            args.extend([
+                "-c".to_owned(),
+                format!(
+                    "sandbox_workspace_write.writable_roots=[{}]",
+                    roots.join(",")
+                ),
+            ]);
         }
         if in_place {
             args.push("--skip-git-repo-check".to_owned());
@@ -1040,7 +1050,8 @@ impl ClaudeCodeAdapter {
     /// Arguments for a task run at `level` in its worktree. Restricted is the
     /// [`Self::args_for_prompt`] vector, unchanged. Extended adds Bash, allowed
     /// only for read-only git commands. Auto lets the classifier judge each Bash
-    /// call, and denies `git push` and `gh`. Full drops every restriction. Tasks
+    /// call, and denies `git push`, `git remote`, `git credential`, `git config` and `gh`.
+    /// Full drops every restriction. Tasks
     /// keep no session-persistence flag, because a task is not a chat turn. No
     /// spend cap is passed.
     ///
@@ -1099,6 +1110,10 @@ impl ClaudeCodeAdapter {
                 "Read,Edit,Write",
                 "--disallowedTools",
                 "Bash(git push *)",
+                "Bash(git * push *)",
+                "Bash(git remote *)",
+                "Bash(git credential *)",
+                "Bash(git config *)",
                 "Bash(gh *)",
             ]
             .into_iter()
@@ -1324,7 +1339,10 @@ impl CopilotAdapter {
         };
         match probe_copilot_version(&program, limit).await {
             Ok(_) => {
-                let blocked = matches!(sign_in.state, SignInState::NotSignedIn | SignInState::NoSeat);
+                let blocked = matches!(
+                    sign_in.state,
+                    SignInState::NotSignedIn | SignInState::NoSeat
+                );
                 let models = if blocked {
                     Facet::without_items(CatalogState::Unknown, COPILOT_MODELS_UNREAD)
                 } else {
@@ -1646,8 +1664,12 @@ mod tests {
     }
 
     #[test]
-    fn codex_resume_repeats_the_level_through_config_and_refuses_what_it_cannot_repeat() {
-        let dir = Path::new("/data/tasks/t-1/1");
+    fn codex_resume_repeats_the_level_through_config_and_grants_its_directories() {
+        let status = Path::new("/data/tasks/t-1/1");
+        let objects = Path::new("/repo/.git/objects");
+        let dirs = [status, objects];
+        let roots =
+            "sandbox_workspace_write.writable_roots=[\"/data/tasks/t-1/1\",\"/repo/.git/objects\"]";
         let restricted = CodexAdapter::args_for_resume(
             PermissionLevel::Restricted,
             "01a1b721-1f91-7393-ae1d-6aace8e4646a",
@@ -1655,7 +1677,7 @@ mod tests {
             Some("m"),
             None,
             None,
-            Some(dir),
+            &dirs,
             true,
         )
         .unwrap();
@@ -1669,7 +1691,7 @@ mod tests {
                 "-c",
                 "sandbox_mode=\"workspace-write\"",
                 "-c",
-                "sandbox_workspace_write.writable_roots=[\"/data/tasks/t-1/1\"]",
+                roots,
                 "--skip-git-repo-check",
                 "-m",
                 "m",
@@ -1682,7 +1704,8 @@ mod tests {
                 "--answer",
             ]
         );
-        // `exec resume` offers none of these; Full adds nothing, as at launch.
+        // Full adds no sandbox flag, but keeps the status and git grants (the user's roots are
+        // replaced by these, as the doc on `args_for_resume` says).
         let full = CodexAdapter::args_for_resume(
             PermissionLevel::Full,
             "id",
@@ -1690,7 +1713,7 @@ mod tests {
             None,
             None,
             None,
-            Some(dir),
+            &dirs,
             false,
         )
         .unwrap();
@@ -1701,6 +1724,8 @@ mod tests {
                 "resume",
                 "--json",
                 "-c",
+                roots,
+                "-c",
                 "show_raw_agent_reasoning=true",
                 "-c",
                 "model_reasoning_summary=\"detailed\"",
@@ -1709,6 +1734,19 @@ mod tests {
                 "p"
             ]
         );
+        let no_dirs = CodexAdapter::args_for_resume(
+            PermissionLevel::Full,
+            "id",
+            "p",
+            None,
+            None,
+            None,
+            &[],
+            false,
+        )
+        .unwrap();
+        assert!(!no_dirs.iter().any(|arg| arg.contains("writable_roots")));
+        // `exec resume` has no `--approve-for-me`, `--sandbox` or `--add-dir`; the keys stand in.
         for flag in [
             "--sandbox",
             "--add-dir",
@@ -1718,10 +1756,12 @@ mod tests {
         ] {
             assert!(!restricted.iter().any(|arg| arg == flag), "{flag}");
         }
+        // Auto stays refused until a live resume confirms the `-c` equivalent of --approve-for-me.
         for level in [PermissionLevel::Auto, PermissionLevel::Extended] {
             assert_eq!(
-                CodexAdapter::args_for_resume(level, "id", "p", None, None, None, Some(dir), false),
-                None
+                CodexAdapter::args_for_resume(level, "id", "p", None, None, None, &dirs, false),
+                None,
+                "{level:?}"
             );
         }
     }
@@ -2012,9 +2052,53 @@ mod tests {
                 "do it",
             ]
         );
+        // Auto turns the network on, and nothing else in this argv changes.
+        assert_eq!(
+            task(PermissionLevel::Auto, None),
+            [
+                "exec",
+                "--json",
+                "--approve-for-me",
+                "--ignore-user-config",
+                "-c",
+                "sandbox_workspace_write.network_access=true",
+                "-m",
+                "m",
+                "-c",
+                "model_reasoning_effort=\"low\"",
+                "-c",
+                "show_raw_agent_reasoning=true",
+                "-c",
+                "model_reasoning_summary=\"detailed\"",
+                "--",
+                "do it",
+            ]
+        );
         assert_eq!(
             CodexAdapter::args_for_task(PermissionLevel::Extended, "x", None, None, Some(&agent)),
             None
+        );
+    }
+
+    /// Auto's deny list names every path by which a worker could publish or re-point git, and `gh`.
+    #[test]
+    fn claude_task_auto_denies_push_remote_credential_config_and_gh() {
+        let argv =
+            ClaudeCodeAdapter::args_for_task(PermissionLevel::Auto, "do it", None, None, None);
+        let at = argv
+            .iter()
+            .position(|arg| arg == "--disallowedTools")
+            .unwrap();
+        assert_eq!(
+            argv[at + 1..],
+            [
+                "Bash(git push *)",
+                "Bash(git * push *)",
+                "Bash(git remote *)",
+                "Bash(git credential *)",
+                "Bash(git config *)",
+                "Bash(gh *)",
+            ]
         );
     }
 

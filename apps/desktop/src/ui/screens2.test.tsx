@@ -61,6 +61,21 @@ describe("S3 task list", () => {
     expect(within(table).queryByText(/none recorded/)).not.toBeInTheDocument();
   });
 
+  it("shows the level beside each task's agent, and the tools its worker lacked beside its state", async () => {
+    const fake = seeded();
+    fake.tasks = [
+      mkTask("t-q", REPO, {
+        permission_level: "full",
+        tools_notice: { kind: "lacked_tools", tools: ["Bash"], reason: "denied 1×" },
+      }),
+    ];
+    await mount(fake, { route: tasksRoute() });
+    const table = await screen.findByRole("table", { name: "Tasks" });
+    const row = within(table).getByText("objective of t-q").closest("tr")!;
+    expect(within(row).getByText("Full")).toBeInTheDocument();
+    expect(within(row).getByText("Worker lacked tools: Bash (denied 1×)")).toBeInTheDocument();
+  });
+
   it("marks a task with a pending approval as Awaiting review", async () => {
     await mount(seeded(), { route: tasksRoute("review") });
     const table = await screen.findByRole("table", { name: "Tasks" });
@@ -235,6 +250,20 @@ describe("S3 task list", () => {
 });
 
 describe("S4 task and session detail", () => {
+  it("shows the level the task ran with, and the tools its worker lacked, beside its state on the task page", async () => {
+    const fake = seeded();
+    fake.tasks = [
+      mkTask("t-q", REPO, {
+        permission_level: "auto",
+        tools_notice: { kind: "lacked_tools", tools: ["Bash", "Edit"], reason: "denied 2×" },
+      }),
+    ];
+    await mount(fake, { route: taskRoute("t-q") });
+    expect(await screen.findByTestId("task-state")).toHaveTextContent("Queued");
+    expect(screen.getByText("Auto")).toBeInTheDocument();
+    expect(screen.getByText("Worker lacked tools: Bash, Edit (denied 2×)")).toBeInTheDocument();
+  });
+
   it("explains a queued task's launch blocker on the task page", async () => {
     const fake = seeded();
     fake.tasks = [mkTask("t-q", REPO, { contract: { kind: "Investigate", agent: "codex" } })];

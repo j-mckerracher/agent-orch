@@ -12,6 +12,8 @@ import { useGate, useServices, useSource, useStore } from "./services";
 import { Button, Disclosure, Pill } from "./theme";
 import { TaskQueueStatus } from "./TaskQueueStatus";
 import { TaskConversation } from "./TaskConversation";
+import { TaskPermissionBadge, ToolsNotice } from "./TaskPermission";
+import { taskPermissionLevel } from "./views/workspace/permissionLevel";
 import { ActionMenu, type MenuItem } from "./views/workstreams/ActionMenu";
 import { WsTabs } from "./views/workstreams/WsTabs";
 import { ErrorNotice, LoadableRegion, SimulatedReceipts, SourceSection, StateText, TableWrap } from "./widgets";
@@ -286,6 +288,8 @@ function TaskView({ projectId, taskId, record }: { projectId: string; taskId: st
           <span data-testid="task-state">
             {awaitingReview ? <Pill tone="warn">Awaiting review</Pill> : <StateText state={record.state} />}
           </span>
+          <ToolsNotice notice={record.tools_notice} />
+          <TaskPermissionBadge level={taskPermissionLevel(record)} />
           <span className="pt-spacer" />
           {items.length > 0 && <ActionMenu label="Task actions" trigger={<span aria-hidden="true">⋯</span>} items={items} />}
           {primary}

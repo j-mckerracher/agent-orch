@@ -1,15 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
+import type { TaskRecord } from "../../../daemon/types";
 import type { PermissionLevel } from "../../../sources/surfaces/types";
 import {
   DEFAULT_PERMISSION_LEVEL,
   FULL_AGENT_TEXT,
   FULL_REVIEW_TEXT,
   RESTRICTED_PREFERENCE_KEY,
+  TASK_PREFERENCE_KEY,
   agentTexts,
-  chatChoiceBlock,
+  choiceBlock,
   permissionForSend,
   readSavedLevel,
   saveLevel,
+  taskPermissionLevel,
 } from "./permissionLevel";
 
 const LEVELS: PermissionLevel[] = ["restricted", "extended", "auto", "full"];
@@ -41,20 +44,53 @@ describe("the payload per level and capability", () => {
 
 describe("which levels a chat can choose", () => {
   it("refuses Extended for chat on every daemon, since the daemon refuses it too", () => {
-    expect(chatChoiceBlock("extended", true)).toBe("not available for chat yet");
-    expect(chatChoiceBlock("extended", false)).toBe("not available for chat yet");
+    expect(choiceBlock("extended", true, "chat")).toBe("not available for chat yet");
+    expect(choiceBlock("extended", false, "chat")).toBe("not available for chat yet");
   });
 
   it("offers Restricted, Auto and Full on a daemon with permission levels", () => {
-    expect(chatChoiceBlock("restricted", true)).toBeNull();
-    expect(chatChoiceBlock("auto", true)).toBeNull();
-    expect(chatChoiceBlock("full", true)).toBeNull();
+    expect(choiceBlock("restricted", true, "chat")).toBeNull();
+    expect(choiceBlock("auto", true, "chat")).toBeNull();
+    expect(choiceBlock("full", true, "chat")).toBeNull();
   });
 
   it("offers only Restricted on an older daemon, and names why the others cannot be chosen", () => {
-    expect(chatChoiceBlock("restricted", false)).toBeNull();
-    expect(chatChoiceBlock("auto", false)).toBe("needs an updated daemon");
-    expect(chatChoiceBlock("full", false)).toBe("needs an updated daemon");
+    expect(choiceBlock("restricted", false, "chat")).toBeNull();
+    expect(choiceBlock("auto", false, "chat")).toBe("needs an updated daemon");
+    expect(choiceBlock("full", false, "chat")).toBe("needs an updated daemon");
+  });
+
+  it("refuses Extended for tasks too, and names tasks in the reason", () => {
+    expect(choiceBlock("extended", true, "task")).toBe("read-only git only, so it can't build, test or commit");
+    expect(choiceBlock("auto", true, "task")).toBeNull();
+  });
+});
+
+describe("the level a task ran with", () => {
+  const task = (permission_level: string | undefined, permission?: PermissionLevel) =>
+    ({ contract: { permission }, permission_level }) as TaskRecord;
+
+  it("reads the explicit level, and falls back to the contract's, then to Restricted for an older task", () => {
+    expect(taskPermissionLevel(task("auto", "full"))).toBe("auto");
+    expect(taskPermissionLevel(task(undefined, "full"))).toBe("full");
+    expect(taskPermissionLevel(task(undefined))).toBe("restricted");
+    expect(taskPermissionLevel(task("not-a-level", "auto"))).toBe("auto");
+  });
+});
+
+describe("the task form's saved Restricted choice", () => {
+  it("keeps its own key, so a chat's Restricted choice never reaches a task", () => {
+    expect(readSavedLevel(memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "restricted" }), TASK_PREFERENCE_KEY)).toBe("auto");
+    expect(readSavedLevel(memoryStorage({ [TASK_PREFERENCE_KEY]: "restricted" }), TASK_PREFERENCE_KEY)).toBe("restricted");
+  });
+
+  it("saves Restricted under the task key only, and removes it for any other level", () => {
+    const storage = memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "restricted" });
+    saveLevel("restricted", storage, TASK_PREFERENCE_KEY);
+    expect(storage.data.get(TASK_PREFERENCE_KEY)).toBe("restricted");
+    expect(storage.data.get(RESTRICTED_PREFERENCE_KEY)).toBe("restricted");
+    saveLevel("auto", storage, TASK_PREFERENCE_KEY);
+    expect(storage.data.has(TASK_PREFERENCE_KEY)).toBe(false);
   });
 });
 

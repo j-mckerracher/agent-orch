@@ -2,6 +2,16 @@ import { describe, expect, it } from "vitest";
 import { emptySubmitDraft } from "./drafts";
 import { buildSubmission } from "./submission";
 
+describe("buildSubmission permission", () => {
+  it("sends the chosen level, and leaves it out when the daemon cannot take one", () => {
+    const draft = { ...emptySubmitDraft(), objective: "Implement the task" };
+    const chosen = buildSubmission("/repo", draft, "auto");
+    expect(chosen.ok && chosen.submission.permission).toBe("auto");
+    const older = buildSubmission("/repo", draft);
+    expect(older.ok && older.submission).not.toHaveProperty("permission");
+  });
+});
+
 describe("buildSubmission agent identifiers", () => {
   it("omits a blank agent so the daemon resolves saved dispatch defaults", () => {
     const result = buildSubmission("/repo", { ...emptySubmitDraft(), objective: "Use defaults" });

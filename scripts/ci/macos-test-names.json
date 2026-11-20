@@ -1222,7 +1222,12 @@
    "worktree::tests::release_by_another_holder_is_refused",
    "worktree::tests::released_slot_is_reused_by_the_next_task",
    "worktree::tests::worktree_is_pinned_to_the_resolved_sha_when_origin_is_ahead",
-   "worktree::tests::treehouse_timeout_is_reported"
+   "worktree::tests::treehouse_timeout_is_reported",
+   "git::tests::the_task_guard_commits_as_the_daemon_does",
+   "worktree::tests::a_slot_whose_commondir_points_at_another_repository_is_not_attached",
+   "worktree::tests::slot_git_runs_no_hook_the_agent_pointed_git_at",
+   "worktree::tests::slot_git_dirs_grant_the_configured_prefix_the_branch_was_created_under",
+   "worktree::tests::slot_git_dirs_grant_the_slot_objects_and_the_branch_refs_only"
   ],
   "cli-cleanup-safety": [
    "cleanup_refuses_staged_deleted_and_unlanded_work_in_a_landed_worktree",

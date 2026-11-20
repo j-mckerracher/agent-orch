@@ -6,9 +6,10 @@
 //! for the task's kind and delivery. Pure text, no I/O, so the same contract always renders the
 //! same brief.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::contract::{TaskContract, TaskKind};
+use crate::permission::PermissionLevel;
 
 /// The first line of every brief. Tests and log readers find the brief by it.
 pub const BRIEF_MARKER: &str = "# MCAO worker brief";
@@ -64,32 +65,122 @@ fn status_section(status_file: &Path) -> String {
     )
 }
 
+/// What the worker can run at its level. The brief says which, so the worker never assumes a
+/// shell or a command it does not have.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShellAccess {
+    /// No shell: the worker reads and edits files and runs no command, test or git.
+    None,
+    /// A shell that runs only read-only git commands (status, diff, log, show).
+    ReadOnlyGit,
+    /// A shell whose commands the level's rules check. Local git works in the working copy.
+    Checked,
+    /// A shell with no permission checks.
+    Unchecked,
+}
+
+/// A file the task names, copied where the worker can read it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct StagedInput {
+    pub original: PathBuf,
+    pub copy: PathBuf,
+}
+
+/// The environment the daemon set up for one launch. The brief states exactly this.
+pub struct Environment<'a> {
+    pub level: PermissionLevel,
+    pub shell: ShellAccess,
+    /// The isolated copy the task runs in, or `None` for a task that runs in place.
+    pub worktree: Option<&'a Path>,
+    /// The staged pstack plugin the workflow agent runs from, when one is staged.
+    pub plugin_dir: Option<&'a Path>,
+    pub inputs: &'a [StagedInput],
+}
+
 /// The task kind decides what finished means. Delivery does not: it only says what MCAO does
 /// with the candidate afterwards. The daemon commits the candidate itself (`commit_candidate`),
 /// so a worker that commits leaves nothing to commit, and an Implement task that changes
 /// nothing fails as "no changes", whatever its delivery policy.
-fn definition_of_done(kind: TaskKind) -> &'static str {
+fn definition_of_done(kind: TaskKind, shell: ShellAccess) -> String {
+    let checks = match shell {
+        ShellAccess::None | ShellAccess::ReadOnlyGit => {
+            "You cannot run the project's tests at this level; say so in your summary."
+        }
+        ShellAccess::Checked | ShellAccess::Unchecked => {
+            "Run the relevant tests before you finish."
+        }
+    };
     match kind {
-        TaskKind::Investigate => {
-            "## Definition of done\n\
+        TaskKind::Investigate => "## Definition of done\n\
              Your deliverable is a written report in your final message: what you found, the \
              evidence (files, commands, output), and what remains uncertain. Change no files. \
-             Do not commit, push or open a pull request."
-        }
-        TaskKind::Implement => {
+             Never push, open a pull request or merge."
+            .to_owned(),
+        TaskKind::Implement => format!(
             "## Definition of done\n\
-             Leave your changes uncommitted in the working directory. MCAO commits them, runs \
-             the project's checks and asks the user to review. Do not commit, push, open a pull \
-             request or merge. Run the relevant tests before you finish. End with a short \
+             Make your changes in the working directory. You may commit locally as you like; \
+             MCAO commits any changes you leave, runs the project's checks and asks the user to \
+             review. Never push, open a pull request or merge. {checks} End with a short \
              summary: what changed, how you checked it, and anything left undone."
-        }
+        ),
     }
 }
 
-/// Renders the brief for `contract`. `worktree` is the isolated copy the task runs in, or `None`
-/// for a task that runs in place (the home directory). `status_file` is the attempt's status
-/// file, in the daemon's data directory.
-pub fn render(contract: &TaskContract, worktree: Option<&Path>, status_file: &Path) -> String {
+/// The shell and tools the worker has, and where its files are. Everything here is a fact the
+/// daemon set, so the worker can rely on it without probing.
+fn environment_section(env: &Environment<'_>) -> String {
+    let shell = match env.shell {
+        ShellAccess::None => {
+            "none. You cannot run commands, tests or git; you read and edit files only."
+        }
+        ShellAccess::ReadOnlyGit => {
+            "read-only git only (status, diff, log, show). You cannot run tests or commit."
+        }
+        ShellAccess::Checked => {
+            "yes, with each command checked against this level's rules. Local git works in your \
+             working copy. `git push` and `gh` are denied."
+        }
+        ShellAccess::Unchecked => {
+            "yes, with no permission checks. Local git works in your working copy. Still never \
+             push or open a pull request."
+        }
+    };
+    let mut section = format!(
+        "## Environment\n- Permission level: {}.\n- Shell: {shell}\n",
+        env.level.as_str()
+    );
+    match env.worktree {
+        Some(path) => section.push_str(&format!(
+            "- Working copy: {}. Keep every edit inside it.\n",
+            path.display()
+        )),
+        None => section.push_str("- Working directory: the user's project, not a copy.\n"),
+    }
+    if let Some(plugin) = env.plugin_dir {
+        section.push_str(&format!(
+            "- Workflow agent plugin: a copy at {}. Edits there affect only this attempt.\n",
+            plugin.display()
+        ));
+    }
+    if !env.inputs.is_empty() {
+        section.push_str(
+            "- Input files your task names, copied so you can read them (read the copy, not the \
+             original):\n",
+        );
+        for input in env.inputs {
+            section.push_str(&format!(
+                "  - {} -> {}\n",
+                input.original.display(),
+                input.copy.display()
+            ));
+        }
+    }
+    section
+}
+
+/// Renders the brief for `contract` in `env`. `status_file` is the attempt's status file, in the
+/// daemon's data directory.
+pub fn render(contract: &TaskContract, env: &Environment<'_>, status_file: &Path) -> String {
     let mut brief = format!("{BRIEF_MARKER}\n\n{ROLE}\n\n## User's intent\n");
     match &contract.work_item {
         Some(item) => {
@@ -111,12 +202,9 @@ pub fn render(contract: &TaskContract, worktree: Option<&Path>, status_file: &Pa
         None => brief.push_str(&contract.objective),
     }
     brief.push_str("\n\n## Setup\n");
-    match worktree {
+    match env.worktree {
         Some(path) => brief.push_str(&format!(
-            "You run in an isolated copy of the project at {}. Before anything else, run \
-             `pwd -P` and `git rev-parse --show-toplevel`. If either is not that path, stop at \
-             once and say so in your final message. Keep every edit inside that copy; put \
-             scratch files in a temporary directory.",
+            "You run in an isolated copy of the project at {}.",
             path.display()
         )),
         None => brief.push_str(
@@ -124,12 +212,25 @@ pub fn render(contract: &TaskContract, worktree: Option<&Path>, status_file: &Pa
              needs.",
         ),
     }
+    // A worker whose shell cannot run commands freely cannot probe its directory, so the daemon's
+    // facts stand in for the probe.
+    if env.worktree.is_some() {
+        if matches!(env.shell, ShellAccess::Checked | ShellAccess::Unchecked) {
+            brief.push_str(
+                " Before anything else, run `pwd -P` and `git rev-parse --show-toplevel`. If \
+                 either is not that path, stop at once and say so in your final message.",
+            );
+        }
+        brief.push_str(" Put scratch files in a temporary directory.");
+    }
     brief.push_str("\n\n");
+    brief.push_str(&environment_section(env));
+    brief.push('\n');
     brief.push_str(RULES);
     brief.push_str("\n\n");
     brief.push_str(&status_section(status_file));
     brief.push_str("\n\n");
-    brief.push_str(definition_of_done(contract.kind));
+    brief.push_str(&definition_of_done(contract.kind, env.shell));
     brief.push('\n');
     brief
 }
@@ -198,6 +299,17 @@ mod tests {
     use crate::permission::PermissionLevel;
     use crate::work_item::{Criterion, SourceKind, WorkItem, WorkSource};
 
+    /// A Claude Auto environment: a checked shell, the given working copy, no staged files.
+    fn checked(worktree: Option<&Path>) -> Environment<'_> {
+        Environment {
+            level: PermissionLevel::Auto,
+            shell: ShellAccess::Checked,
+            worktree,
+            plugin_dir: None,
+            inputs: &[],
+        }
+    }
+
     fn contract(kind: TaskKind, delivery: DeliveryPolicy) -> TaskContract {
         TaskContract {
             id: "t-1".into(),
@@ -222,7 +334,7 @@ mod tests {
     fn the_role_comes_first_and_the_objective_is_the_users_intent_without_an_intake_record() {
         let brief = render(
             &contract(TaskKind::Implement, DeliveryPolicy::LocalReview),
-            Some(Path::new("/wt/slot-1")),
+            &checked(Some(Path::new("/wt/slot-1"))),
             Path::new("/data/tasks/t-1/1/status"),
         );
         assert!(brief.starts_with(BRIEF_MARKER));
@@ -233,7 +345,7 @@ mod tests {
         assert!(role < intent);
         assert!(!brief.contains("## Orchestrator spec"));
         assert!(brief.contains("isolated copy of the project at /wt/slot-1"));
-        assert!(brief.contains("Leave your changes uncommitted"));
+        assert!(brief.contains("MCAO commits any changes you leave"));
         assert!(!brief.to_lowercase().contains("captain"));
     }
 
@@ -253,7 +365,7 @@ mod tests {
                 confirmed: true,
             }],
         });
-        let brief = render(&c, None, Path::new("/data/tasks/t-1/1/status"));
+        let brief = render(&c, &checked(None), Path::new("/data/tasks/t-1/1/status"));
         let intent = brief
             .find("## User's intent\nplease make sure the parser handles empty input")
             .unwrap();
@@ -266,11 +378,59 @@ mod tests {
     }
 
     #[test]
+    fn the_environment_states_the_level_shell_copy_plugin_and_inputs() {
+        let inputs = [StagedInput {
+            original: PathBuf::from("/Users/me/notes/spec.md"),
+            copy: PathBuf::from("/data/task-status/t-1/1/inputs/spec.md"),
+        }];
+        let env = Environment {
+            level: PermissionLevel::Restricted,
+            shell: ShellAccess::None,
+            worktree: Some(Path::new("/wt/slot-1")),
+            plugin_dir: Some(Path::new("/data/task-status/t-1/1/plugin")),
+            inputs: &inputs,
+        };
+        let brief = render(
+            &contract(TaskKind::Implement, DeliveryPolicy::LocalReview),
+            &env,
+            Path::new("/data/tasks/t-1/1/status"),
+        );
+        let section = brief.find("## Environment").unwrap();
+        assert!(brief.find("## Setup").unwrap() < section);
+        assert!(section < brief.find("## Rules").unwrap());
+        let text = &brief[section..];
+        assert!(text.contains("- Permission level: restricted."));
+        assert!(text.contains("- Shell: none. You cannot run commands, tests or git"));
+        assert!(text.contains("- Working copy: /wt/slot-1."));
+        assert!(text.contains("- Workflow agent plugin: a copy at /data/task-status/t-1/1/plugin."));
+        assert!(
+            text.contains("  - /Users/me/notes/spec.md -> /data/task-status/t-1/1/inputs/spec.md")
+        );
+        // No shell: the worker is not asked to run pwd, and is told it cannot run the tests.
+        assert!(!brief.contains("`pwd -P`"));
+        assert!(brief.contains("You cannot run the project's tests at this level"));
+    }
+
+    #[test]
+    fn a_checked_shell_probes_the_working_copy_and_runs_the_tests() {
+        let brief = render(
+            &contract(TaskKind::Implement, DeliveryPolicy::LocalReview),
+            &checked(Some(Path::new("/wt/slot-1"))),
+            Path::new("/data/tasks/t-1/1/status"),
+        );
+        assert!(brief.contains("run `pwd -P` and `git rev-parse --show-toplevel`"));
+        assert!(brief.contains("Run the relevant tests before you finish."));
+        assert!(brief.contains("`git push` and `gh` are denied"));
+        assert!(!brief.contains("- Workflow agent plugin"));
+        assert!(!brief.contains("- Input files"));
+    }
+
+    #[test]
     fn report_work_changes_no_files_and_implement_work_always_leaves_changes() {
         for delivery in [DeliveryPolicy::ReportOnly, DeliveryPolicy::LocalReview] {
             let brief = render(
                 &contract(TaskKind::Investigate, delivery),
-                None,
+                &checked(None),
                 Path::new("/s"),
             );
             assert!(brief.contains("Change no files"), "{delivery:?}");
@@ -284,12 +444,12 @@ mod tests {
         ] {
             let brief = render(
                 &contract(TaskKind::Implement, delivery),
-                None,
+                &checked(None),
                 Path::new("/s"),
             );
             assert!(!brief.contains("Change no files"), "{delivery:?}");
             assert!(
-                brief.contains("Leave your changes uncommitted"),
+                brief.contains("Make your changes in the working directory"),
                 "{delivery:?}"
             );
         }
@@ -299,7 +459,7 @@ mod tests {
     fn the_brief_names_the_status_file_and_every_verb_the_parser_reads() {
         let brief = render(
             &contract(TaskKind::Implement, DeliveryPolicy::LocalReview),
-            Some(Path::new("/wt/slot-1")),
+            &checked(Some(Path::new("/wt/slot-1"))),
             Path::new("/data/tasks/t-1/1/status"),
         );
         let status = brief.find("## Status").unwrap();

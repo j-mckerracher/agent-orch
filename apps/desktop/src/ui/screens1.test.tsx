@@ -1,9 +1,11 @@
 import { screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { DaemonError } from "../daemon/errors";
+import { ALL_CAPABILITIES } from "../daemon/types";
 import { createFixtureSources } from "../sources/fixtures";
 import { FakeDaemon, mkApproval, mkEvent, mkTask, until } from "../test/fakeDaemon";
 import { REPO, mount } from "../test/render";
+import { RESTRICTED_PREFERENCE_KEY, TASK_PREFERENCE_KEY } from "./views/workspace/permissionLevel";
 
 /** An incomplete history keeps the connection strip on screen over a healthy connection, so its notes can be read. */
 const stripOpen = (fake: FakeDaemon) => {
@@ -273,6 +275,62 @@ describe("S2 project page and new task", () => {
     });
     expect(params.contract).not.toHaveProperty("id");
     expect(params.idempotency_key).toBeTruthy();
+  });
+
+  describe("permission level", () => {
+    beforeEach(() => window.localStorage.clear());
+
+    it("starts at Auto, sends it with the task, and ignores a chat's saved Restricted choice", async () => {
+      window.localStorage.setItem(RESTRICTED_PREFERENCE_KEY, "restricted");
+      const fake = seeded();
+      const { user } = await mount(fake, { route });
+      await openDialog(user);
+      expect(screen.getByRole("combobox", { name: "Permission level" })).toHaveValue("auto");
+      await user.type(screen.getByLabelText("Objective"), "Add a login page");
+      await user.click(screen.getByRole("button", { name: "Create task" }));
+      await screen.findByTestId("task-state");
+      expect(fake.callsTo("tasks.submit")[0]!.params).toMatchObject({ contract: { permission: "auto" } });
+    });
+
+    it("saves a Restricted task choice under the task's own key only", async () => {
+      const fake = seeded();
+      const { user } = await mount(fake, { route });
+      await openDialog(user);
+      await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "restricted");
+      expect(window.localStorage.getItem(TASK_PREFERENCE_KEY)).toBe("restricted");
+      expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBeNull();
+      await user.type(screen.getByLabelText("Objective"), "Add a login page");
+      await user.click(screen.getByRole("button", { name: "Create task" }));
+      await screen.findByTestId("task-state");
+      expect(fake.callsTo("tasks.submit")[0]!.params).toMatchObject({ contract: { permission: "restricted" } });
+    });
+
+    it("asks before a Full task, and sends Full only after the user confirms", async () => {
+      const fake = seeded();
+      const { user } = await mount(fake, { route });
+      await openDialog(user);
+      await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "full");
+      const confirm = await screen.findByRole("dialog", { name: "Run this task at Full?" });
+      await user.click(within(confirm).getByRole("button", { name: "Use Full" }));
+      expect(screen.getByRole("combobox", { name: "Permission level" })).toHaveValue("full");
+      expect(window.localStorage.getItem(TASK_PREFERENCE_KEY)).toBeNull();
+      await user.type(screen.getByLabelText("Objective"), "Add a login page");
+      await user.click(screen.getByRole("button", { name: "Create task" }));
+      await screen.findByTestId("task-state");
+      expect(fake.callsTo("tasks.submit")[0]!.params).toMatchObject({ contract: { permission: "full" } });
+    });
+
+    it("sends no level and reads Restricted on an older daemon", async () => {
+      const fake = seeded();
+      fake.capabilitiesOverride = ALL_CAPABILITIES.filter((capability) => capability !== "permission_levels");
+      const { user } = await mount(fake, { route });
+      await openDialog(user);
+      expect(screen.getByRole("combobox", { name: "Permission level" })).toHaveValue("restricted");
+      await user.type(screen.getByLabelText("Objective"), "Add a login page");
+      await user.click(screen.getByRole("button", { name: "Create task" }));
+      await screen.findByTestId("task-state");
+      expect(fake.callsTo("tasks.submit")[0]!.params).not.toHaveProperty("contract.permission");
+    });
   });
 
   it("submits a task for the home directory with ReportOnly delivery and does not offer another", async () => {

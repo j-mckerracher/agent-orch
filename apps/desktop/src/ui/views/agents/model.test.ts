@@ -52,6 +52,22 @@ describe("agents model", () => {
     expect(rowsFromDaemon(tasks, null, []).find((row) => row.id === "fail")?.sessions).toBeNull();
   });
 
+  it("reads the level the task ran with, and the tools its worker lacked", () => {
+    const [explicit, older] = rowsFromDaemon(
+      [
+        mkTask("t", REPO, {
+          permission_level: "auto",
+          tools_notice: { kind: "lacked_tools", tools: ["Bash"], reason: "denied 3×" },
+        }),
+        mkTask("o", REPO, { contract: { permission: "full" } }),
+      ],
+      [],
+      [],
+    );
+    expect(explicit).toMatchObject({ permission: "auto", toolsNotice: { tools: ["Bash"] } });
+    expect(older).toMatchObject({ permission: "full", toolsNotice: null });
+  });
+
   it("names the highest attempt number", () => {
     const [row] = rowsFromDaemon(
       [
