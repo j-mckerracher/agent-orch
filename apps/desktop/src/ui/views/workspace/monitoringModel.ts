@@ -9,6 +9,7 @@ import type {
   WakeRecord,
 } from "../../../sources/surfaces/types";
 import { formatAt } from "./time";
+import { parseInstant } from "../../../sources/surfaces/instant";
 
 export const WAKE_LABEL = "Update, not a reply to you";
 export const PAUSED_TEXT = "Monitoring paused: limit reached";
@@ -55,7 +56,7 @@ export function unseenFor(state: MonitoringState | null, target: ConversationTar
 
 /** The paused words, with the local time the pause is expected to end when it is known and still ahead. */
 export function pausedText(paused: Pick<PausedTarget, "until">, now: number): string {
-  const until = paused.until === null ? Number.NaN : Date.parse(paused.until);
+  const until = paused.until === null ? Number.NaN : parseInstant(paused.until);
   return Number.isNaN(until) || until <= now ? PAUSED_TEXT : `${PAUSED_TEXT}, resumes about ${formatAt(paused.until!)}`;
 }
 

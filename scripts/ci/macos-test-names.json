@@ -1276,6 +1276,8 @@
    "an_objective_over_the_os_command_line_limit_is_refused_with_the_limit_named"
   ],
   "store": [
+   "instant::tests::a_legacy_sqlite_time_is_read_as_utc",
+   "instant::tests::rfc_3339_text_is_unchanged",
    "concurrent_first_opens_all_succeed_and_record_each_migration_once",
    "new_database_uses_wal_mode",
    "transition_rolls_back_state_when_event_insert_fails",
@@ -1362,6 +1364,7 @@
    "repeating_a_turn_id_returns_the_stored_turn_without_new_entries",
    "targets_are_independent_conversations",
    "messages_and_replies_are_ordered_and_correlated_by_turn",
+   "stored_times_leave_the_store_as_rfc_3339_utc",
    "the_first_terminal_state_wins_and_late_output_is_refused",
    "a_second_message_is_refused_while_a_turn_runs",
    "the_transcript_is_append_only_at_the_database_level",

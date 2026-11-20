@@ -56,6 +56,10 @@ Limits and redaction. Thinking is capped at 1 MiB per chat turn. When the cap is
 
 An older daemon does not record tool calls. The block then shows thinking only, with the time since you sent the message.
 
+## Message times
+
+Each message shows the time it was recorded, in your device's timezone with its short name, such as 11:41 PM MST. The name follows daylight saving, so it reads MDT in summer. The daemon stores and sends every time as UTC with a Z. An older daemon sent some times with no zone mark, and the app reads those as UTC too, so old and new messages show the same clock. A time the app cannot read shows as "Unrecognized time" instead of a guess.
+
 ## Clear history or remove a coordinator
 
 The conversation header menu has Clear history and, for a project coordinator, Remove coordinator. Both ask for confirmation first.

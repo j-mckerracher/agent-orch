@@ -120,7 +120,8 @@ export const WINDOWS = {
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 413.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 418.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 428 becomes 430, worker_status 11 becomes 13.
-  store: { passed: 419, ignored: 0, sequence: [106, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+    // Chat times leave the store as RFC 3339 UTC (DPES-1044) adds two store lib tests and one conversations test: 419 becomes 422.
+store: { passed: 422, ignored: 0, sequence: [108, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 12, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 19 },
@@ -217,7 +218,8 @@ export const MACOS = {
   // DPES-1108 phase 7 adds the coordinators binary (8 tests): 417.
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 422.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 432 becomes 434, worker_status 11 becomes 13.
-  store: { passed: 421, ignored: 0, sequence: [107, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 11, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+    // Chat times leave the store as RFC 3339 UTC (DPES-1044) adds two store lib tests and one conversations test: 421 becomes 424.
+store: { passed: 424, ignored: 0, sequence: [109, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 12, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 17 },
@@ -307,7 +309,8 @@ export const NODE_SELF_TESTS = { passed: 167 };
 // The Review queue (DPES-1044) folds six Review view test files into three and adds Settings notifications tests (net 2 fewer files, 45 fewer tests): 138 files, 2460 tests, as a full `npx vitest run` counted them (the Boise timezone test fails only locally).
 // Simplified Project and Task screens (DPES-1044) add AgentDetectionSection.test.tsx and net 16 tests in existing files: 139 files, 2476 tests, as a full `npx vitest run` counted them.
 // The Settings redesign (DPES-1044) replaces the three switch section tests with AutonomySection.test.tsx and adds SettingsPages.test.tsx and page, dialog and Save tests: 138 files, 2490 tests, as a full `npx vitest run` counted them.
-export const VITEST = { files: 138, tests: 2490 };
+// Chat times (DPES-1044) add instant.test.ts and time.test.tsx and one mapEntries test: 140 files, 2499 tests, as a full `npx vitest run` counted them.
+export const VITEST = { files: 140, tests: 2499 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

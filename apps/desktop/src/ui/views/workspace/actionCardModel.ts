@@ -5,6 +5,7 @@
  */
 import { APPROVER_REQUIRED_NOTICE, presentError, type DaemonError } from "../../../daemon/errors";
 import type { ActionProposal } from "../../../sources/surfaces/types";
+import { parseInstant } from "../../../sources/surfaces/instant";
 import type { Tone } from "../../theme";
 import { formatHoldDay } from "../review/holdDates";
 import { agoText, checkLine, mergeMethodText, mergeVerdict, plainRemote, shortSha } from "../review/pullsModel";
@@ -332,7 +333,7 @@ export function stateOf(p: ActionProposal): CardState {
 /** The later of the transcript's record and the daemon's answer to a decision, by `updatedAt`. */
 export function newerRecord(listed: ActionProposal, confirmed: ActionProposal | undefined): ActionProposal {
   if (confirmed === undefined) return listed;
-  return Date.parse(confirmed.updatedAt) >= Date.parse(listed.updatedAt) ? confirmed : listed;
+  return parseInstant(confirmed.updatedAt) >= parseInstant(listed.updatedAt) ? confirmed : listed;
 }
 
 /**
