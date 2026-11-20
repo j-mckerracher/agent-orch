@@ -17,7 +17,7 @@
 use orchestrator_core::decomposition::{self, DecompositionError};
 use orchestrator_store::{CoordinatorChange, CoordinatorEntry, CoordinatorError};
 
-use super::conversations::reference_str;
+use super::conversations::{reference_instant, reference_str};
 use super::*;
 
 const MAX_MESSAGE_BYTES: usize = 8 * 1024;
@@ -263,7 +263,7 @@ impl DaemonApi {
             None => Ok(json!({
                 "id": entry_id,
                 "sequence": reference.get("entry_sequence").cloned().unwrap_or(Value::Null),
-                "created_at": reference.get("entry_created_at").cloned().unwrap_or(Value::Null),
+                "created_at": reference_instant(reference),
                 "project_id": project_id,
                 "cleared": true
             })),

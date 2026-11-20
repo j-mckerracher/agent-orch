@@ -328,3 +328,24 @@ fn the_transcript_is_append_only_at_the_database_level() {
             .is_err());
     });
 }
+
+/// `YYYY-MM-DDTHH:MM:SSZ`: SQLite writes UTC, so the store must say so.
+fn is_utc_instant(at: &str) -> bool {
+    let b = at.as_bytes();
+    b.len() == 20 && b[10] == b'T' && b[19] == b'Z'
+}
+
+#[test]
+fn stored_times_leave_the_store_as_rfc_3339_utc() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(&directory);
+    let target = ConversationTarget::Global;
+    let begun = begin(&store, &target, "t1", "hello").unwrap();
+    store.append_reply_chunk("t1", "hi").unwrap();
+
+    let page = store.conversation_page(&target, 0, 100).unwrap();
+    assert!(page.entries.iter().all(|e| is_utc_instant(&e.created_at)));
+    assert!(is_utc_instant(&begun.turn.created_at));
+    assert!(is_utc_instant(&begun.turn.updated_at));
+    assert!(is_utc_instant(&begun.user_entry.created_at));
+}

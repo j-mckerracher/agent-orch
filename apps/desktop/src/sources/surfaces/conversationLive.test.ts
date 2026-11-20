@@ -34,6 +34,19 @@ const wire = (
 });
 
 describe("mapEntries", () => {
+  it("passes each entry's RFC 3339 time through as its at, for the message, activity and reply rows", () => {
+    const at = (kind: ConversationWireEntry["kind"], sequence: number) => ({
+      ...wire(sequence, "t1", kind, "x"),
+      created_at: `2026-11-20T06:4${sequence}:00Z`,
+    });
+    const entries = mapEntries([at("user_message", 1), at("thinking_chunk", 2), at("reply_chunk", 3), at("turn_completed", 4)]);
+    expect(entries.map((entry) => [entry.kind, entry.at])).toEqual([
+      ["message", "2026-11-20T06:41:00Z"],
+      ["activity", "2026-11-20T06:42:00Z"],
+      ["message", "2026-11-20T06:43:00Z"],
+    ]);
+  });
+
   const pr = (number: number, url = `https://github.com/octo/demo/pull/${number}`) => ({ task_id: `t-${number}`, number, url });
 
   it("puts the daemon's pull request links on the reply its turn completed", () => {

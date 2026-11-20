@@ -656,7 +656,7 @@ impl SqliteStore {
                             &row.try_get::<String, _>("snapshot_json")?,
                         )?,
                         actor: row.try_get("actor")?,
-                        created_at: row.try_get("created_at")?,
+                        created_at: crate::instant::instant(&row, "created_at")?,
                     })
                 })
                 .collect()

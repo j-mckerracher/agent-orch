@@ -482,7 +482,7 @@ fn origin_from_row(row: &SqliteRow) -> Result<TaskOrigin, StoreError> {
         kind,
         origin_ref: row.try_get("origin_ref")?,
         proposal_id: row.try_get("proposal_id")?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }
 
@@ -506,7 +506,7 @@ async fn read_overrides(
                 chosen: row.try_get("chosen")?,
                 user_words: row.try_get("user_words")?,
                 turn_id: row.try_get("turn_id")?,
-                created_at: row.try_get("created_at")?,
+                created_at: crate::instant::instant(&row, "created_at")?,
             })
         })
         .collect()

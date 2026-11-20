@@ -389,7 +389,7 @@ fn decode_entry(row: SqliteRow) -> Result<CoordinatorEntry, StoreError> {
         validation: validation
             .map(|text| serde_json::from_str(&text))
             .transpose()?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }
 
@@ -405,6 +405,6 @@ fn decode_change_request(row: SqliteRow) -> Result<ChangeRequest, ReviewError> {
         candidate_commit: field("candidate_commit")?,
         feedback: field("feedback")?,
         requested_by: field("requested_by")?,
-        created_at: field("created_at")?,
+        created_at: crate::instant::utc_instant(field("created_at")?),
     })
 }

@@ -19,6 +19,7 @@ import type { ConnectionManager } from "../../daemon/connection";
 import { DaemonError, asDaemonError, isMissingFeature, presentError } from "../../daemon/errors";
 import type { HostMeterWire, HostMetricsWire } from "../../daemon/hostMetrics";
 import { measured, notOk, observation, okResult, oldest } from "./result";
+import { parseInstant } from "./instant";
 import type { Measured, MeterValue, Observation, Provenance, SurfaceResult, SystemMetrics, SystemMetricsSource } from "./types";
 
 const SCHEMA_VERSION = 1;
@@ -55,10 +56,10 @@ function reasonOf(meter: HostMeterWire, resource: Resource): string {
 function mapOk(meter: HostMeterWire, resource: Resource, nowMs: number): Measured<MeterValue> {
   const { value, total } = meter;
   if (!finite(value) || value < 0) return unknown(`The daemon reported an unusable ${resource} value.`);
-  if (typeof meter.observed_at !== "string" || !Number.isFinite(Date.parse(meter.observed_at))) {
+  const observedMs = typeof meter.observed_at === "string" ? parseInstant(meter.observed_at) : Number.NaN;
+  if (!Number.isFinite(observedMs)) {
     return unknown(`The daemon reported ${resource} without a valid observation time.`);
   }
-  const observedMs = Date.parse(meter.observed_at);
   const obs: Observation = { observedAt: new Date(observedMs).toISOString(), ageMs: Math.max(0, nowMs - observedMs) };
   const label = typeof meter.scope === "string" && meter.scope !== "" ? meter.scope : FALLBACK_LABEL[resource];
 

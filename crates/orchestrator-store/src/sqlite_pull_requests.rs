@@ -972,7 +972,7 @@ fn merge_from_row(row: &SqliteRow) -> Result<MergeAttempt, StoreError> {
             .ok_or_else(|| corrupt("a stored merge state is unknown".to_owned()))?,
         refusal: row.try_get("refusal")?,
         merge_sha: row.try_get("merge_sha")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
+        updated_at: crate::instant::instant(&row, "updated_at")?,
     })
 }

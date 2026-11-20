@@ -49,6 +49,8 @@
 // Owner-only permissions (0700/0600 on Unix, a protected owner-only DACL on
 // Windows) live in their own crate so the desktop host shares them.
 pub use orchestrator_private_fs::{create_private_dir, create_private_file, restrict_to_owner};
+mod instant;
+pub use instant::utc_instant;
 pub mod sqlite;
 mod sqlite_actions;
 mod sqlite_approvals;

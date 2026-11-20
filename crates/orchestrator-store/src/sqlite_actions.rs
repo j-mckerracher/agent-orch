@@ -277,7 +277,7 @@ impl SqliteStore {
                 .map(|row| -> Result<RoutedTask, StoreError> {
                     Ok(RoutedTask {
                         task_id: row.try_get("result_ref")?,
-                        routed_at: row.try_get("updated_at")?,
+                        routed_at: crate::instant::instant(&row, "updated_at")?,
                     })
                 })
                 .collect()
@@ -1047,8 +1047,8 @@ pub(crate) fn decode_proposal(row: SqliteRow) -> Result<ActionProposal, StoreErr
         result_ref: row.try_get("result_ref")?,
         error_code: row.try_get("error_code")?,
         denial: row.try_get("denial")?,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
+        updated_at: crate::instant::instant(&row, "updated_at")?,
         id,
     })
 }
@@ -1068,6 +1068,6 @@ fn decode_event(row: SqliteRow) -> Result<ProposalEvent, StoreError> {
         digest: row.try_get("digest")?,
         error_code: row.try_get("error_code")?,
         result_ref: row.try_get("result_ref")?,
-        created_at: row.try_get("created_at")?,
+        created_at: crate::instant::instant(&row, "created_at")?,
     })
 }

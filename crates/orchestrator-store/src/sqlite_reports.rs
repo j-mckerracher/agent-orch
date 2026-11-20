@@ -257,8 +257,8 @@ impl SqliteStore {
                         task_id: row.try_get("task_id")?,
                         attempt_id: row.try_get("attempt_id")?,
                         truncated: row.try_get::<i64, _>("truncated")? != 0,
-                        captured_at: row.try_get("captured_at")?,
-                        relayed_at: row.try_get("relayed_at")?,
+                        captured_at: crate::instant::instant(&row, "captured_at")?,
+                        relayed_at: crate::instant::opt_instant(&row, "relayed_at")?,
                     })
                 })
                 .collect()
@@ -283,8 +283,8 @@ async fn read_report(
             attempt_id: row.try_get("attempt_id")?,
             body: row.try_get("body")?,
             truncated: row.try_get::<i64, _>("truncated")? != 0,
-            captured_at: row.try_get("captured_at")?,
-            relayed_at: row.try_get("relayed_at")?,
+            captured_at: crate::instant::instant(&row, "captured_at")?,
+            relayed_at: crate::instant::opt_instant(&row, "relayed_at")?,
         })
     })
     .transpose()

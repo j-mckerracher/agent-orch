@@ -1,7 +1,10 @@
-/** Format a stored instant in the device's local timezone and name that timezone. */
+import { parseInstant } from "../../../sources/surfaces/instant";
+
+/** Format a daemon instant in the device's local timezone and name that timezone. */
 export function formatAt(at: string, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
-  const date = new Date(at);
-  if (Number.isNaN(date.getTime())) return "Unrecognized time";
+  const ms = parseInstant(at);
+  if (Number.isNaN(ms)) return "Unrecognized time";
+  const date = new Date(ms);
 
   return new Intl.DateTimeFormat(undefined, {
     hour: "2-digit",

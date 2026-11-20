@@ -411,9 +411,18 @@ pub(super) fn cleared_reference_json(reference: &Value) -> Result<Value, RpcErro
     Ok(json!({
         "id": reference_str(reference, "entry_id")?,
         "sequence": reference.get("entry_sequence").cloned().unwrap_or(Value::Null),
-        "created_at": reference.get("entry_created_at").cloned().unwrap_or(Value::Null),
+        "created_at": reference_instant(reference),
         "cleared": true
     }))
+}
+
+/// The creation time a cached reference kept. A reference cached before times left the
+/// store as RFC 3339 holds SQLite's zone-less UTC text.
+pub(super) fn reference_instant(reference: &Value) -> Value {
+    match reference.get("entry_created_at").and_then(Value::as_str) {
+        Some(at) => Value::String(orchestrator_store::utc_instant(at.to_owned())),
+        None => Value::Null,
+    }
 }
 
 /// Reads a reference the daemon wrote itself. A missing field is an internal fault.
