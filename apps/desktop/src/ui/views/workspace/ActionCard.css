@@ -77,3 +77,9 @@
   font-size: 13px;
   color: var(--muted);
 }
+
+/* Compact card: two facts, then the decision. The full field list sits under Details. */
+.ws-action-details > summary {
+  min-height: 0;
+  font-size: 12px;
+}

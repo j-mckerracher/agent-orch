@@ -1,14 +1,12 @@
 import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import App from "../../App";
 import { createFixtureSurfaces, type SurfaceFixtureOptions } from "../../sources/surfaces/fixtures";
 import type { SurfaceResult, SystemMetrics } from "../../sources/surfaces/types";
 import { FakeDaemon } from "../../test/fakeDaemon";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE } from "../router";
 import { ServicesProvider, type Services, type SurfaceState } from "../services";
-import { ActivityPanel } from "./ActivityPanel";
 import { ResourceStrip, ResourceStripView, formatAge } from "./ResourceStrip";
 
 const NOW = Date.parse("2026-01-01T12:00:00Z");
@@ -416,37 +414,5 @@ describe("formatAge", () => {
   it("never reports a negative age and falls back to the reported age for an unusable timestamp", () => {
     expect(formatAge(new Date(NOW + 5000).toISOString(), 0, NOW)).toBe("0 s ago");
     expect(formatAge("not a date", 7000, NOW)).toBe("7 s ago");
-  });
-});
-
-describe("ResourceStrip in the shell", () => {
-  it("renders as the last section of the workspace activity popover, in fixture mode", async () => {
-    const services = fixtureServices();
-    render(
-      <App
-        services={services}
-        shellSlots={{ activity: <ActivityPanel />, resources: <ResourceStrip defaultOpen now={() => NOW} /> }}
-      />,
-    );
-    const panel = await screen.findByTestId("workspace-activity");
-    expect(within(panel).getByRole("button", { name: /^Workspace activity/ })).toHaveAttribute("aria-expanded", "true");
-    const section = within(panel).getByTestId("resource-strip");
-    expect(section.parentElement).toHaveClass("activity-sections");
-    expect(section.parentElement?.lastElementChild).toBe(section);
-    expect(section).toHaveAttribute("open");
-    expect(section).toBeVisible();
-    expect(await within(section).findByRole("meter", { name: "CPU utilization" })).toHaveAttribute("aria-valuenow", "44");
-    expect(await within(section).findByTestId("resource-strip-compact")).toHaveTextContent("CPU 44%");
-    expect(within(section).getByTestId("badge-D13")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
-    expect(document.querySelector(".shell-resources")).toBeNull();
-  });
-
-  it("omits System Usage from the popover when the resources slot is null", async () => {
-    const services = fixtureServices();
-    render(<App services={services} shellSlots={{ activity: <ActivityPanel />, resources: null }} />);
-    const panel = await screen.findByTestId("workspace-activity");
-    expect(within(panel).queryByTestId("resource-strip")).toBeNull();
-    expect(within(panel).queryByRole("meter")).toBeNull();
   });
 });

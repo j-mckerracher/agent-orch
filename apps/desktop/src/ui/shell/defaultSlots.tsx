@@ -1,7 +1,6 @@
 import { decisionCountText, matchesFilter, pendingDecisionCount } from "../format";
 import { heldSets } from "../../sources/surfaces/holds";
 import { useServices, useStore } from "../services";
-import { ResourcesSlot } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 import { NeedYouCount } from "./TopBar";
 
@@ -52,12 +51,6 @@ export function RunningCount() {
   );
 }
 
-const placeholder = (testId: string, text: string) => (
-  <p className="shell-placeholder" data-testid={testId}>
-    {text}
-  </p>
-);
-
 export const defaultShellSlots: ShellSlots = {
   agentsCount: <RunningCount />,
   reviewCount: <ReviewCount />,
@@ -68,12 +61,4 @@ export const defaultShellSlots: ShellSlots = {
     </div>
   ),
   topNeedYou: <NeedYouCount />,
-  activity: (
-    <div data-testid="slot-activity">
-      <h2>Workspace activity</h2>
-      {placeholder("slot-activity-note", "Not available yet.")}
-      <ResourcesSlot />
-    </div>
-  ),
-  resources: placeholder("slot-resources", "Device resources: not available (no metrics source is connected)."),
 };

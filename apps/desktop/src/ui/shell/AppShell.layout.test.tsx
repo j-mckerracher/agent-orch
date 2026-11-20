@@ -14,8 +14,6 @@ const slots: ShellSlots = {
   topUsage: null,
   topSearch: null,
   topNeedYou: null,
-  activity: null,
-  resources: null,
 };
 
 function memoryStorage(initial: Record<string, string> = {}): LayoutStorage & { data: Record<string, string> } {

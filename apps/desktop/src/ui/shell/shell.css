@@ -1,8 +1,6 @@
 /*
  * Global app shell layout. Token names fall back to M7-01 defaults.
- * At 1150 px the sidebar narrows. Above 960 px the activity control is a top-right trigger in its own column beside main.
- * At 960 px the activity control moves above main. System Usage lives inside the activity popover,
- * so the shell has no bottom resource row at any width.
+ * At 1150 px the sidebar narrows. The shell has no bottom resource row at any width.
  * At 760 px sidebar navigation stays visible in two columns.
  * Updated: 2026-11-11 20:16:54 UTC.
  */
@@ -222,13 +220,6 @@ body:has(.shell) {
   font: 11px/1.4 ui-monospace, monospace;
 }
 
-.shell-placeholder {
-  margin: 0;
-  padding: 0 7px;
-  color: var(--shell-muted);
-  font-size: 12px;
-}
-
 .shell-content {
   position: relative;
   grid-column: 2;
@@ -290,28 +281,6 @@ body:has(.shell) {
   scroll-margin-top: var(--shell-strip-height, 0px);
 }
 
-/* Workspace only (`.has-activity`, set by App.tsx). Above 960 px the activity control has a column of its own,
-   beside main, as in the wireframe (command-center): the reserve is the 300 px inspector card plus a 24 px
-   gutter, and it stays when the card is collapsed. Main never runs under the card (ActivityPanel.css). The
-   top bar spans both columns. Other routes have no activity slot and keep one full-width column. */
-@media (min-width: 961px) {
-  .shell-content.has-activity {
-    --shell-activity-reserve: 324px;
-    grid-template-columns: minmax(0, 1fr) var(--shell-activity-reserve);
-    grid-template-areas:
-      "top top"
-      "main activity";
-  }
-}
-
-.shell-activity {
-  grid-area: activity;
-  align-self: start;
-  justify-self: end;
-  min-width: 0;
-  margin: 10px 24px 0 0;
-}
-
 @media (max-width: 1150px) {
   .shell-body {
     --shell-sidebar-default: 185px;
@@ -329,20 +298,15 @@ body:has(.shell) {
   .shell-main {
     padding: 0 22px 24px;
   }
-
-  .shell-activity {
-    margin-right: 22px;
-  }
 }
 
 @media (max-width: 960px) {
   .shell-content {
     grid-template-columns: minmax(0, 1fr);
     /* Main is the only flexible row, so height freed by the connection strip goes to the content below. */
-    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
     grid-template-areas:
       "top"
-      "activity"
       "main";
     overflow: auto;
   }
@@ -351,10 +315,6 @@ body:has(.shell) {
     overflow: visible;
     /* Grow main with its content; shell-body becomes the scroller at 760 px. */
     min-height: auto;
-  }
-
-  .shell-activity {
-    margin: 8px 22px 0 auto;
   }
 }
 
@@ -400,8 +360,7 @@ body:has(.shell) {
     font-size: 12px;
   }
 
-  .shell-content,
-  .shell-content.has-activity {
+  .shell-content {
     overflow: visible;
   }
 
@@ -421,10 +380,6 @@ body:has(.shell) {
 
   .shell-main {
     padding: 0 18px 24px;
-  }
-
-  .shell-activity {
-    margin: 0 18px 12px auto;
   }
 }
 

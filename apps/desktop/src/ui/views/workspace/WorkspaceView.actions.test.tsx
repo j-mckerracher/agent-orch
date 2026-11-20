@@ -132,11 +132,15 @@ describe("orchestrator action cards over the daemon stub", () => {
 
     const card = cardNamed("Proposed: Create workstream");
     expect(screen.getAllByRole("article", { name: /^Proposed:/ })).toHaveLength(1);
-    const terms = Array.from(card.querySelectorAll("dt")).map((term) => [term.textContent, term.nextElementSibling?.textContent]);
-    expect(terms).toEqual([
+    // The compact card shows the first two facts; Details lists every field.
+    const factsOf = (root: Element) =>
+      Array.from(root.querySelectorAll("dt")).map((term) => [term.textContent, term.nextElementSibling?.textContent]);
+    const expected = [
       ["Title", "Post-MVP work"],
       ["Summary", "(none)"],
-    ]);
+    ];
+    expect(factsOf(card.querySelector(".ws-action-fields")!)).toEqual(expected);
+    expect(factsOf(card.querySelector(".ws-action-details")!)).toEqual(expected);
     expect(reply.compareDocumentPosition(card) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
@@ -470,9 +474,16 @@ describe("orchestrator action cards over the daemon stub", () => {
     const reply = await sendAndReply(user);
 
     const card = cardNamed("Proposed: Create task");
+    // The compact card shows two facts; the full field list is under Details.
+    expect(Array.from(card.querySelectorAll(".ws-action-fields")[0]!.querySelectorAll("dt")).map((term) => term.textContent)).toEqual([
+      "Project",
+      "Task",
+    ]);
+    const details = card.querySelector<HTMLElement>(".ws-action-details")!;
+    expect(within(card).getByText("Details")).toBeInTheDocument();
     const row = (label: string) =>
-      Array.from(card.querySelectorAll("dt")).find((term) => term.textContent === label)?.nextElementSibling?.textContent;
-    expect(Array.from(card.querySelectorAll("dt")).map((term) => term.textContent)).toEqual([
+      Array.from(details.querySelectorAll("dt")).find((term) => term.textContent === label)?.nextElementSibling?.textContent;
+    expect(Array.from(details.querySelectorAll("dt")).map((term) => term.textContent)).toEqual([
       "Project",
       "Task",
       "Agent",
@@ -486,7 +497,7 @@ describe("orchestrator action cards over the daemon stub", () => {
     expect(row("Delivery")).toBe("LocalReview");
     expect(row("Autonomy")).toBe("Approval required, fixed by the app");
     expect(row("Verification")).toBe("None, fixed by the app");
-    expect(within(card).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+    expect(within(details).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
       "Add unit tests for the retry module.",
       "Run them locally.",
     ]);

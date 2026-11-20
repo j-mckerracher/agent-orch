@@ -3,7 +3,6 @@ import { useLayoutSettings, type LayoutSettings } from "../layout/layoutSettings
 import type { Route } from "../router";
 import { SidebarSplitter } from "./SidebarSplitter";
 import { SidebarNav } from "./SidebarNav";
-import { ResourcesSlotProvider } from "./ResourcesSlot";
 import type { ShellSlots } from "./slots";
 import { useShellTier } from "./useShellTier";
 import "./shell.css";
@@ -25,10 +24,7 @@ export interface AppShellProps {
 }
 
 /**
- * Global shell with persistent connection strip, sidebar, top bar and main. The activity slot is a
- * top-right control in its own column beside main above 960 px; at narrower widths it stacks above
- * main. The resources slot has no region of its own: the activity popover renders it as its last
- * section (see `ResourcesSlot.tsx`).
+ * Global shell with persistent connection strip, sidebar, top bar and main.
  * Updated: 2026-11-11 18:12:43 UTC. Slot contracts live in `slots.ts`; breakpoints in `shell.css`.
  */
 export function AppShell({ route, connection, slots, mainLandmark, layout, children }: AppShellProps) {
@@ -38,8 +34,6 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
   const resizable = tier !== "narrow";
   const bodyStyle =
     sidebarWidth === null ? undefined : ({ "--shell-sidebar-width": `${sidebarWidth}px` } as CSSProperties);
-  const hasActivity = slots.activity !== null && slots.activity !== undefined;
-  const hasResources = slots.resources !== null && slots.resources !== undefined;
   // Main is the scroll container only in the full and medium tiers, so only there must it be keyboard-focusable (axe scrollable-region-focusable).
   const mainTabIndex = tier === "full" || tier === "medium" ? 0 : -1;
   const main = mainLandmark ? (
@@ -102,18 +96,12 @@ export function AppShell({ route, connection, slots, mainLandmark, layout, child
             onReset={reset}
           />
         )}
-        <div className={`shell-content${hasActivity ? " has-activity" : ""}`}>
+        <div className="shell-content">
           <section className="shell-topbar" aria-label="Workspace summary">
             <div className="shell-topbar-search">{slots.topSearch}</div>
             <div className="shell-topbar-need">{slots.topNeedYou}</div>
             <div className="shell-topbar-usage">{slots.topUsage}</div>
           </section>
-          {/* A control, not a region: it sits in the activity column beside main (see shell.css). */}
-          {hasActivity && (
-            <div className="shell-activity" data-testid="shell-activity">
-              <ResourcesSlotProvider value={hasResources ? slots.resources : null}>{slots.activity}</ResourcesSlotProvider>
-            </div>
-          )}
           {main}
         </div>
       </div>

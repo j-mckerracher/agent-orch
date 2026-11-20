@@ -24,9 +24,9 @@ import { useRetained } from "./useRetained";
 export const BRIEF_POLL_MS = 5_000;
 
 /**
- * The "While you were away" panel (DPES-1105 Phase 5b). It shows the closed brief until the user acknowledges it, and a
- * live "so far" brief while the mode is away. Hidden quietly for a daemon without `standing_approvals`. Only counts,
- * state words and short titles are shown, never ids or text an agent wrote.
+ * The "While you were away" line (DPES-1105 Phase 5b). One line with Show and Dismiss: Show opens the detail, Dismiss
+ * acknowledges a closed brief and hides a live "so far" brief. Hidden quietly for a daemon without
+ * `standing_approvals`. Only counts, state words and short titles are shown, never ids or text an agent wrote.
  */
 export function ReturnBrief() {
   const { surfaces } = useServices();
@@ -37,12 +37,15 @@ export function ReturnBrief() {
   const supported = !live || gate.connection.capabilities.includes("standing_approvals");
   const [nonce, setNonce] = useState(0);
   const [dismissed, setDismissed] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [hiddenSoFar, setHiddenSoFar] = useState<number | null>(null);
   const [message, setMessage] = useState<{ text: string; quiet: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
   const working = useRef(false);
   const announced = useRef<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const headingId = useId();
+  const detailId = useId();
 
   const loaded = useSurface(
     () =>
@@ -56,7 +59,7 @@ export function ReturnBrief() {
   const result = useRetained(loaded, "brief");
   const brief = supported && result.status === "ok" ? result.data : null;
   const key = brief ? `${brief.fromMs}:${brief.toMs}` : null;
-  const shown = brief !== null && (brief.open || key !== dismissed);
+  const shown = brief !== null && (brief.open ? brief.fromMs !== hiddenSoFar : key !== dismissed);
 
   // Announce a closed brief once when it first appears. The region is always mounted, so the change is spoken.
   useEffect(() => {
@@ -68,7 +71,11 @@ export function ReturnBrief() {
 
   if (!supported) return null;
 
-  const acknowledge = async () => {
+  const dismiss = async () => {
+    if (brief?.open) {
+      setHiddenSoFar(brief.fromMs);
+      return;
+    }
     if (working.current || key === null) return;
     working.current = true;
     setBusy(true);
@@ -94,32 +101,38 @@ export function ReturnBrief() {
       </p>
       {shown && brief && (
         <section aria-labelledby={headingId} className="ws-brief">
-          <h3 id={headingId}>{briefHeading(brief)}</h3>
-          <p className="ws-small">{briefWindowText(brief)}</p>
-          <ul>
-            {briefLines(brief).map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-          <BriefList title={BRIEF_WAITING_HEADING} lines={brief.waiting.map(itemText)} />
-          <BriefList title={BRIEF_ATTENTION_HEADING} lines={brief.attention.map(itemText)} />
-          {brief.grants.length > 0 && (
-            <>
-              <h4>{BRIEF_GRANTS_HEADING}</h4>
-              <ul>
-                {brief.grants.map((grant) => (
-                  <li key={grant.id}>
-                    {grant.scopeLabel}: {grantStatusText(grant)}. {grantUsesText(grant)}
-                  </li>
-                ))}
-              </ul>
-            </>
-          )}
-          {!brief.open && (
-            <Button variant="primary" disabled={busy} onClick={() => void acknowledge()}>
+          <div className="ws-brief-line">
+            <h3 id={headingId}>{briefHeading(brief)}</h3>
+            <p>{briefLines(brief).slice(0, 2).join(" · ")}</p>
+            <Button variant="quiet" aria-expanded={expanded} aria-controls={detailId} onClick={() => setExpanded((open) => !open)}>
+              {expanded ? "Hide" : "Show"}
+            </Button>
+            <Button variant="quiet" disabled={busy} onClick={() => void dismiss()}>
               {BRIEF_ACK_TEXT}
             </Button>
-          )}
+          </div>
+          <div id={detailId} className="ws-brief-detail" hidden={!expanded}>
+            <p className="ws-small">{briefWindowText(brief)}</p>
+            <ul>
+              {briefLines(brief).map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+            <BriefList title={BRIEF_WAITING_HEADING} lines={brief.waiting.map(itemText)} />
+            <BriefList title={BRIEF_ATTENTION_HEADING} lines={brief.attention.map(itemText)} />
+            {brief.grants.length > 0 && (
+              <>
+                <h4>{BRIEF_GRANTS_HEADING}</h4>
+                <ul>
+                  {brief.grants.map((grant) => (
+                    <li key={grant.id}>
+                      {grant.scopeLabel}: {grantStatusText(grant)}. {grantUsesText(grant)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
         </section>
       )}
     </div>

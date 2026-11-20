@@ -13,11 +13,11 @@ import type {
 import type { CopilotSignInRecord, CopilotSignInState } from "../../../daemon/types";
 import type { SurfaceState } from "../../services";
 import { formatAge } from "../../shell/ResourceStrip";
-import { Badge, Button } from "../../theme";
+import { Badge, Button, Disclosure } from "../../theme";
 import { usePopover } from "../../usePopover";
 import { CopilotSignInCheck } from "./CopilotSignInCheck";
 import { clearSavedChoice, readSavedChoice, saveChoice } from "./modelChoice";
-import { PermissionLevelPicker } from "./PermissionLevelPicker";
+import { LastTurnNote, PermissionLevelPicker, type LastTurnLevel } from "./PermissionLevelPicker";
 import { permissionLabel } from "./permissionLevel";
 
 const LIVE_NOTE =
@@ -197,7 +197,13 @@ export function ModelPicker({
   /** Live only: false when the connected daemon has no `conversation_selection` capability (DPES-1105). */
   selectionSupported?: boolean;
   /** A chat's permission level: shown in the chip and chosen in the panel. Omitted where no message runs (DPES-1105). */
-  permission?: { level: PermissionLevel; daemonAdvertises: boolean; onChange: (level: PermissionLevel) => void };
+  permission?: {
+    level: PermissionLevel;
+    daemonAdvertises: boolean;
+    onChange: (level: PermissionLevel) => void;
+    /** What the daemon reported for the last turn, shown at the end of the panel. */
+    lastTurn?: LastTurnLevel | null;
+  };
 }) {
   const popover = usePopover();
   const ids = useId();
@@ -580,9 +586,11 @@ export function ModelPicker({
             onRecord={setSignIn}
           />
         )}
-        <p id={noteId} className="ws-small">
-          {note}
-        </p>
+        <Disclosure summary="Technical details">
+          <p id={noteId} className="ws-small">
+            {note}
+          </p>
+        </Disclosure>
         {permission && (
           <PermissionLevelPicker
             level={permission.level}
@@ -592,6 +600,7 @@ export function ModelPicker({
             closePanel={popover.close}
           />
         )}
+        {permission && <LastTurnNote lastTurn={permission.lastTurn ?? null} />}
       </div>
     </div>
   );

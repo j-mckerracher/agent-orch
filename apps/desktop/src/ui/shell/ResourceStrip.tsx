@@ -8,8 +8,8 @@ import "./ResourceStrip.css";
 
 /**
  * System Usage section (OX-A9, M7-17): CPU, memory, GPU and disk of the device, read from
- * the D13 `SystemMetricsSource`. Shown as the last section of the workspace activity popover, open
- * by default, as in the wireframe's `.system-usage` inspector section.
+ * the D13 `SystemMetricsSource`. Shown in Settings > Limits (LimitsMachineLoadSection), open
+ * by default.
  *
  * Honesty rules, enforced here and covered by `ResourceStrip.test.tsx`:
  * - A meter (`role="meter"`) exists only for a measured percentage in 0-100. `unavailable`,
@@ -27,8 +27,7 @@ import "./ResourceStrip.css";
  *   range would be invented, and unavailable/unsupported meters (GPU) have no value at all.
  *   Those rows are `role="group"` with the same name, value, scope and age as visible text.
  *
- * The activity popover renders this slot as its last section (`ResourcesSlot.tsx`). The section
- * stays in normal flow inside the popover, so the summary and the readings stay reachable at every
+ * The section stays in normal flow, so the summary and the readings stay reachable at every
  * width. Each row keeps its scope and observed age as visible text; no reading is shown without them.
  */
 
@@ -122,7 +121,7 @@ export function ResourceStripView({ state, provenance, nowMs, defaultOpen = fals
   const effective = state.status === "loading" || state.status === "ok" ? provenance : state.provenance;
   return (
     <Disclosure
-      className="system-usage activity-group"
+      className="system-usage"
       aria-label="This device resource usage"
       data-testid="resource-strip"
       defaultOpen={defaultOpen}
@@ -204,7 +203,7 @@ export interface ResourceStripProps {
 }
 
 /**
- * Shell `resources` slot. A source with `watch` (the live adapter) is refreshed by that
+ * System Usage meters (Settings > Limits). A source with `watch` (the live adapter) is refreshed by that
  * source at its own interval and not at all while the window is hidden; any other source is
  * read once per connection generation. Either way the shown observation age keeps moving, so a
  * snapshot that stops refreshing visibly ages instead of looking current.

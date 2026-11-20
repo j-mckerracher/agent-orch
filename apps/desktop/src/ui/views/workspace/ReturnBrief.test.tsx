@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it } from "vitest";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
@@ -83,17 +83,33 @@ describe("return brief panel", () => {
     expect(screen.getByRole("heading", { name: "While you were away" })).toBeInTheDocument();
   });
 
-  it("brief_panel_open_window_says_so_far_and_offers_no_acknowledge", async () => {
-    await mount({ brief: { ...BRIEF, open: true } });
+  it("brief_panel_open_window_says_so_far_and_dismisses_without_asking_the_daemon", async () => {
+    const { fake, user } = await mount({ brief: { ...BRIEF, open: true } });
     const region = await screen.findByRole("region", { name: "While you were away, so far" });
     expect(region).toHaveTextContent(/so far/);
-    expect(screen.queryByRole("button", { name: "Acknowledge" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
+    expect(screen.queryByRole("region", { name: /While you were away/ })).not.toBeInTheDocument();
+    expect(fake.callsTo("monitoring.brief_ack")).toEqual([]);
+  });
+
+  it("brief_panel_is_one_line_until_Show_opens_the_detail", async () => {
+    const { user } = await mount();
+    const region = await panel();
+    const show = within(region).getByRole("button", { name: "Show" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    expect(region.querySelector(".ws-brief-detail")).not.toBeVisible();
+    expect(region).toHaveTextContent("3 tasks finished, 1 failed, 2 still running · 2 decisions are waiting for you");
+    await user.click(show);
+    expect(within(region).getByRole("button", { name: "Hide" })).toHaveAttribute("aria-expanded", "true");
+    expect(region.querySelector(".ws-brief-detail")).toBeVisible();
+    expect(within(region).getByText("Task failed: Fix the login form")).toBeVisible();
+    expect(within(region).getByText(/From .+ to .+/)).toBeVisible();
   });
 
   it("brief_panel_acknowledge_calls_the_method_once_and_hides_the_panel", async () => {
     const { fake, user } = await mount();
     await panel();
-    const button = screen.getByRole("button", { name: "Acknowledge" });
+    const button = screen.getByRole("button", { name: "Dismiss" });
     await user.dblClick(button);
     await waitFor(() => expect(screen.queryByRole("region", { name: /While you were away/ })).not.toBeInTheDocument());
     expect(fake.callsTo("monitoring.brief_ack")).toHaveLength(1);
@@ -110,7 +126,7 @@ describe("return brief panel", () => {
   it("brief_panel_fixture_acknowledge_says_nothing_was_saved", async () => {
     const { fake, user } = await mount({ surfaces: createFixtureSurfaces() });
     await panel();
-    await user.click(screen.getByRole("button", { name: "Acknowledge" }));
+    await user.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("Fixture data: nothing was saved"));
     expect(screen.queryByRole("region", { name: /While you were away/ })).not.toBeInTheDocument();
     expect(fake.callsTo("monitoring.brief_ack")).toEqual([]);

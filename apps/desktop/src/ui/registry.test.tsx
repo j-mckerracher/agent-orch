@@ -22,7 +22,7 @@ const route = (view: GlobalView): Route => ({ name: "global", view });
 describe("M7 wiring", () => {
   it("registers a view for every global route and fills every shell slot", () => {
     expect(Object.keys(appGlobalViews).sort()).toEqual([...VIEWS].sort());
-    for (const slot of ["activity", "resources", "topUsage", "topSearch", "topNeedYou"] as const) {
+    for (const slot of ["topUsage", "topSearch", "topNeedYou"] as const) {
       expect(appShellSlots[slot], slot).toBeTruthy();
     }
   });
@@ -32,12 +32,11 @@ describe("M7 wiring", () => {
     render(<App services={services} shellSlots={appShellSlots} globalViews={appGlobalViews} />);
     expect(screen.queryByTestId(`global-view-${view}`)).not.toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument());
-    // System Usage lives inside the workspace activity popover, so only the workspace route renders it.
+    // System Usage moved to Settings, so only the settings route renders it.
     expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
-    expect(document.querySelector('[data-testid="resource-strip"]') !== null).toBe(view === "workspace");
+    expect(document.querySelector('[data-testid="resource-strip"]') !== null).toBe(view === "settings");
     expect(screen.queryByTestId("slot-top-usage")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("slot-resources")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /^Workspace activity/ }) !== null).toBe(view === "workspace");
+    expect(screen.queryByRole("button", { name: /^Workspace activity/ })).not.toBeInTheDocument();
   });
 
   it("turns the ambient background on by default, with the switch beside the theme toggle in Settings > Appearance", async () => {

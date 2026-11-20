@@ -9,7 +9,6 @@ import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { REPO, connected } from "../../test/render";
 import { createServices } from "../createServices";
 import type { Route } from "../router";
-import { ActivityPanel } from "./ActivityPanel";
 import { topBarSlots } from "./TopBar";
 
 const WORKSPACE: Route = { name: "global", view: "workspace" };
@@ -355,7 +354,7 @@ describe("top bar pending decisions", () => {
     scope: { kind: "global" },
   });
 
-  it("top_bar_counts_pending_proposed_actions_with_approvals_and_matches_the_nav_and_the_activity_badge", async () => {
+  it("top_bar_counts_pending_proposed_actions_with_approvals_and_matches_the_nav", async () => {
     const fake = daemon();
     fake.stub("actions.pending", { proposals: [pendingWire("proposal-1"), pendingWire("proposal-2")], more: false });
     const services = createServices({
@@ -365,12 +364,11 @@ describe("top bar pending decisions", () => {
       data: { coalesceMs: 10 },
       sources: createFixtureSources(),
     });
-    render(<App services={services} shellSlots={{ ...topBarSlots, activity: <ActivityPanel /> }} />);
+    render(<App services={services} shellSlots={{ ...topBarSlots }} />);
     await connected();
     await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("3 need you"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3");
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3 pending decisions: 1 approvals, 2 proposed actions");
-    expect(screen.getByTestId("activity-badge")).toHaveTextContent("3");
   });
 
   it("the_decision_count_shows_a_plus_when_more_proposals_are_waiting", async () => {
@@ -384,12 +382,11 @@ describe("top bar pending decisions", () => {
       data: { coalesceMs: 10 },
       sources: createFixtureSources(),
     });
-    render(<App services={services} shellSlots={{ ...topBarSlots, activity: <ActivityPanel /> }} />);
+    render(<App services={services} shellSlots={{ ...topBarSlots }} />);
     await connected();
     await waitFor(() => expect(screen.getByTestId("top-need-you")).toHaveTextContent("3+ need you"));
     expect(screen.getByTestId("nav-review-count")).toHaveTextContent("3+");
     expect(screen.getByTestId("nav-review-count")).toHaveAccessibleName("3+ pending decisions: 1 approvals, 2+ proposed actions");
-    expect(screen.getByTestId("activity-badge")).toHaveTextContent("3+");
   });
 
   it("top_bar_reads_a_daemon_without_actions_pending_as_the_approvals_alone_not_as_unavailable", async () => {

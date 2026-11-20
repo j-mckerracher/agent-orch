@@ -105,10 +105,19 @@ export interface LastTurnLevel {
 }
 
 /**
- * Below the composer row: the older-daemon notice and the level the daemon reports for the last turn. A mismatch with
- * the level sent is an error.
+ * Below the composer row: the older-daemon notice, and an error when the daemon reports a different level for the last
+ * reply than the one sent. The routine "the daemon reports level X" line lives in the picker panel (`LastTurnNote`).
  */
 export function PermissionLevelNotes({ olderDaemon, lastTurn }: { olderDaemon: boolean; lastTurn: LastTurnLevel | null }) {
+  const mismatch =
+    lastTurn !== null &&
+    lastTurn.daemonLevel !== null &&
+    lastTurn.trigger !== "wake" &&
+    lastTurn.sentLevel !== null &&
+    lastTurn.sentLevel !== lastTurn.daemonLevel
+      ? { daemonLevel: lastTurn.daemonLevel, sentLevel: lastTurn.sentLevel }
+      : null;
+  if (!olderDaemon && mismatch === null) return null;
   return (
     <div className="ws-perm-notes">
       {olderDaemon && (
@@ -116,24 +125,21 @@ export function PermissionLevelNotes({ olderDaemon, lastTurn }: { olderDaemon: b
           {OLDER_DAEMON_NOTICE}
         </p>
       )}
-      {lastTurn && <LastTurn {...lastTurn} />}
+      {mismatch && (
+        <p role="alert" className="ws-small">
+          The daemon reports the last reply ran at {permissionLabel(mismatch.daemonLevel)}, not {permissionLabel(mismatch.sentLevel)}.
+          Check that reply before you act on it.
+        </p>
+      )}
     </div>
   );
 }
 
-function LastTurn({ daemonLevel, sentLevel, trigger }: LastTurnLevel) {
-  if (daemonLevel === null) {
-    return <p className="ws-small">The daemon has not recorded a permission level for the last turn.</p>;
-  }
-  // An automatic update was never sent by the user, so there is no sent level to compare against.
-  if (trigger === "wake") return null;
-  if (sentLevel !== null && sentLevel !== daemonLevel) {
-    return (
-      <p role="alert" className="ws-small">
-        The daemon reports the last reply ran at {permissionLabel(daemonLevel)}, not {permissionLabel(sentLevel)}. Check
-        that reply before you act on it.
-      </p>
-    );
-  }
+/** The level the daemon reports for the last turn, in the picker panel. Nothing for an automatic update or a mismatch (that is an alert). */
+export function LastTurnNote({ lastTurn }: { lastTurn: LastTurnLevel | null }) {
+  if (lastTurn === null) return null;
+  const { daemonLevel, sentLevel, trigger } = lastTurn;
+  if (daemonLevel === null) return <p className="ws-small">The daemon has not recorded a permission level for the last turn.</p>;
+  if (trigger === "wake" || (sentLevel !== null && sentLevel !== daemonLevel)) return null;
   return <p className="ws-small">The daemon reports the last reply ran at {permissionLabel(daemonLevel)}.</p>;
 }

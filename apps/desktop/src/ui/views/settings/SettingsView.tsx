@@ -33,6 +33,7 @@ import { AppearanceSection } from "./AppearanceSection";
 import { AutonomousActionsSection } from "./AutonomousActionsSection";
 import { ChatPullRequestSection } from "./ChatPullRequestSection";
 import { HomeDirectorySection } from "./HomeDirectorySection";
+import { LimitsMachineLoadSection } from "./LimitsMachineLoadSection";
 import { McpToolsSection } from "./McpToolsSection";
 import { DispatchDefaultsSection } from "./DispatchDefaultsSection";
 import { GrantsSection } from "./GrantsSection";
@@ -206,6 +207,7 @@ export function SettingsView() {
         <p className="settings-intro">{INTRO_TEXT}</p>
         <MachineLoad model={model} />
       </section>
+      <LimitsMachineLoadSection />
       <SupervisionSections model={model} />
       <AutonomousActionsSection model={model} />
       <ChatPullRequestSection model={model} />

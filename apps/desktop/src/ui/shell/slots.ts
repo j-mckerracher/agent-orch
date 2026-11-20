@@ -14,8 +14,6 @@ import type { ReactNode } from "react";
  * | `topUsage`         | top bar, usage pill                      | M7-16      |
  * | `topSearch`        | top bar, search                          | M7-16      |
  * | `topNeedYou`       | top bar, the one "N need you" count      | DPES-1044  |
- * | `activity`         | top-right control over main (workspace)  | M7-12      |
- * | `resources`        | last section of the activity popover     | M7-17      |
  */
 export interface ShellSlots {
   agentsCount: ReactNode;
@@ -23,8 +21,4 @@ export interface ShellSlots {
   topUsage: ReactNode;
   topSearch: ReactNode;
   topNeedYou: ReactNode;
-  /** `null` removes the activity control entirely. Its popover must render `<ResourcesSlot />`. */
-  activity: ReactNode;
-  /** Shown as the last section of the activity popover; `null` removes System Usage. */
-  resources: ReactNode;
 }

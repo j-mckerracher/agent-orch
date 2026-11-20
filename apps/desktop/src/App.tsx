@@ -84,12 +84,7 @@ function ShellHost({
 }) {
   const { router } = useServices();
   const route = useStore(router);
-  // Activity is part of the workspace view only; other routes keep the full width.
-  const merged: ShellSlots = { ...defaultShellSlots, ...shellSlots };
-  const slots: ShellSlots = {
-    ...merged,
-    activity: route.name === "global" && route.view === "workspace" ? merged.activity : null,
-  };
+  const slots: ShellSlots = { ...defaultShellSlots, ...shellSlots };
   return (
     <AppShell
       route={route}

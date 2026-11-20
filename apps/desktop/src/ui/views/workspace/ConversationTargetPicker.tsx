@@ -20,7 +20,7 @@ export interface ConversationTargetPickerProps {
 const ARROW_KEYS = new Set(["ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"]);
 
 /**
- * Searchable conversation-target dropdown that lives inside the composer.
+ * Searchable conversation-target dropdown that is the conversation's title in the workspace header.
  *
  * Keyboard: Enter/Space on the button toggles; opening moves focus to the search box;
  * Enter in the search box does nothing (it must not submit the composer form);
@@ -76,13 +76,13 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
       <button
         ref={popover.buttonRef}
         type="button"
-        className="ws-chip-button"
+        className="ws-chip-button ws-title-button"
         aria-expanded={popover.open}
         aria-controls={panelId}
+        aria-label={`Choose conversation target · ${current?.label ?? "none selected"}`}
         onClick={() => popover.setOpen((value) => !value)}
       >
-        <span>Choose conversation target</span>
-        <span className="ws-chip-current">· {current?.label ?? "none selected"}</span>
+        <span>{current?.label ?? "none selected"}</span>
         <span aria-hidden="true">⌄</span>
       </button>
       <div id={panelId} className="ws-popover ws-target-panel" hidden={!popover.open}>
@@ -167,7 +167,6 @@ export function ConversationTargetPicker({ options, selectedKey, onSelect, addCo
         <p id={statusId} role="status" className="ws-target-status">
           {status}
         </p>
-        <p className="ws-small">Each target retains its own conversation and local draft.</p>
         {addCoordinator && (
           <div className="ws-target-add">
             <button

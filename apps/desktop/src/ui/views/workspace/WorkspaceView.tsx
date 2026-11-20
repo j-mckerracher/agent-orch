@@ -14,6 +14,7 @@ import type {
 } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
 import { useGate, useServices, useStore, useSurface, type SurfaceState } from "../../services";
+import { matchesFilter } from "../../format";
 import { NavLink } from "../../shell/NavLink";
 import { formatAge } from "../../shell/ResourceStrip";
 import { ChatComposer } from "../../chat/ChatComposer";
@@ -366,7 +367,8 @@ function Conversation({
   onRemoveCoordinator,
   addCoordinator,
 }: ConversationProps) {
-  const { surfaces, drafts } = useServices();
+  const { surfaces, drafts, data } = useServices();
+  const { tasks: taskList, approvals } = useStore(data);
   const gate = useGate();
   const ids = useId();
   const [nonce, setNonce] = useState(0);
@@ -389,6 +391,8 @@ function Conversation({
   const notice = feedback?.key === option.key ? feedback.notice : null;
   const error = feedback?.key === option.key ? feedback.error : null;
   const { target } = option;
+  // Hidden until the tasks are listed, and at 0: no count is better than a made-up one.
+  const runningCount = taskList.data?.filter((task) => matchesFilter(task, "running", taskList.data!, approvals.data ?? [])).length ?? 0;
 
   const loaded = useSurface(
     () => surfaces.conversation.transcript(target),
@@ -490,7 +494,11 @@ function Conversation({
     saveLevel(next);
     setPermission(next);
   };
-  const permissionControl = { level: shownLevel, daemonAdvertises: !olderDaemon, onChange: choosePermission };
+  const lastTurnLevel =
+    live && turn
+      ? { daemonLevel: turn.permissionLevel ?? null, sentLevel: sentLevels.current.get(turn.id) ?? null, trigger: turn.trigger }
+      : null;
+  const permissionControl = { level: shownLevel, daemonAdvertises: !olderDaemon, onChange: choosePermission, lastTurn: lastTurnLevel };
 
   let blocked: string | null = null;
   if (live) {
@@ -649,32 +657,62 @@ function Conversation({
   return (
     <section className="ws-conversation" aria-labelledby={headingId}>
       <header className="ws-head">
-        <h2 id={headingId}>Talking to: {option.label}</h2>
+        <h2 id={headingId} className="ws-visually-hidden">
+          Talking to: {option.label}
+        </h2>
+        <ConversationTargetPicker
+          options={options}
+          selectedKey={option.key}
+          onSelect={onSelect}
+          addCoordinator={addCoordinator}
+          globalUnseen={monitoring.supported ? unseenFor(monitoring.state, GLOBAL_TARGET) : 0}
+        />
         {!live && <Badge tone="placeholder">PLACEHOLDER DATA (D10)</Badge>}
-        <p className="ws-scope">{option.scope}</p>
-        {target.kind !== "project" && (
-          <MonitoringChip
-            model={monitoring}
-            target={target}
-            canChange={!live || (gate.can("monitoring") && gate.connection.approver)}
-          />
+        {runningCount > 0 && (
+          <NavLink to={{ name: "global", view: "agents" }} className="ws-running">
+            {runningCount} running
+          </NavLink>
         )}
-        {target.kind !== "workstream" && (
-          <ConversationActions
-            option={option}
-            live={live}
-            connected={gate.connected}
-            supported={gate.can("conversation_history")}
-            running={userRunning}
-            busy={busy}
-            onClear={() => void clearHistory()}
-            onRemove={
-              target.kind === "project" && onRemoveCoordinator
-                ? () => onRemoveCoordinator(target.projectId)
-                : undefined
-            }
-          />
-        )}
+        <ConversationActions
+          option={option}
+          live={live}
+          connected={gate.connected}
+          supported={gate.can("conversation_history")}
+          running={userRunning}
+          busy={busy}
+          history={target.kind !== "workstream"}
+          onClear={() => void clearHistory()}
+          onRemove={
+            target.kind === "project" && onRemoveCoordinator ? () => onRemoveCoordinator(target.projectId) : undefined
+          }
+        >
+          <p className="ws-scope">{option.scope}</p>
+          {target.kind !== "project" && (
+            <MonitoringChip
+              model={monitoring}
+              target={target}
+              canChange={!live || (gate.can("monitoring") && gate.connection.approver)}
+            />
+          )}
+          {target.kind === "project" && (
+            <CoordinatorStrip
+              key={option.key}
+              snapshot={transcript.status === "ok" ? transcript.data : null}
+              lockReason={scopeLockReason({
+                live,
+                connected: gate.connected,
+                supported: gate.can("conversation_history"),
+                approver: gate.connection.approver,
+              })}
+              onSaveScope={
+                surfaces.conversation.setCoordinatorScope
+                  ? (sentence) => surfaces.conversation.setCoordinatorScope!(target.projectId, sentence)
+                  : undefined
+              }
+              onSaved={() => setNonce((value) => value + 1)}
+            />
+          )}
+        </ConversationActions>
         {target.kind !== "project" && <ReturnBrief />}
       </header>
 
@@ -714,18 +752,12 @@ function Conversation({
 
       {target.kind === "project" && (
         <div className="ws-chips">
-          <Button variant="quiet" disabled aria-describedby={`${ids}-chips`}>
-            Escalate to Global
-          </Button>
           <NavLink to={{ name: "global", view: "workstreams" }} className="ws-chip-link">
             Show dependency plan
           </NavLink>
           <NavLink to={{ name: "global", view: "review" }} className="ws-chip-link">
             Request review
           </NavLink>
-          <span id={`${ids}-chips`} className="ws-small">
-            Escalate to Global is not available: the daemon has no operation for it.
-          </span>
         </div>
       )}
 
@@ -735,24 +767,6 @@ function Conversation({
         workstream={target.kind === "workstream"}
       />
 
-      {target.kind === "project" && (
-        <CoordinatorStrip
-          key={option.key}
-          snapshot={transcript.status === "ok" ? transcript.data : null}
-          lockReason={scopeLockReason({
-            live,
-            connected: gate.connected,
-            supported: gate.can("conversation_history"),
-            approver: gate.connection.approver,
-          })}
-          onSaveScope={
-            surfaces.conversation.setCoordinatorScope
-              ? (sentence) => surfaces.conversation.setCoordinatorScope!(target.projectId, sentence)
-              : undefined
-          }
-          onSaved={() => setNonce((value) => value + 1)}
-        />
-      )}
 
       <ChatComposer
         label={`Message ${option.label}`}
@@ -766,13 +780,6 @@ function Conversation({
         blocked={blocked}
         controls={
           <>
-            <ConversationTargetPicker
-              options={options}
-              selectedKey={option.key}
-              onSelect={onSelect}
-              addCoordinator={addCoordinator}
-              globalUnseen={monitoring.supported ? unseenFor(monitoring.state, GLOBAL_TARGET) : 0}
-            />
             <ModelPicker
               catalog={modelCatalog}
               provenance={surfaces.models.provenance}
@@ -789,18 +796,7 @@ function Conversation({
         notes={
           <>
             {target.kind !== "project" && (
-              <PermissionLevelNotes
-                olderDaemon={olderDaemon}
-                lastTurn={
-                  live && turn
-                    ? {
-                        daemonLevel: turn.permissionLevel ?? null,
-                        sentLevel: sentLevels.current.get(turn.id) ?? null,
-                        trigger: turn.trigger,
-                      }
-                    : null
-                }
-              />
+              <PermissionLevelNotes olderDaemon={olderDaemon} lastTurn={lastTurnLevel} />
             )}
             {actionsLevelNote && <p className="ws-small">{ACTIONS_LEVEL_NOTE}</p>}
           </>
