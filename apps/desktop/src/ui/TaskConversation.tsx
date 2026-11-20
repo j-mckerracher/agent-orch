@@ -6,9 +6,10 @@ import { Timestamp } from "./chat/Timestamp";
 import { useGate } from "./services";
 import { Bubble, CopyButton, EmptyState, Markdown } from "./theme";
 import { type Turn, TaskReply, useTaskReply } from "./TaskReply";
-import { ThinkingBlock } from "./views/workspace/ThinkingBlock";
+import { ActivityLog } from "./activity/ActivityLog";
+import { ActivityStatus } from "./activity/ActivityStatus";
 import { type OutputTailState, useOutputTail } from "./views/agents/useOutputTail";
-import { useSessionThinking } from "./views/agents/useSessionThinking";
+import { useSessionActivity } from "./views/agents/useSessionActivity";
 import { ErrorNotice } from "./widgets";
 
 interface Props {
@@ -78,7 +79,7 @@ function TurnBubble({ turn, agent }: { turn: Turn; agent: string }) {
   );
 }
 
-/** The session's thinking and retained output as thread entries, then `children` (what was said in this window). */
+/** The session's activity (thinking and tool calls) and retained output as thread entries, then `children` (what was said in this window). */
 function SessionThread({
   taskId,
   sessionId,
@@ -89,15 +90,21 @@ function SessionThread({
   children,
 }: Omit<Props, "state"> & { sessionId: string; label: string; scrollKey: string; children: ReactNode }) {
   const tail = useOutputTail(taskId, sessionId, running);
-  const thinking = useSessionThinking(sessionId, running);
+  const activity = useSessionActivity(sessionId, running);
+  const last = activity.items[activity.items.length - 1];
+  // Grows with every line, with every chunk of the newest thinking, and when the newest tool call ends.
+  const grown = `${activity.items.length}:${last?.kind === "thinking" ? last.text.length : last?.kind === "tool" ? last.state : ""}`;
   return (
-    <ChatLog label={label} scrollKey={`${tail.lines.length}:${thinking.text.length}:${scrollKey}`}>
-      {thinking.error && <ErrorNotice error={thinking.error} action="Refreshing thinking" />}
-      {thinking.text !== "" && <ThinkingBlock text={thinking.text} streaming={running} />}
-      {thinking.truncated && <p className="ws-small">Thinking log hit its size limit.</p>}
-      <Output tail={tail} running={running} agent={agent} />
-      {children}
-    </ChatLog>
+    <>
+      <ChatLog label={label} scrollKey={`${tail.lines.length}:${grown}:${scrollKey}`}>
+        {activity.error && <ErrorNotice error={activity.error} action="Refreshing activity" />}
+        {activity.items.length > 0 && <ActivityLog items={activity.items} streaming={running} active={running} />}
+        {activity.truncated && <p className="ws-small">Thinking log hit its size limit.</p>}
+        <Output tail={tail} running={running} agent={agent} />
+        {children}
+      </ChatLog>
+      {running && <ActivityStatus live={activity.live} />}
+    </>
   );
 }
 

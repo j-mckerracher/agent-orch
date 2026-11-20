@@ -1022,7 +1022,19 @@
    "api::tests::update_idle_is_refused_while_a_task_runs_and_leaves_the_daemon_serving",
    "api::tests::update_idle_recovers_a_poisoned_gate_and_accepts_when_idle",
    "executor::tests::update_idle_a_closed_gate_holds_back_the_scheduler_until_it_reopens",
-   "executor::tests::update_idle_waits_for_a_running_agent_and_its_supervisor_then_accepts"
+   "executor::tests::update_idle_waits_for_a_running_agent_and_its_supervisor_then_accepts",
+   "activity::tests::a_tool_id_is_cut_but_never_redacted_so_long_hex_ids_stay_distinct",
+   "activity::tests::a_private_key_block_is_replaced_whole_in_a_summary_and_a_result",
+   "activity::tests::tool_text_is_redacted_before_it_is_cut_and_folded_to_one_line",
+   "activity::tests::board_tracks_phase_and_tool_and_forgets",
+   "activity::tests::coalescer_flushes_at_two_kib_or_when_taken",
+   "api::conversations::tests::a_tool_heavy_turn_does_not_push_earlier_exchanges_out_of_the_history",
+   "api::wake::tests::a_quiet_turn_hides_its_thinking_and_tool_entries_with_its_reply",
+   "executor::tests::task_tool_calls_are_stored_redacted_and_served_with_a_live_snapshot_by_sessions_activity",
+   "executor::tests::usage_paths::thinking_and_tool_rows_are_stored_even_without_an_activity_board",
+   "a_finished_tool_turn_keeps_redacted_tool_rows_and_no_snapshot",
+   "a_timeout_mid_tool_fails_the_turn_and_leaves_the_tool_unfinished",
+   "tool_rows_and_the_live_snapshot_show_while_a_turn_runs_and_cancel_stays_prompt"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
@@ -1674,7 +1686,16 @@
    "thinking_entries_round_trip_but_stay_append_only_and_clearable",
    "migration_0063_keeps_entries_and_the_sequence_counter",
    "thinking_does_not_use_the_reply_budget_and_overflow_marks_once",
-   "session_thinking_writes_one_marker_at_the_cap_then_drops_text"
+   "session_thinking_writes_one_marker_at_the_cap_then_drops_text",
+   "a_thinking_row_whose_body_is_not_json_never_breaks_tool_matching",
+   "session_activity_pages_every_kind_and_thinking_stays_thinking_only",
+   "finish_rows_need_a_stored_start_and_store_once",
+   "migration_0074_keeps_thinking_rows_and_accepts_tool_rows",
+   "history_entries_skip_thinking_and_tool_rows_so_a_tool_heavy_turn_cannot_crowd_them_out",
+   "thinking_tools_and_reply_keep_sequence_order",
+   "tool_entries_survive_reopen_and_clear",
+   "the_start_cap_stores_one_marker_and_drops_later_starts",
+   "session_tool_cap_marks_once_and_thinking_cap_counts_only_thinking"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",

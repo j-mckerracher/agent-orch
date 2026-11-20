@@ -333,14 +333,19 @@ impl DaemonApi {
         );
         let github: Arc<dyn GitHub> = Arc::new(orchestrator_git::github::GhCli::from_env());
         let mut api = Self::with_config(data_dir, config.clone(), github)?;
-        let executor = Executor::start_gated(api.store.clone(), config, api.stop_gate.clone())?;
+        let executor = Executor::start_gated(
+            api.store.clone(),
+            config,
+            api.stop_gate.clone(),
+            api.conversations.board(),
+        )?;
         // Recovery settles the batches a crash left running before the loop starts, so a
         // restart never makes a second turn for one record.
         let wake = Arc::new(
             wake::WakeService::new(
                 api.store.clone(),
                 api.conversations.clone(),
-                executor.pulse(),
+                executor.board(),
                 Arc::new(wake::SystemClock),
                 api.config.load.clone(),
                 api.config.diagnostics.clone(),
@@ -457,6 +462,7 @@ impl RpcHandler for DaemonApi {
             "sessions.events" => self.session_events(params),
             "sessions.output_tail" => self.session_output_tail(params),
             "sessions.thinking" => self.session_thinking(params),
+            "sessions.activity" => self.session_activity(params),
             "approvals.list" => self.list_approvals(params),
             "approvals.resolve" => self.resolve_approval(params),
             "workspaces.diff" => self.workspace_diff(params),
@@ -2171,6 +2177,8 @@ thread_local! {
 #[path = "api_actions.rs"]
 mod actions;
 use actions::project_code;
+#[path = "api_activity.rs"]
+mod activity_rpc;
 #[path = "admission.rs"]
 pub(crate) mod admission;
 #[path = "api_authority.rs"]
@@ -2178,7 +2186,7 @@ mod authority;
 #[path = "api_brief.rs"]
 mod brief;
 #[path = "api_conversation_agent.rs"]
-mod conversation_agent;
+pub(crate) mod conversation_agent;
 #[path = "api_conversation_orphans.rs"]
 mod conversation_orphans;
 #[path = "api_conversation_runtime.rs"]

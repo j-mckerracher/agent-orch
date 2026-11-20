@@ -24,6 +24,7 @@ use crate::contract::{
     AgentLaunchRequest, Result, TurnOutcome,
 };
 use crate::routing::RoutableAdapter;
+use crate::tool_summary::{input_summary, result_summary};
 use crate::usage::{pi_message_end_usage, UsageReport};
 
 /// Pi's RPC protocol facts verified by [`PiRpcAdapter::detect_protocol`].
@@ -570,10 +571,16 @@ fn event_from_record(record_type: &str, object: &Map<String, Value>) -> Option<A
         "tool_execution_start" => Some(AgentEvent::ToolStarted {
             tool_id: object.get("toolCallId")?.as_str()?.to_owned(),
             name: object.get("toolName")?.as_str()?.to_owned(),
+            summary: object.get("args").map(input_summary).unwrap_or_default(),
         }),
         "tool_execution_end" => Some(AgentEvent::ToolFinished {
             tool_id: object.get("toolCallId")?.as_str()?.to_owned(),
             success: !object.get("isError")?.as_bool()?,
+            summary: object
+                .get("result")
+                .and_then(|result| result.get("content"))
+                .map(result_summary)
+                .unwrap_or_default(),
         }),
         "agent_settled" => Some(AgentEvent::TurnFinished {
             outcome: if object.get("aborted")?.as_bool()? {
@@ -674,6 +681,38 @@ mod tests {
             })
         );
         assert_eq!(event("thinking_start"), None);
+    }
+
+    #[test]
+    fn tool_execution_records_carry_summaries() {
+        let events: Vec<AgentEvent> = include_str!("../tests/fixtures/pi/tool_execution.jsonl")
+            .lines()
+            .filter_map(|line| match parse_record(line) {
+                Some(RpcRecord::Event(event)) => Some(event),
+                _ => None,
+            })
+            .collect();
+        let started = |id: &str, name: &str, summary: &str| AgentEvent::ToolStarted {
+            tool_id: id.to_owned(),
+            name: name.to_owned(),
+            summary: summary.to_owned(),
+        };
+        let finished = |id: &str, success, summary: &str| AgentEvent::ToolFinished {
+            tool_id: id.to_owned(),
+            success,
+            summary: summary.to_owned(),
+        };
+        // The update record has no canonical event; a result-less end has an empty summary.
+        assert_eq!(
+            events,
+            [
+                started("call_abc123", "bash", "ls -la"),
+                finished("call_abc123", true, "complete output"),
+                started("call_def456", "read", "/tmp/scratch/missing.txt"),
+                finished("call_def456", false, "ENOENT: no such file"),
+                finished("call_ghi789", true, ""),
+            ]
+        );
     }
 
     #[test]

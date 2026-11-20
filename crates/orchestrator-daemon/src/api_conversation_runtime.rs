@@ -42,6 +42,7 @@ use super::landing_api::{merge_denial, with_project_merge_methods};
 use super::load::LoadHandle;
 use super::projects_defaults::{denial_of, revise_denial};
 use super::wake_events::redact_snapshot;
+use crate::activity::{ActivityBoard, Phase, ToolEnd, ToolStart};
 use crate::executor::unix_now_ms;
 use crate::mcp_server::McpView;
 
@@ -311,6 +312,8 @@ struct Shared {
     completed: Mutex<Vec<CompletedTurn>>,
     /// Called after a turn is queued in `completed`, so the pass runs at once. Set once.
     on_completed: OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// What each running turn is doing, keyed by turn id.
+    board: Arc<ActivityBoard>,
 }
 
 /// Most turns the autonomy queue holds. A turn past it is not queued and its cards stay pending.
@@ -465,6 +468,45 @@ impl ReplySink {
                 .append_thinking_chunk(&self.turn_id, piece)
                 .is_ok()
         })
+    }
+
+    /// Opens the turn's slot on the activity board.
+    pub(crate) fn activity_begin(&self) {
+        self.shared.board.begin(&self.turn_id);
+    }
+
+    /// Removes the turn's slot. The turn is over, whatever way it ended.
+    pub(crate) fn activity_end(&self) {
+        self.shared.board.forget(&self.turn_id);
+    }
+
+    /// Notes the agent produced an event, and what it is doing now.
+    pub(crate) fn phase(&self, phase: Phase) {
+        self.shared.board.set_phase(&self.turn_id, phase);
+    }
+
+    pub(crate) fn touch(&self) {
+        self.shared.board.touch(&self.turn_id);
+    }
+
+    /// Stores a tool call that began and shows it as the running tool. Best effort.
+    pub(crate) fn tool_started(&self, tool: ToolStart) {
+        let _ = self.shared.store.append_tool_started(
+            &self.turn_id,
+            &tool.id,
+            &tool.name,
+            &tool.summary,
+        );
+        self.shared.board.tool_started(&self.turn_id, tool);
+    }
+
+    /// Stores a tool result when its start was stored. Best effort.
+    pub(crate) fn tool_finished(&self, end: ToolEnd) {
+        let _ =
+            self.shared
+                .store
+                .append_tool_finished(&self.turn_id, &end.id, end.ok, &end.summary);
+        self.shared.board.tool_finished(&self.turn_id, &end.id);
     }
 
     /// Stores already shown text as reply chunks. Held text never reaches here.
@@ -697,7 +739,7 @@ const MAX_HISTORY_REPLY_BYTES: usize = 4 * 1024;
 /// Kept well under the Windows 32,767-character command line, with room for
 /// an 8 KiB message and the frame.
 const MAX_HISTORY_BYTES: usize = 12 * 1024;
-/// How many of the newest transcript entries are scanned for history.
+/// How many of the newest user, reply and completion entries are scanned for history.
 const HISTORY_SCAN_ENTRIES: i64 = 400;
 
 /// Starts, tracks and cancels turns for both conversation scopes. Cloning shares the
@@ -727,11 +769,17 @@ impl ConversationService {
                 controls: Mutex::new(HashMap::new()),
                 completed: Mutex::new(Vec::new()),
                 on_completed: OnceLock::new(),
+                board: Arc::default(),
             }),
             runtime,
             workstreams,
             pinned,
         }
+    }
+
+    /// The live activity of running turns; the executor's sessions share it.
+    pub(crate) fn board(&self) -> Arc<ActivityBoard> {
+        self.shared.board.clone()
     }
 
     /// Fail turns a previous process left running. Call once at startup,
@@ -1104,16 +1152,12 @@ impl ConversationService {
     /// Best effort: an unreadable transcript yields no history, not a failure.
     fn history(&self, target: &ConversationTarget, current_turn: &str) -> Vec<HistoryTurn> {
         let store = &self.shared.store;
-        let Ok(latest) = store.conversation_page(target, 0, 1) else {
-            return Vec::new();
-        };
-        let after = (latest.latest_sequence - HISTORY_SCAN_ENTRIES).max(0);
-        let limit = usize::try_from(HISTORY_SCAN_ENTRIES).map_or(400, |n| n + 1);
-        let Ok(page) = store.conversation_page(target, after, limit) else {
+        let limit = usize::try_from(HISTORY_SCAN_ENTRIES).unwrap_or(400);
+        let Ok(entries) = store.conversation_history_entries(target, limit) else {
             return Vec::new();
         };
         let mut turns: Vec<(String, Option<String>, String, bool)> = Vec::new();
-        for entry in &page.entries {
+        for entry in &entries {
             if turns.last().map(|turn| &turn.0) != Some(&entry.turn_id) {
                 turns.push((entry.turn_id.clone(), None, String::new(), false));
             }

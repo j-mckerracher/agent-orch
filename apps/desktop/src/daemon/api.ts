@@ -40,6 +40,7 @@ import type {
   SessionEntry,
   SessionEventsPage,
   SessionOutputTail,
+  SessionActivityPage,
   SessionThinkingPage,
   TaskMessageWire,
   TaskRecord,
@@ -273,6 +274,15 @@ export class DaemonApi {
   /** Read-only; `after` is the previous page's `next_cursor`. */
   async sessionsThinking(sessionId: string, options: { after?: number; limit?: number } = {}): Promise<SessionThinkingPage> {
     return this.session.request("sessions.thinking", {
+      session_id: realId(sessionId),
+      ...(options.after === undefined ? {} : { after: options.after }),
+      ...(options.limit === undefined ? {} : { limit: options.limit }),
+    });
+  }
+
+  /** Read-only; `after` is the previous page's `next_cursor`. */
+  async sessionsActivity(sessionId: string, options: { after?: number; limit?: number } = {}): Promise<SessionActivityPage> {
+    return this.session.request("sessions.activity", {
       session_id: realId(sessionId),
       ...(options.after === undefined ? {} : { after: options.after }),
       ...(options.limit === undefined ? {} : { limit: options.limit }),
