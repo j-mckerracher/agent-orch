@@ -31,7 +31,7 @@ describe("M7 wiring", () => {
     const services = createServices({ initialRoute: route(view) });
     render(<App services={services} shellSlots={appShellSlots} globalViews={appGlobalViews} />);
     expect(screen.queryByTestId(`global-view-${view}`)).not.toBeInTheDocument();
-    expect(await screen.findByRole("heading", { level: 1 })).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument());
     // System Usage lives inside the workspace activity popover, so only the workspace route renders it.
     expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
     expect(document.querySelector('[data-testid="resource-strip"]') !== null).toBe(view === "workspace");

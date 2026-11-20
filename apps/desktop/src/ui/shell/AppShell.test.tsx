@@ -7,6 +7,7 @@ import { createFixtureSources } from "../../sources/fixtures";
 import { installFakeWorkstreams } from "../../test/fakeWorkstreams";
 import { FakeDaemon, mkApproval, mkTask } from "../../test/fakeDaemon";
 import { REPO, connected } from "../../test/render";
+import { chooseAction } from "../../test/workstreamsUi";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE, syncRouterToHash, type Route } from "../router";
 import { workstreamsGlobalViews, workstreamsShellSlots } from "../views/workstreams/register";
@@ -216,7 +217,7 @@ describe("navigation", () => {
     const { user, services } = await mount(daemon(), { globalViews: workstreamsGlobalViews });
     await user.click(within(screen.getByRole("navigation", { name: "Workstreams and individual workers" })).getByRole("link", { name: /Workstreams/ }));
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams" });
-    await user.click(screen.getByRole("link", { name: "Manage projects" }));
+    await chooseAction(user, "More actions", "Manage projects");
     expect(services.router.getSnapshot()).toEqual({ name: "projects" });
     expect(await screen.findByText("repo")).toBeInTheDocument();
   });
@@ -247,7 +248,7 @@ describe("navigation", () => {
   it("keeps projects reachable from the Workstreams view and not from any primary destination", async () => {
     const { user } = await mount(daemon(), { route: { name: "global", view: "workstreams" }, globalViews: workstreamsGlobalViews });
     expect(within(screen.getByRole("navigation", { name: "Primary views" })).queryByRole("link", { name: /Projects/ })).toBeNull();
-    await user.click(screen.getByRole("link", { name: "Manage projects" }));
+    await chooseAction(user, "More actions", "Manage projects");
     expect(await screen.findByText("repo")).toBeInTheDocument();
   });
 

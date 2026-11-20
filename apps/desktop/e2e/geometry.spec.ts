@@ -416,7 +416,7 @@ test("dragging the splitter resizes the sidebar and the toggle collapses it out 
   await expect(sidebar).toBeVisible();
 });
 
-test("agents and workstreams split columns follow the wireframe 1150 and 760 breakpoints", async ({ page }) => {
+test("agents split columns follow the wireframe 1150 breakpoint", async ({ page }) => {
   const trackCount = (selector: string) =>
     page.locator(selector).evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ").length);
 
@@ -426,53 +426,28 @@ test("agents and workstreams split columns follow the wireframe 1150 and 760 bre
   expect(await trackCount(".agents-layout"), "agents stacks at 1150 px").toBe(1);
   await page.setViewportSize({ width: 1151, height: viewport.height });
   expect(await trackCount(".agents-layout"), "agents splits above 1150 px").toBe(2);
-
-  await page.setViewportSize({ width: 1150, height: viewport.height });
-  await page.goto("/?fixture=1#/workstreams");
-  await expect(page.locator(".ws-layout")).toBeVisible();
-  const listColumn = await page
-    .locator(".ws-layout")
-    .evaluate((el) => getComputedStyle(el).gridTemplateColumns.split(" ")[0]);
-  expect(listColumn, "workstream list column is 145 px at 1150 px").toBe("145px");
-  expect(await trackCount(".ws-layout"), "workstreams keep two columns at 1150 px").toBe(2);
-  await page.setViewportSize({ width: 960, height: viewport.height });
-  expect(await trackCount(".ws-layout"), "workstreams keep two columns at 960 px").toBe(2);
-
-  await page.setViewportSize({ width: 760, height: viewport.height });
-  expect(await trackCount(".ws-layout"), "workstreams stack at 760 px").toBe(1);
-  expect(await trackCount(".ws-items"), "workstream list is two columns at 760 px").toBe(2);
 });
 
-test("the workstream list badge stays on one line and item titles do not wrap per letter at 960 px", async ({ page }) => {
-  await page.setViewportSize({ width: viewport.width, height: viewport.height });
+test("workstream rows stay inside the page and titles wrap at words, at 960 and 760 px", async ({ page }) => {
   await page.goto("/?fixture=1#/workstreams");
-  const badge = page.locator(".ws-list-marker .ui-badge");
-  await expect(badge).toBeVisible();
-
-  const lineHeight = parseFloat(await badge.evaluate((el) => getComputedStyle(el).lineHeight));
-  const box = await badge.boundingBox();
-  expect(box, "badge is laid out").toBeTruthy();
-  expect(box!.height, "badge is one line tall").toBeLessThanOrEqual(lineHeight * 1.5);
-  // The rendered text, not the box: a label wider than its box overflows visibly.
-  const textRight = await badge.evaluate((el) => {
-    const range = document.createRange();
-    range.selectNodeContents(el);
-    return range.getBoundingClientRect().right;
-  });
-  const contentRight = await page.locator(".ws-list").evaluate((el) => {
-    const style = getComputedStyle(el);
-    return el.getBoundingClientRect().right - parseFloat(style.paddingRight);
-  });
-  expect(textRight, "badge text stays inside the list panel's content edge").toBeLessThanOrEqual(contentRight);
-  const itemRights = await page.locator(".ws-item").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().right));
-  for (const right of itemRights) {
-    expect(right, "a list item stays inside the list panel").toBeLessThanOrEqual(contentRight + 1);
-  }
-
-  const titleLine = parseFloat(await page.locator(".ws-item-title").first().evaluate((el) => getComputedStyle(el).lineHeight));
-  const titles = await page.locator(".ws-item-title").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
-  for (const height of titles) {
-    expect(height, "an item title wraps at words, not per letter").toBeLessThanOrEqual(titleLine * 3);
+  for (const width of [960, 760]) {
+    await page.setViewportSize({ width, height: viewport.height });
+    await expect(page.getByTestId("ws-row").first()).toBeVisible();
+    const list = await page.locator(".ws-items").first().boundingBox();
+    expect(list, "the row list is laid out").toBeTruthy();
+    const rights = await page.getByTestId("ws-row").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().right));
+    for (const right of rights) {
+      expect(right, `a row stays inside the list at ${width} px`).toBeLessThanOrEqual(list!.x + list!.width + 1);
+    }
+    const titleLine = parseFloat(await page.locator(".ws-row-name").first().evaluate((el) => getComputedStyle(el).lineHeight));
+    const titles = await page.locator(".ws-row-name").evaluateAll((els) => els.map((el) => el.getBoundingClientRect().height));
+    for (const height of titles) {
+      expect(height, `a row title wraps at words, not per letter, at ${width} px`).toBeLessThanOrEqual(titleLine * 3);
+    }
+    expect(
+      await page.getByTestId("workstreams-view").evaluate((el) => el.scrollWidth <= el.clientWidth),
+      `the workstreams page does not scroll sideways at ${width} px`,
+    ).toBe(true);
   }
 });
 
