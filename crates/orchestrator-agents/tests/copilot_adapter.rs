@@ -546,12 +546,22 @@ async fn the_catalog_lists_the_models_and_levels_the_cli_reports() {
         .models
         .items
         .iter()
-        .map(|m| (m.id.as_str(), m.efforts.as_slice(), m.default_effort.as_deref()))
+        .map(|m| {
+            (
+                m.id.as_str(),
+                m.efforts.as_slice(),
+                m.default_effort.as_deref(),
+            )
+        })
         .collect();
     let levels = ["low".to_owned(), "high".to_owned()];
     assert_eq!(
         listed,
-        [("auto", &[][..], None), ("gpt-a", &levels[..], Some("high")), ("mini", &[][..], None)]
+        [
+            ("auto", &[][..], None),
+            ("gpt-a", &levels[..], Some("high")),
+            ("mini", &[][..], None)
+        ]
     );
     // Levels are per model, so the adapter-wide list says so and offers none.
     assert_eq!(catalog.efforts.state, CatalogState::Unsupported);
@@ -590,7 +600,10 @@ async fn a_signed_out_account_is_not_asked_for_models() {
         .await;
     assert_eq!(catalog.state, CatalogState::AuthenticationFailed);
     assert_eq!(catalog.models.state, CatalogState::Unknown);
-    assert!(!marker.exists(), "the model read started for a signed-out account");
+    assert!(
+        !marker.exists(),
+        "the model read started for a signed-out account"
+    );
 }
 
 #[test]

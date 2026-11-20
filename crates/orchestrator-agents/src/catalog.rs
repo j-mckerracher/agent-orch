@@ -1340,7 +1340,10 @@ impl CopilotAdapter {
         };
         match probe_copilot_version(&program, limit).await {
             Ok(_) => {
-                let blocked = matches!(sign_in.state, SignInState::NotSignedIn | SignInState::NoSeat);
+                let blocked = matches!(
+                    sign_in.state,
+                    SignInState::NotSignedIn | SignInState::NoSeat
+                );
                 let models = if blocked {
                     Facet::without_items(CatalogState::Unknown, COPILOT_MODELS_UNREAD)
                 } else {
