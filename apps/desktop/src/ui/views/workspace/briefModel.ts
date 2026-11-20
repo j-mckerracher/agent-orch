@@ -2,7 +2,7 @@
 import type { Brief, BriefGrant, BriefItem } from "../../../sources/surfaces/types";
 
 export const BRIEF_HEADING = "While you were away";
-export const BRIEF_ACK_TEXT = "Acknowledge";
+export const BRIEF_ACK_TEXT = "Dismiss";
 export const BRIEF_FIXTURE_TEXT = "Fixture data: nothing was saved";
 export const BRIEF_ACKED_TEXT = "Return brief acknowledged";
 export const BRIEF_READY_TEXT = "Return brief ready";

@@ -1,8 +1,24 @@
 /*
- * System Usage section (M7-17): device meters in the workspace activity popover, styled after the
- * wireframe's `.system-usage` block. Reads tokens only. Section chrome comes from ActivityPanel.css
- * (`.activity-group`); this file styles the meter rows.
+ * System Usage section (M7-17): device meters on the Settings page (LimitsMachineLoadSection). Reads tokens only.
  */
+.system-usage > summary {
+  min-height: 0;
+  padding: 11px 8px;
+  border-radius: var(--radius-md);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--ink);
+}
+
+.system-usage > .ui-disclosure-count {
+  font: 500 11px/1.4 var(--font-mono);
+  color: var(--ink);
+}
+
+.system-usage > .ui-disclosure-body {
+  padding: 0 4px 12px 18px;
+}
+
 .system-usage > summary {
   flex-wrap: wrap;
 }
@@ -36,7 +52,7 @@
   padding: 4px 8px 8px;
 }
 
-/* One row per resource: label, thin gradient bar, value. The popover is a single column, so rows stack. */
+/* One row per resource: label, thin gradient bar, value. The section is a single column, so rows stack. */
 .rs-list {
   display: grid;
   gap: 8px;

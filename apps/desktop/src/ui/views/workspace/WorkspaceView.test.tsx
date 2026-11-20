@@ -1024,15 +1024,16 @@ describe("workspace view, fixture mode", () => {
     expect(screen.getByText(/never sent anywhere/)).toBeInTheDocument();
   });
 
-  it("shows chips for project targets: Escalate is disabled with a reason, the dependency plan chip navigates", async () => {
+  it("shows chips for project targets without a disabled Escalate control, and the dependency plan chip navigates", async () => {
     const services = build();
     const { user } = await mountView(services);
     await screen.findByRole("heading", { name: /Global orchestrator/ });
     expect(screen.queryByRole("link", { name: "Show dependency plan" })).toBeNull();
     await pickTarget(user, /Docs refresh coordinator/);
-    expect(await screen.findByRole("button", { name: "Escalate to Global" })).toBeDisabled();
-    expect(screen.getByText("Escalate to Global is not available: the daemon has no operation for it.")).toBeInTheDocument();
-    await user.click(screen.getByRole("link", { name: "Show dependency plan" }));
+    const plan = await screen.findByRole("link", { name: "Show dependency plan" });
+    expect(screen.queryByRole("button", { name: "Escalate to Global" })).toBeNull();
+    expect(screen.queryByText(/Escalate to Global is not available/)).toBeNull();
+    await user.click(plan);
     expect(services.router.getSnapshot()).toEqual({ name: "global", view: "workstreams" });
   });
 
@@ -1464,6 +1465,7 @@ describe("workspace view, history actions", () => {
     const services = track(build({ fake }));
     const { user } = await mountView(services, false);
     await waitLive(services);
+    await user.click(await screen.findByRole("button", { name: /Conversation actions for/ }));
     const region = await screen.findByRole("region", { name: COORDINATOR_HEADING });
     expect(region.textContent).toContain("Scope: No scope set");
     expect(region.textContent).toContain("r-0123456789abcdef: Write the troubleshooting page.");
@@ -1485,8 +1487,9 @@ describe("workspace view, history actions", () => {
     const conversation = stubConversation(fake, "completed");
     conversation.coordinator = { scope_sentence: "Owns docs.", open_tasks: 0, open_requests: 0, routed_requests: [], reports: [] };
     const services = track(build({ fake }));
-    await mountView(services, false);
+    const { user } = await mountView(services, false);
     await waitLive(services);
+    await user.click(await screen.findByRole("button", { name: /Conversation actions for/ }));
     const region = await screen.findByRole("region", { name: COORDINATOR_HEADING });
     expect(within(region).getByRole("textbox", { name: "Scope sentence" })).toBeDisabled();
     expect(within(region).getByRole("button", { name: "Save scope" })).toBeDisabled();
@@ -1586,5 +1589,93 @@ describe("Global tasks workstream is not a target (DPES-1106)", () => {
 
   it("pins the id to the daemon's seed: workstream- plus sha256 of default:global-tasks", () => {
     expect(GLOBAL_TASKS_WORKSTREAM_ID).toBe(`workstream-${createHash("sha256").update("default:global-tasks").digest("hex")}`);
+  });
+});
+
+describe("workspace header and composer, redesigned", () => {
+  it("opens on the conversation: the target picker is the title and nothing else competes with it", async () => {
+    const services = build();
+    await mountView(services);
+    const title = await screen.findByRole("button", { name: "Choose conversation target · Global orchestrator" });
+    expect(title).toHaveTextContent("Global orchestrator");
+    expect(title.closest("header")).toHaveClass("ws-head");
+    // Scope and conversation actions are one click deeper, in the "⋯" menu.
+    expect(screen.queryByRole("menu", { name: /Actions for/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Conversation actions for Global orchestrator" })).toHaveAttribute("aria-expanded", "false");
+    // The composer holds the text box, one picker chip and the send button; the target picker is not in it.
+    const composer = screen.getByRole("form", { name: /Message Global orchestrator/ });
+    expect(within(composer).queryByRole("button", { name: /Choose conversation target/ })).toBeNull();
+    expect(within(composer).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual([
+      expect.stringMatching(/^Model settings:/),
+      "Send message to Global orchestrator",
+    ]);
+  });
+
+  it("puts scope, monitoring and the conversation actions in the ⋯ menu", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    await user.click(await screen.findByRole("button", { name: "Conversation actions for Global orchestrator" }));
+    const menu = screen.getByRole("menu", { name: "Actions for Global orchestrator" });
+    expect(within(menu).getByRole("menuitem", { name: "Clear history…" })).toBeInTheDocument();
+    expect(screen.getByText("All workstreams · Cross-workstream coordination")).toBeVisible();
+  });
+
+  it("holds the live monitoring mode in the ⋯ menu, not the header", async () => {
+    const fake = liveDaemon();
+    fake.stub("monitoring.get", { authority: "none", mode: "on", paused: [], unseen: [], epoch: "e1" });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await pickTarget(user, /Global orchestrator/);
+    const trigger = await screen.findByRole("button", { name: "Conversation actions for Global orchestrator" });
+    expect(screen.queryByRole("button", { name: "Monitoring: on" })).toBeNull();
+    await user.click(trigger);
+    expect(await screen.findByRole("button", { name: "Monitoring: on" })).toBeVisible();
+  });
+
+  it("links to Agents with the number of running tasks, and says nothing when none run or none are known", async () => {
+    const fake = liveDaemon();
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    const link = await screen.findByRole("link", { name: "1 running" });
+    expect(link).toHaveAttribute("href", "#/agents");
+    await user.click(link);
+    expect(services.router.getSnapshot()).toEqual({ name: "global", view: "agents" });
+  });
+
+  it("hides the running link when no task runs", async () => {
+    const fake = liveDaemon();
+    fake.tasks = fake.tasks.filter((task) => task.state !== "Running");
+    const services = track(build({ fake }));
+    await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("button", { name: /Choose conversation target/ });
+    await waitFor(() => expect(services.data.getSnapshot().tasks.data).not.toBeNull());
+    expect(screen.queryByRole("link", { name: /running/ })).toBeNull();
+  });
+
+  it("hides the running link, never showing 0, while the task list is unknown", async () => {
+    const services = build();
+    await mountView(services);
+    await screen.findByRole("button", { name: /Choose conversation target/ });
+    expect(services.data.getSnapshot().tasks.data).toBeNull();
+    expect(screen.queryByRole("link", { name: /running/ })).toBeNull();
+  });
+
+  it("collapses model, effort and permission level into one chip whose panel holds all three; Full asks first", async () => {
+    const services = build();
+    const { user } = await mountView(services);
+    const chip = await screen.findByRole("button", { name: /^Model settings:/ });
+    expect(chip).toHaveAccessibleName(/Auto$|Auto /);
+    await user.click(chip);
+    const panel = chip.closest(".ws-model-root")!.querySelector<HTMLElement>(".ws-model-panel")!;
+    for (const name of ["Provider", "Model", "Effort", "Permission level"]) {
+      expect(within(panel).getByRole("combobox", { name })).toBeInTheDocument();
+    }
+    await user.selectOptions(within(panel).getByRole("combobox", { name: "Permission level" }), "full");
+    expect(await screen.findByRole("dialog", { name: "Run this chat at Full?" })).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Use Full" }));
+    expect(screen.getByRole("button", { name: /^Model settings:.*Full/ })).toBeInTheDocument();
   });
 });

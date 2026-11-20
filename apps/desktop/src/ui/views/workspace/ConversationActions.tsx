@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type KeyboardEvent } from "react";
+import { useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Button } from "../../theme";
 import { Dialog } from "../../Dialog";
 import { usePopover } from "../../usePopover";
@@ -19,6 +19,10 @@ export interface ConversationActionsProps {
   onClear: () => void;
   /** Present for project coordinators only. */
   onRemove?: () => void;
+  /** A workstream conversation has no history actions: its menu holds only `children`. */
+  history?: boolean;
+  /** Scope, monitoring and coordinator controls, shown above the actions in the menu. */
+  children?: ReactNode;
 }
 
 /**
@@ -37,10 +41,10 @@ export function historyActionReason(
 }
 
 /**
- * The conversation header's overflow menu (DPES-1105): "Clear history…" for every Global or
- * project conversation, and "Remove coordinator…" for a project coordinator. Each opens a
- * confirmation dialog that names the conversation. Escape closes the menu and returns focus to
- * its button; arrow keys move between the items.
+ * The conversation header's "⋯" menu (DPES-1105): the conversation's scope, monitoring and coordinator controls
+ * (`children`), "Clear history…" for every Global or project conversation, and "Remove coordinator…" for a project
+ * coordinator. Each action opens a confirmation dialog that names the conversation. Escape closes the menu and
+ * returns focus to its button; arrow keys move between the actions.
  */
 export function ConversationActions({
   option,
@@ -51,12 +55,16 @@ export function ConversationActions({
   busy,
   onClear,
   onRemove,
+  history = true,
+  children,
 }: ConversationActionsProps) {
   const ids = useId();
   const menuId = `${ids}-menu`;
   const reasonId = `${ids}-reason`;
-  const firstItem = useRef<HTMLButtonElement>(null);
-  const popover = usePopover(() => firstItem.current?.focus());
+  const panelRef = useRef<HTMLDivElement>(null);
+  const popover = usePopover(() =>
+    panelRef.current?.querySelector<HTMLElement>('[role="menuitem"], button, input, a[href]')?.focus(),
+  );
   const [dialog, setDialog] = useState<"clear" | "remove" | null>(null);
   const reason = historyActionReason({ live, connected, supported, running, busy });
 
@@ -109,36 +117,40 @@ export function ConversationActions({
           aria-label={`Conversation actions for ${option.label}`}
           onClick={() => popover.setOpen((value) => !value)}
         >
-          Actions <span aria-hidden="true">⌄</span>
+          <span aria-hidden="true">⋯</span>
         </button>
-        <div id={menuId} role="menu" aria-label={`Actions for ${option.label}`} className="ws-actions-menu" hidden={!popover.open}>
-          <button
-            ref={firstItem}
-            type="button"
-            role="menuitem"
-            className="ws-actions-item"
-            aria-disabled={reason !== null || undefined}
-            aria-describedby={reason !== null ? reasonId : undefined}
-            onClick={() => choose("clear")}
-          >
-            Clear history…
-          </button>
-          {option.target.kind === "project" && onRemove && (
-            <button
-              type="button"
-              role="menuitem"
-              className="ws-actions-item"
-              aria-disabled={reason !== null || undefined}
-              aria-describedby={reason !== null ? reasonId : undefined}
-              onClick={() => choose("remove")}
-            >
-              Remove coordinator…
-            </button>
-          )}
-          {reason !== null && (
-            <p id={reasonId} className="ws-actions-reason">
-              {reason}
-            </p>
+        <div ref={panelRef} id={menuId} className="ws-actions-menu ws-actions-panel" hidden={!popover.open}>
+          {children}
+          {history && (
+            <div role="menu" aria-label={`Actions for ${option.label}`} className="ws-actions-list">
+              <button
+                type="button"
+                role="menuitem"
+                className="ws-actions-item"
+                aria-disabled={reason !== null || undefined}
+                aria-describedby={reason !== null ? reasonId : undefined}
+                onClick={() => choose("clear")}
+              >
+                Clear history…
+              </button>
+              {option.target.kind === "project" && onRemove && (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="ws-actions-item"
+                  aria-disabled={reason !== null || undefined}
+                  aria-describedby={reason !== null ? reasonId : undefined}
+                  onClick={() => choose("remove")}
+                >
+                  Remove coordinator…
+                </button>
+              )}
+              {reason !== null && (
+                <p id={reasonId} className="ws-actions-reason">
+                  {reason}
+                </p>
+              )}
+            </div>
           )}
         </div>
       </div>

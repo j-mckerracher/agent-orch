@@ -302,7 +302,8 @@ export const NODE_SELF_TESTS = { passed: 167 };
 // Live agent activity (DPES-1044) adds 3 files and 30 tests net: 137 files, 2539 tests, as a full `npx vitest run` counted them.
 // Force start (DPES-1044) adds 2 tests in an existing file: 2543, as a full `npx vitest run` counted them.
 // The calm shell (DPES-1044) drops the sidebar tree, four-count line and strip-while-healthy tests, and adds the need-you, nav badge, strip and Appearance tests (one new file): 138 files, 2537, as a full `npx vitest run` counted them.
-export const VITEST = { files: 138, tests: 2537 };
+// The Workspace redesign (DPES-1044) removes the activity popover tests and adds LimitsMachineLoadSection.test.tsx plus the workspace header, brief, card and picker tests: 138 files, 2507, as a full `npx vitest run` counted them.
+export const VITEST = { files: 138, tests: 2507 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran

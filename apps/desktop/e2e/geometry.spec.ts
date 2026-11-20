@@ -118,79 +118,33 @@ test("sidebar and connection controls stay separate and independent", async ({ p
   }
 });
 
-test("System Usage stays reachable and unclipped in the activity popover at 960 CSS px", async ({ page }) => {
-  await openFixture(page, viewport.width);
+test("System Usage and agent slots stay reachable and unclipped on the Settings page at 960 CSS px", async ({ page }) => {
+  await page.setViewportSize(viewport);
+  await page.goto("/?fixture=1#/settings");
+  await expect(page.getByTestId("fixture-banner")).toBeVisible();
 
-  const activity = page.getByTestId("workspace-activity");
-  await expect(activity.getByRole("button", { name: /^Workspace activity/ })).toHaveAttribute("aria-expanded", "true");
-  const usage = activity.getByTestId("resource-strip");
+  const section = page.getByTestId("limits-machine-load");
+  await expect(section.getByTestId("limits-slots")).toContainText("20 of 24 agent slots in use");
+  const usage = section.getByTestId("resource-strip");
   await expect(usage).toHaveAttribute("open", "");
-  for (const section of ["activity-queue", "activity-attention", "activity-slots"]) {
-    await expect(activity.getByTestId(section)).not.toHaveAttribute("open");
-  }
-
   for (const name of resourceLabels) {
     await expect(usage.getByText(name, { exact: true })).toBeVisible();
   }
 
   await usage.scrollIntoViewIfNeeded();
-  const geometry = await usage.evaluate((element) => {
-    const popover = element.closest<HTMLElement>(".activity-popover");
-    if (!popover) throw new Error("System Usage is not inside the activity popover");
-    const bounds = popover.getBoundingClientRect();
-    return {
-      clip: {
-        left: Math.max(0, bounds.left),
-        top: Math.max(0, bounds.top),
-        right: Math.min(innerWidth, bounds.right),
-        bottom: Math.min(innerHeight, bounds.bottom),
-      },
-      content: Array.from(element.querySelectorAll<HTMLElement>(".rs-item"), (item) => {
-        const rect = item.getBoundingClientRect();
-        return { left: rect.left, top: rect.top, right: rect.right, bottom: rect.bottom };
-      }),
-    };
-  });
-
+  const geometry = await usage.evaluate((element) => ({
+    sectionRight: element.closest<HTMLElement>("section")!.getBoundingClientRect().right,
+    content: Array.from(element.querySelectorAll<HTMLElement>(".rs-item"), (item) => {
+      const rect = item.getBoundingClientRect();
+      return { left: rect.left, right: rect.right };
+    }),
+    width: innerWidth,
+  }));
   expect(geometry.content).toHaveLength(resourceLabels.length);
   for (const rect of geometry.content) {
-    expect(rect.left).toBeGreaterThanOrEqual(geometry.clip.left - 1);
-    expect(rect.top).toBeGreaterThanOrEqual(geometry.clip.top - 1);
-    expect(rect.right).toBeLessThanOrEqual(geometry.clip.right + 1);
-    expect(rect.bottom).toBeLessThanOrEqual(geometry.clip.bottom + 1);
+    expect(rect.left).toBeGreaterThanOrEqual(-1);
+    expect(rect.right).toBeLessThanOrEqual(Math.min(geometry.width, geometry.sectionRight) + 1);
   }
-});
-
-test("activity controls receive pointer input and activate at 760 CSS px", async ({ page }) => {
-  await openFixture(page, 760);
-
-  const activity = page.getByTestId("workspace-activity");
-  await expect(activity.getByRole("button", { name: /^Workspace activity/ })).toHaveAttribute("aria-expanded", "true");
-  const slots = activity.getByTestId("activity-slots");
-  await slots.locator("summary").click();
-  await expect(slots).toHaveAttribute("open", "");
-
-  for (const name of ["Pause new dispatch", "Stop menu", "Queue settings"]) {
-    await expect(activity.getByRole("button", { name, exact: true })).toBeVisible();
-  }
-
-  const pause = activity.getByRole("button", { name: "Pause new dispatch", exact: true });
-  await expect(pause).toBeEnabled();
-  await pause.scrollIntoViewIfNeeded();
-  const point = await pause.evaluate((button) => {
-    const rect = button.getBoundingClientRect();
-    const x = rect.left + rect.width / 2;
-    const y = rect.top + rect.height / 2;
-    return {
-      x,
-      y,
-      inViewport: x >= 0 && x <= innerWidth && y >= 0 && y <= innerHeight,
-    };
-  });
-
-  expect(point.inViewport).toBe(true);
-  await page.mouse.click(point.x, point.y);
-  await expect(activity.getByTestId("simulated-receipt")).toHaveCount(1);
 });
 
 const censusRoutes = [
@@ -227,10 +181,9 @@ for (const width of [760, 761, 960, 961, 1150, 1151]) {
           sidebarRight: document.querySelector(".shell-sidebar")!.getBoundingClientRect().right,
           sidebarBottom: document.querySelector(".shell-sidebar")!.getBoundingClientRect().bottom,
           slots: [document.documentElement, ...document.querySelectorAll<HTMLElement>(
-            ".shell-sidebar,.shell-topbar,.shell-main,main,.shell-activity,.shell-content")]
+            ".shell-sidebar,.shell-topbar,.shell-main,main,.shell-content")]
             .map(el => ({ slot: el.className || el.tagName, overflow: el.scrollWidth - el.clientWidth })),
           asides: [...document.querySelectorAll("aside")].map(el => el.getAttribute("aria-label")),
-          activityControls: document.querySelectorAll('[data-testid="shell-activity"]').length,
         }));
         console.log(JSON.stringify({ route, fixture, ...geometry }));
         expect(geometry.width).toBe(width);
@@ -346,7 +299,7 @@ const sidebarStates = ["min", "max", "collapsed"] as const;
 
 async function horizontalOverflow(page: Page) {
   return page.evaluate(() =>
-    [".shell", ".shell-body", ".shell-sidebar", ".shell-topbar", ".shell-main", ".shell-activity", ".shell-resources", ".shell-content"]
+    [".shell", ".shell-body", ".shell-sidebar", ".shell-topbar", ".shell-main", ".shell-content"]
       .map((selector) => document.querySelector<HTMLElement>(selector))
       .filter((element): element is HTMLElement => element !== null)
       // scrollWidth ignores clipping; a clipped box (the collapsed 0 px sidebar) cannot scroll or show overflow.
@@ -463,56 +416,26 @@ test("agents split is 1.1 to 1 at desktop width, with the first running task sel
   expect(selected!.width / work!.width).toBeCloseTo(1 / 1.1, 2);
 });
 
-// DPES-1105 (RC-24): the wireframe reserves 324 px for the inspector column at 961 px and up, a 300 px card
-// and a 24 px gutter. The conversation must stop short of the open card, and the column stays when collapsed.
-const INSPECTOR_GAP = 24;
+// The activity column is gone: the conversation uses the whole main column, with the target picker as its title.
 for (const [width, height] of [
   [1440, 900],
   [1920, 1080],
 ] as const) {
-  test(`workspace inspector has its own column at ${width} CSS px: the conversation stops short of the open card`, async ({ page }) => {
+  test(`workspace conversation fills the main column at ${width} CSS px`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await page.goto("/?fixture=1#/workspace");
     await expect(page.getByTestId("fixture-banner")).toBeVisible();
-    await expect(page.locator(".ws-head h2")).toBeVisible();
-
-    const conversation = page.locator(".ws-conversation");
-    const conversationRight = async () => {
-      const b = (await conversation.boundingBox())!;
-      return b.x + b.width;
-    };
-    const trigger = page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ });
-    await expect(trigger).toHaveAttribute("aria-expanded", "true");
-    await trigger.click();
-    await expect(trigger).toHaveAttribute("aria-expanded", "false");
-    const collapsedRight = await conversationRight();
-
-    await trigger.click();
-    const card = page.getByTestId("activity-popover");
-    await expect(card).toBeVisible();
-    const cardBox = (await card.boundingBox())!;
-    expect(await conversationRight(), "conversation right edge vs inspector left edge").toBeLessThanOrEqual(cardBox.x - INSPECTOR_GAP);
-    expect(await conversationRight(), "column stays reserved while the card is open").toBeCloseTo(collapsedRight, 0);
-
-    const parts = await page.locator(".ws-conversation > *, .ws-log > *, .ws-composer-row > *").evaluateAll((els) =>
-      els.map((el) => {
-        const r = el.getBoundingClientRect();
-        return { right: r.right, bottom: r.bottom, left: r.left, top: r.top };
-      }),
-    );
-    expect(parts.length, "conversation parts measured").toBeGreaterThan(0);
-    for (const part of parts) {
-      const overlapsCard =
-        part.left < cardBox.x + cardBox.width && part.right > cardBox.x && part.top < cardBox.y + cardBox.height && part.bottom > cardBox.y;
-      expect(overlapsCard, "a conversation part runs under the inspector card").toBe(false);
-    }
+    await expect(page.locator(".ws-head").getByRole("button", { name: /Choose conversation target/ })).toBeVisible();
+    await expect(page.getByTestId("shell-activity")).toHaveCount(0);
+    const main = (await page.locator("#shell-main").boundingBox())!;
+    const conversation = (await page.locator(".ws-conversation").boundingBox())!;
+    expect(main.x + main.width - (conversation.x + conversation.width), "right gutter only").toBeLessThanOrEqual(30);
   });
 }
 
-test("the model chip's label, level and badge are whole and on one line beside the target, at 960 CSS px", async ({ page }) => {
+test("the model chip's label, level and badge are whole and on one line before the send button, at 960 CSS px", async ({ page }) => {
   await openFixture(page, 960);
   const chip = page.locator(".ws-model-root > .ws-chip-button");
-  const target = page.locator(".ws-composer-row > .ws-popover-root:not(.ws-model-root) > .ws-chip-button");
   const label = chip.locator(":scope > span").first();
   const level = chip.locator(".ws-chip-level");
   const badge = chip.locator(".ui-badge");
@@ -526,9 +449,7 @@ test("the model chip's label, level and badge are whole and on one line beside t
     expect((await part.boundingBox())!.height, `${name} is one line`).toBeLessThan(24);
   }
   const chipBox = (await chip.boundingBox())!;
-  const targetBox = (await target.boundingBox())!;
   const sendBox = (await page.locator(".ws-composer .ws-send").boundingBox())!;
-  expect(Math.abs(chipBox.y - targetBox.y), "the chip sits on the target's row, not a new one").toBeLessThan(2);
   expect(chipBox.x + chipBox.width, "the chip ends before the send button").toBeLessThanOrEqual(sendBox.x);
 });
 
@@ -538,9 +459,6 @@ test.describe("connection strip collapse (DPES-1105)", () => {
       await page.setViewportSize({ width, height: 900 });
       await page.goto("/?fixture=1#/workspace");
       await expect(page.getByTestId("fixture-banner")).toBeVisible();
-      const activityTrigger = page.getByTestId("workspace-activity").getByRole("button", { name: /^Workspace activity/ });
-      await activityTrigger.click();
-      await expect(activityTrigger).toHaveAttribute("aria-expanded", "false");
       const strip = page.getByTestId("shell-connection");
       const content = page.locator("#shell-main");
       const measure = async () => ({

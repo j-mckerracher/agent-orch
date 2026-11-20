@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { PermissionLevel } from "../../../sources/surfaces/types";
-import { PermissionLevelNotes, PermissionLevelPicker } from "./PermissionLevelPicker";
+import { LastTurnNote, PermissionLevelNotes, PermissionLevelPicker } from "./PermissionLevelPicker";
 import { OLDER_DAEMON_NOTICE } from "./permissionLevel";
 
 function picker(
@@ -109,7 +109,7 @@ describe("permission level control in the model picker panel", () => {
   });
 });
 
-describe("permission level notes below the composer", () => {
+describe("permission level notes below the composer and in the picker panel", () => {
   it("shows no level indicator and no one-click switch: the level is chosen in the model picker", () => {
     render(<PermissionLevelNotes olderDaemon={false} lastTurn={null} />);
     expect(screen.queryByRole("button")).toBeNull();
@@ -123,9 +123,14 @@ describe("permission level notes below the composer", () => {
   });
 
   it("reports the level the daemon recorded for the last turn", () => {
-    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: "auto", sentLevel: "auto" }} />);
+    render(<LastTurnNote lastTurn={{ daemonLevel: "auto", sentLevel: "auto" }} />);
     expect(screen.getByText("The daemon reports the last reply ran at Auto.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("keeps the panel note quiet for a mismatch, which the composer alert reports", () => {
+    render(<LastTurnNote lastTurn={{ daemonLevel: "restricted", sentLevel: "auto" }} />);
+    expect(screen.queryByText(/ran at/)).toBeNull();
   });
 
   it("shows an error when the daemon reports a different level from the one sent", () => {
@@ -140,12 +145,12 @@ describe("permission level notes below the composer", () => {
   });
 
   it("keeps the reply wording for a turn the user sent", () => {
-    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: "auto", sentLevel: "auto", trigger: "user" }} />);
+    render(<LastTurnNote lastTurn={{ daemonLevel: "auto", sentLevel: "auto", trigger: "user" }} />);
     expect(screen.getByText("The daemon reports the last reply ran at Auto.")).toBeInTheDocument();
   });
 
   it("says so when the daemon recorded no level for the last turn", () => {
-    render(<PermissionLevelNotes olderDaemon={false} lastTurn={{ daemonLevel: null, sentLevel: "auto" }} />);
+    render(<LastTurnNote lastTurn={{ daemonLevel: null, sentLevel: "auto" }} />);
     expect(screen.getByText("The daemon has not recorded a permission level for the last turn.")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).toBeNull();
   });

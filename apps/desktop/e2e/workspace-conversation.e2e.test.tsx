@@ -86,6 +86,10 @@ describe("Workspace conversation and model selector over the real daemon", () =>
       );
       const heading = await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
       expect(heading.parentElement?.textContent).not.toContain("PLACEHOLDER");
+      // The target picker is the title; the "⋯" menu holds the conversation actions, and no activity popover remains.
+      expect(screen.getByRole("button", { name: "Choose conversation target · Global orchestrator" }).closest(".ws-head")).toBe(heading.parentElement);
+      expect(screen.getByRole("button", { name: "Conversation actions for Global orchestrator" })).toBeTruthy();
+      expect(screen.queryByText(/Workspace activity/)).toBeNull();
       const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
       await userEvent.type(box, "hello real daemon");
       const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });

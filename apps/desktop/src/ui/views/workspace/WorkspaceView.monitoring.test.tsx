@@ -211,9 +211,11 @@ describe("Workspace monitoring", () => {
     const user = await mount(fake, null);
     await screen.findByRole("textbox", { name: /Message / });
     await waitFor(() => expect(fake.callsTo("monitoring.get").length).toBeGreaterThan(0));
+    await user.click(screen.getByRole("button", { name: /Conversation actions for/ }));
     expect(screen.queryByRole("button", { name: /Monitoring:/ })).not.toBeInTheDocument();
     await user.click(screen.getByRole("button", { name: /Choose conversation target/ }));
     await user.click(screen.getByRole("radio", { name: /Global orchestrator/ }));
+    await user.click(screen.getByRole("button", { name: /Conversation actions for/ }));
     expect(await screen.findByRole("button", { name: "Monitoring: on" })).toBeInTheDocument();
   });
 });

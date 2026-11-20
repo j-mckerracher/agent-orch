@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { RoutedIn } from "../../../sources/surfaces/types";
+import { Disclosure } from "../../theme";
 import { ROUTED_IN_HEADING, ROUTED_IN_HELP, announcement, labelFor, rowsFrom } from "./routedInModel";
 
 /** Tasks the global conversation routed to this workstream, above the composer. Nothing for the global conversation. */
@@ -30,7 +31,9 @@ export function RoutedInStrip({ snapshot, workstream }: { snapshot: { routedIn?:
               <li key={`${row.taskId}:${row.routedAt}`}>{labelFor(row)}</li>
             ))}
           </ul>
-          <p className="ws-small">{ROUTED_IN_HELP}</p>
+          <Disclosure summary="Technical details">
+            <p className="ws-small">{ROUTED_IN_HELP}</p>
+          </Disclosure>
         </section>
       )}
     </>

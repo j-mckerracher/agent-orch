@@ -3,7 +3,7 @@ import type { DaemonError } from "../../../daemon/errors";
 import type { ActionProposal, Decision } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
 import { NavLink } from "../../shell/NavLink";
-import { Badge, Button, Pill } from "../../theme";
+import { Badge, Button, Disclosure, Pill } from "../../theme";
 import { Notice } from "../../widgets";
 import {
   actionPhrase,
@@ -41,6 +41,9 @@ export interface ActionCardProps {
   onDecide: (decision: Decision) => void;
 }
 
+/** How many facts the compact card shows; the Details section lists every field. */
+const FACT_COUNT = 2;
+
 /** One proposed action under the reply that proposed it (DPES-1105). Its state is only what the daemon reported. */
 export function ActionCard({
   proposal,
@@ -69,6 +72,14 @@ export function ActionCard({
   const taskLink = taskId !== null ? taskRoute(taskId) : null;
   const approvedBy = approvedByText(proposal);
   const onItsOwn = doneOnItsOwnText(proposal);
+  const fields = fieldsOf(proposal, names, parent);
+  // "Nothing runs until you approve." is the card's resting message; every other message says why something is off or what happened.
+  const restingMessage = view.state === "pending" && view.message.tone === "info";
+  const messageNotice = (
+    <Notice id={messageId} tone={view.message.tone}>
+      {view.message.text}
+    </Notice>
+  );
 
   // The buttons leave the page once the state settles, so keep focus on the card instead of letting it fall to the body.
   useEffect(() => {
@@ -101,33 +112,14 @@ export function ActionCard({
         {!live && <Badge tone="placeholder">Fixture data</Badge>}
       </header>
       <dl className="ws-action-fields">
-        {fieldsOf(proposal, names, parent).map((item) => (
+        {fields.slice(0, FACT_COUNT).map((item) => (
           <div key={item.label} className="ws-action-field">
             <dt>{item.label}</dt>
-            <dd>
-              {typeof item.value === "string" ? (
-                item.value
-              ) : (
-                <ul>
-                  {item.value.map((line, index) => (
-                    <li key={index}>{line}</li>
-                  ))}
-                </ul>
-              )}
-            </dd>
+            <dd>{typeof item.value === "string" ? item.value : `${item.value[0]}${item.value.length > 1 ? " …" : ""}`}</dd>
           </div>
         ))}
       </dl>
-      <Notice id={messageId} tone={view.message.tone}>
-        {view.message.text}
-      </Notice>
-      {approvedBy !== null && <p className="ws-action-approver">{approvedBy}</p>}
-      {onItsOwn !== null && <p className="ws-action-approver">{onItsOwn}</p>}
-      {overrideLines(proposal).map((line) => (
-        <p key={line} className="ws-action-approver">
-          {line}
-        </p>
-      ))}
+      {!restingMessage && messageNotice}
       {notice !== null && <Notice tone="info">{notice}</Notice>}
       {error !== null && <Notice tone="bad">{requestErrorText(error, parent)}</Notice>}
       {view.state === "pending" && (
@@ -166,6 +158,34 @@ export function ActionCard({
           )}
         </div>
       )}
+      <Disclosure summary="Details" className="ws-action-details">
+        <dl className="ws-action-fields">
+          {fields.map((item) => (
+            <div key={item.label} className="ws-action-field">
+              <dt>{item.label}</dt>
+              <dd>
+                {typeof item.value === "string" ? (
+                  item.value
+                ) : (
+                  <ul>
+                    {item.value.map((line, index) => (
+                      <li key={index}>{line}</li>
+                    ))}
+                  </ul>
+                )}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        {restingMessage && messageNotice}
+        {approvedBy !== null && <p className="ws-action-approver">{approvedBy}</p>}
+        {onItsOwn !== null && <p className="ws-action-approver">{onItsOwn}</p>}
+        {overrideLines(proposal).map((line) => (
+          <p key={line} className="ws-action-approver">
+            {line}
+          </p>
+        ))}
+      </Disclosure>
     </article>
   );
 }

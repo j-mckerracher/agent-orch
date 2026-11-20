@@ -10,7 +10,6 @@ import { chooseAction } from "../../test/workstreamsUi";
 import { createServices } from "../createServices";
 import { DEFAULT_ROUTE, syncRouterToHash, type Route } from "../router";
 import { workstreamsGlobalViews } from "../views/workstreams/register";
-import { ResourcesSlot } from "./ResourcesSlot";
 
 /** Like the shared `mount`, but starts on the boot default route and accepts the shell props. */
 async function mount(
@@ -88,16 +87,9 @@ describe("global routes in the shell", () => {
     expect(current[0]).toHaveTextContent(label);
   });
 
-  it("defaults to the workspace and shows its activity control only there", async () => {
+  it("defaults to the workspace and has no activity column", async () => {
     await mount(daemon());
     expect(screen.getByRole("heading", { level: 1, name: "Orchestrator Workspace" })).toBeInTheDocument();
-    expect(screen.getByTestId("shell-activity")).toBeInTheDocument();
-    expect(screen.getByTestId("slot-activity")).toBeInTheDocument();
-    expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
-  });
-
-  it("omits the activity control outside the workspace view", async () => {
-    await mount(daemon(), { route: { name: "global", view: "agents" } });
     expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
     expect(screen.queryByRole("complementary")).not.toBeInTheDocument();
   });
@@ -322,8 +314,6 @@ describe("counts and placeholders", () => {
     expect(screen.getByTestId("top-need-you")).not.toHaveTextContent(/\b0\b/);
     expect(screen.queryByTestId("nav-agents-count")).not.toBeInTheDocument();
     expect(screen.getByTestId("slot-top-usage")).toHaveTextContent("Usage: not available");
-    expect(screen.getByTestId("slot-resources")).toHaveTextContent("not available");
-    expect(screen.getByTestId("slot-resources").closest('[data-testid="shell-activity"]')).not.toBeNull();
   });
 
   it("hides the running badge when no task runs", async () => {
@@ -344,12 +334,6 @@ describe("slots", () => {
         topUsage: <span data-testid="s-usage">U</span>,
         topSearch: <span data-testid="s-search">S</span>,
         topNeedYou: <span data-testid="s-need">C</span>,
-        activity: (
-          <div data-testid="s-activity">
-            A<ResourcesSlot />
-          </div>
-        ),
-        resources: <p data-testid="s-resources">X</p>,
       },
     });
     const primary = screen.getByRole("navigation", { name: "Primary views" });
@@ -357,9 +341,6 @@ describe("slots", () => {
     expect(within(primary).getByTestId("s-agents")).toBeInTheDocument();
     const top = screen.getByRole("region", { name: "Workspace summary" });
     for (const id of ["s-usage", "s-search", "s-need"]) expect(within(top).getByTestId(id)).toBeInTheDocument();
-    const activity = within(screen.getByTestId("shell-activity")).getByTestId("s-activity");
-    expect(within(activity).getByTestId("s-resources")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
   });
 
   it("has no theme toggle in the shell: it lives in Settings > Appearance", async () => {
@@ -368,17 +349,6 @@ describe("slots", () => {
     expect(screen.queryByTestId("slot-theme-toggle")).not.toBeInTheDocument();
   });
 
-  it("removes the activity control and System Usage when their slots are null", async () => {
-    await mount(daemon(), { shellSlots: { activity: null, resources: null } });
-    expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
-    expect(screen.queryByTestId("slot-resources")).not.toBeInTheDocument();
-  });
-
-  it("keeps the activity control, without System Usage, when resources is null", async () => {
-    await mount(daemon(), { shellSlots: { resources: null } });
-    expect(screen.getByTestId("shell-activity")).toBeInTheDocument();
-    expect(screen.queryByTestId("slot-resources")).not.toBeInTheDocument();
-  });
 });
 
 describe("responsive behavior", () => {
@@ -395,9 +365,7 @@ describe("responsive behavior", () => {
     expect(screen.getByTestId("shell-connection")).toBeInTheDocument();
     expect(screen.getByRole("region", { name: "Workspace summary" })).toBeInTheDocument();
     expect(screen.getByRole("main")).toBeInTheDocument();
-    expect(screen.getByTestId("shell-activity")).toBeInTheDocument();
-    expect(screen.getByTestId("slot-resources")).toBeInTheDocument();
-    expect(screen.queryByRole("region", { name: "Device resources" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("shell-activity")).not.toBeInTheDocument();
     expect(screen.getByTestId("shell-sidebar")).toBeInTheDocument();
   });
 
