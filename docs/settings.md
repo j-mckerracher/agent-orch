@@ -42,6 +42,15 @@ The orchestrator can propose a new preference. You see the key and the text on t
 
 Do not put passwords, tokens, or file paths in an entry. The daemon refuses entries that look like these.
 
+## Notifications
+
+**Settings** > **Notifications** controls the desktop reminders for decisions that wait for you. These controls apply when you click them. The page has no **Save changes** bar. Each button shows what happened next to it:
+
+- **Save reminder interval** shows "Saving…" while it runs, then "Saved. Reminders repeat every 2 hours.", "Saved. Reminders are off." or "Already set to every 4 hours." A line under the select reads "Saved: every 4 hours." or "Not saved yet. Saved: every 4 hours." A custom value shows its range, "Enter a whole number from 5 to 1440 minutes.", under the field and marks the field invalid before you click.
+- **Enable notifications**, **Retry permission** and **Disable notifications** say "Notifications enabled.", "Notifications disabled. Your reminder interval is kept.", or why the system did not allow notifications and what to do (allow them in System Settings > Notifications, then choose **Retry permission**).
+- **Acknowledge reminders** and **Defer reminders 60 minutes** say "Reminders silenced for the decisions pending now." and "Reminders deferred for 60 minutes."
+- A failure appears as an alert beside the control with the reason from the app and a **Retry** button. The value stays as you typed it. A live status update does not remove a confirmation or a failure. Editing the control clears it.
+
 ## Home directory
 
 The home directory is the folder a task runs in when it is not clear which project the task belongs to, such as a task you start from the global orchestrator. Enter the full path of a folder on this machine, for example `~/Code`, and click Save home directory. The folder must already exist. Leave the field empty to set none, and the orchestrator then asks where to run instead.
