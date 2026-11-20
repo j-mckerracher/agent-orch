@@ -8,6 +8,7 @@
 //! the approver secret to its stdin and closes the pipe. The daemon reads it
 //! before it creates anything, so a missing or malformed secret ends the start.
 //! Without the flag the daemon never reads stdin and no session can approve.
+mod activity;
 mod api;
 mod executor;
 mod idempotency;

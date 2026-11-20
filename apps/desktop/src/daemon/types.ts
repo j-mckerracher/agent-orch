@@ -257,6 +257,27 @@ export interface SessionThinkingPage {
   truncated: boolean;
 }
 
+/** What the agent is doing now: the daemon's durations are measured when it answers, never timestamps. */
+export interface LiveActivityWire {
+  /** `starting`, `thinking`, `tool`, `replying` or `approval`. An unknown word is shown as is. */
+  phase: string;
+  tool: { id: string; name: string; summary: string } | null;
+  phase_ms: number;
+  idle_ms: number;
+}
+
+/**
+ * `sessions.activity`: one page of a session's recorded activity in order. A `thinking` body is the text; a
+ * `tool_started` body is `{id, name, summary}` or the cap marker `{truncated: true}`; a `tool_finished` body is
+ * `{id, ok, summary}`. `live` is null once the session is not running.
+ */
+export interface SessionActivityPage {
+  entries: Array<{ sequence: number; kind: string; body: string }>;
+  next_cursor: number;
+  truncated: boolean;
+  live: LiveActivityWire | null;
+}
+
 /** `Actor` serializes as `{kind, id}`. */
 export interface Actor {
   kind: "user" | "agent" | "approved";
@@ -751,6 +772,8 @@ export type ConversationWireTarget =
 export type ConversationEntryKind =
   | "user_message"
   | "thinking_chunk"
+  | "tool_started"
+  | "tool_finished"
   | "reply_chunk"
   | "turn_completed"
   | "turn_failed"
@@ -1417,6 +1440,8 @@ export interface ConversationWirePage {
   /** Advances on every clear. A reader that sees a new value discards what it has read (DPES-1105). */
   clear_generation: number;
   turn: ConversationWireTurn | null;
+  /** Set only while the latest turn runs. Absent from older daemons. */
+  activity?: LiveActivityWire | null;
   epoch: string;
   /** The scope's proposals, newest first, on every page (DPES-1105). Absent from older daemons. */
   proposals?: ActionProposalWire[];

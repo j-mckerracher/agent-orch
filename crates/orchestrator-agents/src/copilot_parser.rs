@@ -13,9 +13,11 @@
 //! error, a warning or a log.
 
 use serde_json::Value;
+use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::contract::{AgentEvent, TurnOutcome};
+use crate::tool_summary::{bound, input_summary, result_summary};
 
 /// Longest provider-reported error text kept, in characters.
 const MAX_ERROR_CHARS: usize = 200;
@@ -32,6 +34,8 @@ pub struct CopilotParser {
     result_exit_code: Option<i64>,
     /// The message event of a line that also yielded a thinking event.
     pending: Option<AgentEvent>,
+    started_tools: HashSet<String>,
+    finished_tools: HashSet<String>,
 }
 
 impl CopilotParser {
@@ -123,6 +127,40 @@ impl CopilotParser {
                     }
                     None => message,
                 }
+            }
+            "tool.execution_start" => {
+                let data = data?;
+                let tool_id = data.get("toolCallId")?.as_str()?;
+                let name = data.get("toolName")?.as_str()?;
+                if !self.started_tools.insert(tool_id.to_owned()) {
+                    return None;
+                }
+                Some(AgentEvent::ToolStarted {
+                    tool_id: tool_id.to_owned(),
+                    name: name.to_owned(),
+                    summary: data.get("arguments").map(input_summary).unwrap_or_default(),
+                })
+            }
+            "tool.execution_complete" => {
+                let data = data?;
+                let tool_id = data.get("toolCallId")?.as_str()?;
+                if !self.finished_tools.insert(tool_id.to_owned()) {
+                    return None;
+                }
+                let result = data
+                    .get("result")
+                    .and_then(|result| result.get("content"))
+                    .map(result_summary)
+                    .filter(|text| !text.is_empty());
+                let error = || {
+                    let message = data.get("error")?.get("message")?.as_str()?;
+                    Some(bound(message))
+                };
+                Some(AgentEvent::ToolFinished {
+                    tool_id: tool_id.to_owned(),
+                    success: data.get("success").and_then(Value::as_bool) == Some(true),
+                    summary: result.or_else(error).unwrap_or_default(),
+                })
             }
             "session.error" => {
                 if self.session_error.is_none() {

@@ -199,6 +199,54 @@ fn thinking(dialect: Dialect, text: &str) {
     }
 }
 
+/// A tool call that began, as each CLI reports one.
+fn tool_started(dialect: Dialect, id: &str, command: &str) {
+    let command = serde_json::Value::String(command.to_owned());
+    match dialect {
+        Dialect::Codex => emit(&format!(
+            r#"{{"type":"item.started","item":{{"id":"{id}","type":"command_execution","command":{command},"aggregated_output":"","exit_code":null,"status":"in_progress"}}}}"#
+        )),
+        Dialect::Claude => emit(&format!(
+            r#"{{"type":"assistant","message":{{"content":[{{"type":"tool_use","id":"{id}","name":"Bash","input":{{"command":{command}}}}}]}}}}"#
+        )),
+    }
+}
+
+/// The end of a tool call that began with [`tool_started`].
+fn tool_finished(dialect: Dialect, id: &str, command: &str, output: &str) {
+    let command = serde_json::Value::String(command.to_owned());
+    let output = serde_json::Value::String(output.to_owned());
+    match dialect {
+        Dialect::Codex => emit(&format!(
+            r#"{{"type":"item.completed","item":{{"id":"{id}","type":"command_execution","command":{command},"aggregated_output":{output},"exit_code":0,"status":"completed"}}}}"#
+        )),
+        Dialect::Claude => emit(&format!(
+            r#"{{"type":"user","message":{{"content":[{{"type":"tool_result","tool_use_id":"{id}","content":{output},"is_error":false}}]}}}}"#
+        )),
+    }
+}
+
+/// A credential planted in a tool command and a tool result. Tests assert that no stored row
+/// and no reply ever carries it: the daemon redacts tool text before it keeps any.
+const PLANTED_TOKEN: &str = "ghp_PLANTED0123456789abcdefghij";
+const PLANTED_PASSWORD: &str = "hunter2-planted";
+
+/// Thinking, one finished tool, then a second tool whose command and result carry a secret.
+/// The second tool never finishes when `hang` is set, so a test can cancel or time out mid-tool.
+fn tool_script(dialect: Dialect, hang: bool) {
+    thinking(dialect, "fake thinking before the tools");
+    tool_started(dialect, "tool_1", "ls src");
+    tool_finished(dialect, "tool_1", "ls src", "main.rs\nlib.rs");
+    thinking(dialect, "fake thinking between the tools");
+    let command = format!("deploy --token {PLANTED_TOKEN} password={PLANTED_PASSWORD}");
+    tool_started(dialect, "tool_2", &command);
+    if hang {
+        std::thread::sleep(Duration::from_secs(600));
+    }
+    let output = format!("ok password={PLANTED_PASSWORD}");
+    tool_finished(dialect, "tool_2", &command, &output);
+}
+
 fn finished(dialect: Dialect, whole: &str) {
     match dialect {
         Dialect::Codex => {
@@ -299,6 +347,12 @@ fn turn(args: &[String], prompt: &str, dialect: Dialect) {
     } else if message.contains("[fake:hang]") {
         std::thread::sleep(Duration::from_secs(600));
         return;
+    } else if message.contains("[fake:tool-hang]") {
+        tool_script(dialect, true);
+        return;
+    } else if message.contains("[fake:tools]") {
+        tool_script(dialect, false);
+        pieces.push("fake reply after tools".to_owned());
     } else if message.contains("[fake:slow]") {
         pieces.extend((1..=5).map(|n| format!("part{n} ")));
     } else if message.contains("[fake:control]") {

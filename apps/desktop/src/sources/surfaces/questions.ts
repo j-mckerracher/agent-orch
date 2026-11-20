@@ -28,6 +28,7 @@ export function mapQuestion(wire: QuestionWire): QuestionItem {
     options: wire.options,
     deferredUntil: wire.deferred_until,
     state: wire.state,
+    askedAt: wire.created_at,
   };
 }
 
@@ -67,6 +68,7 @@ const FIXTURE_QUESTION: QuestionItem = {
   options: ["Migrate them now", "Let them expire"],
   deferredUntil: null,
   state: "open",
+  askedAt: "2026-11-18T09:00:00Z",
 };
 
 export function createFixtureQuestions(scenario: SurfaceFixtureScenario, now: () => number): QuestionsSource {

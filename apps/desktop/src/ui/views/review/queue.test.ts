@@ -9,6 +9,7 @@ const question = (id: string, over: Partial<QuestionItem> = {}): QuestionItem =>
   taskId: `t-${id}`,
   taskTitle: "",
   question: `Question ${id}?`,
+  askedAt: "2026-11-20T12:00:00Z",
   options: [],
   deferredUntil: null,
   state: "open",

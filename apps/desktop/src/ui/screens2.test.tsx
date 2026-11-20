@@ -25,6 +25,7 @@ const openQuestion = {
   raised_by: "worker",
   state: "open",
   deferred_until: null,
+  created_at: "2026-11-18T09:00:00Z",
 };
 
 function seeded() {
@@ -682,6 +683,8 @@ describe("S4 task and session detail", () => {
     expect(thread.getByText("<b>warn</b> **x**")).toBeInTheDocument();
     expect(thread.getByText("stderr")).toBeInTheDocument();
     expect(thread.getByText(/not redacted/)).toBeInTheDocument();
+    // Output lines have no times, so the bubble says when the app read them.
+    expect(thread.getByText(/^as of/).closest("article")!.querySelector("time")).toHaveAttribute("datetime", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
     expect(await thread.findByText("Thinking")).toBeInTheDocument();
     expect(thread.getByText("Checking the spec first.")).toBeInTheDocument();
     expect(screen.queryByRole("region", { name: "Recent output" })).not.toBeInTheDocument();
@@ -757,6 +760,7 @@ describe("S4 task and session detail", () => {
     expect(fake.messages).toEqual([{ task_id: "t-w", text: "first line\nsecond line" }]);
     const thread = within(screen.getByRole("log", { name: /^Conversation with/ }));
     expect(thread.getByText("You")).toBeInTheDocument();
+    expect(thread.getByText("You").closest("article")!.querySelector("time")).toHaveAttribute("datetime", expect.stringMatching(/^\d{4}-\d{2}-\d{2}T/));
     expect(thread.getByText(/second line/)).toBeInTheDocument();
   });
 
@@ -776,6 +780,8 @@ describe("S4 task and session detail", () => {
     expect(await thread.findByText("Answered: Fix the login bug.")).toBeInTheDocument();
     // The answered question stays in the thread once, with the answer under it as the person's own bubble.
     expect(thread.getAllByText("Migrate sessions now?")).toHaveLength(1);
+    expect(thread.getByText("Migrate sessions now?").closest("article")!.querySelector("time")).toHaveAttribute("datetime", "2026-11-18T09:00:00Z");
+    expect(thread.getByText("You").closest("article")!.querySelector("time")).not.toBeNull();
     expect(thread.getByText("You")).toBeInTheDocument();
     expect(thread.getAllByText("Migrate them now")).toHaveLength(1);
     expect(fake.callsTo("decisions.answer")[0]!.params).toEqual({

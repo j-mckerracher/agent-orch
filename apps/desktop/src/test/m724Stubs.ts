@@ -6,6 +6,7 @@ import type {
   ConversationWireEntry,
   ConversationWireTarget,
   ConversationWireTurn,
+  LiveActivityWire,
 } from "../daemon/types";
 import { StubRpcError, type FakeDaemon } from "./fakeDaemon";
 
@@ -28,9 +29,18 @@ export interface ConversationStub {
   proposals?: ActionProposalWire[];
   /** Set by a test to send a project coordinator's state on `conversations.get` (DPES-1108); left out by default. */
   coordinator?: ConversationCoordinatorWire;
+  /** Set by a test to send `clear_generation` on `conversations.get`; left out by default, like the older stubs. */
+  clearGeneration?: number;
+  /** Set by a test to send `activity` on `conversations.get` while the turn runs; left out by default, like an older daemon. */
+  activity?: LiveActivityWire;
   finishRunning(code?: string | null, reply?: string): void;
   /** Records one thinking chunk on the running turn. */
   think(body: string): void;
+  /** Records a tool start and a tool finish on the running turn, as the daemon stores them. */
+  toolStart(id: string, name: string, summary?: string): void;
+  toolFinish(id: string, ok: boolean, summary?: string): void;
+  /** Records a chunk of the reply on the running turn without ending it. */
+  reply(body: string): void;
 }
 
 /** A daemon-shaped live conversation: send records a turn, get pages the log, cancel ends a running turn. */
@@ -43,6 +53,15 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
     outcome,
     think(body) {
       if (this.turn) this.entries.push(entry(this.turn.id, "thinking_chunk", "orchestrator", body, null, `think:${seq}`));
+    },
+    toolStart(id, name, summary = "") {
+      if (this.turn) this.entries.push(entry(this.turn.id, "tool_started", "orchestrator", JSON.stringify({ id, name, summary }), null, `tool:${seq}`));
+    },
+    toolFinish(id, ok, summary = "") {
+      if (this.turn) this.entries.push(entry(this.turn.id, "tool_finished", "orchestrator", JSON.stringify({ id, ok, summary }), null, `tool:${seq}`));
+    },
+    reply(body) {
+      if (this.turn) this.entries.push(entry(this.turn.id, "reply_chunk", "orchestrator", body, null, `chunk:${seq}`));
     },
     finishRunning(code = null, reply) {
       if (!this.turn || this.turn.state !== "running") return;
@@ -106,6 +125,8 @@ export function stubConversation(fake: FakeDaemon, outcome: Outcome = "runtime_u
       next_after_sequence: seq,
       latest_sequence: seq,
       turn: state.turn,
+      ...(state.clearGeneration === undefined ? {} : { clear_generation: state.clearGeneration }),
+      ...(state.activity && state.turn?.state === "running" ? { activity: state.activity } : {}),
       epoch: "epoch-1",
       ...(state.proposals ? { proposals: state.proposals } : {}),
       ...(state.coordinator ? { coordinator: state.coordinator } : {}),
