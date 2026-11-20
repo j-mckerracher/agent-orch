@@ -294,7 +294,8 @@ export const NODE_SELF_TESTS = { passed: 149 };
 // Together in the phase 9 integration: 131 files, 2438 tests, as a full local `npx vitest run` counted them.
 // With main (DPES-1106 agent thinking) merged in: 133 files, 2458 tests, as a full local `npx vitest run` counted them.
 // DPES-1106 task window: 133 files, 2474 tests, as the desktop-vitest gate measured them on macOS and Windows in CI run 44640878437.
-export const VITEST = { files: 133, tests: 2474 };
+// The Waiting and Finished tabs in Agents & Sessions (DPES-1044) add 4 tests in existing files: 2478, as a full `npx vitest run` counted them.
+export const VITEST = { files: 133, tests: 2478 };
 // DPES-1106 moves the topbar usage popover test from this vitest gate to e2e/topbar-usage-viewport.spec.ts (Playwright).
 // Main had 45 e2e tests; moving that one out leaves 44. The chat model choice (DPES-1105) adds one real-daemon e2e test: 45
 // (CI run 43734333632). The permission level control (DPES-1105) adds one real-daemon e2e test: 46. CI run 43774378675 ran
