@@ -10,11 +10,12 @@ import { Button } from "./theme";
 import { ErrorNotice } from "./widgets";
 import { type QuestionsModel, useQuestions } from "./views/review/useQuestions";
 
-/** One thing the person said (or the question they answered) in this window. The daemon keeps no message history to read back. */
+/** One thing the person said (or the question they answered) in this window. The daemon keeps no message history to read back. `at` is an ISO instant. */
 export interface Turn {
   key: string;
   from: "agent" | "you";
   text: string;
+  at: string;
 }
 
 /** What the reply box can do right now: why it is off, the open question it answers, and the question list behind both. */
@@ -69,8 +70,8 @@ export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: T
     if (question) {
       if (await questions.answer(question, text)) {
         onTurns([
-          { key: question.id, from: "agent", text: question.question },
-          { key: `${question.id}:answer`, from: "you", text },
+          { key: question.id, from: "agent", text: question.question, at: question.askedAt },
+          { key: `${question.id}:answer`, from: "you", text, at: new Date().toISOString() },
         ]);
         setText("");
       }
@@ -82,7 +83,7 @@ export function TaskReply({ taskId, reply, onTurns }: { taskId: string; reply: T
     const result = await data.messageTask(taskId, text);
     setSending(false);
     if (result.ok) {
-      onTurns([{ key: `message-${nextMessage++}`, from: "you", text }]);
+      onTurns([{ key: `message-${nextMessage++}`, from: "you", text, at: new Date().toISOString() }]);
       setText("");
       setSent(true);
     } else {

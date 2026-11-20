@@ -37,7 +37,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { newerRecord } from "./actionCardModel";
 import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
-import { formatAt } from "./time";
+import { Timestamp } from "../../chat/Timestamp";
 import { useActionDecisions } from "./useActionDecisions";
 import { useMonitoring, type MonitoringModel } from "./useMonitoring";
 import { useRetained } from "./useRetained";
@@ -855,7 +855,7 @@ function TranscriptBody({
       author="You"
       time={
         <>
-          <time dateTime={entry.at}>{formatAt(entry.at)}</time> <Badge tone="placeholder">SIMULATED, not recorded</Badge>
+          <Timestamp at={entry.at} /> <Badge tone="placeholder">SIMULATED, not recorded</Badge>
         </>
       }
       actions={<CopyButton text={entry.text} />}
@@ -942,17 +942,20 @@ function EntryBubble({
   runtime: WakeRuntime | undefined;
 }) {
   // The opening entry of an automatic turn is event lines inside an update, not something the user wrote.
-  if (entry.origin === "wake") return <WakeLines text={entry.text} runtime={runtime} />;
-  if (entry.kind === "thinking") return <ThinkingBlock text={entry.text} streaming={entry.streaming === true} />;
+  if (entry.origin === "wake") return <WakeLines text={entry.text} at={entry.at} runtime={runtime} />;
+  if (entry.kind === "thinking") return <ThinkingBlock text={entry.text} streaming={entry.streaming === true} at={entry.at} />;
   const human = entry.role === "user";
   // A daemon turn outcome is a system line, never a reply from the orchestrator. It is daemon text, so it stays plain.
   if (entry.kind === "status") {
     return (
       <>
         <div className="ws-state ws-turn-status">
-          <p role="status" className="ws-turn-status-text">
-            {entry.text}
-          </p>
+          <div className="ws-turn-status-body">
+            <Timestamp at={entry.at} />
+            <p role="status" className="ws-turn-status-text">
+              {entry.text}
+            </p>
+          </div>
           <CopyButton text={entry.text} label="Copy status" />
         </div>
         <PullRequestLinks links={entry.pullRequests} />
@@ -965,7 +968,7 @@ function EntryBubble({
       author={human ? "You" : label}
       time={
         <>
-          <time dateTime={entry.at}>{formatAt(entry.at)}</time>
+          <Timestamp at={entry.at} />
           {entry.streaming && (
             <>
               {" "}
