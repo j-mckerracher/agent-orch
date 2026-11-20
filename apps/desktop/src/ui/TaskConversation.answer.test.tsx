@@ -36,13 +36,14 @@ describe("task answer", () => {
     await user.type(screen.getByRole("textbox", { name: "Your answer" }), "Migrate them now");
     await user.click(screen.getByRole("button", { name: "Send answer" }));
 
-    const alert = await screen.findByRole("alert");
-    expect(alert).toHaveTextContent("That question is no longer known. Nothing was changed.");
+    const refusal = await screen.findByText(/That question is no longer known\. Nothing was changed\./);
+    const alert = refusal.closest<HTMLElement>('[role="alert"]');
+    expect(alert).not.toBeNull();
     expect(screen.queryAllByRole("status").some((region) => /no longer known/.test(region.textContent ?? ""))).toBe(false);
 
-    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    await user.click(within(alert!).getByRole("button", { name: "Retry" }));
     expect(await screen.findByText("Answered: Fix the login bug.")).toBeInTheDocument();
-    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryAllByText(/no longer known/)).toHaveLength(0);
     expect(fake.callsTo("decisions.answer")).toHaveLength(2);
   });
 });

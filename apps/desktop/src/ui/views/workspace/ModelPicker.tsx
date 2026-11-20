@@ -463,7 +463,7 @@ export function ModelPicker({
           {live ? "Model settings" : "Conversation settings"} {!live && <Badge tone="placeholder">{panelBadge}</Badge>}
         </p>
         {/* A failed read is an error, so it is an alert; a read in progress is a status. */}
-        {unavailable && <p role={catalog.status === "loading" ? "status" : "alert"}>{unavailable}</p>}
+        {unavailable && <p role={catalog.status === "ok" || catalog.status === "loading" ? "status" : "alert"}>{unavailable}</p>}
         {cold && (
           <p role="status" className="ws-small">
             The catalog is still being read; retry shortly.{" "}

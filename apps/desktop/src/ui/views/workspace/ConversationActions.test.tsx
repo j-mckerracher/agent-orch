@@ -217,6 +217,21 @@ describe("clear history confirmation", () => {
     expect(props.onClear).toHaveBeenCalledTimes(1);
   });
 
+  it("holds the remove confirm pending until the removal ends", async () => {
+    const u = user();
+    let finish = (): void => {};
+    const props = actions({
+      onRemove: vi.fn(() => new Promise<void>((resolve) => (finish = () => resolve()))),
+    });
+    await openMenu(u);
+    await u.click(screen.getByRole("menuitem", { name: "Remove coordinator…" }));
+    await u.click(screen.getByRole("button", { name: "Remove coordinator permanently" }));
+    expect(screen.getByRole("button", { name: "Remove coordinator permanently" })).toHaveAttribute("aria-busy", "true");
+    finish();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(props.onRemove).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps Tab and Shift+Tab inside the dialog", async () => {
     const u = user();
     actions();
