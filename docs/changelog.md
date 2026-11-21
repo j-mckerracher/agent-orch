@@ -5,6 +5,15 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.38](https://github.com/mc-innersource/motif-mcao/compare/v0.1.37...v0.1.38) (2026-11-21)
+
+
+### Bug Fixes
+
+* **ci:** DPES-1106 - Pin Node in the release publish job ([f0295ec](https://github.com/mc-innersource/motif-mcao/commit/f0295ec7f25fffac2d6502f2dde395e1a1ad4e83))
+* **ci:** DPES-1106 - Pin Node in the release publish job ([c873872](https://github.com/mc-innersource/motif-mcao/commit/c873872e466da4f1812b932fd47e8e219117655a))
+* **desktop:** DPES-1170 - Give every button pending, success and failure feedback ([83721e6](https://github.com/mc-innersource/motif-mcao/commit/83721e6f57960e4f0e4976f955a50324365bf07d))
+
 ## [0.1.37](https://github.com/mc-innersource/motif-mcao/compare/v0.1.36...v0.1.37) (2026-11-21)
 
 
