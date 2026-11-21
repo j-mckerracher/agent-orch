@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use orchestrator_core::permission::PermissionLevel;
 use serde::Serialize;
 
-pub const PERMISSION_GROUP: &str = "permission";
+const PERMISSION_GROUP: &str = "permission";
 const AGENTS: [&str; 3] = ["claude-code", "github-copilot", "codex"];
 
 /// A group from which a send selects exactly one option.

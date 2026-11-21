@@ -1047,7 +1047,9 @@ fn conversation_args(
 
 /// Provider visibility is independent of the current mode and model choice.
 /// A turn still validates its complete argv at the mode it runs with. Each
-/// permission option is checked and keyed by its id.
+/// available option is checked on its own, with the other groups at their
+/// defaults, so a flag only an option adds (`--plan`, `--autopilot`) is checked
+/// too. Results are keyed by option id, which is unique within an agent.
 pub(super) async fn check_chat_provider(
     config: &ExecutorConfig,
     agent: &str,
@@ -1059,9 +1061,6 @@ pub(super) async fn check_chat_provider(
     };
     let mut options = Vec::new();
     for group in modes::groups(agent) {
-        if group.id != modes::PERMISSION_GROUP {
-            continue;
-        }
         for option in group.options.iter().filter(|option| option.available) {
             let chosen = BTreeMap::from([(group.id.to_owned(), option.id.to_owned())]);
             let Some(mode) = modes::resolve(agent, &ModeRequest::Chosen(chosen)) else {
