@@ -65,7 +65,7 @@ const AGENT_IDS: readonly AgentId[] = ["codex", "claude-code", "github-copilot"]
 
 export const FULL_AGENT_TEXT: Record<AgentId, string> = {
   codex:
-    "Codex runs with your own ~/.codex settings. MCAO adds no sandbox or approval flags, so the settings in that config decide what runs.",
+    "Codex runs with no sandbox. MCAO passes --sandbox danger-full-access, and your own ~/.codex settings still decide the approvals.",
   "claude-code":
     "Claude Code skips its permission checks and uses your own Claude settings and hooks. It can run any tool your account allows.",
   "github-copilot":

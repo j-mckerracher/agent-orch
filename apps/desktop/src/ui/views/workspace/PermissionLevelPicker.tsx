@@ -1,19 +1,7 @@
 import { useState } from "react";
 import type { PermissionLevel } from "../../../sources/surfaces/types";
-import { Dialog } from "../../Dialog";
-import { Button } from "../../theme";
-import {
-  FULL_AGENT_TEXT,
-  FULL_REVIEW_TEXT,
-  FULL_SAVE_TEXT,
-  FULL_SUMMARY,
-  OLDER_DAEMON_NOTICE,
-  PERMISSION_LEVELS,
-  agentTexts,
-  choiceBlock,
-  permissionLabel,
-  type PermissionSurface,
-} from "./permissionLevel";
+import { FullConfirmDialog } from "./FullConfirmDialog";
+import { OLDER_DAEMON_NOTICE, PERMISSION_LEVELS, choiceBlock, permissionLabel, type PermissionSurface } from "./permissionLevel";
 import "./PermissionLevelPicker.css";
 
 const FULL_TITLE: Record<PermissionSurface, string> = {
@@ -72,33 +60,15 @@ export function PermissionLevelPicker({
         </select>
       </label>
       {confirmingFull && (
-        <Dialog
+        <FullConfirmDialog
           title={FULL_TITLE[surface]}
-          onClose={() => setConfirmingFull(false)}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => setConfirmingFull(false)}>
-                Cancel
-              </Button>
-              <Button
-                variant="primary"
-                onClick={() => {
-                  setConfirmingFull(false);
-                  onChange("full");
-                }}
-              >
-                Use Full
-              </Button>
-            </>
-          }
-        >
-          <p>{FULL_SUMMARY}</p>
-          {agentTexts(FULL_AGENT_TEXT, agent).map(({ agent: id, text }) => (
-            <p key={id}>{text}</p>
-          ))}
-          <p>{FULL_REVIEW_TEXT}</p>
-          <p>{FULL_SAVE_TEXT}</p>
-        </Dialog>
+          agent={agent}
+          onCancel={() => setConfirmingFull(false)}
+          onConfirm={() => {
+            setConfirmingFull(false);
+            onChange("full");
+          }}
+        />
       )}
     </>
   );
