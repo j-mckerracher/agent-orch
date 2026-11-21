@@ -1065,7 +1065,10 @@
    "executor::session_transcript::tests::follow_moves_the_transcript_once_and_other_agents_need_none",
    "executor::tests::a_message_sent_before_a_task_starts_goes_with_its_first_instructions",
    "executor::tests::a_message_to_an_archived_task_continues_it_in_a_new_slot_on_the_same_branch",
-   "executor::tests::a_user_message_to_a_finished_task_resumes_its_session_under_a_new_attempt"
+   "executor::tests::a_user_message_to_a_finished_task_resumes_its_session_under_a_new_attempt",
+   "api::conversations::tests::a_mode_and_a_permission_together_are_a_bad_request_and_record_nothing",
+   "api::conversations::tests::the_daemon_advertises_the_chat_modes_capability",
+   "a_routed_mode_takes_the_agents_defaults_and_a_chosen_option_its_flags"
   ],
   "coordinator-review": [
    "coordinator_conversation_survives_daemon_restart_and_grants_no_authority",
