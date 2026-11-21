@@ -330,7 +330,14 @@ export class FakeDaemon implements DaemonConnector {
       case "tasks.message": {
         const task = this.tasks.find((t) => t.contract.id === params.task_id);
         if (!task) return fail(-32010, "task not found");
-        if (task.state !== "Waiting") return fail(-32011, `task is ${task.state}; it is not waiting for a message`);
+        if (task.state === "Running" || task.state === "Verifying") {
+          return fail(-32011, `task is ${task.state}; it takes a message only while the agent is not working or being verified`);
+        }
+        if (ARCHIVABLE_STATES.has(task.state)) {
+          // A finished task is reopened by the message and resumes its earlier session.
+          task.state = "Waiting";
+          task.version += 1;
+        }
         this.messages.push({ task_id: task.contract.id, text: String(params.text) });
         return reply({ task_id: task.contract.id, queued: true });
       }

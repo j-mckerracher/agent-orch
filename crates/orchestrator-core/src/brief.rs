@@ -268,11 +268,40 @@ pub struct Reply {
 /// a heading that names who wrote it. The session already holds the brief, so this only says
 /// the brief still applies. `None` when it would pass [`MAX_RESUME_BYTES`].
 pub fn render_resume(replies: &[Reply]) -> Option<String> {
-    let mut prompt = format!(
-        "{RESUME_MARKER}\n\nYou ended your turn to wait. These replies came back. Continue the \
-         task under the same brief, in the same working copy, and keep reporting to the same \
-         status file.\n"
-    );
+    render_replies(
+        "You ended your turn to wait. These replies came back. Continue the task under the same \
+         brief, in the same working copy, and keep reporting to the same status file.",
+        replies,
+    )
+}
+
+/// The prompt a finished task's agent resumes with when the user messages it. Same shape as
+/// [`render_resume`]: the agent already holds the brief, and its status file is the one it was
+/// told, so a new report goes to the same place.
+pub fn render_follow_up(replies: &[Reply]) -> Option<String> {
+    render_replies(
+        "You finished this task earlier, and the user has written to you since. Read their \
+         message and act on it under the same brief, in the same working copy. Keep reporting \
+         to the same status file, and end with a `done` line when you finish again.",
+        replies,
+    )
+}
+
+/// What the user wrote to a task before it started, for the end of its first brief. Empty when
+/// there is nothing. Their words go exactly as typed.
+pub fn render_launch_messages(replies: &[Reply]) -> String {
+    if replies.is_empty() {
+        return String::new();
+    }
+    let mut section = String::from("\n## The user also wrote, before you started\n");
+    for reply in replies {
+        section.push_str(&format!("Message: {}\n", reply.text));
+    }
+    section
+}
+
+fn render_replies(intro: &str, replies: &[Reply]) -> Option<String> {
+    let mut prompt = format!("{RESUME_MARKER}\n\n{intro}\n");
     for reply in replies {
         let (heading, label) = match reply.kind {
             ReplyKind::Answer => ("## The user's answer", "Answer"),

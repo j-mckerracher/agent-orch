@@ -238,8 +238,8 @@ export class DaemonApi {
   }
 
   /**
-   * DPES-1106. Queues the user's message for a Waiting task; the worker resumes with it. User-only.
-   * Conflict when the task is not waiting or already holds the most messages.
+   * DPES-1106. Queues the user's message for the task's next run; a finished task is reopened and resumes its session. User-only.
+   * Conflict when the task is running or being verified, a question is open, the task cannot be resumed, or it already holds the most messages.
    */
   async tasksMessage(taskId: string, text: string, idempotencyKey: string): Promise<TaskMessageWire> {
     return this.session.request("tasks.message", {

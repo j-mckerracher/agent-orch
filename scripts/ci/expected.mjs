@@ -69,7 +69,7 @@ export const WINDOWS = {
   // With main merged (DPES-1106): one real-daemon test and the agent_thinking store binary (5) plus one store lib test; re-synced from CI.
   // DPES-1106 adds one portable daemon test (tasks.message, api_authority_tests): 738 becomes 739, unit binary 633 becomes 634.
   // The wake brief keeps a worker's note (line cap 512) and adds one portable daemon test: 739 becomes 740, unit binary 634 becomes 635.
-  daemon: { passed: 769, ignored: 1, sequence: [661, 93, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 772, ignored: 1, sequence: [664, 93, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -122,7 +122,7 @@ export const WINDOWS = {
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 418.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 428 becomes 430, worker_status 11 becomes 13.
     // Chat times leave the store as RFC 3339 UTC (DPES-1044) adds two store lib tests and one conversations test: 419 becomes 422.
-  store: { passed: 422, ignored: 0, sequence: [108, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 12, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+  store: { passed: 426, ignored: 0, sequence: [108, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 12, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 4, 14, 3, 7, 5, 2, 5, 1, 17, 15, 0] },
   // Windows lib: 68 tests compile (the 2 cfg(unix) tests are excluded), so 68 - 1 = 67 are filtered out.
   // PR #108 (CI run 43974417288): the Windows store lib has 69 tests, so 68 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 19 },
@@ -182,7 +182,7 @@ export const MACOS = {
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
   // DPES-1106 adds one portable daemon test and one unix-only executor test: 882 becomes 884, unit binary 750 becomes 752.
   // The wake brief adds one portable daemon test: 884 becomes 885, unit binary 752 becomes 753.
-  daemon: { passed: 932, ignored: 1, sequence: [797, 98, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  daemon: { passed: 938, ignored: 1, sequence: [803, 98, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
@@ -194,7 +194,7 @@ export const MACOS = {
   // Reading Copilot's models (DPES-1105) adds two portable parser tests and three Unix-only catalog tests in orchestrator-agents: 1073 becomes 1078.
   // Worker environment (DPES-1126) adds 11 tests outside daemon, store and ipc: 1078 becomes 1089 (CI run 44783088646,
   // measured on macOS).
-  workspace: { passed: 1089, ignored: 1 },
+  workspace: { passed: 1090, ignored: 1 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
   // Worker environment (DPES-1126) adds 5 orchestrator-git tests, one of them Unix-only (a hook the agent pointed git at): 105 becomes 110 (CI run 44783088646).
@@ -224,7 +224,7 @@ export const MACOS = {
   // DPES-1108 phase 8 adds one store lib test and the turn_links binary (4 tests): 422.
   // DPES-1106 adds two worker_status tests (the author split and migration 0073): 432 becomes 434, worker_status 11 becomes 13.
     // Chat times leave the store as RFC 3339 UTC (DPES-1044) adds two store lib tests and one conversations test: 421 becomes 424.
-  store: { passed: 424, ignored: 0, sequence: [109, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 12, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 13, 15, 0] },
+  store: { passed: 428, ignored: 0, sequence: [109, 6, 7, 31, 9, 5, 9, 3, 7, 9, 13, 1, 15, 12, 9, 8, 11, 3, 7, 14, 2, 7, 14, 7, 20, 3, 11, 2, 5, 14, 3, 7, 5, 2, 5, 1, 17, 15, 0] },
   // Measured on the same run: the store lib has 70 tests, so 69 are filtered out.
   // PR #108 (CI run 43974417288): the macOS store lib has 71 tests, so 70 are filtered out.
   lockTakeover: { passed: 1, sequence: [1], filteredOut: 17 },

@@ -779,3 +779,221 @@ fn migration_0073_applies_to_a_0072_database_and_keeps_every_row() {
     )
     .unwrap();
 }
+
+/// A task whose single run reported `abc-123`, waited on a blocker (no question to answer), and
+/// finished `Failed` when it could not resume.
+fn finished_task(store: &SqliteStore, id: &str) {
+    run_task(store, id);
+    store
+        .record_agent_session_id(id, &format!("{id}-s1"), "abc-123")
+        .unwrap();
+    store
+        .record_status_events(
+            id,
+            &format!("{id}-a1"),
+            &format!("{id}-s1"),
+            &[(4, line(StatusVerb::Working, None, Some("reading")))],
+        )
+        .unwrap();
+    store
+        .enter_waiting(
+            id,
+            &format!("{id}-a1"),
+            &format!("{id}-s1"),
+            WaitReason::Blocker,
+            &[],
+        )
+        .unwrap();
+    store.fail_waiting_task(id, "gone").unwrap();
+    assert_eq!(store.get(id).unwrap().state, TaskState::Failed);
+}
+
+#[test]
+fn a_user_message_reopens_a_finished_task_under_an_attempt_that_continues_its_session() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    finished_task(&store, "t1");
+
+    // Only the user reaches past a finished task; the orchestrator's message is refused.
+    let refusal = store
+        .queue_task_message("t1", "k0", "Try again.", MessageAuthor::Orchestrator)
+        .unwrap_err();
+    assert_eq!(WaitError::of(&refusal), Some(WaitError::NotWaiting));
+    assert_eq!(store.get("t1").unwrap().state, TaskState::Failed);
+
+    store
+        .queue_task_message("t1", "k1", "Please add a test.", MessageAuthor::User)
+        .unwrap();
+    let task = store.get("t1").unwrap();
+    assert_eq!(task.state, TaskState::Waiting);
+    assert_eq!(task.attempts.len(), 2);
+    assert_eq!(
+        task.attempts[0].state,
+        AttemptState::Failed,
+        "never reopened"
+    );
+    assert_eq!(task.attempts[1].state, AttemptState::Waiting);
+    assert_eq!(store.follow_up_attempts("t1").unwrap(), 1);
+
+    let target = store.resume_target("t1").unwrap().unwrap();
+    assert_eq!(target.attempt_id, "t1-attempt-2");
+    assert_eq!(target.agent_session_id.as_deref(), Some("abc-123"));
+    assert_eq!(
+        (target.attempt_number, target.status_attempt_number),
+        (2, 1)
+    );
+    assert!(target.follow_up && !target.fresh_workspace);
+    // The agent keeps writing the file it was told about, so reading goes on after its lines.
+    assert_eq!(store.last_status_line("t1", "t1-attempt-2").unwrap(), 4);
+    assert!(store.tasks_ready_to_resume().unwrap().contains("t1"));
+    assert_eq!(
+        store.pending_replies("t1").unwrap()[0].kind,
+        ReplyKind::UserMessage
+    );
+}
+
+#[test]
+fn a_finished_task_that_never_reported_a_session_cannot_be_continued() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    run_task(&store, "t1");
+    store
+        .enter_waiting("t1", "t1-a1", "t1-s1", WaitReason::Blocker, &[])
+        .unwrap();
+    store.fail_waiting_task("t1", "gone").unwrap();
+    let refusal = store
+        .queue_task_message("t1", "k1", "Hello?", MessageAuthor::User)
+        .unwrap_err();
+    assert_eq!(WaitError::of(&refusal), Some(WaitError::NoSession));
+    let task = store.get("t1").unwrap();
+    assert_eq!((task.state, task.attempts.len()), (TaskState::Failed, 1));
+}
+
+#[test]
+fn a_busy_task_takes_no_message_and_one_not_started_queues_it_for_the_launch() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = open(directory.path());
+    run_task(&store, "busy");
+    let refusal = store
+        .queue_task_message("busy", "k0", "Hi", MessageAuthor::User)
+        .unwrap_err();
+    assert_eq!(WaitError::of(&refusal), Some(WaitError::NotWaiting));
+
+    store
+        .create(&TaskContract {
+            id: "early".into(),
+            project_id: "p".into(),
+            parent_id: None,
+            objective: "Pick a database".into(),
+            kind: TaskKind::Implement,
+            agent: "codex".into(),
+            dependencies: Vec::new(),
+            verification: VerificationPolicy::None,
+            delivery: DeliveryPolicy::LocalReview,
+            autonomy: AutonomyPolicy::WorkspaceWrites,
+            max_retries: 0,
+            max_repairs: 0,
+            model_selection: None,
+            work_item: None,
+            permission: Default::default(),
+        })
+        .unwrap();
+    // Created: the user's message waits for the launch; the orchestrator's is refused.
+    assert_eq!(
+        WaitError::of(
+            &store
+                .queue_task_message("early", "k1", "Hi", MessageAuthor::Orchestrator)
+                .unwrap_err()
+        ),
+        Some(WaitError::NotWaiting)
+    );
+    store
+        .queue_task_message("early", "k2", "Use Postgres.", MessageAuthor::User)
+        .unwrap();
+    let replies = store.pending_replies("early").unwrap();
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].text, "Use Postgres.");
+    assert_eq!(store.get("early").unwrap().state, TaskState::Created);
+    // The launch delivers it once.
+    store
+        .mark_launch_replies_delivered("early", "early-session-1", &[replies[0].id])
+        .unwrap();
+    assert!(store.pending_replies("early").unwrap().is_empty());
+    assert_eq!(
+        WaitError::of(
+            &store
+                .mark_launch_replies_delivered("early", "early-session-1", &[replies[0].id])
+                .unwrap_err()
+        ),
+        Some(WaitError::UnknownReply)
+    );
+}
+
+#[test]
+fn migration_0075_applies_to_a_0074_database_and_keeps_every_message() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("store.sqlite");
+    let legacy_dir = directory.path().join("legacy-migrations");
+    fs::create_dir(&legacy_dir).unwrap();
+    let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("migrations");
+    for entry in fs::read_dir(&source).unwrap() {
+        let entry = entry.unwrap().path();
+        let name = entry.file_name().unwrap().to_str().unwrap().to_owned();
+        let version: u32 = name.split('_').next().unwrap().parse().unwrap();
+        if version < 75 {
+            fs::copy(&entry, legacy_dir.join(name)).unwrap();
+        }
+    }
+    runtime().block_on(async {
+        let options = SqliteConnectOptions::new()
+            .filename(&path)
+            .create_if_missing(true)
+            .foreign_keys(true);
+        let mut connection = sqlx::SqliteConnection::connect_with(&options)
+            .await
+            .unwrap();
+        Migrator::new(legacy_dir.as_path())
+            .await
+            .unwrap()
+            .run(&mut connection)
+            .await
+            .unwrap();
+        connection.close().await.unwrap();
+    });
+    for statement in [
+        "INSERT INTO projects (id, root_path, settings) VALUES ('p1', '/work/p1', '{}')",
+        "INSERT INTO tasks (id, project_id, parent_id, state, contract_json, version) \
+         VALUES ('t1', 'p1', NULL, '\"Waiting\"', '{}', 1)",
+        "INSERT INTO attempts (task_id, id, attempt_number, state) \
+         VALUES ('t1', 't1-a1', 1, '\"Waiting\"')",
+        "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key, author) \
+         VALUES ('t1', 't1-a1', 'message', 'Use the other branch.', 'u0', 'user')",
+        "UPDATE task_messages SET delivered_session_id = 't1-s1' WHERE message_key = 'u0'",
+        "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key) \
+         VALUES ('t1', 't1-a1', 'message', 'The network is back.', 'k0')",
+    ] {
+        try_sql(&path, statement).unwrap();
+    }
+    let dump = "SELECT json_array(id, task_id, attempt_id, kind, text, message_key, \
+         delivered_session_id, author) FROM task_messages ORDER BY id";
+    let before = scalars(&path, dump);
+
+    let _store = SqliteStore::new(&path).unwrap();
+    assert_eq!(scalars(&path, dump), before);
+    // Only the user's own message may exist before an attempt does.
+    let early = |author: &str, key: &str| {
+        format!(
+            "INSERT INTO task_messages (task_id, attempt_id, kind, text, message_key, author) \
+             VALUES ('t1', NULL, 'message', 'Hi', '{key}', '{author}')"
+        )
+    };
+    assert!(try_sql(&path, &early("orchestrator", "e0")).is_err());
+    try_sql(&path, &early("user", "e1")).unwrap();
+    // The rebuilt table keeps its guards: delivered once, never deleted.
+    assert!(try_sql(
+        &path,
+        "UPDATE task_messages SET delivered_session_id = 't1-s9' WHERE message_key = 'u0'"
+    )
+    .is_err());
+    assert!(try_sql(&path, "DELETE FROM task_messages").is_err());
+}
