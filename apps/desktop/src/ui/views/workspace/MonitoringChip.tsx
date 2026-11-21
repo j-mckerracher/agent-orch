@@ -69,7 +69,9 @@ export function MonitoringChip({ model, target, canChange }: MonitoringChipProps
         aria-controls={menuId}
         onClick={() => popover.setOpen((value) => !value)}
       >
-        <span aria-hidden="true">{current === "off" ? "○" : "●"}</span>
+        <span aria-hidden="true" className="ws-monitoring-dot" data-tone={paused ? "paused" : (current ?? "unknown")}>
+          {current === "off" ? "○" : "●"}
+        </span>
         <span>{chipLabel(state)}</span>
       </button>
       {/* Always mounted, so a pause that starts while the page is open is announced. */}

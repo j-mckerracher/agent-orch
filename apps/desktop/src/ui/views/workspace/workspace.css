@@ -265,6 +265,20 @@
   bottom: auto;
 }
 
+/* The label carries the state; the dot colour only reinforces it. */
+.ws-monitoring-dot[data-tone="on"] {
+  color: var(--green);
+}
+
+.ws-monitoring-dot[data-tone="quiet"],
+.ws-monitoring-dot[data-tone="away"] {
+  color: var(--amber);
+}
+
+.ws-monitoring-dot[data-tone="paused"] {
+  color: var(--red);
+}
+
 .ws-monitoring-paused {
   font-size: 12px;
   font-weight: 600;
