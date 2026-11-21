@@ -501,6 +501,15 @@ fn the_daemon_advertises_the_permission_levels_capability() {
 }
 
 #[test]
+fn the_daemon_advertises_the_chat_modes_capability() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    assert!(api
+        .capabilities()
+        .contains(&orchestrator_ipc::Capability::ChatModes));
+}
+
+#[test]
 fn an_unknown_permission_is_a_bad_request_and_records_nothing() {
     let directory = tempfile::tempdir().unwrap();
     let api = without_agents(directory.path());
