@@ -230,28 +230,31 @@ export function NotificationsSection({ client = decisionNotificationsClient }: {
                 </select>
               </label>
               {choice === "custom" && (
-                <label>
-                  Custom reminder interval (5–1440 minutes)
-                  <input
-                    ref={customRef}
-                    type="number"
-                    min={5}
-                    max={1440}
-                    step={1}
-                    value={customInterval}
-                    disabled={busy}
-                    aria-invalid={invalid}
-                    aria-describedby={hintId}
-                    onChange={(event) => {
-                      setCustomInterval(event.target.value);
-                      setTried(false);
-                      interval.clear();
-                    }}
-                  />
+                <div className="settings-notification-field">
+                  <label>
+                    Custom reminder interval (5–1440 minutes)
+                    <input
+                      ref={customRef}
+                      type="number"
+                      min={5}
+                      max={1440}
+                      step={1}
+                      value={customInterval}
+                      disabled={busy}
+                      aria-invalid={invalid}
+                      aria-describedby={hintId}
+                      onChange={(event) => {
+                        setCustomInterval(event.target.value);
+                        setTried(false);
+                        interval.clear();
+                      }}
+                    />
+                  </label>
+                  {/* Outside the label, so the field's name stays "Custom reminder interval (5–1440 minutes)". */}
                   <small id={hintId} role={invalid && tried ? "alert" : undefined} className={invalid ? "settings-error" : "settings-hint"}>
                     {RANGE_TEXT}
                   </small>
-                </label>
+                </div>
               )}
               <Button onClick={saveInterval} pending={interval.pending} disabled={locked(interval)}>
                 Save reminder interval
