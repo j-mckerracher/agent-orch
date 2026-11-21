@@ -5,7 +5,7 @@ import { ALL_CAPABILITIES } from "../daemon/types";
 import { createFixtureSources } from "../sources/fixtures";
 import { FakeDaemon, mkApproval, mkEvent, mkTask, until } from "../test/fakeDaemon";
 import { REPO, mount } from "../test/render";
-import { RESTRICTED_PREFERENCE_KEY, TASK_PREFERENCE_KEY } from "./views/workspace/permissionLevel";
+import { TASK_PREFERENCE_KEY } from "./views/workspace/permissionLevel";
 
 /** An incomplete history keeps the connection strip on screen over a healthy connection, so its notes can be read. */
 const stripOpen = (fake: FakeDaemon) => {
@@ -282,8 +282,7 @@ describe("S2 project page and new task", () => {
   describe("permission level", () => {
     beforeEach(() => window.localStorage.clear());
 
-    it("starts at Auto, sends it with the task, and ignores a chat's saved Restricted choice", async () => {
-      window.localStorage.setItem(RESTRICTED_PREFERENCE_KEY, "restricted");
+    it("starts at Auto and sends it with the task", async () => {
       const fake = seeded();
       const { user } = await mount(fake, { route });
       await openDialog(user);
@@ -300,7 +299,6 @@ describe("S2 project page and new task", () => {
       await openDialog(user);
       await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "restricted");
       expect(window.localStorage.getItem(TASK_PREFERENCE_KEY)).toBe("restricted");
-      expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBeNull();
       await user.type(screen.getByLabelText("Objective"), "Add a login page");
       await user.click(screen.getByRole("button", { name: "Create task" }));
       await screen.findByTestId("task-state");

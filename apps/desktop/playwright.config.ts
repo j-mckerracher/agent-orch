@@ -2,7 +2,7 @@ import { defineConfig } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["**/geometry.spec.ts", "**/topbar-usage-viewport.spec.ts", "**/workspace-composer-pin.spec.ts"],
+  testMatch: ["**/geometry.spec.ts", "**/topbar-usage-viewport.spec.ts", "**/workspace-composer-pin.spec.ts", "**/workspace-composer-modes.spec.ts"],
   use: {
     browserName: "chromium",
     channel: "chrome",

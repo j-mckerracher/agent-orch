@@ -1,6 +1,6 @@
 /**
- * The permission level for chats (DPES-1105) and tasks (DPES-1126): its labels, the level a request carries,
- * why a level cannot be chosen, the Full confirmation's wording, and the saved preferences. Pure, so the rules
+ * The task permission level (DPES-1126): its labels, the level a request carries, why a level cannot be chosen, the
+ * Full confirmation's wording, and the saved preference. Chats choose a mode instead (DPES-1105). Pure, so the rules
  * are tested without rendering.
  */
 import type { TaskRecord } from "../../../daemon/types";
@@ -8,11 +8,8 @@ import type { PermissionLevel } from "../../../sources/surfaces/types";
 
 export const PERMISSION_LEVELS: readonly PermissionLevel[] = ["restricted", "extended", "auto", "full"];
 
-/** Auto is the default for chats (design D1). */
+/** Auto is the default for chats (design D1), and the level a legacy-daemon chat sends. */
 export const DEFAULT_PERMISSION_LEVEL: PermissionLevel = "auto";
-
-/** The one value that survives a reload. Only Restricted is saved; Auto, Extended and Full reset to Auto (design O4). */
-export const RESTRICTED_PREFERENCE_KEY = "agent-orch.chat.permission-level";
 
 /** The task form's own saved Restricted choice, so a chat choice never reaches a task (design O4). */
 export const TASK_PREFERENCE_KEY = "agent-orch.task.permission-level";
@@ -34,17 +31,9 @@ export function permissionForSend(level: PermissionLevel, daemonAdvertises: bool
   return daemonAdvertises ? level : undefined;
 }
 
-/** Where a level is picked. Each surface keeps its own saved Restricted choice. */
-export type PermissionSurface = "chat" | "task";
-
-const EXTENDED_BLOCK: Record<PermissionSurface, string> = {
-  chat: "not available for chat yet",
-  task: "read-only git only, so it can't build, test or commit",
-};
-
-/** Why a level cannot be chosen on a surface, or null. Extended is refused on every agent for now (PR A). */
-export function choiceBlock(level: PermissionLevel, daemonAdvertises: boolean, surface: PermissionSurface): string | null {
-  if (level === "extended") return EXTENDED_BLOCK[surface];
+/** Why a task level cannot be chosen, or null. Extended is refused on every agent for now (PR A). */
+export function choiceBlock(level: PermissionLevel, daemonAdvertises: boolean): string | null {
+  if (level === "extended") return "read-only git only, so it can't build, test or commit";
   if (!daemonAdvertises && level !== "restricted") return "needs an updated daemon";
   return null;
 }
@@ -93,7 +82,7 @@ export function browserStorage(): PreferenceStorage | null {
 }
 
 /** The level to start with. Only a saved Restricted counts; missing or unreadable storage means the default. */
-export function readSavedLevel(storage: PreferenceStorage | null = browserStorage(), key = RESTRICTED_PREFERENCE_KEY): PermissionLevel {
+export function readSavedLevel(storage: PreferenceStorage | null, key: string): PermissionLevel {
   try {
     return storage?.getItem(key) === "restricted" ? "restricted" : DEFAULT_PERMISSION_LEVEL;
   } catch {
@@ -105,7 +94,7 @@ export function readSavedLevel(storage: PreferenceStorage | null = browserStorag
  * Saves Restricted and removes the saved value for any other level, so the only value ever written is the
  * Restricted preference. A failed write means the choice is simply not kept after a reload.
  */
-export function saveLevel(level: PermissionLevel, storage: PreferenceStorage | null = browserStorage(), key = RESTRICTED_PREFERENCE_KEY): void {
+export function saveLevel(level: PermissionLevel, storage: PreferenceStorage | null, key: string): void {
   try {
     if (level === "restricted") storage?.setItem(key, "restricted");
     else storage?.removeItem(key);

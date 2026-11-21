@@ -65,7 +65,7 @@ export function ModeDropdown({
           </p>
         )}
         {groups.map((group) => (
-          <fieldset key={group.id} className="ws-mode-group" disabled={disabled !== null}>
+          <fieldset key={group.id} className="ws-mode-group">
             <legend>{group.label}</legend>
             {group.options.map((option) => (
               <label key={option.id} className="ws-mode-option">
@@ -95,6 +95,29 @@ export function ModeDropdown({
             setConfirming(null);
           }}
         />
+      )}
+    </div>
+  );
+}
+
+/** The last reply's mode, as the daemon reports it and as this session sent it. Labels are null when the catalog cannot name them. */
+export interface LastReplyMode {
+  reported: string;
+  sent: string | null;
+  differs: boolean;
+}
+
+/** Below the composer row: what the last reply ran in, or an alert when the daemon reports a different mode than was sent. */
+export function ModeNotes({ last }: { last: LastReplyMode | null }) {
+  if (last === null) return null;
+  return (
+    <div className="ws-perm-notes">
+      {last.differs ? (
+        <p role="alert" className="ws-small">
+          The daemon reports the last reply ran in {last.reported}, not {last.sent}. Check that reply before you act on it.
+        </p>
+      ) : (
+        <p className="ws-small">Last reply ran in {last.reported}.</p>
       )}
     </div>
   );

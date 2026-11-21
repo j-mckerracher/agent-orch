@@ -6,9 +6,10 @@ import { ALL_CAPABILITIES } from "../../../daemon/types";
 import { createFixtureSources } from "../../../sources/fixtures";
 import { populate } from "../../../sources/surfaces/testkit";
 import { FakeDaemon } from "../../../test/fakeDaemon";
-import { stubActionsResolve, stubConversation } from "../../../test/m724Stubs";
+import { CODEX_CATALOG, stubActionsResolve, stubConversation } from "../../../test/m724Stubs";
 import { createServices } from "../../createServices";
 import { ServicesProvider, type Services } from "../../services";
+import { CHOICE_PREFERENCE_KEY } from "./modelChoice";
 import { WorkspaceView } from "./WorkspaceView";
 
 const at = "2026-11-10T21:00:00Z";
@@ -413,25 +414,25 @@ describe("orchestrator action cards over the daemon stub", () => {
     expect(screen.getByText("Hello from the runtime.")).toBeInTheDocument();
   });
 
-  it("shows the actions note at Full only, not at Auto, Restricted or in fixture mode", async () => {
-    const note = "Action proposals work only at Restricted and Auto. At Full the orchestrator can answer but cannot propose changes.";
+  it("shows the actions note only in a mode that cannot propose actions, and not in fixture mode", async () => {
+    const note = "Action proposals are off in this mode. The orchestrator can answer, but it cannot propose changes.";
     window.localStorage.clear();
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex" }));
     const fake = liveDaemon();
+    fake.stub("agents.catalog", [CODEX_CATALOG]);
     stubConversation(fake, "completed");
     const services = track(build({ fake }));
     const user = await mountLive(services);
     await pickGlobal(user);
     expect(screen.queryByText(note)).toBeNull();
 
-    const button = screen.getByRole("button", { name: /^Model settings/ });
-    if (button.getAttribute("aria-expanded") !== "true") await user.click(button);
-    await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Full");
+    await user.click(screen.getByRole("button", { name: /Chat mode:/ }));
+    await user.click(within(screen.getByRole("group", { name: "Permission" })).getByRole("radio", { name: /^Full access/ }));
     await user.click(await screen.findByRole("button", { name: "Use Full" }));
     expect(await screen.findByText(note)).toBeInTheDocument();
 
-    const reopened = screen.getByRole("button", { name: /^Model settings/ });
-    if (reopened.getAttribute("aria-expanded") !== "true") await user.click(reopened);
-    await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Restricted");
+    await user.click(screen.getByRole("button", { name: /Chat mode:/ }));
+    await user.click(within(screen.getByRole("group", { name: "Permission" })).getByRole("radio", { name: /^Read only/ }));
     expect(screen.queryByText(note)).toBeNull();
 
     cleanup();

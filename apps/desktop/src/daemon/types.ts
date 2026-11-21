@@ -372,8 +372,7 @@ export interface AgentCapabilityEntry {
   } | null;
   /** DPES-1105: GitHub Copilot only. Its session sign-in record. */
   sign_in?: CopilotSignInRecord | null;
-  chat_compatibility?: Partial<Record<PermissionLevelWire, { retryable: boolean; reason: string }>>;
-  /** Keyed by mode option id. Like `chat_compatibility`, read from this row. */
+  /** Keyed by mode option id: why a mode cannot run with this agent yet. Read from this row, as the other agent capabilities are. */
   mode_compatibility?: Record<string, { retryable: boolean; reason: string }>;
 }
 
@@ -749,6 +748,24 @@ export interface AgentCatalogEntry {
 
 /** A turn's chat mode: each group id mapped to the option id that ran (DPES-1105). */
 export type ModeSelectionWire = Record<string, string>;
+
+/** One chat mode option as `agents.catalog` reports it (DPES-1105). The UI validates it at the boundary before use. */
+export interface ModeOptionWire {
+  id: string;
+  label: string;
+  description: string;
+  available: boolean;
+  unavailable_reason: string | null;
+  needs_confirmation: boolean;
+  default: boolean;
+  allows_actions: boolean;
+}
+
+export interface ModeGroupWire {
+  id: string;
+  label: string;
+  options: ModeOptionWire[];
+}
 
 export type SelectionReasonWire =
   | "agent_unavailable"

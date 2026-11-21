@@ -7,7 +7,6 @@ import type {
   ModelOption,
   ModelProvider,
   ModelSelectionCheck,
-  PermissionLevel,
   Provenance,
   SurfaceResult,
 } from "../../../sources/surfaces/types";
@@ -18,8 +17,6 @@ import { Badge, Button, Disclosure } from "../../theme";
 import { usePopover } from "../../usePopover";
 import { CopilotSignInCheck } from "./CopilotSignInCheck";
 import { clearSavedChoice, readSavedChoice, saveChoice } from "./modelChoice";
-import { LastTurnNote, PermissionLevelPicker, type LastTurnLevel } from "./PermissionLevelPicker";
-import { permissionLabel } from "./permissionLevel";
 
 const LIVE_NOTE =
   "Models and efforts come from the daemon's catalog, and the daemon checks each choice. A changed choice is sent with each message and remembered in this app until you change it. Task submissions do not use it yet.";
@@ -53,8 +50,8 @@ type Check = { key: string; result: SurfaceResult<ModelSelectionCheck> | "checki
  * refuses a choice for, so the list never offers a choice that always fails. Until the sign-in state is read, Copilot
  * stays choosable: the daemon decides each send.
  */
-function blockOf(item: ModelProvider, signIn: CopilotSignInRecord | null, level: PermissionLevel): { label: string; reason: string } | null {
-  const failure = item.chatCompatibility?.[level];
+function blockOf(item: ModelProvider, signIn: CopilotSignInRecord | null, modeIds: string[]): { label: string; reason: string } | null {
+  const failure = modeIds.map((id) => item.modeCompatibility?.[id]).find((entry) => entry !== undefined);
   if (failure) {
     return {
       label: failure.retryable ? "compatibility not confirmed" : "not compatible",
@@ -68,8 +65,8 @@ function blockOf(item: ModelProvider, signIn: CopilotSignInRecord | null, level:
 }
 
 /** The line under the provider list that says why a provider cannot be chosen, or that Copilot sign-in is not confirmed yet. */
-function providerNote(item: ModelProvider, signIn: CopilotSignInRecord | null, level: PermissionLevel): string | null {
-  const block = blockOf(item, signIn, level);
+function providerNote(item: ModelProvider, signIn: CopilotSignInRecord | null, modeIds: string[]): string | null {
+  const block = blockOf(item, signIn, modeIds);
   if (block) return `${item.name}: ${block.reason}`;
   if (item.id === COPILOT && signIn?.state === "not_checked") return `${item.name}: ${SIGN_IN_TEXT.not_checked}`;
   return null;
@@ -94,12 +91,12 @@ function problemOf(
   provider: ModelProvider | undefined,
   signIn: CopilotSignInRecord | null,
   efforts: string[],
-  level: PermissionLevel,
+  modeIds: string[],
 ): Problem | null {
   if (catalog.status === "loading") return { pending: true, text: "the model catalog is still being read" };
   if (catalog.status !== "ok") return { pending: false, text: "the model catalog is not available" };
   if (provider === undefined) return { pending: false, text: `the daemon's catalog does not list ${choice.agent}` };
-  const block = blockOf(provider, signIn, level);
+  const block = blockOf(provider, signIn, modeIds);
   if (block) return { pending: provider.id === COPILOT && signIn?.state === "checking", text: block.reason };
   if (choice.model !== undefined) {
     if (provider.models.status === "unknown") return { pending: true, text: "the model list is still being read" };
@@ -170,7 +167,7 @@ function effortHelp(
  * efforts, each choice checked with `agents.validate_selection`, and a cold catalog retried
  * shortly. The choice is saved on each change and restored on mount, so a remount keeps it
  * (DPES-1105). Fixtures: placeholder options that can be tried locally. Fixtures send nothing
- * and never save a choice. A chat also shows its permission level at the end of the chip and offers it in the panel.
+ * and never save a choice.
  */
 export function ModelPicker({
   catalog,
@@ -182,7 +179,7 @@ export function ModelPicker({
   onChoiceChange,
   onChoiceBlocked,
   selectionSupported = true,
-  permission,
+  modeIdsFor,
 }: {
   catalog: SurfaceState<ModelCatalog>;
   provenance: Provenance;
@@ -200,14 +197,8 @@ export function ModelPicker({
   onChoiceBlocked?: (reason: string | null) => void;
   /** Live only: false when the connected daemon has no `conversation_selection` capability (DPES-1105). */
   selectionSupported?: boolean;
-  /** A chat's permission level: shown in the chip and chosen in the panel. Omitted where no message runs (DPES-1105). */
-  permission?: {
-    level: PermissionLevel;
-    daemonAdvertises: boolean;
-    onChange: (level: PermissionLevel) => void;
-    /** What the daemon reported for the last turn, shown at the end of the panel. */
-    lastTurn?: LastTurnLevel | null;
-  };
+  /** The mode option ids a provider would run with, checked against its mode compatibility (DPES-1105). */
+  modeIdsFor?: (provider: ModelProvider) => string[];
 }) {
   const popover = usePopover();
   const ids = useId();
@@ -221,11 +212,11 @@ export function ModelPicker({
   const [asked, setAsked] = useState(false);
 
   const providers = catalog.status === "ok" ? catalog.data.providers : [];
-  const level = permission?.level ?? "restricted";
+  const modeIdsOf = (item: ModelProvider) => modeIdsFor?.(item) ?? [];
   const providerNotes = live
-    ? providers.map((item) => providerNote(item, signIn, level)).filter((note): note is string => note !== null)
+    ? providers.map((item) => providerNote(item, signIn, modeIdsOf(item))).filter((note): note is string => note !== null)
     : [];
-  const choosable = (item: ModelProvider) => blockOf(item, signIn, level) === null;
+  const choosable = (item: ModelProvider) => blockOf(item, signIn, modeIdsOf(item)) === null;
   // A provider that cannot be chosen is listed but never chosen. Live, Copilot is never the default: the daemon's
   // default is Codex, then Claude Code. A chosen or restored provider is shown even when it cannot be chosen now.
   const defaultChoosable = (item: ModelProvider) => item.launchable && (!live || item.id !== COPILOT);
@@ -246,7 +237,7 @@ export function ModelPicker({
   }
   // A chosen or restored part the catalog does not offer is never replaced by the default: it is shown as unavailable,
   // with the reason, and the choice is not sent (DPES-1105).
-  const problem = live && pinned !== null ? problemOf(pinned, catalog, provider, signIn, efforts, level) : null;
+  const problem = live && pinned !== null ? problemOf(pinned, catalog, provider, signIn, efforts, provider ? modeIdsOf(provider) : []) : null;
   const missingAgent = live && pinned !== null && catalog.status === "ok" && pinnedProvider === undefined ? pinned.agent : null;
   const unavailableModel = live && modelId !== null && provider !== undefined && model === undefined ? modelId : null;
   const unavailableEffort = live && effort !== null && !efforts.includes(effort) ? effort : null;
@@ -270,8 +261,6 @@ export function ModelPicker({
     modelSummary = `${chosenName} · ${problemWord}`;
     chipText = `${chipName(chosenName)} · ${problemWord}`;
   }
-  const levelLabel = permission ? permissionLabel(permission.level) : null;
-  const summary = levelLabel ? `${modelSummary} · ${levelLabel}` : modelSummary;
 
   const lock = provider === undefined && missingAgent === null;
   const providerLocked = lock && !providers.some(choosable);
@@ -445,11 +434,10 @@ export function ModelPicker({
         className="ws-chip-button"
         aria-expanded={popover.open}
         aria-controls={`${ids}-menu`}
-        aria-label={`Model settings: ${summary}${!live && catalog.status === "ok" ? ` ${triggerBadge}` : ""}`}
+        aria-label={`Model settings: ${modelSummary}${!live && catalog.status === "ok" ? ` ${triggerBadge}` : ""}`}
         onClick={() => popover.setOpen((value) => !value)}
       >
         <span>{chipText}</span>
-        {levelLabel && <span className="ws-chip-level"> · {levelLabel}</span>}
         {!live && catalog.status === "ok" && (
           <>
             {" "}
@@ -492,7 +480,7 @@ export function ModelPicker({
               </option>
             )}
             {providers.map((item) => {
-              const block = blockOf(item, signIn, level);
+              const block = blockOf(item, signIn, modeIdsOf(item));
               return (
                 <option key={item.id} value={item.id} disabled={block !== null}>
                   {item.name}
@@ -507,7 +495,7 @@ export function ModelPicker({
             {note}
           </p>
         ))}
-        {onRetry && providers.some((item) => item.chatCompatibility?.[level]?.retryable) && (
+        {onRetry && providers.some((item) => modeIdsOf(item).some((id) => item.modeCompatibility?.[id]?.retryable)) && (
           <Button variant="quiet" pending={refreshing} onClick={retryNow}>
             Retry compatibility check
           </Button>
@@ -617,17 +605,6 @@ export function ModelPicker({
             {note}
           </p>
         </Disclosure>
-        {permission && (
-          <PermissionLevelPicker
-            level={permission.level}
-            daemonAdvertises={permission.daemonAdvertises}
-            agent={choice?.agent}
-            surface="chat"
-            onChange={permission.onChange}
-            closePanel={popover.close}
-          />
-        )}
-        {permission && <LastTurnNote lastTurn={permission.lastTurn ?? null} />}
       </div>
     </div>
   );

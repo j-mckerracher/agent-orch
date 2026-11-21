@@ -28,18 +28,18 @@
                   "id": "permission",
                   "label": "Permission",
                   "options": [
-                    { "id": "read-only", "label": "Read only", "description": "Reads files; changes nothing.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "auto", "label": "Auto", "description": "Edits files and runs commands in the workspace.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
-                    { "id": "full-access", "label": "Full access", "description": "No sandbox and no approval checks.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
+                    { "id": "read-only", "label": "Read only", "description": "Reads the workspace, writes nothing.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "auto", "label": "Auto", "description": "Writes in the workspace; approvals go to automatic review.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "full-access", "label": "Full access", "description": "Runs with no sandbox, as your user.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
                   ]
                 },
                 {
                   "id": "work",
                   "label": "Work",
                   "options": [
-                    { "id": "standard", "label": "Standard", "description": "Answers and acts on each message.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
-                    { "id": "plan", "label": "Plan", "description": "Plans before it acts.", "available": false, "unavailableReason": "Not available through codex exec.", "needsConfirmation": false, "isDefault": false, "allowsActions": false },
-                    { "id": "goal", "label": "Goal", "description": "Works toward an objective until it is met.", "available": false, "unavailableReason": "Not available through codex exec.", "needsConfirmation": false, "isDefault": false, "allowsActions": false }
+                    { "id": "standard", "label": "Standard", "description": "Answers and works in the chat.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "plan", "label": "Plan", "description": "Plans before it changes anything.", "available": false, "unavailableReason": "Not available through codex exec.", "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "goal", "label": "Goal", "description": "Works until a stated condition holds.", "available": false, "unavailableReason": "Not available through codex exec.", "needsConfirmation": false, "isDefault": false, "allowsActions": true }
                   ]
                 }
               ]
@@ -61,20 +61,20 @@
                   "id": "permission",
                   "label": "Permission",
                   "options": [
-                    { "id": "manual", "label": "Manual", "description": "Asks before each edit or command.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "accept-edits", "label": "Accept edits", "description": "Edits files without asking; asks before commands.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "plan", "label": "Plan", "description": "Reads and plans; makes no source edits.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "auto", "label": "Auto", "description": "Runs most actions, with safety checks.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
-                    { "id": "dont-ask", "label": "Don't ask", "description": "Runs only pre-approved tools; denies the rest.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "bypass", "label": "Bypass permissions", "description": "Skips every permission check.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
+                    { "id": "manual", "label": "Manual", "description": "Asks before it acts.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "acceptEdits", "label": "Accept edits", "description": "Edits files without asking.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "plan", "label": "Plan", "description": "Reads and plans, without editing source.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "auto", "label": "Auto", "description": "Acts on its own, with a safety check.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "dontAsk", "label": "Don't ask", "description": "Runs only pre-approved tools and denies the rest.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "bypassPermissions", "label": "Bypass permissions", "description": "Runs everything without asking.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
                   ]
                 },
                 {
                   "id": "work",
                   "label": "Work",
                   "options": [
-                    { "id": "standard", "label": "Standard", "description": "Answers and acts on each message.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
-                    { "id": "goal", "label": "Goal", "description": "Works toward an objective until it is met.", "available": false, "unavailableReason": "Goal mode isn't supported for chat yet.", "needsConfirmation": false, "isDefault": false, "allowsActions": false }
+                    { "id": "standard", "label": "Standard", "description": "Answers and works in the chat.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "goal", "label": "Goal", "description": "Works until a stated condition holds.", "available": false, "unavailableReason": "Goal mode isn't supported for chat yet.", "needsConfirmation": false, "isDefault": false, "allowsActions": true }
                   ]
                 }
               ]
@@ -96,19 +96,19 @@
                   "id": "agent",
                   "label": "Agent",
                   "options": [
-                    { "id": "standard", "label": "Standard", "description": "Answers and acts on each message.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
-                    { "id": "plan", "label": "Plan", "description": "Plans before it acts.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "autopilot", "label": "Autopilot", "description": "Keeps going without asking, up to a fixed number of continues.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "plan-autopilot", "label": "Plan → Autopilot", "description": "Plans, then keeps going without asking.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true }
+                    { "id": "standard", "label": "Standard", "description": "Answers and works in the chat.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "plan", "label": "Plan", "description": "Plans before it changes anything.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "autopilot", "label": "Autopilot", "description": "Keeps going without asking, for at most two continues.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "plan-autopilot", "label": "Plan then autopilot", "description": "Plans, then keeps going without asking.", "available": false, "unavailableReason": "Plan then autopilot did not finish in a headless turn.", "needsConfirmation": false, "isDefault": false, "allowsActions": true }
                   ]
                 },
                 {
                   "id": "permission",
                   "label": "Permission",
                   "options": [
-                    { "id": "default", "label": "Default", "description": "Asks before it runs commands or edits files.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
-                    { "id": "assisted", "label": "Assisted", "description": "Runs routine actions without asking.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
-                    { "id": "allow-all", "label": "Allow all", "description": "Runs any command and edits any file; no OS sandbox.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
+                    { "id": "default", "label": "Default", "description": "Reads only, with no writes, shell, web or memory.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "assisted", "label": "Assisted", "description": "A judge approves safe requests; writes stay in the scratch folder.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "allow-all", "label": "Allow all", "description": "Runs everything without asking.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
                   ]
                 }
               ]

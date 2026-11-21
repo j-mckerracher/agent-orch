@@ -716,7 +716,6 @@ export interface ModelOption {
   defaultEffort?: string | null;
 }
 export interface ModelProvider {
-  chatCompatibility?: Partial<Record<PermissionLevel, { retryable: boolean; reason: string }>>;
   /** Keyed by mode option id: why a mode cannot run with this agent yet (DPES-1105). */
   modeCompatibility?: Partial<Record<string, { retryable: boolean; reason: string }>>;
   /** Derived: the daemon agent id. */

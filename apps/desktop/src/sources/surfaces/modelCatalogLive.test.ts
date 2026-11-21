@@ -124,7 +124,7 @@ describe("live model catalog", () => {
 
   it("treats a catalog row without modes as an unsupported mode list, from a daemon that predates chat modes", async () => {
     const fake = withAgents(populate(new FakeDaemon()));
-    fake.stub("agents.catalog", [CODEX_CATALOG]);
+    fake.stub("agents.catalog", [{ ...CODEX_CATALOG, modes: undefined }]);
     const result = await (await live(fake)).models.catalog();
     if (result.status !== "ok") return;
     expect(result.data.providers.find((item) => item.id === "codex")?.modes.status).toBe("unsupported");

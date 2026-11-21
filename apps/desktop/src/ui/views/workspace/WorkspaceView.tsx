@@ -8,8 +8,11 @@ import type {
   ActionProposal,
   ConversationEntry,
   ConversationTranscript,
+  Measured,
   ModelChoice,
-  PermissionLevel,
+  ModelProvider,
+  ModeGroup,
+  ModeSelection,
   Workstream,
 } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
@@ -30,13 +33,14 @@ import { ConversationTargetPicker } from "./ConversationTargetPicker";
 import { MonitoringChip } from "./MonitoringChip";
 import { ModelPicker } from "./ModelPicker";
 import { NEW_UPDATE_TEXT, WAKE_RUNNING_TEXT, notifyingCount, placeWake, quietTurnIds, unseenFor } from "./monitoringModel";
-import { PermissionLevelNotes } from "./PermissionLevelPicker";
+import { ModeDropdown, ModeNotes, type LastReplyMode } from "./ModeDropdown";
 import { ReturnBrief } from "./ReturnBrief";
 import { RoutedInStrip } from "./RoutedInStrip";
 import { CoordinatorStrip } from "./CoordinatorStrip";
 import { REMOVE_OPEN_WORK_TEXT, scopeLockReason } from "./coordinatorModel";
 import { newerRecord } from "./actionCardModel";
-import { permissionForSend, readSavedLevel, saveLevel } from "./permissionLevel";
+import { DEFAULT_PERMISSION_LEVEL } from "./permissionLevel";
+import { effectiveMode, modeLabels, modeOffer, modesDiffer, readSavedMode, saveMode, selectedOptions } from "./modeChoice";
 import { GLOBAL_TARGET, parseTargetKey, projectLabel, targetId, targetKey, type TargetOption } from "./targets";
 import { Timestamp } from "../../chat/Timestamp";
 import { useActionDecisions } from "./useActionDecisions";
@@ -344,8 +348,7 @@ function resolveKey(
   return "global";
 }
 
-const ACTIONS_LEVEL_NOTE =
-  "Action proposals work only at Restricted and Auto. At Full the orchestrator can answer but cannot propose changes.";
+const ACTIONS_LEVEL_NOTE = "Action proposals are off in this mode. The orchestrator can answer, but it cannot propose changes.";
 
 interface ConversationProps {
   option: TargetOption;
@@ -393,10 +396,10 @@ function Conversation({
   // The model choice each message is sent with; null means the daemon default (DPES-1105).
   const [choice, setChoice] = useState<ModelChoice | null>(null);
   const [choiceBlocked, setChoiceBlocked] = useState<string | null>(null);
-  // The level each message runs at (DPES-1105). Only a saved Restricted survives a reload.
-  const [permission, setPermission] = useState<PermissionLevel>(() => readSavedLevel());
-  // The level each turn was sent at, by turn id, so a reply can be checked against what the daemon reports.
-  const sentLevels = useRef(new Map<string, PermissionLevel>());
+  // The modes each agent was set to in this session (DPES-1105). Until one is set, the agent's saved choice applies.
+  const [modesByAgent, setModesByAgent] = useState<Record<string, ModeSelection>>({});
+  // The mode each turn was sent with, by turn id, so a reply can be checked against what the daemon reports.
+  const sentModes = useRef(new Map<string, { agent: string | undefined; mode: ModeSelection }>());
   const [feedback, setFeedback] = useState<{
     key: string;
     notice: string | null;
@@ -507,22 +510,52 @@ function Conversation({
     seenNotifying.current = { key: option.key, count: notifying };
   }, [notifying, option.key]);
 
-  // An older daemon has no permission levels and runs chats read-only, so the level reads Restricted (DPES-1105).
-  const olderDaemon = live && gate.connected && !gate.can("permission_levels");
-  const shownLevel: PermissionLevel = olderDaemon ? "restricted" : permission;
-  // Action proposals run at Restricted and Auto: at Full the daemon gives the agent no block format (DPES-1105).
-  const actionsLevelNote = live && target.kind !== "project" && actionsShown && shownLevel === "full";
-  const permissionOnWire = live ? permissionForSend(permission, !olderDaemon) : undefined;
-  const choiceOnWire = choice ?? undefined;
-  const choosePermission = (next: PermissionLevel) => {
-    saveLevel(next);
-    setPermission(next);
+  const modelLoaded = useSurface(
+    () => surfaces.models.catalog(),
+    `workspace-models#${modelNonce}`,
+    surfaces.models.provenance,
+  );
+  const modelCatalog = useRetained(modelLoaded, "workspace-models");
+  const retryModels = useCallback(() => setModelNonce((value) => value + 1), []);
+  const providers = modelCatalog.status === "ok" ? modelCatalog.data.providers : [];
+  const groupsOf = (modes: Measured<ModeGroup[]> | undefined): ModeGroup[] => (modes?.status === "ok" ? modes.value : []);
+  const groupsFor = (agent: string | undefined) => groupsOf(providers.find((item) => item.id === agent)?.modes);
+  // A choice made in this session, else the one saved for the agent. Read on each render, so groups that load later apply it.
+  const selectionFor = (agent: string, groups: ModeGroup[]): ModeSelection => modesByAgent[agent] ?? readSavedMode(agent, groups);
+  // An older daemon has no chat modes: the control says so, and the message sends the level an older desktop sent.
+  const olderModes = live && gate.connected && !gate.can("chat_modes");
+  const offer = modeOffer(choice?.agent, !olderModes, providers.find((item) => item.id === choice?.agent)?.modes);
+  const selection = choice ? selectionFor(choice.agent, offer.groups) : {};
+  const effective = effectiveMode(offer.groups, selection);
+  const chooseMode = (next: ModeSelection) => {
+    if (choice === null) return;
+    setModesByAgent((prior) => ({ ...prior, [choice.agent]: next }));
+    saveMode(choice.agent, next, offer.groups);
   };
-  const lastTurnLevel =
-    live && turn
-      ? { daemonLevel: turn.permissionLevel ?? null, sentLevel: sentLevels.current.get(turn.id) ?? null, trigger: turn.trigger }
+  const modeIdsFor = (provider: ModelProvider) => {
+    const groups = groupsOf(provider.modes);
+    return Object.values(effectiveMode(groups, selectionFor(provider.id, groups)));
+  };
+  // A routed message sends no mode, so the daemon runs each agent at its default. Never sent alongside a permission level.
+  const modeOnWire = live && gate.can("chat_modes") ? (choice === null ? {} : effective) : undefined;
+  const permissionOnWire = live && !gate.can("chat_modes") && gate.can("permission_levels") ? DEFAULT_PERMISSION_LEVEL : undefined;
+  const choiceOnWire = choice ?? undefined;
+  // Action proposals are off in a mode whose option cannot propose them (DPES-1105).
+  const actionsLevelNote =
+    live && target.kind !== "project" && actionsShown && selectedOptions(offer.groups, effective).some((item) => !item.allowsActions);
+  // What the last reply ran in, from the daemon. A wake turn was not sent by the user, so it reports nothing (DPES-1105).
+  const reportedMode = live && turn && turn.trigger !== "wake" ? (turn.mode ?? null) : null;
+  const sentRecord = turn ? sentModes.current.get(turn.id) : undefined;
+  const sentLabels = sentRecord ? modeLabels(groupsFor(sentRecord.agent), sentRecord.mode) : null;
+  const reportedLabels = reportedMode ? modeLabels(groupsFor(sentRecord?.agent ?? choice?.agent), reportedMode) : null;
+  const lastReply: LastReplyMode | null =
+    reportedMode && reportedLabels
+      ? {
+          reported: reportedLabels,
+          sent: sentLabels,
+          differs: sentRecord !== undefined && sentLabels !== null && modesDiffer(sentRecord.mode, reportedMode),
+        }
       : null;
-  const permissionControl = { level: shownLevel, daemonAdvertises: !olderDaemon, onChange: choosePermission, lastTurn: lastTurnLevel };
 
   let blocked: string | null = null;
   if (live) {
@@ -548,13 +581,13 @@ function Conversation({
     setBusy(true);
     setFeedback(null);
     try {
-      const receipt = await surfaces.conversation.send(target, sent, choiceOnWire, permissionOnWire);
+      const receipt = await surfaces.conversation.send(target, sent, choiceOnWire, permissionOnWire, modeOnWire);
       if (receipt.simulated) {
         onSimulated({ id: receipt.entryId, text: sent, at: receipt.at });
         setFeedback({ key, notice: "SIMULATED: this message was not sent or recorded anywhere.", error: null });
       } else {
         setFeedback({ key, notice: receipt.notice, error: null, ...(receipt.turn ? { turnId: receipt.turn.id } : {}) });
-        if (receipt.turn && permissionOnWire) sentLevels.current.set(receipt.turn.id, permissionOnWire);
+        if (receipt.turn && modeOnWire) sentModes.current.set(receipt.turn.id, { agent: choice?.agent, mode: modeOnWire });
         setNonce((value) => value + 1);
       }
       // Keep anything typed while the send was in flight.
@@ -613,13 +646,6 @@ function Conversation({
   };
 
   const headingId = `${ids}-heading`;
-  const modelLoaded = useSurface(
-    () => surfaces.models.catalog(),
-    `workspace-models#${modelNonce}`,
-    surfaces.models.provenance,
-  );
-  const modelCatalog = useRetained(modelLoaded, "workspace-models");
-  const retryModels = useCallback(() => setModelNonce((value) => value + 1), []);
   const runtimeUnavailable =
     live && turn?.state === "failed" && turn.errorCode === "runtime_unavailable" && !turnStatusInTranscript;
 
@@ -807,6 +833,7 @@ function Conversation({
         blocked={blocked}
         controls={
           <>
+            <ModeDropdown agent={choice?.agent} groups={offer.groups} selection={selection} disabled={offer.disabled} onChange={chooseMode} />
             <ModelPicker
               catalog={modelCatalog}
               provenance={surfaces.models.provenance}
@@ -817,14 +844,14 @@ function Conversation({
               onChoiceChange={setChoice}
               onChoiceBlocked={setChoiceBlocked}
               selectionSupported={!live || !gate.connected || gate.can("conversation_selection")}
-              permission={permissionControl}
+              modeIdsFor={modeIdsFor}
             />
           </>
         }
         notes={
           <>
             {target.kind !== "project" && (
-              <PermissionLevelNotes olderDaemon={olderDaemon} lastTurn={lastTurnLevel} />
+              <ModeNotes last={lastReply} />
             )}
             {actionsLevelNote && <p className="ws-small">{ACTIONS_LEVEL_NOTE}</p>}
           </>

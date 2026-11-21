@@ -111,10 +111,9 @@ export function NewTaskDialog({ projectId, inPlace, onClose }: { projectId: stri
               level={shownLevel}
               daemonAdvertises={!olderDaemon}
               agent={draft.agent.trim() || undefined}
-              surface="task"
               onChange={choosePermission}
             />
-            <PermissionLevelNotes olderDaemon={olderDaemon} lastTurn={null} />
+            <PermissionLevelNotes olderDaemon={olderDaemon} />
             <label>
               Autonomy
               <select value={draft.autonomy} onChange={(e) => set({ autonomy: e.target.value as AutonomyPolicy })}>

@@ -21,7 +21,6 @@ import {
 import type { DraftStorage } from "../../drafts";
 import { ServicesProvider, type Services } from "../../services";
 import { CHOICE_PREFERENCE_KEY } from "./modelChoice";
-import { RESTRICTED_PREFERENCE_KEY } from "./permissionLevel";
 import { workspaceRegistration } from "./register";
 import { COORDINATOR_HEADING, REMOVE_OPEN_WORK_TEXT } from "./coordinatorModel";
 import { formatAt } from "./time";
@@ -674,9 +673,8 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.getByRole("button", { name: /^Model settings: Codex · GPT A/ })).toBeInTheDocument();
   });
 
-  it("sends a project coordinator message with the saved model, effort and permission level", async () => {
+  it("sends a project coordinator message with the saved model, effort and the agent's default modes", async () => {
     window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }));
-    window.localStorage.setItem(RESTRICTED_PREFERENCE_KEY, "restricted");
     const fake = liveDaemon();
     const catalog = [CODEX_CATALOG];
     fake.stub("agents.catalog", catalog);
@@ -694,12 +692,12 @@ describe("workspace view, live (daemon-derived) mode", () => {
     const params = fake.callsTo("conversations.send")[0]!.params as Record<string, unknown>;
     expect(params).toMatchObject({
       target: { kind: "project", project_id: ALPHA }, text: "a note",
-      selection: { agent: "codex", model: "gpt-a", effort: "high" }, permission: "restricted",
+      selection: { agent: "codex", model: "gpt-a", effort: "high" }, mode: { permission: "auto", work: "standard" },
     });
+    expect(params).not.toHaveProperty("permission");
     expect(window.localStorage.getItem(CHOICE_PREFERENCE_KEY)).toBe(
       JSON.stringify({ agent: "codex", model: "gpt-a", effort: "high" }),
     );
-    expect(window.localStorage.getItem(RESTRICTED_PREFERENCE_KEY)).toBe("restricted");
   });
 
   it("keeps Enter on the model selector from submitting the unsent draft in either direction", async () => {
@@ -1690,10 +1688,11 @@ describe("workspace header and composer, redesigned", () => {
     // Scope and conversation actions are one click deeper, in the "⋯" menu.
     expect(screen.queryByRole("menu", { name: /Actions for/ })).toBeNull();
     expect(screen.getByRole("button", { name: "Conversation actions for Global orchestrator" })).toHaveAttribute("aria-expanded", "false");
-    // The composer holds the text box, one picker chip and the send button; the target picker is not in it.
+    // The composer holds the text box, the mode and model pickers and the send button; the target picker is not in it.
     const composer = screen.getByRole("form", { name: /Message Global orchestrator/ });
     expect(within(composer).queryByRole("button", { name: /Choose conversation target/ })).toBeNull();
     expect(within(composer).getAllByRole("button").map((button) => button.getAttribute("aria-label") ?? button.textContent)).toEqual([
+      expect.stringMatching(/^Chat mode:/),
       expect.stringMatching(/^Model settings:/),
       "Send message to Global orchestrator",
     ]);
@@ -1721,19 +1720,17 @@ describe("workspace header and composer, redesigned", () => {
     expect(await screen.findByRole("button", { name: "Monitoring: on" })).toBeVisible();
   });
 
-  it("collapses model, effort and permission level into one chip whose panel holds all three; Full asks first", async () => {
+  it("keeps provider, model and effort in the model chip, and the chat mode in its own dropdown beside it", async () => {
     const services = build();
     const { user } = await mountView(services);
     const chip = await screen.findByRole("button", { name: /^Model settings:/ });
-    expect(chip).toHaveAccessibleName(/Auto$|Auto /);
+    expect(chip).not.toHaveAccessibleName(/Auto/);
     await user.click(chip);
     const panel = chip.closest(".ws-model-root")!.querySelector<HTMLElement>(".ws-model-panel")!;
-    for (const name of ["Provider", "Model", "Effort", "Permission level"]) {
+    for (const name of ["Provider", "Model", "Effort"]) {
       expect(within(panel).getByRole("combobox", { name })).toBeInTheDocument();
     }
-    await user.selectOptions(within(panel).getByRole("combobox", { name: "Permission level" }), "full");
-    expect(await screen.findByRole("dialog", { name: "Run this chat at Full?" })).toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: "Use Full" }));
-    expect(screen.getByRole("button", { name: /^Model settings:.*Full/ })).toBeInTheDocument();
+    expect(within(panel).queryByRole("combobox", { name: "Permission level" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Chat mode:/ })).toBeInTheDocument();
   });
 });
