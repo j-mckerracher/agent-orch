@@ -19,6 +19,7 @@ import type {
   PermissionLevelWire,
   ConversationWireTarget,
   IntakeNormalizeResult,
+  ModeSelectionWire,
   ModelSelectionWire,
   SelectionCheck,
   WorkClassInput,
@@ -663,6 +664,7 @@ export class DaemonApi {
     idempotencyKey: string,
     selection?: ConversationSelectionWire,
     permission?: PermissionLevelWire,
+    mode?: ModeSelectionWire,
   ): Promise<ConversationSendResult> {
     return this.session.request("conversations.send", {
       target: realTarget(target),
@@ -671,6 +673,8 @@ export class DaemonApi {
       ...(selection === undefined ? {} : { selection }),
       // Sent only when the daemon advertises `permission_levels`: an older daemon rejects unknown fields.
       ...(permission === undefined ? {} : { permission }),
+      // Sent only when the daemon advertises `chat_modes`. The daemon refuses both `permission` and `mode` together.
+      ...(mode === undefined ? {} : { mode }),
     });
   }
 

@@ -43,6 +43,7 @@ import type {
   ConversationTarget,
   ConversationTurnInfo,
   CoordinatorState,
+  ModeSelection,
   ModelChoice,
   PermissionLevel,
   Provenance,
@@ -204,6 +205,7 @@ export function turnInfo(turn: ConversationWireTurn): ConversationTurnInfo {
     errorCode: turn.error_code,
     runtime: turn.runtime,
     permissionLevel: turn.permission_level ?? null,
+    mode: turn.mode ?? null,
     // A daemon from before the verified field (DPES-1106) is not warned about.
     verified: turn.verified ?? true,
     actionBlock: turn.action_block ?? null,
@@ -471,7 +473,7 @@ export function createLiveConversation(
   now: () => number,
 ): Required<Pick<ConversationSource, "cancel" | "clear" | "resolve">> & {
   transcript: ConversationSource["transcript"];
-  send: (target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel) => Promise<SendReceipt>;
+  send: (target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel, mode?: ModeSelection) => Promise<SendReceipt>;
 } {
   const scopeOf = (target: ConversationTarget) => JSON.stringify(toWireTarget(target));
   const requireSupported = (target: ConversationTarget) => {
@@ -586,17 +588,22 @@ export function createLiveConversation(
       return liveRead(provenance, now, read, describeNotFound(target));
     },
 
-    async send(target, text, selection, permission) {
+    async send(target, text, selection, permission, mode) {
       refuseFixture(target);
       requireSupported(target);
       const scope = `send:${scopeOf(target)}`;
       // A retry with another choice is another message: it must not reuse the key of the first. A request
-      // without a permission keeps the key it always had.
-      const fingerprint = permission === undefined ? [text, selection ?? null] : [text, selection ?? null, permission];
+      // without a permission or mode keeps the key it always had.
+      const fingerprint = [
+        text,
+        selection ?? null,
+        ...(permission === undefined ? [] : [permission]),
+        ...(mode === undefined ? [] : [mode]),
+      ];
       const key = keys.keyFor(scope, JSON.stringify(fingerprint));
       try {
         const result = await retryWhileStarting(() =>
-          connection.api().conversationsSend(toWireTarget(target), text, key, selection, permission),
+          connection.api().conversationsSend(toWireTarget(target), text, key, selection, permission, mode),
         );
         keys.settle(scope, null);
         const { entry } = result;

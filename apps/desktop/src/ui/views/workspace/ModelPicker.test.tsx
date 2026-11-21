@@ -19,6 +19,7 @@ function provider(id: string, name: string): ModelProvider {
     modelSelection: "supported",
     models: { status: "ok", value: [{ id: "m1", label: "Model one" }], ...observed },
     efforts: { status: "ok", value: ["low", "high"], ...observed },
+    modes: { status: "unsupported", reason: "Chat modes are not used here." },
   };
 }
 
@@ -36,6 +37,7 @@ function copilot(overrides: Partial<ModelProvider> = {}): ModelProvider {
     modelSelection: "unsupported",
     models: { status: "unsupported", reason: "The Copilot model list could not be read." },
     efforts: { status: "unsupported", reason: "Reasoning effort is not offered for GitHub Copilot." },
+    modes: { status: "unsupported", reason: "Chat modes are not used here." },
     ...overrides,
   };
 }

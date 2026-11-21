@@ -184,7 +184,7 @@ export function createDerivedSurfaces(connection: ConnectionManager, now: () => 
         return failure(conversationProvenance, error, now);
       }
     },
-    send: (target, text, selection, permission) => liveConversation.send(target, text, selection, permission),
+    send: (target, text, selection, permission, mode) => liveConversation.send(target, text, selection, permission, mode),
     cancel: (target, turnId) => liveConversation.cancel(target, turnId),
     resolve: (proposalId, decision, digest) => liveConversation.resolve(proposalId, decision, digest),
     async clear(target: ConversationTarget): Promise<ClearReceipt> {

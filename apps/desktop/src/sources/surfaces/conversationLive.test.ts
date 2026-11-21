@@ -540,6 +540,19 @@ describe("live conversation adapter", () => {
     expect(second!.idempotency_key).not.toBe(first!.idempotency_key);
   });
 
+  it("sends the chosen mode with the message, and no permission level alongside it", async () => {
+    const fake = populate(new FakeDaemon());
+    stubConversation(fake);
+    const s = await live(fake);
+    await s.conversation.send({ kind: "global" }, "hello", undefined, undefined, { permission: "auto", work: "standard" });
+    await s.conversation.send({ kind: "global" }, "hello", undefined, undefined, {});
+    const [withModes, routed] = fake.callsTo("conversations.send").map((c) => c.params as Record<string, unknown>);
+    expect(withModes!.mode).toEqual({ permission: "auto", work: "standard" });
+    expect(withModes).not.toHaveProperty("permission");
+    expect(routed!.mode).toEqual({});
+    expect(routed).not.toHaveProperty("permission");
+  });
+
   describe("send while the agent is starting (DPES-1106)", () => {
     const conflict = { code: -32011, message: "operation conflicts with current state" };
     afterEach(() => vi.useRealTimers());

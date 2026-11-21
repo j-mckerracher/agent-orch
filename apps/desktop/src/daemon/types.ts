@@ -26,6 +26,7 @@ export type Capability =
   | "conversation_selection"
   | "project_conversations"
   | "permission_levels"
+  | "chat_modes"
   | "orchestrator_actions"
   | "settings"
   | "monitoring"
@@ -52,6 +53,7 @@ export const ALL_CAPABILITIES: readonly Capability[] = [
   "conversation_selection",
   "project_conversations",
   "permission_levels",
+  "chat_modes",
   "orchestrator_actions",
   "settings",
   "monitoring",
@@ -76,6 +78,7 @@ export const OPTIONAL_CAPABILITIES: readonly Capability[] = [
   "conversation_selection",
   "project_conversations",
   "permission_levels",
+  "chat_modes",
   "orchestrator_actions",
   "settings",
   "monitoring",
@@ -370,6 +373,8 @@ export interface AgentCapabilityEntry {
   /** DPES-1105: GitHub Copilot only. Its session sign-in record. */
   sign_in?: CopilotSignInRecord | null;
   chat_compatibility?: Partial<Record<PermissionLevelWire, { retryable: boolean; reason: string }>>;
+  /** Keyed by mode option id. Like `chat_compatibility`, read from this row. */
+  mode_compatibility?: Record<string, { retryable: boolean; reason: string }>;
 }
 
 export interface ProposalTaskSummary {
@@ -738,7 +743,12 @@ export interface AgentCatalogEntry {
   detail: string;
   models: CatalogFacet<CatalogModelOption>;
   efforts: CatalogFacet<string>;
+  /** Chat modes (DPES-1105). Absent from a daemon without `chat_modes`; validated at the boundary, not trusted. */
+  modes?: unknown;
 }
+
+/** A turn's chat mode: each group id mapped to the option id that ran (DPES-1105). */
+export type ModeSelectionWire = Record<string, string>;
 
 export type SelectionReasonWire =
   | "agent_unavailable"
@@ -837,6 +847,8 @@ export interface ConversationWireTurn {
   /** The level the daemon recorded the agent ran with. Null before launch and for turns from before levels. */
   permission_level?: PermissionLevelWire | null;
   permission_profile?: string | null;
+  /** The chat mode each group ran with (DPES-1105). Null for turns from before modes; absent from older daemons. */
+  mode?: ModeSelectionWire | null;
   /** The outcome of the action block in this turn's reply (DPES-1105). Absent from older daemons. */
   action_block?: ActionBlockWire | null;
   /** `wake` for an automatic turn, `user` otherwise. Absent from older daemons. */
