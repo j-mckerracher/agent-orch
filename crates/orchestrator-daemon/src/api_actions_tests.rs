@@ -45,7 +45,7 @@ pub(super) fn propose_in(
             turn,
             TurnPermission {
                 level,
-                profile: "test-profile",
+                profile: "test-profile".into(),
             },
         )
         .unwrap();

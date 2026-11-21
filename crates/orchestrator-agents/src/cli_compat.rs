@@ -148,6 +148,8 @@ fn takes_value(agent: &str, flag: &str) -> bool {
                 | "--allow-tool"
                 | "--deny-tool"
                 | "--model"
+                | "--mode"
+                | "--max-autopilot-continues"
                 | "--reasoning-effort"
                 | "--max-ai-credits"
                 | "--agent"

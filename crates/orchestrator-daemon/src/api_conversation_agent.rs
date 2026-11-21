@@ -37,7 +37,7 @@ use std::time::{Duration, Instant};
 
 use orchestrator_agents::cli_compat::{CliHelp, CompatibilityError, Executable};
 use orchestrator_agents::copilot_adapter::parse_copilot_version;
-use orchestrator_agents::permission::chat_profile;
+use orchestrator_agents::modes::{self, ModeRequest};
 use orchestrator_agents::{
     AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
@@ -763,8 +763,11 @@ impl ConversationRuntime for AgentRuntime {
             // No selected agent: the turn fails with the selection's own code.
             return Ok(None);
         };
-        match chat_profile(selected.agent, level) {
-            Some(profile) => Ok(Some(TurnPermission { level, profile })),
+        match modes::resolve(selected.agent, &ModeRequest::Legacy(level)) {
+            Some(mode) => Ok(Some(TurnPermission {
+                level: mode.tier,
+                profile: mode.profile,
+            })),
             None => Err(RuntimeFailure::LevelUnsupported),
         }
     }
@@ -858,8 +861,10 @@ impl ConversationRuntime for AgentRuntime {
             // empty and its usage file sits beside it, never in a repository.
             let run = CopilotRun::create(&self.exec.data_dir.join(COPILOT_RUNS_DIR))
                 .map_err(|_| RuntimeFailure::Failed)?;
+            let mode = modes::resolve(GITHUB_COPILOT, &ModeRequest::Legacy(request.level))
+                .ok_or(RuntimeFailure::LevelUnsupported)?;
             let mut args = CopilotAdapter::conversation_args(
-                request.level,
+                &mode,
                 &prompt.joined(),
                 &run.usage_file(),
                 &run.cwd(),
@@ -1034,11 +1039,12 @@ fn conversation_args(
     mcp: Option<&McpWiring>,
 ) -> Option<Vec<String>> {
     let (model, effort) = (selected.model.as_deref(), selected.effort.as_deref());
+    let mode = modes::resolve(selected.agent, &ModeRequest::Legacy(level))?;
     if selected.agent == CODEX {
-        CodexAdapter::args_for_conversation(level, &prompt.joined(), model, effort)
+        CodexAdapter::args_for_conversation(&mode, &prompt.joined(), model, effort)
     } else {
         ClaudeCodeAdapter::args_for_conversation_mcp(
-            level,
+            &mode,
             &prompt.content,
             Some(prompt.instructions),
             model,
@@ -1065,17 +1071,20 @@ pub(super) async fn check_chat_provider(
         PermissionLevel::Auto,
         PermissionLevel::Full,
     ] {
+        let Some(mode) = modes::resolve(agent, &ModeRequest::Legacy(level)) else {
+            continue;
+        };
         let args = match agent {
-            CODEX => CodexAdapter::args_for_conversation(level, "prompt", None, None),
+            CODEX => CodexAdapter::args_for_conversation(&mode, "prompt", None, None),
             CLAUDE => ClaudeCodeAdapter::args_for_conversation(
-                level,
+                &mode,
                 "prompt",
                 Some("instructions"),
                 None,
                 None,
             ),
             GITHUB_COPILOT => CopilotAdapter::conversation_args(
-                level,
+                &mode,
                 "prompt",
                 Path::new("usage.json"),
                 Path::new("."),

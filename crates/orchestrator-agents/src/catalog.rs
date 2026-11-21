@@ -39,6 +39,7 @@ use crate::copilot_sign_in::{
     SignInRecord, SignInState, NOT_CHECKED_DETAIL, NOT_SIGNED_IN_DETAIL, NO_SEAT_DETAIL,
 };
 use crate::mcp_wiring::McpWiring;
+use crate::modes::{self, ModeGroup, ResolvedMode};
 use crate::workflow_agent::{WorkflowAgent, AGENT_ID};
 
 const CODEX_AGENT: &str = "codex";
@@ -144,6 +145,9 @@ pub struct AgentCatalog {
     /// Adapter-wide effort levels, for adapters whose levels do not depend
     /// on the model. Codex reports levels per model instead.
     pub efforts: Facet<String>,
+    /// The native work modes this agent offers, in display order. Static per agent,
+    /// so a catalog that is not yet available still lists them.
+    pub modes: Vec<ModeGroup>,
 }
 
 /// Why a selection was refused.
@@ -204,6 +208,7 @@ impl AgentCatalog {
             detail: detail.to_owned(),
             models: Facet::without_items(state, detail),
             efforts: Facet::without_items(state, detail),
+            modes: modes::groups(agent),
         }
     }
 
@@ -765,6 +770,7 @@ fn codex_catalog(
             CatalogState::Unsupported,
             "effort levels are reported per model",
         ),
+        modes: modes::groups(CODEX_AGENT),
     }
 }
 
@@ -811,6 +817,7 @@ fn claude_catalog(
                 .collect(),
         },
         efforts,
+        modes: modes::groups(CLAUDE_AGENT),
     }
 }
 
@@ -864,27 +871,29 @@ impl CodexAdapter {
     /// this agent has no mapping for it (Extended, in PR A). The prompt is one
     /// argument after `--`; no shell is involved.
     ///
-    /// Restricted is a read-only sandbox. Auto runs in the workspace-write
-    /// sandbox and sends approval requests to automatic review. Full adds no
-    /// sandbox or approval flag, so `~/.codex/config.toml` decides. Every level
-    /// keeps `--skip-git-repo-check --ephemeral`: the turn directory is not a
-    /// repository, and neither flag loosens anything.
+    /// Restricted is a read-only sandbox. Auto sends approval requests to
+    /// automatic review, which selects the workspace-write sandbox by itself;
+    /// codex-cli 0.171.0 refuses `--sandbox` alongside it. Full pins
+    /// `danger-full-access`. Every level keeps `--skip-git-repo-check
+    /// --ephemeral`: the turn directory is not a repository, and neither flag
+    /// loosens anything.
     pub fn args_for_conversation(
-        level: PermissionLevel,
+        mode: &ResolvedMode,
         prompt: &str,
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Option<Vec<String>> {
-        let sandbox: &[&str] = match level {
+        let sandbox: &[&str] = match mode.tier {
             PermissionLevel::Restricted => &["--sandbox", "read-only"],
-            PermissionLevel::Auto => &["--sandbox", "workspace-write", "--approve-for-me"],
-            PermissionLevel::Full => &[],
+            PermissionLevel::Auto => &["--approve-for-me"],
+            PermissionLevel::Full => &["--sandbox", "danger-full-access"],
             PermissionLevel::Extended => return None,
         };
         let mut args: Vec<String> = ["exec", "--json"]
             .into_iter()
             .chain(sandbox.iter().copied())
             .chain(["--skip-git-repo-check", "--ephemeral"])
+            .chain(mode.flags.iter().copied())
             .map(str::to_owned)
             .collect();
         args.extend(Self::selection_args(model, effort));
@@ -1184,13 +1193,13 @@ impl ClaudeCodeAdapter {
     /// `instructions`, when given, go to `--append-system-prompt`, so they stay
     /// apart from the prompt and Claude keeps its own system prompt.
     pub fn args_for_conversation(
-        level: PermissionLevel,
+        mode: &ResolvedMode,
         prompt: &str,
         instructions: Option<&str>,
         model: Option<&str>,
         effort: Option<&str>,
     ) -> Option<Vec<String>> {
-        Self::args_for_conversation_mcp(level, prompt, instructions, model, effort, None)
+        Self::args_for_conversation_mcp(mode, prompt, instructions, model, effort, None)
     }
 
     /// [`Self::args_for_conversation`] plus, at Restricted only and only when `mcp` is
@@ -1198,14 +1207,15 @@ impl ClaudeCodeAdapter {
     /// and `--tools ""` stay, so that server is the only one loaded; `--allowedTools` is
     /// the allow list `dontAsk` needs for its three tools. Auto and Full ignore `mcp`.
     pub fn args_for_conversation_mcp(
-        level: PermissionLevel,
+        mode: &ResolvedMode,
         prompt: &str,
         instructions: Option<&str>,
         model: Option<&str>,
         effort: Option<&str>,
         mcp: Option<&McpWiring>,
     ) -> Option<Vec<String>> {
-        let mut args: Vec<String> = match level {
+        let permission = mode.permission;
+        let mut args: Vec<String> = match mode.tier {
             PermissionLevel::Restricted => [
                 "-p",
                 prompt,
@@ -1214,7 +1224,7 @@ impl ClaudeCodeAdapter {
                 "stream-json",
                 "--include-partial-messages",
                 "--permission-mode",
-                "dontAsk",
+                permission,
                 "--permission-prompts",
                 "none",
                 "--restricted",
@@ -1234,7 +1244,7 @@ impl ClaudeCodeAdapter {
                 "stream-json",
                 "--include-partial-messages",
                 "--permission-mode",
-                "auto",
+                permission,
                 "--permission-prompts",
                 "none",
                 "--restricted",
@@ -1242,8 +1252,6 @@ impl ClaudeCodeAdapter {
                 "--no-session-persistence",
                 "--tools",
                 "Read,Edit,Write,Bash",
-                "--allowedTools",
-                "Read,Edit,Write",
             ]
             .into_iter()
             .map(str::to_owned)
@@ -1256,7 +1264,7 @@ impl ClaudeCodeAdapter {
                 "stream-json",
                 "--include-partial-messages",
                 "--permission-mode",
-                "bypassPermissions",
+                permission,
                 "--permission-prompts",
                 "none",
                 "--allow-dangerously-skip-permissions",
@@ -1267,7 +1275,8 @@ impl ClaudeCodeAdapter {
             .collect(),
             PermissionLevel::Extended => return None,
         };
-        if let (PermissionLevel::Restricted, Some(mcp)) = (level, mcp) {
+        args.extend(mode.flags.iter().map(|flag| (*flag).to_owned()));
+        if let (PermissionLevel::Restricted, Some(mcp)) = (mode.tier, mcp) {
             args.push("--mcp-config".into());
             args.push(mcp.claude_config_json());
             args.push("--allowedTools".into());
@@ -1321,6 +1330,7 @@ fn copilot_catalog(sign_in: &SignInRecord, models: Facet<ModelOption>) -> AgentC
         detail,
         models,
         efforts: Facet::without_items(CatalogState::Unsupported, COPILOT_EFFORTS_DETAIL),
+        modes: modes::groups(COPILOT_AGENT),
     }
 }
 
@@ -1382,6 +1392,21 @@ pub fn pi_catalog() -> AgentCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The option a chat turn at `level` runs with for `agent`, legacy-mapped.
+    fn chat(agent: &str, level: PermissionLevel) -> ResolvedMode {
+        modes::resolve(agent, &modes::ModeRequest::Legacy(level)).unwrap()
+    }
+
+    /// A mode with the Extended tier, which no chat option has. Builders return `None`.
+    fn extended() -> ResolvedMode {
+        ResolvedMode {
+            tier: PermissionLevel::Extended,
+            profile: String::new(),
+            permission: "",
+            flags: Vec::new(),
+        }
+    }
 
     #[test]
     fn a_probe_summary_names_the_probe_path_and_outcome_and_masks_tokens() {
@@ -1785,7 +1810,7 @@ mod tests {
     fn conversation_args_are_read_only_and_keep_the_prompt_whole() {
         let prompt = "line one\n--dangerously; $(rm -rf /)";
         let codex = CodexAdapter::args_for_conversation(
-            PermissionLevel::Restricted,
+            &chat("codex", PermissionLevel::Restricted),
             prompt,
             Some("m"),
             Some("low"),
@@ -1801,7 +1826,7 @@ mod tests {
         assert!(codex.iter().any(|arg| arg == "-m"));
 
         let claude = ClaudeCodeAdapter::args_for_conversation(
-            PermissionLevel::Restricted,
+            &chat("claude-code", PermissionLevel::Restricted),
             prompt,
             Some("rules"),
             None,
@@ -1826,7 +1851,7 @@ mod tests {
     #[test]
     fn codex_argv_per_level_is_exact() {
         let argv = |level| {
-            CodexAdapter::args_for_conversation(level, "hi", None, None)
+            CodexAdapter::args_for_conversation(&chat("codex", level), "hi", None, None)
                 .unwrap()
                 .into_iter()
                 .take_while(|arg| arg != "hi")
@@ -1853,8 +1878,6 @@ mod tests {
             [
                 "exec",
                 "--json",
-                "--sandbox",
-                "workspace-write",
                 "--approve-for-me",
                 "--skip-git-repo-check",
                 "--ephemeral",
@@ -1870,6 +1893,8 @@ mod tests {
             [
                 "exec",
                 "--json",
+                "--sandbox",
+                "danger-full-access",
                 "--skip-git-repo-check",
                 "--ephemeral",
                 "-c",
@@ -1880,7 +1905,7 @@ mod tests {
             ]
         );
         assert_eq!(
-            CodexAdapter::args_for_conversation(PermissionLevel::Extended, "hi", None, None),
+            CodexAdapter::args_for_conversation(&extended(), "hi", None, None),
             None
         );
     }
@@ -1890,8 +1915,35 @@ mod tests {
     #[test]
     fn claude_argv_per_level_is_exact() {
         let argv = |level| {
-            ClaudeCodeAdapter::args_for_conversation(level, "hi", None, None, None).unwrap()
+            ClaudeCodeAdapter::args_for_conversation(
+                &chat("claude-code", level),
+                "hi",
+                None,
+                None,
+                None,
+            )
+            .unwrap()
         };
+        assert_eq!(
+            argv(PermissionLevel::Restricted)[..],
+            [
+                "-p",
+                "hi",
+                "--verbose",
+                "--output-format",
+                "stream-json",
+                "--include-partial-messages",
+                "--permission-mode",
+                "dontAsk",
+                "--permission-prompts",
+                "none",
+                "--restricted",
+                "--strict-mcp-config",
+                "--no-session-persistence",
+                "--tools",
+                "",
+            ]
+        );
         for level in [
             PermissionLevel::Restricted,
             PermissionLevel::Auto,
@@ -1900,7 +1952,7 @@ mod tests {
             let plain = argv(level);
             assert!(!plain.iter().any(|arg| arg == "--append-system-prompt"));
             let with = ClaudeCodeAdapter::args_for_conversation(
-                level,
+                &chat("claude-code", level),
                 "hi",
                 Some("rules"),
                 Some("m"),
@@ -1965,13 +2017,7 @@ mod tests {
             assert!(!full.iter().any(|arg| arg == flag), "{flag}");
         }
         assert_eq!(
-            ClaudeCodeAdapter::args_for_conversation(
-                PermissionLevel::Extended,
-                "hi",
-                None,
-                None,
-                None
-            ),
+            ClaudeCodeAdapter::args_for_conversation(&extended(), "hi", None, None, None),
             None
         );
     }
@@ -2168,7 +2214,7 @@ mod tests {
         ] {
             assert_eq!(
                 ClaudeCodeAdapter::args_for_conversation_mcp(
-                    level,
+                    &chat("claude-code", level),
                     "hi",
                     Some("rules"),
                     Some("m"),
@@ -2176,7 +2222,7 @@ mod tests {
                     None
                 ),
                 ClaudeCodeAdapter::args_for_conversation(
-                    level,
+                    &chat("claude-code", level),
                     "hi",
                     Some("rules"),
                     Some("m"),
@@ -2195,7 +2241,7 @@ mod tests {
             env: vec![("MCAO_MCP_SECRET".into(), "abc".into())],
         };
         let plain = ClaudeCodeAdapter::args_for_conversation(
-            PermissionLevel::Restricted,
+            &chat("claude-code", PermissionLevel::Restricted),
             "hi",
             Some("rules"),
             None,
@@ -2203,7 +2249,7 @@ mod tests {
         )
         .unwrap();
         let with = ClaudeCodeAdapter::args_for_conversation_mcp(
-            PermissionLevel::Restricted,
+            &chat("claude-code", PermissionLevel::Restricted),
             "hi",
             Some("rules"),
             None,
@@ -2235,14 +2281,20 @@ mod tests {
         for level in [PermissionLevel::Auto, PermissionLevel::Full] {
             assert_eq!(
                 ClaudeCodeAdapter::args_for_conversation_mcp(
-                    level,
+                    &chat("claude-code", level),
                     "hi",
                     None,
                     None,
                     None,
                     Some(&wiring)
                 ),
-                ClaudeCodeAdapter::args_for_conversation(level, "hi", None, None, None),
+                ClaudeCodeAdapter::args_for_conversation(
+                    &chat("claude-code", level),
+                    "hi",
+                    None,
+                    None,
+                    None
+                ),
                 "{level:?}"
             );
         }
