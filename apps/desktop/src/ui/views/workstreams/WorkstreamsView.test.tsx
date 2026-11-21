@@ -417,7 +417,7 @@ describe("list screen", () => {
     expect(rows[0]).toHaveTextContent("1 of 2 tasks done");
     expect(rows[1]).toHaveTextContent("0 of 1 task done");
     expect(screen.getByRole("heading", { level: 1, name: "Workstreams" })).toBeVisible();
-    expect(screen.getByRole("link", { name: "+ New workstream" })).toHaveAttribute("href", "#/workspace");
+    expect(screen.getByRole("button", { name: "+ New workstream" })).toBeEnabled();
     expect(screen.getByRole("tablist", { name: "Workstream status" })).toBeVisible();
     expect(screen.getByTestId("ws-updated")).toHaveTextContent(/Updated \d+ s ago/);
     expect(screen.queryByTestId("task-row")).not.toBeInTheDocument();
@@ -518,13 +518,29 @@ describe("live mutations", () => {
   const writes = (fake: FakeDaemon) => fake.calls.filter((call) => /^workstreams\.(create|update|prioritize|add_|revise_|set_|link_|unlink_)/.test(call.method));
   const paramsOf = (fake: FakeDaemon, method: string) => fake.callsTo(method).map((call) => call.params as Record<string, unknown>);
 
-  it("offers no create control: workstreams are created through the orchestrator", async () => {
+  it("creates a workstream through workstreams.create from the New workstream dialog and opens it", async () => {
     const fake = daemon();
-    await mount(fake);
+    const { user } = await mount(fake);
     await screen.findAllByTestId("ws-row");
-    expect(screen.getByRole("link", { name: "+ New workstream" })).toHaveAttribute("href", "#/workspace");
-    expect(screen.queryByRole("button", { name: /Create workstream/ })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("New workstream title")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "+ New workstream" }));
+    const dialog = await screen.findByRole("dialog", { name: "New workstream" });
+    const create = within(dialog).getByRole("button", { name: "Create workstream" });
+    expect(create).toBeDisabled();
+    await user.type(within(dialog).getByLabelText("Workstream title"), "  Gamma stream ");
+    await user.type(within(dialog).getByLabelText("Summary (optional)"), "why");
+    await user.click(create);
+    expect(await screen.findByRole("heading", { level: 1, name: "Gamma stream" })).toBeVisible();
+    expect(paramsOf(fake, "workstreams.create")).toEqual([{ title: "Gamma stream", summary: "why", idempotency_key: expect.any(String) }]);
+  });
+
+  it("sends nothing when the New workstream dialog is cancelled", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("ws-row");
+    await user.click(screen.getByRole("button", { name: "+ New workstream" }));
+    await user.type(await screen.findByLabelText("Workstream title"), "Gamma");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(paramsOf(fake, "workstreams.create")).toHaveLength(0);
   });
 
@@ -1138,7 +1154,7 @@ describe("states without data", () => {
   it("is empty only when the daemon says no workstreams exist, and never shows fixtures", async () => {
     await mount(daemon((fake, state) => ((fake.projects = []), (fake.tasks = []), (state.workstreams = []), (state.objectives = []), (state.links = []))));
     expect(await screen.findByText("No workstreams")).toBeInTheDocument();
-    expect(within(screen.getByTestId("workstreams-view")).getByText(/Ask the global orchestrator to create one/)).toBeInTheDocument();
+    expect(within(screen.getByTestId("workstreams-view")).getByText(/Create one with \+ New workstream/)).toBeInTheDocument();
     expect(screen.getByTestId("workstreams-view").textContent).not.toMatch(/PLACEHOLDER|Harden session/);
   });
 
@@ -1185,6 +1201,14 @@ describe("states without data", () => {
 });
 
 describe("fixture mode", () => {
+  it("disables New workstream on placeholder data", async () => {
+    await mount(null);
+    await screen.findAllByTestId("ws-row");
+    const button = screen.getByRole("button", { name: "+ New workstream" });
+    expect(button).toBeDisabled();
+    expect(button).toHaveAccessibleDescription(/placeholder data/);
+  });
+
   it("labels every fixture section PLACEHOLDER, shows its objectives read-only and never links fixture tasks", async () => {
     const { user } = await mount(null);
     await screen.findAllByTestId("ws-row");

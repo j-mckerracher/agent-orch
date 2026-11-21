@@ -20,6 +20,7 @@ function wsSource(result: SurfaceResult<Workstream[]>): WorkstreamSource {
     provenance: result.provenance,
     workstreams: () => Promise.resolve(result),
     update: () => Promise.reject(new Error("unused")),
+    create: () => Promise.reject(new Error("unused")),
     prioritize: () => Promise.reject(new Error("unused")),
     addObjective: () => Promise.reject(new Error("unused")),
     reviseObjective: () => Promise.reject(new Error("unused")),

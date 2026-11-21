@@ -102,6 +102,7 @@ export function createLiveWorkstreams(
 ): Pick<
   WorkstreamSource,
   | "workstreams"
+  | "create"
   | "update"
   | "prioritize"
   | "addObjective"
@@ -169,6 +170,12 @@ export function createLiveWorkstreams(
             ? workstreamOf(item, detail.value, tasks, nowMs)
             : unreadWorkstream(item, asDaemonError(detail.reason));
         });
+      }),
+
+    create: (title, summary) =>
+      mutate("ws:create", [title, summary], [], async (key) => {
+        const created = await connection.api().workstreamsCreate(title, summary, key);
+        return receipt(created.id, created.revision);
       }),
 
     update: (target, change) =>

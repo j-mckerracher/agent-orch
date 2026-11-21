@@ -2,13 +2,12 @@ import { useEffect, useId, useState, type ReactNode } from "react";
 import { basename } from "../../format";
 import { ActionStatus, useAction, type Outcome } from "../../action";
 import { useLastingAction } from "../../lastingAction";
-import { useServices, useStore } from "../../services";
-import { NavLink } from "../../shell/NavLink";
+import { useGate, useServices, useStore } from "../../services";
 import { formatAge } from "../../shell/ResourceStrip";
 import { Disclosure, EmptyState, Pill } from "../../theme";
 import { PlaceholderBadge } from "../../widgets";
 import { WorkstreamDetail } from "./WorkstreamDetail";
-import { ARCHIVED_REASON, ListMenu, useGroupRunner } from "./Manage";
+import { ARCHIVED_REASON, ListMenu, NewWorkstreamButton, useGroupRunner } from "./Manage";
 import {
   progressOf,
   reloadWorkstreams,
@@ -23,6 +22,10 @@ import "./workstreams.css";
 
 const STALE_REASON = "Disabled: the connection was lost. Changes resume when the daemon is reachable again.";
 const UNREAD_REASON = "Disabled: this workstream's details could not be read. Use Refresh to read them again.";
+const FIXTURE_CREATE_REASON = "Disabled: this is placeholder data. Nothing would be created.";
+const OFFLINE_CREATE_REASON = "Disabled: the daemon is not connected. Create is offered once this connection is live.";
+// While the first connection is still opening, "not connected" would read as a failure; the answer may still arrive.
+const SETTLING_CREATE_REASON = "Disabled: the daemon connection is still being established. Create is offered once it is live.";
 const AGE_TICK_MS = 5_000;
 
 type Status = "active" | "suspended" | "archived";
@@ -93,6 +96,9 @@ export function WorkstreamsView() {
   const archiveAction = useLastingAction();
   const runArchive = useGroupRunner(archiveAction);
   const refreshAction = useAction();
+  const createAction = useLastingAction();
+  const runCreate = useGroupRunner(createAction);
+  const gate = useGate();
   const now = useNow();
   // A route that names a workstream opens it on first render and whenever navigation names one (DPES-1105).
   const route = useStore(router);
@@ -103,6 +109,15 @@ export function WorkstreamsView() {
   }, [route]);
   const [filter, setFilter] = useState("");
   const live = surfaces.workstreams.provenance.kind !== "fixture";
+  const createLocked = !live
+    ? FIXTURE_CREATE_REASON
+    : model.status === "ready" && model.stale
+      ? STALE_REASON
+      : !gate.can("workstreams")
+        ? gate.settling
+          ? SETTLING_CREATE_REASON
+          : OFFLINE_CREATE_REASON
+        : null;
 
   // Refresh reads the daemon itself, so its result is real: a failed read is an alert, not a silent reload.
   const refreshRead = async (): Promise<Outcome> => {
@@ -129,10 +144,17 @@ export function WorkstreamsView() {
         <p className="ws-head-summary">Each workstream groups related projects and tasks toward one goal.</p>
       </div>
       <div className="ws-head-actions">
-        <NavLink className="ui-btn ui-btn-primary ws-new" to={{ name: "global", view: "workspace" }}>
-          + New workstream
-        </NavLink>
+        <NewWorkstreamButton
+          run={runCreate}
+          busy={createAction.pending}
+          locked={createLocked}
+          onCreated={(id) => {
+            setFilter("");
+            setSelected(id);
+          }}
+        />
         {menu}
+        <ActionStatus action={createAction} />
         <ActionStatus action={archiveAction} />
         <ActionStatus action={refreshAction} />
       </div>
@@ -247,7 +269,7 @@ export function WorkstreamsView() {
                 description={
                   fixture
                     ? "There are no placeholder workstreams."
-                    : "No workstreams exist yet. Ask the global orchestrator to create one, then link tasks to it."
+                    : "No workstreams exist yet. Create one with + New workstream, then link tasks to it."
                 }
               />
             ) : (

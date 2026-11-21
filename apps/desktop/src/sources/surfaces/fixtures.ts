@@ -208,6 +208,7 @@ function workstreamSource(ctx: Ctx): WorkstreamSource {
         () => [],
       ),
     // Real mutations never run against placeholder data.
+    create: () => notMutable(),
     update: () => notMutable(),
     prioritize: () => notMutable(),
     addObjective: () => notMutable(),
