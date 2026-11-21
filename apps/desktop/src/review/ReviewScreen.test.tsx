@@ -573,7 +573,7 @@ describe("self-originated approval events (M5-02 `approval.<decision>` durable e
     await ready();
     client.setHandler("approvals.resolve", () => fail("timeout"));
     await userEvent.click(accept());
-    await screen.findByText(/Decision failed \(timeout\)/);
+    await screen.findByText(/Decision failed\./);
     act(() => client.emit(approvalEvent("approval-1")));
     await screen.findByText(/Stale review/);
   });
@@ -618,7 +618,7 @@ describe("self-originated delivery events (`delivery.<outcome>` durable events)"
     await userEvent.click(accept());
     await waitFor(() => expect(deliver().disabled).toBe(false));
     await userEvent.click(deliver());
-    await screen.findByText(/Delivery request failed \(timeout\)/);
+    await screen.findByText(/Delivery request failed\./);
     act(() => client.emit(deliveryEvent()));
     await screen.findByText(/Stale review/);
   });
@@ -658,7 +658,8 @@ describe("request integrity", () => {
       button.click();
       button.click();
     });
-    await waitFor(() => expect(accept().disabled).toBe(true));
+    // The pressed button stays focusable (aria-disabled, not disabled), and shows its own spinner.
+    await waitFor(() => expect(accept()).toHaveAttribute("aria-busy", "true"));
     await userEvent.click(reject());
     release();
     await screen.findByText(/receipt from daemon/);

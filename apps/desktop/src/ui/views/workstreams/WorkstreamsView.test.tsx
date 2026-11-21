@@ -912,8 +912,9 @@ describe("live mutations", () => {
     await waitFor(() => expect(screen.getByTestId("ws-status")).toHaveTextContent("Suspended"));
     expect(paramsOf(fake, "workstreams.update")[0]).toMatchObject({ workstream_id: "ws-a", expected_revision: 2, state: "suspended" });
     expect(within(screen.getByTestId("ws-technical")).getByText(/Suspend is advisory/)).toBeInTheDocument();
+    // The confirmation sits beside the Actions menu that was used, so it is read there, before leaving the detail.
+    expect(await screen.findByText(/Suspend workstream: recorded by the daemon/)).toBeInTheDocument();
     await backToList(user);
-    expect(screen.getByText(/Suspend workstream: recorded by the daemon/)).toBeInTheDocument();
     await openTab(user, "Suspended 1");
     expect(within(screen.getByRole("tabpanel")).getAllByTestId("ws-row").map(titleOf)).toEqual(["Alpha stream"]);
     expect(within(screen.getByRole("tabpanel")).getByTestId("ws-row")).toHaveTextContent("Suspended");

@@ -381,7 +381,7 @@ describe("Settings page, live", () => {
     const alert = await within(region).findByRole("alert");
     expect(alert).toHaveTextContent("Refreshing repositories failed.");
     fake.delayNext("projects.list", 200);
-    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    await user.click(within(region).getByRole("button", { name: "Retry" }));
     expect(await within(region).findByText("Refreshing repositories…")).toBeInTheDocument();
     await waitFor(() => expect(within(region).queryByRole("alert")).not.toBeInTheDocument());
     expect(within(region).getByRole("list", { name: "Registered repositories" })).toHaveTextContent("/work/repo");

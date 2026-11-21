@@ -158,7 +158,6 @@ export function SimulatedReceipts({
   );
 }
 
-/** Inline error: reason, affected action, safe next step. */
 /** The reason and next step ErrorNotice shows, as plain text for an action's Outcome or thrown Error (DPES-1170). */
 export function failureText(action: string, error: DaemonError): string {
   const { reason, nextStep } = presentError(error);
@@ -166,6 +165,7 @@ export function failureText(action: string, error: DaemonError): string {
   return `${action} failed. ${reason} ${nextStep}${unknown}`;
 }
 
+/** Inline error: reason, affected action, safe next step. */
 export function ErrorNotice({ error, action }: { error: DaemonError; action: string }) {
   const { reason, nextStep } = presentError(error);
   return (
