@@ -533,4 +533,82 @@ export function ListMenu({ controls, live, onRefresh }: { controls: Controls; li
   );
 }
 
+/** list header's "+ New workstream": a dialog for the title and summary, then `workstreams.create`. */
+export function NewWorkstreamButton({
+  run,
+  busy,
+  locked,
+  onCreated,
+}: {
+  run: Run;
+  busy: boolean;
+  locked: string | null;
+  onCreated: (id: string) => void;
+}) {
+  const { surfaces } = useServices();
+  const reasonId = useId();
+  const formId = useId();
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [summary, setSummary] = useState("");
+  const close = () => {
+    setOpen(false);
+    setTitle("");
+    setSummary("");
+  };
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    const name = title.trim();
+    if (name === "") return;
+    const text = summary.trim();
+    close();
+    const created = await run(`Create workstream "${name}"`, () => surfaces.workstreams.create(name, text === "" ? undefined : text));
+    if (created) onCreated(created.id);
+  };
+  const reason = locked ?? (busy ? "Another change is still being recorded." : null);
+  return (
+    <>
+      <Button
+        variant="primary"
+        className="ws-new"
+        disabled={reason !== null}
+        aria-describedby={reason === null ? undefined : reasonId}
+        onClick={() => setOpen(true)}
+      >
+        + New workstream
+      </Button>
+      {reason !== null && (
+        <span className="ws-reason" id={reasonId}>
+          {reason}
+        </span>
+      )}
+      {open && (
+        <Dialog
+          title="New workstream"
+          onClose={close}
+          footer={
+            <>
+              <Button onClick={close}>Cancel</Button>
+              <Button type="submit" form={formId} variant="primary" disabled={title.trim() === ""}>
+                Create workstream
+              </Button>
+            </>
+          }
+        >
+          <form id={formId} className="ws-form" onSubmit={submit} aria-label="New workstream">
+            <label>
+              Workstream title
+              <input type="text" value={title} onChange={(event) => setTitle(event.target.value)} />
+            </label>
+            <label>
+              Summary (optional)
+              <textarea value={summary} rows={3} onChange={(event) => setSummary(event.target.value)} />
+            </label>
+          </form>
+        </Dialog>
+      )}
+    </>
+  );
+}
+
 export type { Controls };

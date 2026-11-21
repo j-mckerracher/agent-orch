@@ -234,11 +234,11 @@ test.describe("RC-09 workstream detail header, plan revision and tabs", () => {
 // RC-10 Workstreams page header and plan-editing controls
 // ---------------------------------------------------------------------------
 test.describe("RC-10 workstreams page header and plan controls", () => {
-  // Superseded: workstreams are created through the global orchestrator, so the page has no create control.
-  test("workstreams-06: the page header offers no Create workstream control", async ({ page }) => {
+  test("workstreams-06: the page header offers a New workstream button that opens the create dialog", async ({ page }) => {
     await openApp(page, "#/workstreams", "populated", "desktop");
     await expect(page.getByRole("heading", { level: 1, name: "Workstreams" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /Create workstream/ })).toHaveCount(0);
+    // The audit runs on placeholder data, where the button is present but disabled.
+    await expect(page.getByRole("button", { name: "+ New workstream" })).toBeDisabled();
   });
 
   test("workstreams-12: plan controls Combine and Change execution policy are offered", async ({ page }) => {

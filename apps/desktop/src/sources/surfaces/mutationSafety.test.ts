@@ -30,7 +30,10 @@ const idWrites: Write[] = [
   { method: "unlink_task", run: (s, id) => s.unlinkTask(id, "t-run") },
   { method: "unlink_task", run: (s, id) => s.unlinkTask("ws-1", id) },
 ];
-const writes: Write[] = idWrites.filter((_, i) => [0, 1, 2, 3, 4, 7, 10].includes(i));
+const writes: Write[] = [
+  { method: "create", run: (s) => s.create("New workstream") },
+  ...idWrites.filter((_, i) => [0, 1, 2, 3, 4, 7, 10].includes(i)),
+];
 
 describe("D9 mutation safety", () => {
   it.each(["fixture:item", "fixture0001", " FIXTURE0001 "])("refuses every ID position for %s, connected or disconnected", async (id) => {

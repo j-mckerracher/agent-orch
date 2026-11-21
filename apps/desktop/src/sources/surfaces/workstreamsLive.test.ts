@@ -46,6 +46,8 @@ describe("live workstreams adapter", () => {
     expect(result.status).toBe("unsupported");
     expect(result.provenance.kind).toBe("daemon");
     expect(fake.callsTo("workstreams.list")).toHaveLength(0);
+    await expect(source.create("x")).rejects.toMatchObject({ kind: "capability-not-negotiated" });
+    expect(fake.callsTo("workstreams.create")).toHaveLength(0);
     await expect(source.prioritize("ws-1")).rejects.toMatchObject({ kind: "capability-not-negotiated" });
     expect(fake.callsTo("workstreams.prioritize")).toHaveLength(0);
   });
@@ -71,6 +73,14 @@ describe("live workstreams adapter", () => {
     expect(fake.callsTo("queue.snapshot")).toHaveLength(0);
     expect(fake.callsTo("tasks.list")).toHaveLength(1);
     expect(fake.callsTo("approvals.list")).toHaveLength(1);
+  });
+
+  it("creates a workstream and returns the daemon's id and revision", async () => {
+    const fake = populate(new FakeDaemon());
+    const receipt = await (await live(fake)).create("Gamma", "why");
+    expect(receipt).toMatchObject({ revision: 1 });
+    expect(receipt.id).toMatch(/^ws-/);
+    expect(paramsOf(fake, "workstreams.create")).toEqual([{ title: "Gamma", summary: "why", idempotency_key: expect.any(String) }]);
   });
 
   it("prioritizes a workstream and the next read lists it first", async () => {
