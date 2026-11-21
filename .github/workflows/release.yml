@@ -178,6 +178,13 @@ jobs:
         with:
           persist-credentials: false
 
+      # The runner's own node crashed here with glibc heap corruption (exit 134); pin it like the build job does.
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22.20.0"
+          package-manager-cache: false
+
       - name: Download release artifacts
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
