@@ -5,6 +5,24 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.37](https://github.com/mc-innersource/motif-mcao/compare/v0.1.36...v0.1.37) (2026-11-21)
+
+
+### Bug Fixes
+
+* **daemon:** DPES-1106 - Let the user message an agent in any state but busy ([3698d09](https://github.com/mc-innersource/motif-mcao/commit/3698d09a9fd8476e9766f3de1b0e711a2125cd51))
+* **daemon:** DPES-1106 - Let the user message an agent in any state but busy ([b3c2537](https://github.com/mc-innersource/motif-mcao/commit/b3c2537eca3b2f641c39cca8e57fa012b2cd6283))
+* **desktop:** DPES-1106 - Check the staged treehouse instead of running the extracted copy ([4660385](https://github.com/mc-innersource/motif-mcao/commit/46603854df8bea9fbf7e83953bcb888ae00e7093))
+* **desktop:** DPES-1106 - Check the staged treehouse instead of running the extracted copy ([a4fc6c2](https://github.com/mc-innersource/motif-mcao/commit/a4fc6c244ef195305b1f2cbb4a351eec4f0643b8))
+* **desktop:** DPES-1106 - Retry removing the treehouse extract directory on Windows ([dfd1df3](https://github.com/mc-innersource/motif-mcao/commit/dfd1df3d8b33330fef35aee3305d313d4aef33a0))
+* **release:** DPES-1106 - Deep ad hoc sign the unsigned macOS app ([44eda8d](https://github.com/mc-innersource/motif-mcao/commit/44eda8d644c26c1fd289198aacc4e41a0c47be16))
+* **release:** DPES-1106 - Deep ad hoc sign the unsigned macOS app ([53f0f24](https://github.com/mc-innersource/motif-mcao/commit/53f0f244f24313cc3aa9a5a0d39429677390fcf4))
+
+
+### Tests
+
+* **ci:** DPES-1106 - Re-pin the daemon, store and workspace counts for the follow-up tests ([f4c4178](https://github.com/mc-innersource/motif-mcao/commit/f4c417829b174a2af375fa01062d423901d3f3d9))
+
 ## [0.1.36](https://github.com/mc-innersource/motif-mcao/compare/v0.1.35...v0.1.36) (2026-11-20)
 
 
