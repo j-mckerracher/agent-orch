@@ -419,6 +419,8 @@ fn codex_groups() -> Vec<ModeGroup> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::copilot_adapter::CopilotAdapter;
+    use std::path::Path;
 
     /// The `--permission-mode` choices of `claude` 2.1.311, from `claude --help`.
     const CLAUDE_PERMISSION_MODE_CHOICES: [&str; 6] = [
@@ -588,6 +590,57 @@ mod tests {
                     option.id
                 );
             }
+        }
+    }
+
+    #[test]
+    fn option_ids_are_unique_within_an_agent() {
+        for agent in AGENTS {
+            let ids: Vec<&str> = all_options(agent)
+                .into_iter()
+                .map(|(_, option)| option.id)
+                .collect();
+            let mut unique = ids.clone();
+            unique.sort();
+            unique.dedup();
+            assert_eq!(unique.len(), ids.len(), "{agent}");
+        }
+    }
+
+    #[test]
+    fn no_copilot_selection_passes_a_hard_limit_flag_except_chat_autopilot() {
+        for choice in selections("github-copilot") {
+            let mode = resolve("github-copilot", &ModeRequest::Chosen(choice.clone())).unwrap();
+            let args = CopilotAdapter::conversation_args(
+                &mode,
+                "hi",
+                Path::new("usage.json"),
+                Path::new("."),
+                false,
+            )
+            .unwrap();
+            let has = |flag: &str| args.iter().any(|arg| arg == flag);
+            let autopilot = choice["agent"] == "autopilot";
+            assert_eq!(has("--autopilot"), autopilot, "{choice:?}");
+            if autopilot {
+                let cap = args
+                    .iter()
+                    .position(|arg| arg == "--max-autopilot-continues")
+                    .unwrap();
+                assert_eq!(args[cap + 1], "2", "{choice:?}");
+            }
+            for flag in [
+                "--experimental",
+                "--allow-all-mcp-server-instructions",
+                "--sandbox",
+                "--yolo",
+                "--available-tools",
+                "--add-dir",
+            ] {
+                assert!(!has(flag), "{choice:?}: {flag}");
+            }
+            let widens = args.iter().any(|arg| arg.starts_with("--allow-all"));
+            assert_eq!(widens, mode.tier == PermissionLevel::Full, "{choice:?}");
         }
     }
 
