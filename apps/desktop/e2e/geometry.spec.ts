@@ -537,16 +537,14 @@ test("the activity box has no scrollbar while it fits, and scrolls inside at 90%
   expect((await measure()).scrolls).toBe(false);
 });
 
-test("the model chip's label, level and badge are whole and on one line before the send button, at 960 CSS px", async ({ page }) => {
+test("the model chip's label and badge are whole and on one line before the send button, at 960 CSS px", async ({ page }) => {
   await openFixture(page, 960);
   const chip = page.locator(".ws-model-root > .ws-chip-button");
   const label = chip.locator(":scope > span").first();
-  const level = chip.locator(".ws-chip-level");
   const badge = chip.locator(".ui-badge");
-  await expect(chip).toContainText("Codex · default · medium · Auto");
+  await expect(chip).toContainText("Codex · default · medium");
   for (const [name, part] of [
     ["label", label],
-    ["level", level],
     ["badge", badge],
   ] as const) {
     expect(await part.evaluate((el) => el.scrollWidth <= el.clientWidth), `${name} is not clipped`).toBe(true);

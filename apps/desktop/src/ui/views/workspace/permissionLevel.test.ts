@@ -5,7 +5,6 @@ import {
   DEFAULT_PERMISSION_LEVEL,
   FULL_AGENT_TEXT,
   FULL_REVIEW_TEXT,
-  RESTRICTED_PREFERENCE_KEY,
   TASK_PREFERENCE_KEY,
   agentTexts,
   choiceBlock,
@@ -36,33 +35,28 @@ describe("the payload per level and capability", () => {
     expect(permissionForSend(level, false)).toBeUndefined();
   });
 
-  it("starts at Auto, the default for chats", () => {
+  it("starts at Auto, the default level", () => {
     expect(DEFAULT_PERMISSION_LEVEL).toBe("auto");
     expect(permissionForSend(DEFAULT_PERMISSION_LEVEL, true)).toBe("auto");
   });
 });
 
-describe("which levels a chat can choose", () => {
-  it("refuses Extended for chat on every daemon, since the daemon refuses it too", () => {
-    expect(choiceBlock("extended", true, "chat")).toBe("not available for chat yet");
-    expect(choiceBlock("extended", false, "chat")).toBe("not available for chat yet");
+describe("which task levels can be chosen", () => {
+  it("refuses Extended on every daemon, and names why", () => {
+    expect(choiceBlock("extended", true)).toBe("read-only git only, so it can't build, test or commit");
+    expect(choiceBlock("extended", false)).toBe("read-only git only, so it can't build, test or commit");
   });
 
   it("offers Restricted, Auto and Full on a daemon with permission levels", () => {
-    expect(choiceBlock("restricted", true, "chat")).toBeNull();
-    expect(choiceBlock("auto", true, "chat")).toBeNull();
-    expect(choiceBlock("full", true, "chat")).toBeNull();
+    expect(choiceBlock("restricted", true)).toBeNull();
+    expect(choiceBlock("auto", true)).toBeNull();
+    expect(choiceBlock("full", true)).toBeNull();
   });
 
   it("offers only Restricted on an older daemon, and names why the others cannot be chosen", () => {
-    expect(choiceBlock("restricted", false, "chat")).toBeNull();
-    expect(choiceBlock("auto", false, "chat")).toBe("needs an updated daemon");
-    expect(choiceBlock("full", false, "chat")).toBe("needs an updated daemon");
-  });
-
-  it("refuses Extended for tasks too, and names tasks in the reason", () => {
-    expect(choiceBlock("extended", true, "task")).toBe("read-only git only, so it can't build, test or commit");
-    expect(choiceBlock("auto", true, "task")).toBeNull();
+    expect(choiceBlock("restricted", false)).toBeNull();
+    expect(choiceBlock("auto", false)).toBe("needs an updated daemon");
+    expect(choiceBlock("full", false)).toBe("needs an updated daemon");
   });
 });
 
@@ -78,22 +72,6 @@ describe("the level a task ran with", () => {
   });
 });
 
-describe("the task form's saved Restricted choice", () => {
-  it("keeps its own key, so a chat's Restricted choice never reaches a task", () => {
-    expect(readSavedLevel(memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "restricted" }), TASK_PREFERENCE_KEY)).toBe("auto");
-    expect(readSavedLevel(memoryStorage({ [TASK_PREFERENCE_KEY]: "restricted" }), TASK_PREFERENCE_KEY)).toBe("restricted");
-  });
-
-  it("saves Restricted under the task key only, and removes it for any other level", () => {
-    const storage = memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "restricted" });
-    saveLevel("restricted", storage, TASK_PREFERENCE_KEY);
-    expect(storage.data.get(TASK_PREFERENCE_KEY)).toBe("restricted");
-    expect(storage.data.get(RESTRICTED_PREFERENCE_KEY)).toBe("restricted");
-    saveLevel("auto", storage, TASK_PREFERENCE_KEY);
-    expect(storage.data.has(TASK_PREFERENCE_KEY)).toBe(false);
-  });
-});
-
 describe("the wording", () => {
   it("says Full has no review step and that automatic review is not a guarantee", () => {
     expect(FULL_REVIEW_TEXT).toContain("no automatic review step");
@@ -101,7 +79,7 @@ describe("the wording", () => {
   });
 
   it("names each agent's own Full consequences", () => {
-    expect(FULL_AGENT_TEXT.codex).toContain("~/.codex");
+    expect(FULL_AGENT_TEXT.codex).toContain("--sandbox danger-full-access");
     expect(FULL_AGENT_TEXT["claude-code"]).toContain("skips its permission checks");
     expect(FULL_AGENT_TEXT["github-copilot"]).toContain("No OS sandbox is applied");
   });
@@ -117,13 +95,13 @@ describe("the wording", () => {
   });
 });
 
-describe("the saved preference", () => {
+describe("the task's saved Restricted choice", () => {
   it("reads Restricted as saved, and reads anything else, or no storage, as the default", () => {
-    expect(readSavedLevel(memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "restricted" }))).toBe("restricted");
-    expect(readSavedLevel(memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "full" }))).toBe("auto");
-    expect(readSavedLevel(memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "auto" }))).toBe("auto");
-    expect(readSavedLevel(memoryStorage())).toBe("auto");
-    expect(readSavedLevel(null)).toBe("auto");
+    expect(readSavedLevel(memoryStorage({ [TASK_PREFERENCE_KEY]: "restricted" }), TASK_PREFERENCE_KEY)).toBe("restricted");
+    expect(readSavedLevel(memoryStorage({ [TASK_PREFERENCE_KEY]: "full" }), TASK_PREFERENCE_KEY)).toBe("auto");
+    expect(readSavedLevel(memoryStorage({ [TASK_PREFERENCE_KEY]: "auto" }), TASK_PREFERENCE_KEY)).toBe("auto");
+    expect(readSavedLevel(memoryStorage(), TASK_PREFERENCE_KEY)).toBe("auto");
+    expect(readSavedLevel(null, TASK_PREFERENCE_KEY)).toBe("auto");
   });
 
   it("reads the default when storage throws", () => {
@@ -134,21 +112,21 @@ describe("the saved preference", () => {
       setItem: vi.fn(),
       removeItem: vi.fn(),
     };
-    expect(readSavedLevel(broken)).toBe("auto");
+    expect(readSavedLevel(broken, TASK_PREFERENCE_KEY)).toBe("auto");
   });
 
   it("saves Restricted and only Restricted", () => {
     const storage = memoryStorage();
-    saveLevel("restricted", storage);
-    expect(storage.setItem).toHaveBeenCalledWith(RESTRICTED_PREFERENCE_KEY, "restricted");
-    expect(storage.data.get(RESTRICTED_PREFERENCE_KEY)).toBe("restricted");
+    saveLevel("restricted", storage, TASK_PREFERENCE_KEY);
+    expect(storage.setItem).toHaveBeenCalledWith(TASK_PREFERENCE_KEY, "restricted");
+    expect(storage.data.get(TASK_PREFERENCE_KEY)).toBe("restricted");
   });
 
   it.each(["auto", "extended", "full"] as const)("removes the saved value when the level is %s, so it is never saved", (level) => {
-    const storage = memoryStorage({ [RESTRICTED_PREFERENCE_KEY]: "restricted" });
-    saveLevel(level, storage);
+    const storage = memoryStorage({ [TASK_PREFERENCE_KEY]: "restricted" });
+    saveLevel(level, storage, TASK_PREFERENCE_KEY);
     expect(storage.setItem).not.toHaveBeenCalled();
-    expect(storage.data.has(RESTRICTED_PREFERENCE_KEY)).toBe(false);
+    expect(storage.data.has(TASK_PREFERENCE_KEY)).toBe(false);
   });
 
   it("does not throw when storage refuses the write", () => {
@@ -159,6 +137,6 @@ describe("the saved preference", () => {
       },
       removeItem: vi.fn(),
     };
-    expect(() => saveLevel("restricted", refused)).not.toThrow();
+    expect(() => saveLevel("restricted", refused, TASK_PREFERENCE_KEY)).not.toThrow();
   });
 });

@@ -4,9 +4,3 @@
   gap: 4px;
   padding-top: 0;
 }
-
-/* The level's part of the model chip. It never shrinks: the model text truncates first, so the level stays whole. */
-.ws-chip-level {
-  flex: none;
-  white-space: nowrap;
-}

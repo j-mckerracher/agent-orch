@@ -19,6 +19,8 @@ import { liveRead } from "./liveSupport";
 import { measured, notOk, observation, unsupportedValue } from "./result";
 import type {
   Measured,
+  ModeGroup,
+  ModeOption,
   ModelCatalog,
   ModelCatalogSource,
   ModelOption,
@@ -30,6 +32,51 @@ import type {
 export const MODELS_METHODS = ["agents.capabilities", "agents.catalog", "agents.validate_selection"] as const;
 
 const RETRY_SHORTLY = "The catalog is still being read; retry shortly.";
+
+function parseOption(value: unknown): ModeOption | null {
+  if (typeof value !== "object" || value === null) return null;
+  const option = value as Record<string, unknown>;
+  if (
+    typeof option.id !== "string" ||
+    typeof option.label !== "string" ||
+    typeof option.description !== "string" ||
+    typeof option.available !== "boolean" ||
+    typeof option.needs_confirmation !== "boolean" ||
+    typeof option.default !== "boolean" ||
+    typeof option.allows_actions !== "boolean"
+  ) {
+    return null;
+  }
+  return {
+    id: option.id,
+    label: option.label,
+    description: option.description,
+    available: option.available,
+    unavailableReason: typeof option.unavailable_reason === "string" ? option.unavailable_reason : null,
+    needsConfirmation: option.needs_confirmation,
+    isDefault: option.default,
+    allowsActions: option.allows_actions,
+  };
+}
+
+/** A group with a malformed option is dropped whole: a half-read group would offer choices the daemon did not state. */
+function parseGroup(value: unknown): ModeGroup | null {
+  if (typeof value !== "object" || value === null) return null;
+  const group = value as Record<string, unknown>;
+  if (typeof group.id !== "string" || typeof group.label !== "string" || !Array.isArray(group.options)) return null;
+  const options = group.options.map(parseOption);
+  if (options.some((option) => option === null)) return null;
+  return { id: group.id, label: group.label, options: options as ModeOption[] };
+}
+
+/** An absent `modes` field means the daemon predates chat modes, so the list is unsupported rather than empty. */
+function parseModes(raw: unknown, obs: Observation): Measured<ModeGroup[]> {
+  if (!Array.isArray(raw)) return unsupportedValue("The daemon does not report chat modes for this agent.");
+  return measured(
+    raw.map(parseGroup).filter((group): group is ModeGroup => group !== null),
+    obs,
+  );
+}
 
 function facetValue<T, U>(
   row: AgentCatalogEntry,
@@ -108,7 +155,7 @@ export function createLiveModels(
             name: agentDisplayName(entry.agent),
             installed: entry.installed,
             launchable: entry.launchable,
-            ...(entry.chat_compatibility ? { chatCompatibility: entry.chat_compatibility } : {}),
+            ...(entry.mode_compatibility ? { modeCompatibility: entry.mode_compatibility } : {}),
             modelSelection: supported,
             models,
             modelsNote: row && models.status === "ok" && row.models.detail ? row.models.detail : undefined,
@@ -116,6 +163,7 @@ export function createLiveModels(
             efforts: row
               ? facetValue(row, row.efforts, obs, (items) => items)
               : withoutRow<string[]>("effort settings"),
+            modes: row ? parseModes(row.modes, obs) : withoutRow<ModeGroup[]>("chat modes"),
           };
         });
         return { providers };

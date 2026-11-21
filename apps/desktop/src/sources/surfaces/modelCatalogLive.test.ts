@@ -83,6 +83,53 @@ describe("live model catalog", () => {
     expect(copilot.efforts.status).toBe("unsupported");
   });
 
+  it("reads each group's options, drops a malformed group, and reads mode compatibility from the capabilities row", async () => {
+    const fake = populate(new FakeDaemon());
+    const option = { id: "auto", label: "Auto", description: "Runs most actions.", available: true, unavailable_reason: null, needs_confirmation: false, default: true, allows_actions: true };
+    fake.stub("agents.capabilities", [
+      {
+        agent: "codex",
+        installed: true,
+        launchable: true,
+        capabilities: { streaming: true, interactive_input: false, structured_output: true, cancellation: true, session_resumption: false, approvals: false, model_selection: true },
+        mode_compatibility: { plan: { retryable: false, reason: "Not in codex exec." } },
+      },
+    ]);
+    fake.stub("agents.catalog", [
+      {
+        ...CODEX_CATALOG,
+        modes: [
+          { id: "permission", label: "Permission", options: [option] },
+          { id: "work", label: "Work", options: [{ ...option, id: "plan", label: 3 }] },
+        ],
+      },
+    ]);
+    const result = await (await live(fake)).models.catalog();
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    const codex = result.data.providers.find((item) => item.id === "codex");
+    expect(codex?.modes.status).toBe("ok");
+    if (codex?.modes.status !== "ok") return;
+    expect(codex.modes.value).toEqual([
+      {
+        id: "permission",
+        label: "Permission",
+        options: [
+          { id: "auto", label: "Auto", description: "Runs most actions.", available: true, unavailableReason: null, needsConfirmation: false, isDefault: true, allowsActions: true },
+        ],
+      },
+    ]);
+    expect(codex.modeCompatibility).toEqual({ plan: { retryable: false, reason: "Not in codex exec." } });
+  });
+
+  it("treats a catalog row without modes as an unsupported mode list, from a daemon that predates chat modes", async () => {
+    const fake = withAgents(populate(new FakeDaemon()));
+    fake.stub("agents.catalog", [{ ...CODEX_CATALOG, modes: undefined }]);
+    const result = await (await live(fake)).models.catalog();
+    if (result.status !== "ok") return;
+    expect(result.data.providers.find((item) => item.id === "codex")?.modes.status).toBe("unsupported");
+  });
+
   it("keeps Copilot's models unknown, with the reason as text, when its list could not be read", async () => {
     const fake = populate(new FakeDaemon());
     fake.stub("agents.capabilities", [copilotCapabilities]);

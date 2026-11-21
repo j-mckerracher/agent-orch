@@ -923,7 +923,10 @@
    "task_view::tests::every_task_names_its_level_and_a_restricted_one_is_not_implicit",
    "api::authority_tests::tasks_message_reopens_a_finished_task_unless_its_agent_cannot_resume",
    "executor::session_transcript::tests::folder_names_match_claudes_own",
-   "executor::session_transcript::tests::follow_moves_the_transcript_once_and_other_agents_need_none"
+   "executor::session_transcript::tests::follow_moves_the_transcript_once_and_other_agents_need_none",
+   "api::conversations::tests::a_mode_and_a_permission_together_are_a_bad_request_and_record_nothing",
+   "api::conversations::tests::the_daemon_advertises_the_chat_modes_capability",
+   "a_routed_mode_takes_the_agents_defaults_and_a_chosen_option_its_flags"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",

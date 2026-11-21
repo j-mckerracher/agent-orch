@@ -69,7 +69,7 @@ export const WINDOWS = {
   // With main merged (DPES-1106): one real-daemon test and the agent_thinking store binary (5) plus one store lib test; re-synced from CI.
   // DPES-1106 adds one portable daemon test (tasks.message, api_authority_tests): 738 becomes 739, unit binary 633 becomes 634.
   // The wake brief keeps a worker's note (line cap 512) and adds one portable daemon test: 739 becomes 740, unit binary 634 becomes 635.
-  daemon: { passed: 772, ignored: 1, sequence: [664, 93, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
+  daemon: { passed: 775, ignored: 1, sequence: [666, 94, 2, 5, 0, 1, 2, 2, 0, 4, 0] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The ipc lib is 59 on Windows (58 plus the selection capability test), so 59 - 14 = 45 are filtered out (CI run 43734333632).
   // PR #113, CI run 43981399384: the Windows ipc lib has 62 tests, so 48 are filtered out.
@@ -182,7 +182,7 @@ export const MACOS = {
   // DPES-1108 phase 8 adds 4 daemon unit tests: 878 in the phase 9 integration, re-synced from CI.
   // DPES-1106 adds one portable daemon test and one unix-only executor test: 882 becomes 884, unit binary 750 becomes 752.
   // The wake brief adds one portable daemon test: 884 becomes 885, unit binary 752 becomes 753.
-  daemon: { passed: 938, ignored: 1, sequence: [803, 98, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
+  daemon: { passed: 941, ignored: 1, sequence: [805, 99, 2, 5, 13, 1, 2, 2, 4, 4, 5] },
   coordinatorReview: { passed: 5, sequence: [5] },
   // The workspace gate excludes orchestrator-daemon, orchestrator-store and orchestrator-ipc: daemon-tests, store-tests and
   // ipc-tests already run those whole crates, and running them twice made the macOS job take over 30 minutes. Main measured
@@ -194,7 +194,7 @@ export const MACOS = {
   // Reading Copilot's models (DPES-1105) adds two portable parser tests and three Unix-only catalog tests in orchestrator-agents: 1073 becomes 1078.
   // Worker environment (DPES-1126) adds 11 tests outside daemon, store and ipc: 1078 becomes 1089 (CI run 44783088646,
   // measured on macOS).
-  workspace: { passed: 1090, ignored: 1 },
+  workspace: { passed: 1100, ignored: 1 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
   // Worker environment (DPES-1126) adds 5 orchestrator-git tests, one of them Unix-only (a hook the agent pointed git at): 105 becomes 110 (CI run 44783088646).

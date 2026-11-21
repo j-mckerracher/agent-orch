@@ -38,6 +38,7 @@ use crate::contract::{
 use crate::copilot_parser::CopilotParser;
 use crate::copilot_sign_in::{record_for_exit, SignInRecord};
 use crate::copilot_usage::read_usage;
+use crate::modes::ResolvedMode;
 use crate::routing::RoutableAdapter;
 use crate::workflow_agent::{WorkflowAgent, AGENT_ID};
 
@@ -184,20 +185,21 @@ impl CopilotAdapter {
     /// (`--assisted-approval`). Git push is denied by rule. Full passes
     /// `--allow-all`, the user's per-turn choice.
     pub fn conversation_args(
-        level: PermissionLevel,
+        mode: &ResolvedMode,
         prompt: &str,
         usage_file: &Path,
         scratch: &Path,
         credit_cap: bool,
     ) -> Option<Vec<String>> {
-        let flags = match level {
+        let flags = match mode.tier {
             PermissionLevel::Restricted => restricted_flags(),
             PermissionLevel::Auto => auto_flags(scratch),
             PermissionLevel::Full => vec!["--allow-all".to_owned()],
             PermissionLevel::Extended => return None,
         };
-        let mut args = base_args(prompt, usage_file, scratch, level, credit_cap);
+        let mut args = base_args(prompt, usage_file, scratch, mode.tier, credit_cap);
         args.extend(flags);
+        args.extend(mode.flags.iter().map(|flag| (*flag).to_owned()));
         Some(args)
     }
 

@@ -78,6 +78,7 @@ const DISPATCH_CATALOG: ModelCatalog = {
       { id: "m2", label: "Model two", efforts: ["medium"] },
     ], observedAt: "2026-11-17T00:00:00Z", ageMs: 0 },
     efforts: { status: "unsupported", reason: "Choose a model to see effort levels." },
+    modes: { status: "unsupported", reason: "Chat modes are not used here." },
   })),
 };
 
@@ -88,6 +89,7 @@ const COPILOT: ModelProvider = {
   id: "github-copilot", name: "GitHub Copilot", installed: true, launchable: true, modelSelection: "supported",
   models: { status: "ok", value: [{ id: "gpt-a", label: "GPT A", efforts: ["low", "high"] }, { id: "mini", label: "Mini", efforts: [] }], ...NOW },
   efforts: { status: "unsupported", reason: "Effort levels are reported per model." },
+  modes: { status: "unsupported", reason: "Chat modes are not used here." },
 };
 const COPILOT_UNREAD: ModelProvider = {
   ...COPILOT,
@@ -100,11 +102,13 @@ const catalogWith = (copilot: ModelProvider): ModelCatalog => ({
       id: "claude-code", name: "Claude Code", installed: true, launchable: true, modelSelection: "supported",
       models: { status: "ok", value: [{ id: "opus", label: "Opus", efforts: [] }, { id: "sonnet", label: "Sonnet", efforts: [] }], ...NOW },
       efforts: { status: "ok", value: ["low", "high"], ...NOW },
+      modes: { status: "unsupported", reason: "Chat modes are not used here." },
     },
     {
       id: "pi", name: "Pi", installed: true, launchable: true, modelSelection: "unsupported",
       models: { status: "ok", value: [], ...NOW },
       efforts: { status: "ok", value: [], ...NOW },
+      modes: { status: "unsupported", reason: "Chat modes are not used here." },
     },
     copilot,
   ],

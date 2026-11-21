@@ -13,9 +13,10 @@ import { createServices } from "../src/ui/createServices";
 import { ServicesProvider } from "../src/ui/services";
 import { WorkspaceView } from "../src/ui/views/workspace/WorkspaceView";
 import { CHOICE_PREFERENCE_KEY } from "../src/ui/views/workspace/modelChoice";
-import { RESTRICTED_PREFERENCE_KEY } from "../src/ui/views/workspace/permissionLevel";
 import { projectLabel } from "../src/ui/views/workspace/targets";
 import { NodeConnector, fakeAgentEnv, noAgentsEnv, startDaemon } from "./harness";
+
+const CODEX_MODE_KEY = "agent-orch.chat.mode.codex";
 
 // A saved model choice (DPES-1105) lives in browser storage, which outlives a test.
 afterEach(() => {
@@ -359,7 +360,9 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
     }
   }, 90000);
 
-  it("sends the chat's permission level to the agent: Auto by default, Restricted after the switch", async () => {
+  it("sends the chat's mode to the agent: Auto by default, Read only after the switch", async () => {
+    // A mode is chosen for an agent, so the chat starts with Codex chosen.
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex" }));
     const dir = mkdtempSync(join(tmpdir(), "mc-permission-level-"));
     const log = join(dir, "agent.log");
     const t = await prepare({ ...fakeAgentEnv(), FAKE_AGENT_LOG: log, AGENT_ORCH_ENV_PASSTHROUGH: "FAKE_AGENT_LOG" });
@@ -372,9 +375,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         </ServicesProvider>,
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
-      await userEvent.click(screen.getByRole("button", { name: /^Model settings/ }));
-      const level = screen.getByRole("combobox", { name: "Permission level" });
-      expect((level as HTMLSelectElement).value).toBe("auto");
+      const modes = await screen.findByRole("button", { name: "Chat mode: Auto · Standard" }, { timeout: 15000 });
       const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
       const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
 
@@ -382,16 +383,19 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
       await userEvent.click(sendButton());
       expect(await screen.findByText("fake reply to: at auto", undefined, { timeout: 20000 })).toBeTruthy();
-      expect(readFileSync(log, "utf8")).toContain('"--sandbox", "workspace-write", "--approve-for-me"');
+      // Codex rejects --sandbox together with --approve-for-me, so Auto passes only the latter.
+      expect(readFileSync(log, "utf8")).toContain('"--approve-for-me"');
+      expect(readFileSync(log, "utf8")).not.toContain('"--sandbox"');
 
-      await userEvent.selectOptions(level, "Restricted");
+      await userEvent.click(modes);
+      await userEvent.click(within(screen.getByRole("group", { name: "Permission" })).getByRole("radio", { name: /^Read only/ }));
       await userEvent.type(box, "at restricted");
       await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
       await userEvent.click(sendButton());
       expect(await screen.findByText("fake reply to: at restricted", undefined, { timeout: 20000 })).toBeTruthy();
       expect(readFileSync(log, "utf8")).toContain('"--sandbox", "read-only"');
     } finally {
-      window.localStorage.removeItem(RESTRICTED_PREFERENCE_KEY);
+      window.localStorage.removeItem(CODEX_MODE_KEY);
       await t.stop();
       rmSync(dir, { recursive: true, force: true });
     }
@@ -457,6 +461,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
     const replyFile = join(dir, "reply.txt");
     const block = { mcao_actions: 1, actions: [{ kind: "workstream.create", ref: "a", title: "Post-MVP work", summary: "" }] };
     writeFileSync(replyFile, ["Post-MVP work can be its own workstream.", "```mcao-actions", JSON.stringify(block), "```"].join("\n"));
+    window.localStorage.setItem(CHOICE_PREFERENCE_KEY, JSON.stringify({ agent: "codex" }));
     const t = await prepare({
       ...fakeAgentEnv(),
       FAKE_AGENT_REPLY: replyFile,
@@ -470,9 +475,9 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         </ServicesProvider>,
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
-      // Action proposals are carried only by Restricted turns (DPES-1105); the chat defaults to Auto.
-      await userEvent.click(screen.getByRole("button", { name: /^Model settings/ }));
-      await userEvent.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Restricted");
+      // Action proposals ride on the reply of a mode that allows them. Read only does, as Restricted did (DPES-1105).
+      await userEvent.click(await screen.findByRole("button", { name: "Chat mode: Auto · Standard" }, { timeout: 15000 }));
+      await userEvent.click(within(screen.getByRole("group", { name: "Permission" })).getByRole("radio", { name: /^Read only/ }));
       // user-event reads "[[" as a literal "[".
       await userEvent.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "[[fake:script] plan the post-MVP work");
       const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
@@ -497,7 +502,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       const titled = (await t.direct((api) => api.workstreamsList())).filter((ws) => ws.title === "Post-MVP work");
       expect(titled).toHaveLength(1);
     } finally {
-      window.localStorage.removeItem(RESTRICTED_PREFERENCE_KEY);
+      window.localStorage.removeItem(CODEX_MODE_KEY);
       await t.stop();
       rmSync(dir, { recursive: true, force: true });
     }

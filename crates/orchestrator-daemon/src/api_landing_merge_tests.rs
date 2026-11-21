@@ -65,7 +65,7 @@ fn propose_checked(api: &DaemonApi, turn: &str, action: &str) -> Vec<String> {
             turn,
             TurnPermission {
                 level: PermissionLevel::Restricted,
-                profile: "test-profile",
+                profile: "test-profile".into(),
             },
         )
         .unwrap();

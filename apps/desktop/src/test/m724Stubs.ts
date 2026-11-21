@@ -7,6 +7,8 @@ import type {
   ConversationWireTarget,
   ConversationWireTurn,
   LiveActivityWire,
+  ModeGroupWire,
+  ModeOptionWire,
 } from "../daemon/types";
 import { StubRpcError, type FakeDaemon } from "./fakeDaemon";
 
@@ -212,6 +214,40 @@ function conversationTarget(params: Record<string, unknown>): ConversationWireTa
   return GLOBAL;
 }
 
+/** One wire option of `agents.catalog` modes (DPES-1105). Unlisted fields take the common defaults. */
+const option = (id: string, label: string, overrides: Partial<ModeOptionWire> = {}): ModeOptionWire => ({
+  id,
+  label,
+  description: `${label} mode.`,
+  available: true,
+  unavailable_reason: null,
+  needs_confirmation: false,
+  default: false,
+  allows_actions: true,
+  ...overrides,
+});
+
+const CODEX_MODES: ModeGroupWire[] = [
+  {
+    id: "permission",
+    label: "Permission",
+    options: [
+      option("read-only", "Read only"),
+      option("auto", "Auto", { default: true }),
+      option("full-access", "Full access", { needs_confirmation: true, allows_actions: false }),
+    ],
+  },
+  {
+    id: "work",
+    label: "Work",
+    options: [
+      option("standard", "Standard", { default: true }),
+      option("plan", "Plan", { available: false, unavailable_reason: "Not available through codex exec." }),
+      option("goal", "Goal", { available: false, unavailable_reason: "Not available through codex exec." }),
+    ],
+  },
+];
+
 export const CODEX_CATALOG: AgentCatalogEntry = {
   agent: "codex",
   provider: "openai",
@@ -226,6 +262,7 @@ export const CODEX_CATALOG: AgentCatalogEntry = {
     ],
   },
   efforts: { state: "unsupported", detail: "efforts are per model", items: [] },
+  modes: CODEX_MODES,
 };
 
 export const CLAUDE_CATALOG: AgentCatalogEntry = {
@@ -244,6 +281,28 @@ export const CLAUDE_CATALOG: AgentCatalogEntry = {
     ],
   },
   efforts: { state: "available", detail: "", items: ["low", "medium", "high"] },
+  modes: [
+    {
+      id: "permission",
+      label: "Permission",
+      options: [
+        option("manual", "Manual"),
+        option("acceptEdits", "Accept edits"),
+        option("plan", "Plan"),
+        option("auto", "Auto", { default: true }),
+        option("dontAsk", "Don't ask"),
+        option("bypassPermissions", "Bypass permissions", { needs_confirmation: true, allows_actions: false }),
+      ],
+    },
+    {
+      id: "work",
+      label: "Work",
+      options: [
+        option("standard", "Standard", { default: true }),
+        option("goal", "Goal", { available: false, unavailable_reason: "Goal mode isn't supported for chat yet." }),
+      ],
+    },
+  ],
 };
 
 export const PI_CATALOG: AgentCatalogEntry = {
@@ -270,6 +329,30 @@ export const COPILOT_CATALOG: AgentCatalogEntry = {
     ],
   },
   efforts: { state: "unsupported", detail: "effort levels are reported per model", items: [] },
+  modes: [
+    {
+      id: "agent",
+      label: "Agent",
+      options: [
+        option("standard", "Standard", { default: true }),
+        option("plan", "Plan"),
+        option("autopilot", "Autopilot"),
+        option("plan-autopilot", "Plan then autopilot", {
+          available: false,
+          unavailable_reason: "Plan then autopilot did not finish in a headless turn.",
+        }),
+      ],
+    },
+    {
+      id: "permission",
+      label: "Permission",
+      options: [
+        option("default", "Default"),
+        option("assisted", "Assisted", { default: true }),
+        option("allow-all", "Allow all", { needs_confirmation: true, allows_actions: false }),
+      ],
+    },
+  ],
 };
 
 /** GitHub Copilot when its model list could not be read: the models are unknown, never empty (DPES-1105). */

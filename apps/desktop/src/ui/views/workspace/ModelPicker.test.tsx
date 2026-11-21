@@ -19,6 +19,7 @@ function provider(id: string, name: string): ModelProvider {
     modelSelection: "supported",
     models: { status: "ok", value: [{ id: "m1", label: "Model one" }], ...observed },
     efforts: { status: "ok", value: ["low", "high"], ...observed },
+    modes: { status: "unsupported", reason: "Chat modes are not used here." },
   };
 }
 
@@ -36,6 +37,7 @@ function copilot(overrides: Partial<ModelProvider> = {}): ModelProvider {
     modelSelection: "unsupported",
     models: { status: "unsupported", reason: "The Copilot model list could not be read." },
     efforts: { status: "unsupported", reason: "Reasoning effort is not offered for GitHub Copilot." },
+    modes: { status: "unsupported", reason: "Chat modes are not used here." },
     ...overrides,
   };
 }
@@ -400,42 +402,28 @@ describe("ModelPicker saved choice (DPES-1105)", () => {
   });
 });
 
-describe("ModelPicker permission level in a chat", () => {
-  it("shows the level at the end of the chip and offers the four levels in the panel", async () => {
+describe("ModelPicker and chat modes", () => {
+  it("disables a provider whose compatibility fails for the mode it runs with, and offers a retry", async () => {
     const user = userEvent.setup();
-    const onChange = vi.fn();
     const onRetry = vi.fn();
     const copilotWithReadFailure = {
       ...copilot(),
-      chatCompatibility: { auto: { retryable: true, reason: "Could not confirm CLI compatibility. Retry the check." } },
+      modeCompatibility: { plan: { retryable: true, reason: "Could not confirm CLI compatibility. Retry the check." } },
     };
-    const picker = (level: "auto" | "restricted") => (
+    const picker = (modeIds: string[]) => (
       <ModelPicker
         catalog={catalog([provider("codex", "Codex"), copilotWithReadFailure])}
         provenance={provenance}
-        permission={{ level, daemonAdvertises: true, onChange }}
+        modeIdsFor={() => modeIds}
         onRetry={onRetry}
       />
     );
-    const { rerender } = render(picker("auto"));
-    const chip = screen.getByRole("button", { name: "Model settings: Codex · default model · default effort · Auto" });
-    expect(chip).toHaveTextContent("Codex · default · Auto");
-    await user.click(chip);
-    const level = screen.getByRole("combobox", { name: "Permission level" });
-    expect(level).toHaveValue("auto");
-    expect(within(level).getAllByRole("option").map((option) => option.textContent)).toEqual([
-      "Restricted",
-      "Extended (not available for chat yet)",
-      "Auto",
-      "Full",
-    ]);
-    expect(within(level).getByRole("option", { name: "Extended (not available for chat yet)" })).toBeDisabled();
+    const { rerender } = render(picker(["plan"]));
+    await user.click(screen.getByRole("button", { name: /^Model settings/ }));
     expect(screen.getByRole("option", { name: "GitHub Copilot (compatibility not confirmed)" })).toBeDisabled();
     await user.click(screen.getByRole("button", { name: "Retry compatibility check" }));
     expect(onRetry).toHaveBeenCalledOnce();
-    await user.selectOptions(level, "Restricted");
-    expect(onChange).toHaveBeenCalledWith("restricted");
-    rerender(picker("restricted"));
+    rerender(picker(["standard"]));
     expect(screen.getByRole("option", { name: "GitHub Copilot" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Retry compatibility check" })).not.toBeInTheDocument();
   });
@@ -466,69 +454,26 @@ describe("ModelPicker permission level in a chat", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("Model settings are not available: the daemon did not answer");
   });
 
-  it("asks before Full, and on Cancel returns focus to the chip with the panel closed", async () => {
-    const user = userEvent.setup();
-    const onChange = vi.fn();
-    render(
-      <ModelPicker
-        catalog={catalog([provider("codex", "Codex")])}
-        provenance={provenance}
-        permission={{ level: "auto", daemonAdvertises: true, onChange }}
-      />,
-    );
-    const chip = screen.getByRole("button", { name: /^Model settings/ });
-    await user.click(chip);
-    await user.selectOptions(screen.getByRole("combobox", { name: "Permission level" }), "Full");
-    await user.click(await screen.findByRole("button", { name: "Cancel" }));
-    expect(onChange).not.toHaveBeenCalled();
-    expect(chip).toHaveFocus();
-    expect(chip).toHaveAttribute("aria-expanded", "false");
-  });
-
   it("reads the model and effort in the chip as chosen or default, with the full words in the accessible name", async () => {
     const user = userEvent.setup();
-    render(
-      <ModelPicker
-        catalog={catalog([provider("codex", "Codex")])}
-        provenance={provenance}
-        permission={{ level: "auto", daemonAdvertises: true, onChange: vi.fn() }}
-      />,
-    );
+    render(<ModelPicker catalog={catalog([provider("codex", "Codex")])} provenance={provenance} />);
     const chip = () => screen.getByRole("button", { name: /^Model settings/ });
     // Both default: one word covers both.
-    expect(chip()).toHaveTextContent("Codex · default · Auto");
-    expect(chip()).toHaveAccessibleName("Model settings: Codex · default model · default effort · Auto");
+    expect(chip()).toHaveTextContent("Codex · default");
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · default model · default effort");
     await user.click(chip());
     // The default model with a chosen effort: "default" names the model, and the effort is the one chosen.
     await user.selectOptions(screen.getByRole("combobox", { name: "Effort" }), "high");
-    await waitFor(() => expect(chip()).toHaveTextContent("Codex · default · high · Auto"));
-    expect(chip()).toHaveAccessibleName("Model settings: Codex · default model · high · Auto");
+    await waitFor(() => expect(chip()).toHaveTextContent("Codex · default · high"));
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · default model · high");
     // A chosen model keeps its label. Choosing a model clears the effort, so the default effort shows its words.
     await user.selectOptions(screen.getByRole("combobox", { name: "Model" }), "m1");
-    await waitFor(() => expect(chip()).toHaveTextContent("Codex · Model one · default effort · Auto"));
-    expect(chip()).toHaveAccessibleName("Model settings: Codex · Model one · default effort · Auto");
+    await waitFor(() => expect(chip()).toHaveTextContent("Codex · Model one · default effort"));
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · Model one · default effort");
     // Both chosen.
     await user.selectOptions(screen.getByRole("combobox", { name: "Effort" }), "high");
-    await waitFor(() => expect(chip()).toHaveTextContent("Codex · Model one · high · Auto"));
-    expect(chip()).toHaveAccessibleName("Model settings: Codex · Model one · high · Auto");
-  });
-
-  it.each([
-    ["restricted", "Restricted"],
-    ["extended", "Extended"],
-    ["auto", "Auto"],
-    ["full", "Full"],
-  ] as const)("shows the %s level as its label at the end of the chip", (level, label) => {
-    render(
-      <ModelPicker
-        catalog={catalog([provider("codex", "Codex")])}
-        provenance={provenance}
-        permission={{ level, daemonAdvertises: true, onChange: vi.fn() }}
-      />,
-    );
-    const chip = screen.getByRole("button", { name: /^Model settings/ });
-    expect(chip).toHaveTextContent(`Codex · default · ${label}`);
-    expect(chip).toHaveAccessibleName(`Model settings: Codex · default model · default effort · ${label}`);
+    await waitFor(() => expect(chip()).toHaveTextContent("Codex · Model one · high"));
+    expect(chip()).toHaveAccessibleName("Model settings: Codex · Model one · high");
   });
 
   it("shows a fixture agent without its placeholder qualifier, and keeps the qualifier in the accessible name", () => {
@@ -539,26 +484,10 @@ describe("ModelPicker permission level in a chat", () => {
       provenance: fixture,
       ...observed,
     };
-    render(
-      <ModelPicker
-        catalog={fixtureCatalog}
-        provenance={fixture}
-        permission={{ level: "auto", daemonAdvertises: true, onChange: vi.fn() }}
-      />,
-    );
+    render(<ModelPicker catalog={fixtureCatalog} provenance={fixture} />);
     const chip = screen.getByRole("button", { name: /^Model settings/ });
     expect(within(chip).getByText("Codex · default · high")).toBeInTheDocument();
     expect(within(chip).getByText("PLACEHOLDER (D14)")).toBeInTheDocument();
-    expect(chip).toHaveAccessibleName(
-      "Model settings: Codex (placeholder) · default model · high · Auto PLACEHOLDER (D14)",
-    );
-  });
-
-  it("shows no level, and offers no level control, where no message runs", async () => {
-    const user = userEvent.setup();
-    render(<ModelPicker catalog={catalog([provider("codex", "Codex")])} provenance={provenance} />);
-    await user.click(screen.getByRole("button", { name: "Model settings: Codex · default model · default effort" }));
-    expect(screen.getByRole("combobox", { name: "Provider" })).toBeInTheDocument();
-    expect(screen.queryByRole("combobox", { name: "Permission level" })).toBeNull();
+    expect(chip).toHaveAccessibleName("Model settings: Codex (placeholder) · default model · high PLACEHOLDER (D14)");
   });
 });

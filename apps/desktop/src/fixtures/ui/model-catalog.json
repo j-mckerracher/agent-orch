@@ -19,7 +19,31 @@
                 { "id": "fixture:model-small", "label": "Placeholder small model" }
               ]
             },
-            "efforts": { "status": "ok", "ageMs": 5000, "value": ["low", "medium", "high"] }
+            "efforts": { "status": "ok", "ageMs": 5000, "value": ["low", "medium", "high"] },
+            "modes": {
+              "status": "ok",
+              "ageMs": 5000,
+              "value": [
+                {
+                  "id": "permission",
+                  "label": "Permission",
+                  "options": [
+                    { "id": "read-only", "label": "Read only", "description": "Reads the workspace, writes nothing.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "auto", "label": "Auto", "description": "Writes in the workspace; approvals go to automatic review.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "full-access", "label": "Full access", "description": "Runs with no sandbox, as your user.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
+                  ]
+                },
+                {
+                  "id": "work",
+                  "label": "Work",
+                  "options": [
+                    { "id": "standard", "label": "Standard", "description": "Answers and works in the chat.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "plan", "label": "Plan", "description": "Plans before it changes anything.", "available": false, "unavailableReason": "Not available through codex exec.", "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "goal", "label": "Goal", "description": "Works until a stated condition holds.", "available": false, "unavailableReason": "Not available through codex exec.", "needsConfirmation": false, "isDefault": false, "allowsActions": true }
+                  ]
+                }
+              ]
+            }
           },
           {
             "id": "fixture:provider-claude",
@@ -28,7 +52,33 @@
             "launchable": true,
             "modelSelection": "unknown",
             "models": { "status": "unknown", "reason": "The adapter cannot enumerate the models available to the account." },
-            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
+            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." },
+            "modes": {
+              "status": "ok",
+              "ageMs": 5000,
+              "value": [
+                {
+                  "id": "permission",
+                  "label": "Permission",
+                  "options": [
+                    { "id": "manual", "label": "Manual", "description": "Asks before it acts.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "acceptEdits", "label": "Accept edits", "description": "Edits files without asking.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "plan", "label": "Plan", "description": "Reads and plans, without editing source.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "auto", "label": "Auto", "description": "Acts on its own, with a safety check.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "dontAsk", "label": "Don't ask", "description": "Runs only pre-approved tools and denies the rest.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "bypassPermissions", "label": "Bypass permissions", "description": "Runs everything without asking.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
+                  ]
+                },
+                {
+                  "id": "work",
+                  "label": "Work",
+                  "options": [
+                    { "id": "standard", "label": "Standard", "description": "Answers and works in the chat.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "goal", "label": "Goal", "description": "Works until a stated condition holds.", "available": false, "unavailableReason": "Goal mode isn't supported for chat yet.", "needsConfirmation": false, "isDefault": false, "allowsActions": true }
+                  ]
+                }
+              ]
+            }
           },
           {
             "id": "fixture:provider-github-copilot",
@@ -37,7 +87,32 @@
             "launchable": true,
             "modelSelection": "supported",
             "models": { "status": "ok", "ageMs": 5000, "value": [{ "id": "fixture:copilot-model-large", "label": "Placeholder Copilot model", "efforts": ["low", "high"] }, { "id": "fixture:copilot-model-small", "label": "Placeholder Copilot small model" }] },
-            "efforts": { "status": "unsupported", "reason": "Effort levels are reported per model." }
+            "efforts": { "status": "unsupported", "reason": "Effort levels are reported per model." },
+            "modes": {
+              "status": "ok",
+              "ageMs": 5000,
+              "value": [
+                {
+                  "id": "agent",
+                  "label": "Agent",
+                  "options": [
+                    { "id": "standard", "label": "Standard", "description": "Answers and works in the chat.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "plan", "label": "Plan", "description": "Plans before it changes anything.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "autopilot", "label": "Autopilot", "description": "Keeps going without asking, for at most two continues.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "plan-autopilot", "label": "Plan then autopilot", "description": "Plans, then keeps going without asking.", "available": false, "unavailableReason": "Plan then autopilot did not finish in a headless turn.", "needsConfirmation": false, "isDefault": false, "allowsActions": true }
+                  ]
+                },
+                {
+                  "id": "permission",
+                  "label": "Permission",
+                  "options": [
+                    { "id": "default", "label": "Default", "description": "Reads only, with no writes, shell, web or memory.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": false, "allowsActions": true },
+                    { "id": "assisted", "label": "Assisted", "description": "A judge approves safe requests; writes stay in the scratch folder.", "available": true, "unavailableReason": null, "needsConfirmation": false, "isDefault": true, "allowsActions": true },
+                    { "id": "allow-all", "label": "Allow all", "description": "Runs everything without asking.", "available": true, "unavailableReason": null, "needsConfirmation": true, "isDefault": false, "allowsActions": false }
+                  ]
+                }
+              ]
+            }
           },
           {
             "id": "fixture:provider-github-copilot-unavailable",
@@ -46,7 +121,8 @@
             "launchable": false,
             "modelSelection": "unknown",
             "models": { "status": "unknown", "reason": "GitHub Copilot is not ready on this host, so its models are not listed." },
-            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." }
+            "efforts": { "status": "unsupported", "reason": "This provider exposes no effort setting." },
+            "modes": { "status": "unsupported", "reason": "GitHub Copilot is not ready on this host, so its modes are not listed." }
           }
         ]
       }

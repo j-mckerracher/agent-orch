@@ -184,10 +184,10 @@ pub struct ConversationEntry {
 
 /// The permission level a turn was started with and the argument profile it
 /// ran with (DPES-1105). A turn from before permission levels has none.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnPermission {
     pub level: PermissionLevel,
-    pub profile: &'static str,
+    pub profile: String,
 }
 
 /// One user message and the reply it produces.
@@ -1483,7 +1483,7 @@ mod tests {
                 "turn-new",
                 TurnPermission {
                     level: PermissionLevel::Auto,
-                    profile: "codex:auto:v1",
+                    profile: "codex:auto:v1".into(),
                 },
             )
             .unwrap();
@@ -1499,7 +1499,7 @@ mod tests {
             "turn-new",
             TurnPermission {
                 level: PermissionLevel::Full,
-                profile: "codex:full:v1",
+                profile: "codex:full:v1".into(),
             },
         );
         assert!(matches!(second, Err(ConversationError::TurnNotFound)));
@@ -1514,7 +1514,7 @@ mod tests {
             "no-such-turn",
             TurnPermission {
                 level: PermissionLevel::Restricted,
-                profile: "codex:restricted:v1",
+                profile: "codex:restricted:v1".into(),
             },
         );
         assert!(matches!(result, Err(ConversationError::TurnNotFound)));

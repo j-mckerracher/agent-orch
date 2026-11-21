@@ -12,6 +12,7 @@ use orchestrator_agents::copilot_adapter::parse_copilot_version;
 use orchestrator_agents::copilot_parser::CopilotParser;
 use orchestrator_agents::copilot_sign_in::{classify_failure, CopilotSignIn};
 use orchestrator_agents::copilot_usage::parse_usage;
+use orchestrator_agents::modes::{self, ModeRequest, ResolvedMode};
 use orchestrator_agents::workflow_agent::{WorkflowAgent, AGENT_ID};
 use orchestrator_agents::{
     provider_of, AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentLaunchRequest,
@@ -38,6 +39,19 @@ const FORBIDDEN: [&str; 15] = [
     "--continue",
 ];
 
+fn chat(level: PermissionLevel) -> ResolvedMode {
+    modes::resolve("github-copilot", &ModeRequest::Legacy(level)).unwrap()
+}
+
+fn extended() -> ResolvedMode {
+    ResolvedMode {
+        tier: PermissionLevel::Extended,
+        profile: String::new(),
+        permission: "",
+        flags: Vec::new(),
+    }
+}
+
 fn usage_path() -> PathBuf {
     PathBuf::from("/var/tmp/copilot-run/usage.json")
 }
@@ -62,7 +76,7 @@ fn conversation(prompt: &str) -> Vec<String> {
 }
 
 fn conversation_at(level: PermissionLevel, prompt: &str) -> Vec<String> {
-    CopilotAdapter::conversation_args(level, prompt, &usage_path(), &cwd_path(), false)
+    CopilotAdapter::conversation_args(&chat(level), prompt, &usage_path(), &cwd_path(), false)
         .expect("every level but Extended has a mapping")
 }
 
@@ -295,7 +309,7 @@ fn credit_cap_is_off_by_default_and_exactly_thirty_when_on() {
     }
 
     let chat_on = CopilotAdapter::conversation_args(
-        PermissionLevel::Auto,
+        &chat(PermissionLevel::Auto),
         "hi",
         &usage_path(),
         &cwd_path(),
@@ -332,7 +346,8 @@ fn copilot_conversation_argv_per_level_is_exact() {
         args.iter().map(String::as_str).collect()
     }
     let argv = |level| {
-        CopilotAdapter::conversation_args(level, "hi", &usage_path(), &cwd_path(), false).unwrap()
+        CopilotAdapter::conversation_args(&chat(level), "hi", &usage_path(), &cwd_path(), false)
+            .unwrap()
     };
 
     assert_eq!(
@@ -413,7 +428,7 @@ fn copilot_conversation_argv_per_level_is_exact() {
         ]
     );
     assert!(CopilotAdapter::conversation_args(
-        PermissionLevel::Extended,
+        &extended(),
         "hi",
         &usage_path(),
         &cwd_path(),
@@ -773,7 +788,7 @@ async fn the_child_gets_no_github_token_and_keeps_path_and_home() {
         git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
-            PermissionLevel::Restricted,
+            &chat(PermissionLevel::Restricted),
             "hi",
             &run.usage_file(),
             &run.cwd(),
@@ -830,7 +845,7 @@ async fn a_leading_dash_prompt_reaches_the_child_as_one_argument() {
     let run = CopilotRun::create(dir.path()).unwrap();
     let cwd = run.cwd();
     let args = CopilotAdapter::conversation_args(
-        PermissionLevel::Restricted,
+        &chat(PermissionLevel::Restricted),
         "--leading-dash",
         &run.usage_file(),
         &run.cwd(),
@@ -912,7 +927,7 @@ async fn a_replayed_completed_run_exits_completed_and_marks_sign_in_ready() {
         git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
-            PermissionLevel::Restricted,
+            &chat(PermissionLevel::Restricted),
             "hi",
             &run.usage_file(),
             &run.cwd(),
@@ -1331,7 +1346,7 @@ async fn a_replayed_bogus_model_run_exits_failed_with_the_message() {
         git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
-            PermissionLevel::Restricted,
+            &chat(PermissionLevel::Restricted),
             "hi",
             &run.usage_file(),
             &run.cwd(),
@@ -1368,7 +1383,7 @@ async fn cancelling_a_running_turn_reports_cancelled_not_completed() {
         git_guard: false,
         program,
         args: CopilotAdapter::conversation_args(
-            PermissionLevel::Restricted,
+            &chat(PermissionLevel::Restricted),
             "hi",
             &run.usage_file(),
             &run.cwd(),

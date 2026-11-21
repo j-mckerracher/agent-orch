@@ -54,7 +54,7 @@ fn turn(api: &DaemonApi, id: &str, opened: Opened, actions: &str) -> Vec<String>
             id,
             TurnPermission {
                 level: PermissionLevel::Restricted,
-                profile: "test-profile",
+                profile: "test-profile".into(),
             },
         )
         .unwrap();

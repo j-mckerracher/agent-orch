@@ -20,6 +20,7 @@ pub mod copilot_sign_in;
 pub mod copilot_usage;
 mod locate;
 pub mod mcp_wiring;
+pub mod modes;
 pub mod permission;
 pub mod pi_rpc_adapter;
 pub mod routing;

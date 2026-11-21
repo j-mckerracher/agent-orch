@@ -346,6 +346,8 @@ export interface ConversationTurnInfo {
   runtime: { name: string; version: string };
   /** The level the daemon reports the agent ran with. Null when none was recorded (DPES-1105). */
   permissionLevel?: PermissionLevel | null;
+  /** The chat mode each group ran with (DPES-1105). Null when none was recorded. */
+  mode?: ModeSelection | null;
   /** False when the turn ran a version the daemon has not verified (DPES-1106). */
   verified: boolean;
   /** The action block outcome of this turn's reply (DPES-1105). Absent when the daemon did not send it. */
@@ -448,8 +450,9 @@ export interface ConversationSource {
    * Derived: all targets send through `conversations.send`.
    * Rejects for `fixture:` ids. Fixture: simulated. `selection` is the model choice for this message (DPES-1105).
    * `permission` is the level the message runs at. It is sent only when the daemon advertises `permission_levels`.
+   * `mode` is the chat mode it runs in, sent only when the daemon advertises `chat_modes`. Never sent with `permission`.
    */
-  send(target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel): Promise<SendReceipt>;
+  send(target: ConversationTarget, text: string, selection?: ModelChoice, permission?: PermissionLevel, mode?: ModeSelection): Promise<SendReceipt>;
   /** `conversations.cancel` for a running turn. */
   cancel?(target: ConversationTarget, turnId: string): Promise<{ applied: boolean }>;
   /**
@@ -713,7 +716,8 @@ export interface ModelOption {
   defaultEffort?: string | null;
 }
 export interface ModelProvider {
-  chatCompatibility?: Partial<Record<PermissionLevel, { retryable: boolean; reason: string }>>;
+  /** Keyed by mode option id: why a mode cannot run with this agent yet (DPES-1105). */
+  modeCompatibility?: Partial<Record<string, { retryable: boolean; reason: string }>>;
   /** Derived: the daemon agent id. */
   id: string;
   name: string;
@@ -727,7 +731,31 @@ export interface ModelProvider {
   detail?: string;
   /** Adapter-wide efforts; per-model efforts are on each `ModelOption`. */
   efforts: Measured<string[]>;
+  /** The chat modes this agent offers (DPES-1105). Unsupported when the daemon predates `chat_modes`. */
+  modes: Measured<ModeGroup[]>;
 }
+
+/** One group of chat modes, such as permission or work. The daemon names it; the UI picks one option per group. */
+export interface ModeGroup {
+  id: string;
+  label: string;
+  options: ModeOption[];
+}
+export interface ModeOption {
+  id: string;
+  label: string;
+  description: string;
+  available: boolean;
+  unavailableReason: string | null;
+  /** Full access: the user confirms it before it applies, and it is never remembered (design O4). */
+  needsConfirmation: boolean;
+  isDefault: boolean;
+  /** Whether replies in this mode can propose actions. */
+  allowsActions: boolean;
+}
+/** The option chosen in each group, by group id. A group left out means the agent's default (DPES-1105). */
+export type ModeSelection = Record<string, string>;
+
 export interface ModelCatalog {
   providers: ModelProvider[];
 }

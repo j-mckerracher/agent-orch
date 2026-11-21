@@ -52,7 +52,7 @@ fn propose(
             turn,
             TurnPermission {
                 level: PermissionLevel::Restricted,
-                profile: "test-profile",
+                profile: "test-profile".into(),
             },
         )
         .unwrap();
@@ -302,7 +302,7 @@ fn coordinator_wake(api: &DaemonApi, code: &str, turn: &str, actions: &str) -> V
             turn,
             TurnPermission {
                 level: PermissionLevel::Restricted,
-                profile: "test-profile",
+                profile: "test-profile".into(),
             },
         )
         .unwrap();

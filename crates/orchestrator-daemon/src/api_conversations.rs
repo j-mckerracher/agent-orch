@@ -20,12 +20,14 @@
 //! store. A push stream is not provided; the global event journal requires a
 //! task id and is not extended here.
 
+use orchestrator_agents::modes::{self, ModeRequest};
 use orchestrator_core::contract::ModelSelection;
 use orchestrator_core::permission::PermissionLevel;
 use orchestrator_store::{
     ActionBlockOutcome, ConversationEntry, ConversationError, ConversationTarget, ConversationTurn,
     TurnState, TurnTrigger, MAX_CONVERSATION_MESSAGE_BYTES,
 };
+use std::collections::BTreeMap;
 
 use super::conversation_runtime::{Choice, RuntimeIdentity};
 use super::conversation_snapshot::{state_tag, task_title};
@@ -106,6 +108,10 @@ struct ConversationSendParams {
     /// idempotency fingerprint is unchanged.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     permission: Option<PermissionLevel>,
+    /// The chosen option per mode group (DPES-1105). Sent with no `permission`. An empty map
+    /// takes the routed agent's defaults.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mode: Option<BTreeMap<String, String>>,
 }
 
 #[derive(Deserialize)]
@@ -148,7 +154,13 @@ impl DaemonApi {
             .as_ref()
             .map(SelectionParam::to_choice)
             .transpose()?;
-        let level = request.permission.unwrap_or_default();
+        let mode = match (request.permission, request.mode.as_ref()) {
+            (Some(_), Some(_)) => return Err(RpcError::InvalidParams),
+            (Some(level), None) => ModeRequest::Legacy(level),
+            (None, Some(chosen)) => ModeRequest::Chosen(chosen.clone()),
+            // No field runs Restricted, as before modes.
+            (None, None) => ModeRequest::Legacy(PermissionLevel::Restricted),
+        };
         let key = request.idempotency_key.clone();
         self.conversations.prepare(choice.as_ref())?;
         // The idempotency record keeps references only, never the message text
@@ -171,7 +183,7 @@ impl DaemonApi {
                         &turn_id,
                         &request.text,
                         choice.as_ref(),
-                        level,
+                        mode,
                         actions,
                     )
                     .map_err(map_clear_error)?;
@@ -527,6 +539,12 @@ fn turn_json(turn: &ConversationTurn) -> Value {
         // levels, and for a turn the agent refused before it ran.
         "permission_level": turn.permission_level.map(PermissionLevel::as_str),
         "permission_profile": turn.permission_profile,
+        // The chosen option per group, decoded from the profile. Null when the
+        // profile names no mode this daemon offers.
+        "mode": turn
+            .permission_profile
+            .as_deref()
+            .and_then(modes::choices_of_profile),
         // What became of the turn's action block (DPES-1105). Null when it had none.
         "action_block": turn.action_block.map(ActionBlockOutcome::as_str),
         "trigger": turn.trigger.as_str(),
