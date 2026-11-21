@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::time::Instant;
 
+use orchestrator_agents::modes::{ModeRequest, ResolvedMode};
 use orchestrator_agents::{SelectionReason, UsageReport};
 use orchestrator_core::orchestrator_action::{
     parse_block, Action, ActionBlock, BlockScope, HeldBlock, ReplyFilter,
@@ -122,8 +123,9 @@ pub(crate) struct TurnRequest {
     pub identity: RuntimeIdentity,
     /// The choice the message was sent with, or `None` for the configured default.
     pub choice: Option<Choice>,
-    /// The permission level the message was sent with (DPES-1105).
-    pub level: PermissionLevel,
+    /// The work mode the turn runs in (DPES-1105), resolved for the agent that runs it.
+    /// `None` when no agent is selected: the turn then fails with the selection's own code.
+    pub mode: Option<ResolvedMode>,
     /// Recent completed exchanges, oldest first, bounded in count and size.
     /// Failed and canceled turns are not included.
     pub history: Vec<HistoryTurn>,
@@ -170,8 +172,8 @@ pub(crate) enum RuntimeFailure {
     Busy,
     /// The catalog refused the message's choice; the reason sets the code.
     Refused(SelectionReason),
-    /// The agent has no mapping for the message's permission level.
-    LevelUnsupported,
+    /// The agent has no mapping for the message's mode.
+    ModeUnsupported,
 }
 
 impl RuntimeFailure {
@@ -189,7 +191,7 @@ impl RuntimeFailure {
             Self::Timeout => "runtime_timeout",
             Self::Busy => "runtime_busy",
             Self::Refused(reason) => refusal_code(*reason),
-            Self::LevelUnsupported => PERMISSION_LEVEL_UNSUPPORTED,
+            Self::ModeUnsupported => PERMISSION_LEVEL_UNSUPPORTED,
         }
     }
 
@@ -233,14 +235,14 @@ pub(crate) trait ConversationRuntime: Send + Sync {
     /// The identity that would answer a message sent with `choice`.
     fn identity(&self, choice: Option<&Choice>) -> RuntimeIdentity;
 
-    /// The permission a turn at `level` runs with, recorded on the turn before it
-    /// launches. `Err` refuses the level: the turn fails with that code and no
-    /// agent runs. The default records nothing.
+    /// The mode a turn with `mode` runs in, resolved for the agent `choice` selects, and
+    /// recorded on the turn before it launches. `Err` refuses the mode: the turn fails with
+    /// that code and no agent runs. The default resolves nothing.
     fn permission(
         &self,
         _choice: Option<&Choice>,
-        _level: PermissionLevel,
-    ) -> Result<Option<TurnPermission>, RuntimeFailure> {
+        _mode: &ModeRequest,
+    ) -> Result<Option<ResolvedMode>, RuntimeFailure> {
         Ok(None)
     }
 
@@ -869,8 +871,8 @@ impl ConversationService {
 
     /// Persist a message and hand it to the runtime. A runtime that cannot
     /// answer fails the turn, not the call: the message stays in the transcript.
-    /// A level the agent refuses fails the turn with its code and no agent runs.
-    /// The level is recorded on the turn only once the agent has started, so a
+    /// A mode the agent refuses fails the turn with its code and no agent runs.
+    /// The mode is recorded on the turn only once the agent has started, so a
     /// turn that never launched records none. `actions` is the session's
     /// negotiated `orchestrator_actions`; it counts only at `Restricted`
     /// (`turn_actions`).
@@ -883,10 +885,10 @@ impl ConversationService {
         turn_id: &str,
         text: &str,
         choice: Option<&Choice>,
-        level: PermissionLevel,
+        mode: ModeRequest,
         negotiated: bool,
     ) -> Result<BegunTurn, ConversationError> {
-        self.start_as(target, turn_id, text, choice, level, negotiated, None, None)
+        self.start_as(target, turn_id, text, choice, mode, negotiated, None, None)
     }
 
     /// Starts a wake turn: Restricted always, the daemon's default model choice, actions
@@ -908,7 +910,7 @@ impl ConversationService {
             turn_id,
             &text,
             None,
-            PermissionLevel::Restricted,
+            ModeRequest::Legacy(PermissionLevel::Restricted),
             true,
             Some(brief),
             evidence,
@@ -939,7 +941,7 @@ impl ConversationService {
             turn_id,
             text,
             None,
-            PermissionLevel::Restricted,
+            ModeRequest::Legacy(PermissionLevel::Restricted),
             negotiated,
             None,
             Some(&evidence),
@@ -957,24 +959,35 @@ impl ConversationService {
         turn_id: &str,
         text: &str,
         choice: Option<&Choice>,
-        level: PermissionLevel,
+        mode: ModeRequest,
         negotiated: bool,
         wake: Option<&WakeBrief>,
         evidence: Option<&Evidence>,
     ) -> Result<BegunTurn, ConversationError> {
-        let level = if wake.is_some() || evidence.is_some() {
-            PermissionLevel::Restricted
+        let mode = if wake.is_some() || evidence.is_some() {
+            ModeRequest::Legacy(PermissionLevel::Restricted)
         } else {
-            level
+            mode
         };
         let choice = if evidence.is_some() { None } else { choice };
         let trigger = wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake);
         // A project coordinator acts like any orchestrator conversation (DPES-1108 phase 7); its
         // block is held to its own project when the turn completes.
-        let actions = turn_actions(negotiated, level);
         let identity = self.runtime.identity(choice);
         let store = &self.shared.store;
-        let permission = self.runtime.permission(choice, level);
+        let resolved = self.runtime.permission(choice, &mode);
+        // Only a turn that launches can carry actions, and only a resolved mode launches.
+        let actions = match &resolved {
+            Ok(Some(resolved)) => turn_actions(negotiated, resolved.tier),
+            _ => false,
+        };
+        let record = match &resolved {
+            Ok(Some(resolved)) => Some(TurnPermission {
+                level: resolved.tier,
+                profile: resolved.profile.clone(),
+            }),
+            _ => None,
+        };
         let begin = || {
             store.begin_conversation_turn_as(
                 target,
@@ -1005,16 +1018,15 @@ impl ConversationService {
         let reads_report = evidence.is_some_and(|evidence| evidence.is_report);
         let unmarked = reads_report && store.mark_turn_read_report(turn_id).is_err();
         let block = evidence.map(|evidence| evidence.block.as_str());
-        let failure = match permission {
+        let failure = match resolved {
             _ if unmarked => Some(RuntimeFailure::Failed),
             Err(failure) => Some(failure),
-            Ok(permission) => self
-                .launch(
-                    &identity, choice, level, target, turn_id, text, actions, wake, block,
+            Ok(launched) => {
+                self.launch(
+                    &identity, choice, launched, target, turn_id, text, actions, wake, block,
                 )
-                .or_else(|| {
-                    permission.and_then(|permission| self.record_launched(turn_id, permission))
-                }),
+                .or_else(|| record.and_then(|permission| self.record_launched(turn_id, permission)))
+            }
         };
         if let Some(failure) = failure {
             store.finish_conversation_turn_with_detail(
@@ -1056,7 +1068,7 @@ impl ConversationService {
         &self,
         identity: &RuntimeIdentity,
         choice: Option<&Choice>,
-        level: PermissionLevel,
+        mode: Option<ResolvedMode>,
         target: &ConversationTarget,
         turn_id: &str,
         text: &str,
@@ -1067,12 +1079,16 @@ impl ConversationService {
         if let Some(failure) = self.pin_failure(choice) {
             return Some(failure);
         }
+        // Without a mode no agent runs, so the tier below only shapes the turn's record.
+        let tier = mode
+            .as_ref()
+            .map_or(PermissionLevel::Restricted, |mode| mode.tier);
         let request = TurnRequest {
             target: target.clone(),
             text: text.to_owned(),
             identity: identity.clone(),
             choice: choice.cloned(),
-            level,
+            mode,
             history: self.history(target, turn_id),
             context: Some({
                 let snapshot = build_snapshot_from(
@@ -1097,7 +1113,7 @@ impl ConversationService {
             }),
             actions,
             wake: wake.cloned(),
-            mcp: self.mcp_view(level, wake.is_some(), relay.is_some()),
+            mcp: self.mcp_view(tier, wake.is_some(), relay.is_some()),
             charter: match target {
                 ConversationTarget::Project(id) => {
                     Some(coordinator_charter(&self.shared.store, id))
@@ -1110,7 +1126,7 @@ impl ConversationService {
             turn_id: turn_id.to_owned(),
             target: target.clone(),
             actions,
-            level,
+            level: tier,
             trigger: wake.map_or(TurnTrigger::User, |_| TurnTrigger::Wake),
             filter: Arc::new(Mutex::new(ReplyFilter::default())),
         };

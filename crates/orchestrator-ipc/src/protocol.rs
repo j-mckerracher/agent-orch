@@ -53,6 +53,10 @@ pub enum Capability {
     /// A permission level chosen for one `conversations.send` (DPES-1105). Not
     /// advertised by an older daemon, which runs every message read-only.
     PermissionLevels,
+    /// A native work mode chosen for one `conversations.send` (DPES-1105), with
+    /// `mode` on the send and `modes` in the catalog. Not advertised by an older
+    /// daemon, which takes only `permission`.
+    ChatModes,
     /// A completed reply may end in one `mcao-actions` block that becomes
     /// pending proposals (DPES-1105). Not advertised by an older daemon, which
     /// never parses a reply.
@@ -77,7 +81,7 @@ pub enum Capability {
 }
 
 impl Capability {
-    pub const ALL: [Self; 24] = [
+    pub const ALL: [Self; 25] = [
         Self::Health,
         Self::Projects,
         Self::Tasks,
@@ -96,6 +100,7 @@ impl Capability {
         Self::ConversationSelection,
         Self::ProjectConversations,
         Self::PermissionLevels,
+        Self::ChatModes,
         Self::OrchestratorActions,
         Self::Settings,
         Self::Monitoring,
@@ -124,6 +129,7 @@ impl Capability {
             Self::ConversationSelection => "conversation_selection",
             Self::ProjectConversations => "project_conversations",
             Self::PermissionLevels => "permission_levels",
+            Self::ChatModes => "chat_modes",
             Self::OrchestratorActions => "orchestrator_actions",
             Self::Settings => "settings",
             Self::Monitoring => "monitoring",

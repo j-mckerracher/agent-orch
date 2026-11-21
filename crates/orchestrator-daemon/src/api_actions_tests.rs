@@ -8,6 +8,7 @@ use super::conversation_agent::build_prompt;
 use super::conversation_runtime::{turn_actions, RuntimeIdentity, TurnRequest};
 use super::workstreams::{ReviseObjectiveParams, UpdateParams};
 use super::*;
+use orchestrator_agents::modes::{self, ModeRequest};
 
 const CREATE: &str = r#"{"kind": "workstream.create", "ref": "w1", "title": "Alpha"}"#;
 const PLAN: &str = r#"{"kind": "objective.add", "workstream_ref": "w1", "title": "Plan"}"#;
@@ -552,7 +553,7 @@ fn a_turn_above_auto_never_gets_the_block_format() {
                 version: "0.0.0".into(),
             },
             choice: None,
-            level,
+            mode: modes::resolve("codex", &ModeRequest::Legacy(level)),
             history: Vec::new(),
             context: None,
             actions,

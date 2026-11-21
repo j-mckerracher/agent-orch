@@ -28,7 +28,7 @@
 //! daemon takes its request gate, because reading a catalog can take a second.
 //! [`ConversationRuntime::identity`] only reads the result.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -37,18 +37,15 @@ use std::time::{Duration, Instant};
 
 use orchestrator_agents::cli_compat::{CliHelp, CompatibilityError, Executable};
 use orchestrator_agents::copilot_adapter::parse_copilot_version;
-use orchestrator_agents::modes::{self, ModeRequest};
+use orchestrator_agents::modes::{self, ModeRequest, ResolvedMode};
 use orchestrator_agents::{
     AgentAdapter, AgentCatalog, AgentError, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest,
     CatalogState, ClaudeCodeAdapter, CodexAdapter, CopilotAdapter, CopilotRun, CopilotSignIn,
     McpWiring, SelectionReason, SignInState, COPILOT_PINNED_VERSION, MCP_TOOLS,
 };
-use orchestrator_core::permission::PermissionLevel;
 use orchestrator_ipc::RpcError;
 use orchestrator_runtime::command_line::windows_command_line_units;
-use orchestrator_store::{
-    ConversationTarget, SqliteStore, TurnPermission, WakeKind, WorkstreamStoreError,
-};
+use orchestrator_store::{ConversationTarget, SqliteStore, WakeKind, WorkstreamStoreError};
 use uuid::Uuid;
 
 use super::conversation_orphans as orphans;
@@ -752,24 +749,20 @@ impl ConversationRuntime for AgentRuntime {
         matches!(self.current(choice), Some(Selection::Ready(_)))
     }
 
-    /// The profile the selected agent runs `level` with. A level with no
-    /// mapping for that agent is refused before anything launches.
+    /// The mode the selected agent runs `mode` with. A mode with no mapping for that
+    /// agent is refused before anything launches.
     fn permission(
         &self,
         choice: Option<&Choice>,
-        level: PermissionLevel,
-    ) -> Result<Option<TurnPermission>, RuntimeFailure> {
+        mode: &ModeRequest,
+    ) -> Result<Option<ResolvedMode>, RuntimeFailure> {
         let Some(Selection::Ready(selected)) = self.current(choice) else {
             // No selected agent: the turn fails with the selection's own code.
             return Ok(None);
         };
-        match modes::resolve(selected.agent, &ModeRequest::Legacy(level)) {
-            Some(mode) => Ok(Some(TurnPermission {
-                level: mode.tier,
-                profile: mode.profile,
-            })),
-            None => Err(RuntimeFailure::LevelUnsupported),
-        }
+        modes::resolve(selected.agent, mode)
+            .map(Some)
+            .ok_or(RuntimeFailure::ModeUnsupported)
     }
 
     fn prepare(&self, choice: Option<&Choice>) -> Result<(), RpcError> {
@@ -844,6 +837,7 @@ impl ConversationRuntime for AgentRuntime {
         {
             return Err(RuntimeFailure::RuntimeChanged);
         }
+        let mode = request.mode.clone().ok_or(RuntimeFailure::Unavailable)?;
         let slot = Slot::take(&self.running).ok_or(RuntimeFailure::Busy)?;
         std::fs::create_dir_all(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
         // Before the prompt, so its data line names the tools only when a server runs.
@@ -861,8 +855,6 @@ impl ConversationRuntime for AgentRuntime {
             // empty and its usage file sits beside it, never in a repository.
             let run = CopilotRun::create(&self.exec.data_dir.join(COPILOT_RUNS_DIR))
                 .map_err(|_| RuntimeFailure::Failed)?;
-            let mode = modes::resolve(GITHUB_COPILOT, &ModeRequest::Legacy(request.level))
-                .ok_or(RuntimeFailure::LevelUnsupported)?;
             let mut args = CopilotAdapter::conversation_args(
                 &mode,
                 &prompt.joined(),
@@ -870,7 +862,7 @@ impl ConversationRuntime for AgentRuntime {
                 &run.cwd(),
                 self.exec.copilot_credit_cap,
             )
-            .ok_or(RuntimeFailure::LevelUnsupported)?;
+            .ok_or(RuntimeFailure::ModeUnsupported)?;
             args.extend(CopilotAdapter::selection_args(
                 selected.model.as_deref(),
                 selected.effort.as_deref(),
@@ -889,11 +881,11 @@ impl ConversationRuntime for AgentRuntime {
                 TurnDir::create(&self.config.scratch).map_err(|_| RuntimeFailure::Failed)?;
             let args = conversation_args(
                 &selected,
-                request.level,
+                &mode,
                 &prompt,
                 mcp.as_ref().map(|(_, wiring)| wiring),
             )
-            .ok_or(RuntimeFailure::LevelUnsupported)?;
+            .ok_or(RuntimeFailure::ModeUnsupported)?;
             let launch = AgentLaunchRequest {
                 git_guard: false,
                 program: selected.program.clone(),
@@ -1034,17 +1026,16 @@ fn copilot_failure(sign_in: &CopilotSignIn) -> RuntimeFailure {
 /// so they lead its prompt.
 fn conversation_args(
     selected: &Selected,
-    level: PermissionLevel,
+    mode: &ResolvedMode,
     prompt: &Prompt,
     mcp: Option<&McpWiring>,
 ) -> Option<Vec<String>> {
     let (model, effort) = (selected.model.as_deref(), selected.effort.as_deref());
-    let mode = modes::resolve(selected.agent, &ModeRequest::Legacy(level))?;
     if selected.agent == CODEX {
-        CodexAdapter::args_for_conversation(&mode, &prompt.joined(), model, effort)
+        CodexAdapter::args_for_conversation(mode, &prompt.joined(), model, effort)
     } else {
         ClaudeCodeAdapter::args_for_conversation_mcp(
-            &mode,
+            mode,
             &prompt.content,
             Some(prompt.instructions),
             model,
@@ -1054,53 +1045,56 @@ fn conversation_args(
     }
 }
 
-/// Provider visibility is independent of the current level and model choice.
-/// A turn still validates its complete argv at the requested level.
+/// Provider visibility is independent of the current mode and model choice.
+/// A turn still validates its complete argv at the mode it runs with. Each
+/// permission option is checked and keyed by its id.
 pub(super) async fn check_chat_provider(
     config: &ExecutorConfig,
     agent: &str,
-) -> Option<Vec<(PermissionLevel, Result<(), CompatibilityError>)>> {
+) -> Option<Vec<(&'static str, Result<(), CompatibilityError>)>> {
     let program = config.locate_agent(agent)?;
     let help = match Executable::read(&program) {
         Ok(executable) => config.help_for(agent, &program, &executable).await,
         Err(_) => None,
     };
-    let mut levels = Vec::new();
-    for level in [
-        PermissionLevel::Restricted,
-        PermissionLevel::Auto,
-        PermissionLevel::Full,
-    ] {
-        let Some(mode) = modes::resolve(agent, &ModeRequest::Legacy(level)) else {
+    let mut options = Vec::new();
+    for group in modes::groups(agent) {
+        if group.id != modes::PERMISSION_GROUP {
             continue;
-        };
-        let args = match agent {
-            CODEX => CodexAdapter::args_for_conversation(&mode, "prompt", None, None),
-            CLAUDE => ClaudeCodeAdapter::args_for_conversation(
-                &mode,
-                "prompt",
-                Some("instructions"),
-                None,
-                None,
-            ),
-            GITHUB_COPILOT => CopilotAdapter::conversation_args(
-                &mode,
-                "prompt",
-                Path::new("usage.json"),
-                Path::new("."),
-                config.copilot_credit_cap,
-            ),
-            _ => None,
-        };
-        if let Some(args) = args {
-            let result = help
-                .as_ref()
-                .ok_or(CompatibilityError::Unconfirmed)
-                .and_then(|help| help.check(agent, &args));
-            levels.push((level, result));
+        }
+        for option in group.options.iter().filter(|option| option.available) {
+            let chosen = BTreeMap::from([(group.id.to_owned(), option.id.to_owned())]);
+            let Some(mode) = modes::resolve(agent, &ModeRequest::Chosen(chosen)) else {
+                continue;
+            };
+            let args = match agent {
+                CODEX => CodexAdapter::args_for_conversation(&mode, "prompt", None, None),
+                CLAUDE => ClaudeCodeAdapter::args_for_conversation(
+                    &mode,
+                    "prompt",
+                    Some("instructions"),
+                    None,
+                    None,
+                ),
+                GITHUB_COPILOT => CopilotAdapter::conversation_args(
+                    &mode,
+                    "prompt",
+                    Path::new("usage.json"),
+                    Path::new("."),
+                    config.copilot_credit_cap,
+                ),
+                _ => None,
+            };
+            if let Some(args) = args {
+                let result = help
+                    .as_ref()
+                    .ok_or(CompatibilityError::Unconfirmed)
+                    .and_then(|help| help.check(agent, &args));
+                options.push((option.id, result));
+            }
         }
     }
-    Some(levels)
+    Some(options)
 }
 
 /// What `--version` of an agent program showed.
@@ -1914,6 +1908,7 @@ impl WorkstreamDirectory for StoreWorkstreams {
 mod tests {
     use super::*;
     use crate::api::conversation_runtime::{WakeBrief, QUIET_TOKEN};
+    use orchestrator_core::permission::PermissionLevel;
     use orchestrator_store::{DispatchDefaults, SettingsPatch};
 
     fn request(text: &str, history: Vec<HistoryTurn>) -> TurnRequest {
@@ -1925,7 +1920,7 @@ mod tests {
                 version: "0.0.0".into(),
             },
             choice: None,
-            level: PermissionLevel::Restricted,
+            mode: None,
             history,
             context: None,
             actions: false,
@@ -2185,21 +2180,23 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let selected = claude_selected(dir.path(), CLAUDE, None);
         let prompt = build_prompt(&request("hello", Vec::new()));
-        let level = PermissionLevel::Restricted;
-        let plain = conversation_args(&selected, level, &prompt, None).unwrap();
+        let mode = |agent| {
+            modes::resolve(agent, &ModeRequest::Legacy(PermissionLevel::Restricted)).unwrap()
+        };
+        let plain = conversation_args(&selected, &mode(CLAUDE), &prompt, None).unwrap();
         assert!(!plain.iter().any(|arg| arg == "--mcp-config"));
         let wiring = McpWiring {
             command: "/bin/daemon".into(),
             args: vec!["--mcp-relay".into()],
             env: vec![("MCAO_MCP_SECRET".into(), "x".into())],
         };
-        let with = conversation_args(&selected, level, &prompt, Some(&wiring)).unwrap();
+        let with = conversation_args(&selected, &mode(CLAUDE), &prompt, Some(&wiring)).unwrap();
         assert!(with.iter().any(|arg| arg == "--mcp-config"));
         // Codex never takes the wiring.
         let codex = claude_selected(dir.path(), CODEX, None);
         assert_eq!(
-            conversation_args(&codex, level, &prompt, Some(&wiring)),
-            conversation_args(&codex, level, &prompt, None)
+            conversation_args(&codex, &mode(CODEX), &prompt, Some(&wiring)),
+            conversation_args(&codex, &mode(CODEX), &prompt, None)
         );
     }
 

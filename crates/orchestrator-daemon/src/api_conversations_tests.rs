@@ -515,6 +515,18 @@ fn an_unknown_permission_is_a_bad_request_and_records_nothing() {
 }
 
 #[test]
+fn a_mode_and_a_permission_together_are_a_bad_request_and_record_nothing() {
+    let directory = tempfile::tempdir().unwrap();
+    let api = without_agents(directory.path());
+    let result = api.dispatch(
+        "conversations.send",
+        json!({"target": global(), "text": "hi", "idempotency_key": "k", "permission": "auto", "mode": {}}),
+    );
+    assert!(matches!(result, Err(RpcError::InvalidParams)), "{result:?}");
+    assert_eq!(kinds(&get(&api, global(), 0)), Vec::<String>::new());
+}
+
+#[test]
 fn a_send_without_a_choice_serializes_as_it_did_before_selection_existed() {
     let request = ConversationSendParams {
         target: TargetParam::Global {},
@@ -522,6 +534,7 @@ fn a_send_without_a_choice_serializes_as_it_did_before_selection_existed() {
         idempotency_key: "k".to_owned(),
         selection: None,
         permission: None,
+        mode: None,
     };
     // The idempotency fingerprint hashes this encoding, so an absent choice or level must add no key.
     assert_eq!(
@@ -538,6 +551,7 @@ fn a_chosen_permission_is_part_of_the_encoding_the_idempotency_fingerprint_hashe
         idempotency_key: "k".to_owned(),
         selection: None,
         permission: Some(PermissionLevel::Auto),
+        mode: None,
     };
     // The same key with another level is a different request, so it conflicts.
     assert_eq!(

@@ -3,6 +3,7 @@
 //! that records what each turn was given and never starts an agent. The tasks are scouts made
 //! straight in the store, so no executor launches them.
 
+use orchestrator_agents::modes::{self, ModeRequest, ResolvedMode};
 use orchestrator_core::task::Attempt;
 use orchestrator_diagnostics::Diagnostics;
 use orchestrator_store::{ConversationTarget, LineageRelation, ProposalState, TurnOutcome};
@@ -62,6 +63,14 @@ impl TurnControl for NoControl {
 }
 
 impl ConversationRuntime for RelayRuntime {
+    fn permission(
+        &self,
+        _choice: Option<&Choice>,
+        mode: &ModeRequest,
+    ) -> Result<Option<ResolvedMode>, RuntimeFailure> {
+        Ok(modes::resolve("codex", mode))
+    }
+
     fn identity(&self, _choice: Option<&Choice>) -> RuntimeIdentity {
         RuntimeIdentity {
             name: "test-runtime".into(),
@@ -76,7 +85,7 @@ impl ConversationRuntime for RelayRuntime {
     ) -> Result<Box<dyn TurnControl>, RuntimeFailure> {
         self.seen.lock().unwrap().push(Seen {
             text: request.text.clone(),
-            level: request.level,
+            level: request.mode.as_ref().unwrap().tier,
             choice: request.choice.clone(),
             context: request.context.clone(),
             actions: request.actions,

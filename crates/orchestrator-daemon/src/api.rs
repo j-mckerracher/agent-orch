@@ -417,6 +417,7 @@ impl RpcHandler for DaemonApi {
             Capability::ConversationSelection,
             Capability::ProjectConversations,
             Capability::PermissionLevels,
+            Capability::ChatModes,
             Capability::OrchestratorActions,
             Capability::Settings,
             Capability::Monitoring,
@@ -1168,11 +1169,19 @@ impl DaemonApi {
             });
         let sign_in = self.config.copilot_sign_in.snapshot();
         Ok(json!([
-            with_chat_compatibility(agent_entry("codex", true, codex), codex_chat),
-            with_chat_compatibility(agent_entry("claude-code", true, claude), claude_chat),
+            with_chat_compatibility(agent_entry("codex", true, codex), "codex", codex_chat),
+            with_chat_compatibility(
+                agent_entry("claude-code", true, claude),
+                "claude-code",
+                claude_chat,
+            ),
             // The daemon has no stdin RPC launcher for Pi yet.
             agent_entry("pi", false, pi),
-            with_chat_compatibility(copilot_entry(copilot, &sign_in), copilot_chat),
+            with_chat_compatibility(
+                copilot_entry(copilot, &sign_in),
+                COPILOT_AGENT,
+                copilot_chat
+            ),
         ]))
     }
 
@@ -2113,24 +2122,27 @@ async fn probe<T>(
     }
 }
 
+/// Records the failed permission options: `mode_compatibility` by option id, and
+/// `chat_compatibility` by the level each option replaced, kept for one release.
 fn with_chat_compatibility(
     mut entry: Value,
+    agent: &str,
     result: Option<
         Vec<(
-            PermissionLevel,
+            &'static str,
             Result<(), orchestrator_agents::cli_compat::CompatibilityError>,
         )>,
     >,
 ) -> Value {
-    if let Some(levels) = result {
+    if let Some(options) = result {
         use orchestrator_agents::cli_compat::CompatibilityError;
         entry["installed"] = json!(true);
-        let failures: serde_json::Map<String, Value> = levels
+        let failures: serde_json::Map<String, Value> = options
             .into_iter()
-            .filter_map(|(level, answer)| {
+            .filter_map(|(id, answer)| {
                 let error = answer.err()?;
                 Some((
-                    level.as_str().to_owned(),
+                    id.to_owned(),
                     json!({
                         "retryable": error == CompatibilityError::Unconfirmed,
                         "reason": error.to_string(),
@@ -2138,8 +2150,22 @@ fn with_chat_compatibility(
                 ))
             })
             .collect();
+        let levels: serde_json::Map<String, Value> = [
+            PermissionLevel::Restricted,
+            PermissionLevel::Auto,
+            PermissionLevel::Full,
+        ]
+        .into_iter()
+        .filter_map(|level| {
+            let id = orchestrator_agents::modes::legacy_option(agent, level)?;
+            Some((level.as_str().to_owned(), failures.get(id)?.clone()))
+        })
+        .collect();
         if !failures.is_empty() {
-            entry["chat_compatibility"] = json!(failures);
+            entry["mode_compatibility"] = json!(failures);
+        }
+        if !levels.is_empty() {
+            entry["chat_compatibility"] = json!(levels);
         }
     }
     entry

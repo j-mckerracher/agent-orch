@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 use orchestrator_core::permission::PermissionLevel;
 use serde::Serialize;
 
-const PERMISSION_GROUP: &str = "permission";
+pub const PERMISSION_GROUP: &str = "permission";
 const AGENTS: [&str; 3] = ["claude-code", "github-copilot", "codex"];
 
 /// A group from which a send selects exactly one option.
@@ -140,10 +140,10 @@ pub fn choices_of_profile(profile: &str) -> Option<BTreeMap<String, String>> {
     })
 }
 
-/// The option a request for one permission level meant before modes existed.
+/// The option id a request for one permission level meant before modes existed.
 /// Codex full access is the one exception to its argv: legacy Full had no sandbox
 /// flag, so the user's config decided; this option pins `danger-full-access`.
-fn legacy_option(agent: &str, level: PermissionLevel) -> Option<&'static str> {
+pub fn legacy_option(agent: &str, level: PermissionLevel) -> Option<&'static str> {
     use PermissionLevel::{Auto, Full, Restricted};
     Some(match (agent, level) {
         ("claude-code", Restricted) => "dontAsk",

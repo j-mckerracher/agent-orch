@@ -4,6 +4,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use orchestrator_agents::modes::{self, ModeRequest, ResolvedMode};
 use orchestrator_agents::UsageReport;
 use orchestrator_core::contract::{
     AutonomyPolicy, DeliveryPolicy, TaskContract, TaskKind, VerificationPolicy,
@@ -104,6 +105,14 @@ impl Probe {
 }
 
 impl ConversationRuntime for Probe {
+    fn permission(
+        &self,
+        _choice: Option<&Choice>,
+        mode: &ModeRequest,
+    ) -> Result<Option<ResolvedMode>, RuntimeFailure> {
+        Ok(modes::resolve("codex", mode))
+    }
+
     fn identity(&self, _choice: Option<&Choice>) -> RuntimeIdentity {
         self.identity.clone()
     }
@@ -122,7 +131,7 @@ impl ConversationRuntime for Probe {
         sink: ReplySink,
     ) -> Result<Box<dyn TurnControl>, RuntimeFailure> {
         self.seen.lock().unwrap().push(Seen {
-            level: request.level,
+            level: request.mode.as_ref().unwrap().tier,
             wake: request.wake.is_some(),
             actions: request.actions,
             context: request.context.clone().unwrap_or_default(),
@@ -844,7 +853,7 @@ fn a_wake_turn_always_runs_at_restricted() {
             "u-1",
             "hello",
             None,
-            PermissionLevel::Full,
+            ModeRequest::Legacy(PermissionLevel::Full),
             true,
         )
         .unwrap();

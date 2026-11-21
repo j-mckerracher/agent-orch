@@ -1671,6 +1671,75 @@ fn each_codex_level_launches_with_its_exact_flags_and_records_it() {
 }
 
 #[test]
+fn a_routed_mode_takes_the_agents_defaults_and_a_chosen_option_its_flags() {
+    let layout = Layout::new();
+    let log = layout.data.join("agent.log");
+    let daemon = start(&layout, &[("FAKE_AGENT_LOG", log.to_str().unwrap())]);
+    let mut chat = Chat::open(&layout);
+
+    // No selection and an empty mode: the routed agent's defaults, which for Codex is Auto.
+    let sent = chat.send_params(json!({
+        "target": global(),
+        "text": "first",
+        "idempotency_key": "m-1",
+        "mode": {},
+    }));
+    assert_eq!(sent["turn"]["permission_level"], "auto", "{sent}");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(
+        page["turn"]["permission_profile"], "codex:auto:v2",
+        "{page}"
+    );
+    assert_eq!(
+        page["turn"]["mode"],
+        json!({"permission": "auto", "work": "standard"}),
+        "{page}"
+    );
+
+    let sent = chat.send_params(json!({
+        "target": global(),
+        "text": "next",
+        "idempotency_key": "m-2",
+        "mode": {"permission": "read-only"},
+    }));
+    assert_eq!(sent["turn"]["permission_level"], "restricted", "{sent}");
+    let page = chat.settled(&global());
+    assert_eq!(page["turn"]["state"], "completed", "{page}");
+    assert_eq!(
+        page["turn"]["permission_profile"], "codex:read-only:v1",
+        "{page}"
+    );
+
+    // Codex plan is not available through `codex exec`, so the turn fails before anything launches.
+    let sent = chat.send_params(json!({
+        "target": global(),
+        "text": "refused",
+        "idempotency_key": "m-3",
+        "mode": {"work": "plan"},
+    }));
+    assert_eq!(sent["turn"]["state"], "failed", "{sent}");
+    assert_eq!(
+        sent["turn"]["error_code"], "permission_level_unsupported",
+        "{sent}"
+    );
+
+    let lines = launch_lines(&log);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert!(
+        lines[0].contains(r#""exec", "--json", "--approve-for-me", "--skip-git-repo-check""#),
+        "{}",
+        lines[0]
+    );
+    assert!(
+        lines[1].contains(r#""exec", "--json", "--sandbox", "read-only""#),
+        "{}",
+        lines[1]
+    );
+    stop(&layout, daemon, chat);
+}
+
+#[test]
 fn extended_is_refused_for_codex_as_a_failed_turn_that_launches_nothing() {
     let layout = Layout::new();
     let log = layout.data.join("agent.log");
