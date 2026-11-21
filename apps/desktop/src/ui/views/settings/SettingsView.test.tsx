@@ -1,10 +1,10 @@
-import { act, cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../../../daemon/errors";
 import { ALL_CAPABILITIES, type LoadHoldWire, type LoadMeterWire, type SettingsWire } from "../../../daemon/types";
 import { createFixtureSurfaces } from "../../../sources/surfaces/fixtures";
-import { observation, okResult } from "../../../sources/surfaces/result";
+import { notOk, observation, okResult } from "../../../sources/surfaces/result";
 import type { LoadReading, ModelCatalog, ModelProvider, Provenance, SettingsSnapshot, SettingsSource } from "../../../sources/surfaces/types";
 import { FakeDaemon, until } from "../../../test/fakeDaemon";
 import { createServices } from "../../createServices";
@@ -262,6 +262,52 @@ describe("Agent dispatch defaults", () => {
     expect(within(overrides).getByLabelText("Claude Code model")).not.toHaveAccessibleDescription();
   });
 
+  it("Refresh models shows pending, then says the list was refreshed", async () => {
+    const { services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: null, providers: {} } });
+    const catalog = vi.mocked(services.surfaces.models.catalog);
+    const user = userEvent.setup();
+    page(services, "agents");
+    await screen.findByLabelText("Default provider");
+    let finish: (() => void) | undefined;
+    catalog.mockImplementationOnce(
+      () => new Promise((resolve) => { finish = () => resolve(okResult(services.surfaces.models.provenance, DISPATCH_CATALOG, observation(Date.now()))); }),
+    );
+    await user.click(screen.getByRole("button", { name: "Refresh models" }));
+    expect(screen.getByRole("button", { name: "Refresh models" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Refreshing the model list…")).toBeInTheDocument();
+    await act(async () => finish?.());
+    expect(await screen.findByText("Model list refreshed.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Refresh models" })).not.toHaveAttribute("aria-busy");
+  });
+
+  it("Refresh models says why the list was not refreshed in an alert, and Retry reads it again", async () => {
+    const { services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: null, providers: {} } });
+    const catalog = vi.mocked(services.surfaces.models.catalog);
+    const user = userEvent.setup();
+    page(services, "agents");
+    await screen.findByLabelText("Default provider");
+    catalog.mockResolvedValueOnce(notOk<ModelCatalog>(services.surfaces.models.provenance, "unavailable", "The daemon did not answer.", observation(Date.now())));
+    await user.click(screen.getByRole("button", { name: "Refresh models" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The model list could not be refreshed. The daemon did not answer.");
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Model list refreshed.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("Clear defaults and Clear choice say the change is not saved until Save changes", async () => {
+    const { fake, services } = await dispatchPage({ ...OPEN, dispatch_defaults: { default_agent: "codex", providers: { retired: { model: "m" } } } });
+    const user = userEvent.setup();
+    page(services, "agents");
+    await user.click(await screen.findByRole("button", { name: "Clear retired choice" }));
+    expect(await screen.findByText("Cleared. Save changes to apply.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Clear retired choice" })).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Clear defaults" }));
+    expect(screen.getByText("Clearing…")).toBeInTheDocument();
+    expect(await screen.findByText("Cleared. Save changes to apply.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")).toHaveLength(0);
+  });
+
   it("does not allow a token-only session to save dispatch defaults", async () => {
     const fake = new FakeDaemon();
     fake.approver = false;
@@ -292,6 +338,53 @@ describe("Settings page, live", () => {
     expect(await within(region).findByText("Repository registered.")).toBeInTheDocument();
     expect(await within(region).findByRole("list", { name: "Registered repositories" })).toHaveTextContent("/work/new-repo");
     expect(fake.callsTo("projects.register")[0]?.params).toEqual({ path: "/work/new-repo" });
+  });
+
+  it("Register repository shows pending on its button, then says the repository was registered", async () => {
+    const { services } = await connected(OPEN, (daemon) => daemon.delayNext("projects.register", 200));
+    const user = userEvent.setup();
+    page(services, "repositories");
+    const region = await screen.findByRole("region", { name: "Your repositories" });
+    await user.click(within(region).getByRole("button", { name: "Add repository" }));
+    await user.type(screen.getByLabelText("Repository path"), "/work/pending-repo");
+    await user.click(screen.getByRole("button", { name: "Register repository" }));
+    expect(screen.getByRole("button", { name: "Register repository" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Registering…")).toBeInTheDocument();
+    expect(await within(region).findByText("Repository registered.")).toBeInTheDocument();
+  });
+
+  it("a refused repository says why in an alert in the dialog, and Retry registers it", async () => {
+    const { fake, services } = await connected(OPEN, (daemon) => daemon.failNext("projects.register", { code: -32000, message: "no" }));
+    const user = userEvent.setup();
+    page(services, "repositories");
+    const region = await screen.findByRole("region", { name: "Your repositories" });
+    await user.click(within(region).getByRole("button", { name: "Add repository" }));
+    await user.type(screen.getByLabelText("Repository path"), "/work/retry-repo");
+    await user.click(screen.getByRole("button", { name: "Register repository" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("The repository was not registered.");
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    expect(await within(region).findByText("Repository registered.")).toBeInTheDocument();
+    expect(fake.callsTo("projects.register")).toHaveLength(2);
+  });
+
+  it("Retry on a list that already has rows says it is refreshing, then clears the error", async () => {
+    const { fake, services } = await connected(OPEN, (daemon) => {
+      daemon.projects = [{ id: "/work/repo", coordinator_active: false }];
+    });
+    const user = userEvent.setup();
+    page(services, "repositories");
+    const region = await screen.findByRole("region", { name: "Your repositories" });
+    expect(await within(region).findByRole("list", { name: "Registered repositories" })).toHaveTextContent("/work/repo");
+    fake.failNext("projects.list", { code: -32000, message: "down" });
+    await act(async () => services.data.refreshAll());
+    const alert = await within(region).findByRole("alert");
+    expect(alert).toHaveTextContent("Refreshing repositories failed.");
+    fake.delayNext("projects.list", 200);
+    await user.click(within(region).getByRole("button", { name: "Retry" }));
+    expect(await within(region).findByText("Refreshing repositories…")).toBeInTheDocument();
+    await waitFor(() => expect(within(region).queryByRole("alert")).not.toBeInTheDocument());
+    expect(within(region).getByRole("list", { name: "Registered repositories" })).toHaveTextContent("/work/repo");
   });
 
   it("rejects a relative repository path in Settings without calling the daemon", async () => {
@@ -413,6 +506,22 @@ describe("Settings page, live", () => {
     });
   });
 
+  it("settings_page_save_shows_pending_on_the_button_while_the_daemon_answers", async () => {
+    const { services } = await connected(OPEN, (daemon) => {
+      daemon.stub("settings.set", () => OPEN);
+      daemon.delayNext("settings.set", 200);
+    });
+    const user = userEvent.setup();
+    page(services);
+    await field(CPU);
+    const save = screen.getByRole("button", { name: SAVE });
+    await user.click(save);
+    expect(save).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+    expect(await screen.findByText(SAVED_TEXT)).toBeInTheDocument();
+    expect(save).not.toHaveAttribute("aria-busy");
+  });
+
   it("settings_page_saves_every_valid_limit_and_announces_the_new_values", async () => {
     const { fake, services } = await connected(OPEN, (daemon) =>
       daemon.stub("settings.set", () => ({ ...OPEN, load: { ...OPEN.load, cpu_percent: 85 } })),
@@ -496,6 +605,18 @@ describe("Settings page, live", () => {
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: SAVE })).not.toBeInTheDocument();
     expect(fake.callsTo("settings.get")).toHaveLength(0);
+  });
+
+  it("settings_page_retry_shows_pending_until_the_read_answers", async () => {
+    const { fake, services } = await connected(OPEN, (daemon) => daemon.failNext("settings.get", { code: -32603, message: "store busy" }));
+    const user = userEvent.setup();
+    page(services);
+    expect(await screen.findByRole("alert")).toHaveTextContent("The machine load limits could not be read.");
+    fake.delayNext("settings.get", 200);
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(screen.getByRole("button", { name: "Retry" })).toHaveAttribute("aria-busy", "true");
+    expect(await field(CPU)).toHaveValue(80);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("settings_page_shows_an_error_with_retry_when_the_first_read_fails_and_retry_reads_again", async () => {

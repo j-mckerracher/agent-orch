@@ -53,6 +53,7 @@ describe("RequestChangesForm approver policy (DPES-1105)", () => {
     expect(within(panel).queryByText(APPROVER_REQUIRED_NOTICE)).toBeNull();
     await userEvent.type(within(panel).getByLabelText(/Feedback/), "please add tests");
     await userEvent.click(within(panel).getByRole("button", { name: "Send feedback" }));
+    expect(within(panel).getByRole("button", { name: "Send feedback" })).toHaveAttribute("aria-busy", "true");
     await within(panel).findByText(/Receipt cr-1: changes requested/);
     expect(submitted).toEqual([
       {
@@ -62,5 +63,18 @@ describe("RequestChangesForm approver policy (DPES-1105)", () => {
         feedback: "please add tests",
       },
     ]);
+  });
+
+  it("a_refused_change_request_says_it_was_not_sent_beside_the_button_and_keeps_the_feedback", async () => {
+    const { source } = recordingSource();
+    const refusing: ChangeRequestSource = { ...source, submit: async () => Promise.reject(new Error("The daemon did not answer.")) };
+    render(<Panel source={refusing} approval={approval()} approver={true} />);
+    const panel = screen.getByRole("region", { name: "Request changes" });
+    await userEvent.type(within(panel).getByLabelText(/Feedback/), "please add tests");
+    await userEvent.click(within(panel).getByRole("button", { name: "Send feedback" }));
+    const alert = await within(panel).findByRole("alert");
+    expect(alert).toHaveTextContent("Your feedback was not sent. The daemon did not answer.");
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy();
+    expect(within(panel).getByLabelText(/Feedback/)).toHaveValue("please add tests");
   });
 });

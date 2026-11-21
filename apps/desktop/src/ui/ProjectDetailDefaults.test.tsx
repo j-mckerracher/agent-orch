@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { APPROVER_REQUIRED_NOTICE, DaemonError } from "../daemon/errors";
@@ -128,8 +128,27 @@ describe("project defaults section", () => {
     const user = await page(source(answering(SAVED), set));
     await user.type(await screen.findByRole("textbox", { name: "Base branch" }), "nope");
     await user.click(saveButton());
-    expect(await screen.findByText(/The daemon refused these values/)).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent(/The daemon refused these values/);
     expect(screen.getByRole("textbox", { name: "Base branch" })).toHaveValue("nope");
+  });
+
+  it("project_detail_defaults_save_shows_pending_on_the_button_until_the_daemon_answers", async () => {
+    type SetResult = Awaited<ReturnType<ProjectDefaultsSource["set"]>>;
+    let finish: (() => void) | undefined;
+    const set = vi.fn(
+      (_id: string, defaults: ProjectDefaults) =>
+        new Promise<SetResult>((resolve) => {
+          finish = () => resolve({ simulated: false, provenance: DAEMON, defaults });
+        }),
+    );
+    const user = await page(source(answering(SAVED), set));
+    await user.type(await screen.findByRole("textbox", { name: "Base branch" }), "main");
+    await user.click(saveButton());
+    expect(saveButton()).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByText("Saving…")).toBeInTheDocument();
+    await act(async () => finish?.());
+    await waitFor(() => expect(screen.getByRole("status", { name: "Project defaults save result" })).toHaveTextContent("Saved."));
+    expect(saveButton()).not.toHaveAttribute("aria-busy");
   });
 
   it("project_detail_defaults_locks_every_control_with_the_approver_notice_for_a_non_approver", async () => {

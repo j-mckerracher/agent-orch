@@ -11,9 +11,11 @@ import type { AutonomyPolicy, DeliveryPolicy, TaskKind, TaskState } from "../../
 import type { PermissionLevel, WorkstreamMutation, WorkstreamTaskPolicy } from "../../../sources/surfaces/types";
 import { basename } from "../../format";
 import { useServices, useStore } from "../../services";
+import { ActionStatus, useAction } from "../../action";
+import { useLastingAction } from "../../lastingAction";
 import { Button } from "../../theme";
 import { PERMISSION_LEVELS, permissionLabel } from "../workspace/permissionLevel";
-import type { Controls } from "./Manage";
+import { useGroupRunner, type Controls, type Run } from "./Manage";
 import { taskLabelOf, type WsGroup, type WsTask } from "./model";
 
 type Form = "add" | "split" | "combine" | "remove" | "reassign" | "policy";
@@ -105,11 +107,17 @@ interface FormProps {
 }
 
 /** The six plan-editing entry points; each opens one inline form. */
-export function PlanEditing({ group, controls }: { group: WsGroup; controls: Controls }) {
+export function PlanEditing({ group, locked }: { group: WsGroup; locked: string | null }) {
   const { data } = useServices();
   const { projects } = useStore(data);
   const baseId = useId();
   const [open, setOpen] = useState<Form | null>(null);
+  // Adding a task is minor and clears itself; the other forms cancel or replace tasks, so their result stays.
+  const add = useAction();
+  const plan = useLastingAction();
+  const runAdd = useGroupRunner(add);
+  const runPlan = useGroupRunner(plan);
+  const controls: Controls = { run: runPlan, busy: add.pending || plan.pending, locked };
   const eligible = eligibility(group);
   const projectIds = [
     ...new Set([...group.projectIds, ...(projects.data ?? []).filter((project) => !project.archived).map((project) => project.id)]),
@@ -133,15 +141,17 @@ export function PlanEditing({ group, controls }: { group: WsGroup; controls: Con
   const shown = open !== null && reasonOf(open) === null ? open : null;
   const panelId = `${baseId}-panel`;
 
-  const submit: FormProps["submit"] = async (action, send) => {
-    const done = await controls.run(action, send);
-    if (done) {
-      setOpen(null);
-      // A plan edit queues and cancels tasks, so the task snapshot is read again as after a submit or cancel.
-      void data.refreshAll();
-    }
-  };
-  const props = { group, controls, submit };
+  const submitWith =
+    (run: Run): FormProps["submit"] =>
+    async (action, send) => {
+      const done = await run(action, send);
+      if (done) {
+        setOpen(null);
+        // A plan edit queues and cancels tasks, so the task snapshot is read again as after a submit or cancel.
+        void data.refreshAll();
+      }
+    };
+  const props = { group, controls, submit: submitWith(runPlan) };
 
   return (
     <div className="ws-plan" data-testid="ws-plan">
@@ -162,6 +172,8 @@ export function PlanEditing({ group, controls }: { group: WsGroup; controls: Con
           );
         })}
       </div>
+      <ActionStatus action={add} />
+      <ActionStatus action={plan} />
       {[...notes].map(([text, forms]) => (
         <p key={text} className="ws-reason" id={noteIds.get(text)}>
           {controls.locked !== null ? text : `Disabled (${forms.map((form) => LABELS[form]).join(", ")}): ${text}`}
@@ -169,7 +181,7 @@ export function PlanEditing({ group, controls }: { group: WsGroup; controls: Con
       ))}
       {shown !== null && (
         <div id={panelId} className="ws-plan-panel">
-          {shown === "add" && <AddTaskForm {...props} projectIds={projectIds} />}
+          {shown === "add" && <AddTaskForm {...props} submit={submitWith(runAdd)} projectIds={projectIds} />}
           {shown === "split" && <SplitTaskForm {...props} tasks={eligible.replaceable} />}
           {shown === "combine" && <CombineTasksForm {...props} tasks={eligible.combinable} />}
           {shown === "remove" && <RemoveTaskForm {...props} tasks={eligible.removable} />}
@@ -268,7 +280,7 @@ function AddTaskForm({ group, controls, submit, projectIds }: FormProps & { proj
           ))}
         </select>
       </label>
-      <Button type="submit" variant="primary" disabled={off || !ready}>
+      <Button type="submit" variant="primary" pending={off} disabled={!ready}>
         Queue task
       </Button>
       <p className="ws-reason">The task is queued with local review, approval required, and one retry and repair.</p>
@@ -330,7 +342,7 @@ function SplitTaskForm({ group, controls, submit, tasks }: FormProps & { tasks: 
         New task objectives, one per line
         <textarea value={text} rows={3} disabled={controls.busy} onChange={(e) => setText(e.target.value)} />
       </label>
-      <Button type="submit" variant="primary" disabled={controls.busy || !ready}>
+      <Button type="submit" variant="primary" pending={controls.busy} disabled={!ready}>
         Split into {parts.length} tasks
       </Button>
       <p className="ws-reason">
@@ -384,7 +396,7 @@ function CombineTasksForm({ group, controls, submit, tasks }: FormProps & { task
         Combined objective
         <textarea value={objective} rows={3} disabled={controls.busy} onChange={(e) => setDraft(e.target.value)} />
       </label>
-      <Button type="submit" variant="primary" disabled={controls.busy || problem !== null}>
+      <Button type="submit" variant="primary" pending={controls.busy} disabled={problem !== null}>
         Combine into one task
       </Button>
       <p className="ws-reason">{problem ?? "One new task replaces the chosen ones; those that have not started are cancelled."}</p>
@@ -404,7 +416,7 @@ function RemoveTaskForm({ group, controls, submit, tasks }: FormProps & { tasks:
   return (
     <form className="ws-form" onSubmit={send} aria-label="Remove task">
       <TaskSelect label="Task to remove" tasks={tasks} value={taskId} disabled={controls.busy} onChange={setTaskId} />
-      <Button type="submit" variant="danger" disabled={controls.busy || !chosen}>
+      <Button type="submit" variant="danger" pending={controls.busy} disabled={!chosen}>
         Confirm remove
       </Button>
       <p className="ws-reason">
@@ -435,7 +447,7 @@ function ReassignForm({ group, controls, submit, tasks }: FormProps & { tasks: W
     <form className="ws-form" onSubmit={send} aria-label="Reassign task">
       <TaskSelect label="Task to reassign" tasks={tasks} value={taskId} disabled={controls.busy} onChange={setTaskId} />
       <AgentSelect value={agent} current={chosen?.agent} disabled={controls.busy} onChange={setAgent} />
-      <Button type="submit" variant="primary" disabled={controls.busy || !ready}>
+      <Button type="submit" variant="primary" pending={controls.busy} disabled={!ready}>
         Reassign task
       </Button>
       <p className="ws-reason">A copy of the task runs on the new agent with that agent's default model.</p>
@@ -550,7 +562,7 @@ function PolicyFields({ group, controls, submit, task }: FormProps & { task: WsT
           onChange={(e) => set({ maxRepairs: e.target.value })}
         />
       </label>
-      <Button type="submit" variant="primary" disabled={off || !ready}>
+      <Button type="submit" variant="primary" pending={off} disabled={!ready}>
         Apply policy
       </Button>
       <p className="ws-reason">

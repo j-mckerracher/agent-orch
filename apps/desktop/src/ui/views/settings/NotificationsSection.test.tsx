@@ -199,7 +199,9 @@ describe("notifications settings section", () => {
     await screen.findByText(/Decisions needing attention: 2/);
 
     await user.click(screen.getByRole("button", { name: "Acknowledge reminders" }));
+    await screen.findByText("Reminders silenced for the decisions pending now.");
     await user.click(screen.getByRole("button", { name: "Defer reminders 60 minutes" }));
+    await screen.findByText("Reminders deferred for 60 minutes.");
 
     await waitFor(() => expect(fake.notices).toEqual([{ action: "acknowledge" }, { action: "defer", minutes: 60 }]));
     expect(screen.getByText(/nothing is approved or rejected/)).toBeInTheDocument();
@@ -224,14 +226,182 @@ describe("notifications settings section", () => {
   it("shows a failed local action without changing the pending count", async () => {
     const user = userEvent.setup();
     const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 3 }));
-    vi.mocked(fake.client.notice).mockRejectedValueOnce(new Error("private host detail"));
+    vi.mocked(fake.client.notice).mockRejectedValueOnce(new Error("Unable to save notification history."));
     render(<NotificationsSection client={fake.client} />);
     await screen.findByText(/Decisions needing attention: 3/);
 
     await user.click(screen.getByRole("button", { name: "Acknowledge reminders" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Reminder action could not be applied.");
+    const alert = await screen.findByRole("alert");
+    expect(alert).toHaveTextContent("Unable to save notification history.");
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(screen.getByText(/Decisions needing attention: 3/)).toBeInTheDocument();
+  });
+
+  describe("button feedback", () => {
+    const intervalSelect = () => screen.getByLabelText("Reminder interval");
+    const saveButton = () => screen.getByRole("button", { name: "Save reminder interval" });
+
+    it("says what was saved, and that an unchanged value is already set", async () => {
+      const user = userEvent.setup();
+      const fake = clientFor(snapshot({ enabled: true, permission: "granted" }));
+      render(<NotificationsSection client={fake.client} />);
+      await screen.findByText(/Permission: granted/);
+      expect(screen.getByText("Saved: every 4 hours.")).toBeInTheDocument();
+
+      await user.click(saveButton());
+      expect(await screen.findByText("Already set to every 4 hours.")).toBeInTheDocument();
+      expect(fake.client.set).not.toHaveBeenCalled();
+
+      await user.selectOptions(intervalSelect(), "120");
+      expect(screen.getByText("Not saved yet. Saved: every 4 hours.")).toBeInTheDocument();
+      expect(screen.queryByText("Already set to every 4 hours.")).not.toBeInTheDocument();
+      await user.click(saveButton());
+      expect(await screen.findByText("Saved. Reminders repeat every 2 hours.")).toBeInTheDocument();
+      expect(screen.getByText("Saved: every 2 hours.")).toBeInTheDocument();
+
+      await user.selectOptions(intervalSelect(), "off");
+      await user.click(saveButton());
+      expect(await screen.findByText("Saved. Reminders are off.")).toBeInTheDocument();
+    });
+
+    it("shows the button as pending and disables the other controls until the host answers", async () => {
+      const user = userEvent.setup();
+      let finish: (() => void) | undefined;
+      const fake = clientFor(snapshot({ enabled: true, permission: "granted" }));
+      const set = fake.client.set;
+      fake.client.set = vi.fn(async (settings) => {
+        await new Promise<void>((resolve) => { finish = resolve; });
+        return set(settings);
+      });
+      render(<NotificationsSection client={fake.client} />);
+      await screen.findByText(/Permission: granted/);
+      await user.selectOptions(intervalSelect(), "60");
+      await user.click(saveButton());
+
+      expect(saveButton()).toHaveAttribute("aria-busy", "true");
+      expect(saveButton()).not.toBeDisabled();
+      expect(screen.getByRole("button", { name: "Disable notifications" })).toBeDisabled();
+      expect(intervalSelect()).toBeDisabled();
+      expect(screen.getByText("Saving…")).toBeInTheDocument();
+
+      await act(async () => finish?.());
+      expect(await screen.findByText("Saved. Reminders repeat every hour.")).toBeInTheDocument();
+      expect(saveButton()).not.toHaveAttribute("aria-busy");
+      expect(intervalSelect()).toBeEnabled();
+    });
+
+    it("explains a failed save in an alert next to the control, keeps the value, and retries", async () => {
+      const user = userEvent.setup();
+      const fake = clientFor(snapshot({ enabled: true, permission: "granted" }));
+      vi.mocked(fake.client.set).mockRejectedValueOnce(new Error("Unable to save notification settings."));
+      render(<NotificationsSection client={fake.client} />);
+      await screen.findByText(/Permission: granted/);
+      await user.selectOptions(intervalSelect(), "60");
+      await user.click(saveButton());
+
+      const alert = await screen.findByRole("alert");
+      expect(alert).toHaveTextContent("Unable to save notification settings.");
+      expect(intervalSelect()).toHaveValue("60");
+
+      await user.click(within(alert).getByRole("button", { name: "Retry" }));
+      expect(await screen.findByText("Saved. Reminders repeat every hour.")).toBeInTheDocument();
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("keeps a confirmation and a failure through a live snapshot, and clears them when the person edits", async () => {
+      const user = userEvent.setup();
+      const fake = clientFor(snapshot({ enabled: true, permission: "granted" }));
+      render(<NotificationsSection client={fake.client} />);
+      await screen.findByText(/Permission: granted/);
+
+      await user.selectOptions(intervalSelect(), "120");
+      await user.click(saveButton());
+      await screen.findByText("Saved. Reminders repeat every 2 hours.");
+      act(() => fake.emit(snapshot({ enabled: true, permission: "granted", reminder_interval_minutes: 120, pending_count: 2 })));
+      await screen.findByText(/Decisions needing attention: 2/);
+      expect(screen.getByText("Saved. Reminders repeat every 2 hours.")).toBeInTheDocument();
+
+      await user.selectOptions(intervalSelect(), "60");
+      expect(screen.queryByText("Saved. Reminders repeat every 2 hours.")).not.toBeInTheDocument();
+
+      vi.mocked(fake.client.set).mockRejectedValueOnce(new Error("Unable to save notification settings."));
+      await user.click(saveButton());
+      await screen.findByRole("alert");
+      act(() => fake.emit(snapshot({ enabled: true, permission: "granted", reminder_interval_minutes: 120, pending_count: 3 })));
+      await screen.findByText(/Decisions needing attention: 3/);
+      expect(screen.getByRole("alert")).toHaveTextContent("Unable to save notification settings.");
+    });
+
+    it("shows the allowed range before the click and ties the error to the field after it", async () => {
+      const user = userEvent.setup();
+      const fake = clientFor(snapshot({ enabled: true, permission: "granted" }));
+      render(<NotificationsSection client={fake.client} />);
+      await screen.findByText(/Permission: granted/);
+      await user.selectOptions(intervalSelect(), "custom");
+
+      const field = screen.getByLabelText(/Custom reminder interval/);
+      expect(field).toHaveAttribute("aria-invalid", "false");
+      await user.clear(field);
+      await user.type(field, "4");
+      expect(field).toHaveAttribute("aria-invalid", "true");
+      const hint = document.getElementById(field.getAttribute("aria-describedby") ?? "");
+      expect(hint).toHaveTextContent("Enter a whole number from 5 to 1440 minutes.");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+      await user.click(saveButton());
+      expect(screen.getByRole("alert")).toBe(hint);
+      expect(field).toHaveFocus();
+      expect(screen.getByText("Not saved yet. Saved: every 4 hours.")).toBeInTheDocument();
+    });
+
+    it("says whether Enable worked, and what to do when the system did not allow it", async () => {
+      const user = userEvent.setup();
+      const fake = clientFor(snapshot({ permission: "prompt" }));
+      vi.mocked(fake.client.set).mockResolvedValueOnce(snapshot({ enabled: true, permission: "denied" }));
+      render(<NotificationsSection client={fake.client} />);
+      await screen.findByText(/Permission: prompt/);
+
+      await user.click(screen.getByRole("button", { name: "Enable notifications" }));
+      expect(await screen.findByRole("alert")).toHaveTextContent("Allow them in System Settings → Notifications");
+
+      await user.click(within(screen.getByRole("alert")).getByRole("button", { name: "Retry" }));
+      expect(await screen.findByText("Notifications enabled.")).toBeInTheDocument();
+    });
+
+    it("keeps a reminder confirmation when the pending count drops to zero", async () => {
+      const user = userEvent.setup();
+      const fake = clientFor(snapshot({ enabled: true, permission: "granted", pending_count: 2 }));
+      render(<NotificationsSection client={fake.client} />);
+      await screen.findByText(/Decisions needing attention: 2/);
+
+      await user.click(screen.getByRole("button", { name: "Defer reminders 60 minutes" }));
+      await screen.findByText("Reminders deferred for 60 minutes.");
+      act(() => fake.emit(snapshot({ enabled: true, permission: "granted", pending_count: 0 })));
+      await screen.findByText(/Decisions needing attention: 0/);
+
+      expect(screen.queryByRole("button", { name: /Defer reminders/ })).not.toBeInTheDocument();
+      expect(screen.getByText("Reminders deferred for 60 minutes.")).toBeInTheDocument();
+    });
+
+    it("explains an unreachable host and offers Retry", async () => {
+      const user = userEvent.setup();
+      const fake = clientFor(snapshot());
+      vi.mocked(fake.client.get).mockRejectedValueOnce(new Error("down"));
+      render(<NotificationsSection client={fake.client} />);
+
+      expect(await screen.findByRole("alert")).toHaveTextContent("Notification state could not be loaded.");
+      await user.click(screen.getByRole("button", { name: "Retry" }));
+      expect(await screen.findByText(/Permission: prompt/)).toBeInTheDocument();
+    });
+
+    it("says why nothing can be changed when notifications are unavailable", async () => {
+      const fake = clientFor(snapshot({ permission: "unavailable", error: "No notification service." }));
+      render(<NotificationsSection client={fake.client} />);
+
+      expect(await screen.findByText(/Reminders cannot be changed while notifications are unavailable/)).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Save reminder interval" })).not.toBeInTheDocument();
+    });
   });
 });
 
@@ -267,6 +437,25 @@ describe("native decision notification client", () => {
         await expect(client.notice(invalid as never)).rejects.toThrow("Notification action is invalid.");
       }
       expect(invoke).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
+    }
+  });
+
+  it("passes the host's reason for a rejected save or notice on, and uses fixed text only for an unreadable answer", async () => {
+    invoke.mockClear();
+    Object.assign(window, { __TAURI_INTERNALS__: {} });
+    try {
+      const client = createDecisionNotificationsClient();
+      const settings = { enabled: true, reminder_interval_minutes: 240, request_permission: false };
+      invoke.mockRejectedValueOnce("Unable to save notification settings.");
+      await expect(client.set(settings)).rejects.toThrow("Unable to save notification settings.");
+      invoke.mockRejectedValueOnce("Unable to save notification history.");
+      await expect(client.notice({ action: "acknowledge" })).rejects.toThrow("Unable to save notification history.");
+      invoke.mockRejectedValueOnce(new Error("private host detail"));
+      await expect(client.set(settings)).rejects.toThrow("Notification settings could not be saved.");
+      invoke.mockResolvedValueOnce({ nonsense: true });
+      await expect(client.notice({ action: "acknowledge" })).rejects.toThrow("Notification action could not be applied.");
     } finally {
       Reflect.deleteProperty(window, "__TAURI_INTERNALS__");
     }

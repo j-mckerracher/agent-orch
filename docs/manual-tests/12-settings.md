@@ -216,7 +216,7 @@ Before step 1, record and write into `ENVIRONMENT.md`: the **Dark mode** state (
 - Step 4: the result reads "Cleared. A task with no clear project will ask where to run."
 - Step 5: the result reads "Added probe-pref."
 - Step 6: **Dark mode** is pressed. **Background** shows "Off", with no "(this session)" text.
-- Step 7: no error text shows. The select reads `120 minutes`.
+- Step 7: the button shows a spinner, then the text "Saved. Reminders repeat every 2 hours." appears beside it. No alert shows. The select reads `120 minutes`, and the line below it reads "Saved: every 2 hours." Clicking **Save reminder interval** again says "Already set to every 2 hours."
 - Step 9, after the restart:
   - **Agents**: **Default provider** reads `No default (tasks must choose a provider)`.
   - **Limits**: **CPU limit (percent)** reads `85`. **Check interval with one task running (minutes)** reads `5`. **Replies per hour, per conversation** reads `7`.
@@ -776,7 +776,7 @@ This step is **Model-dependent** (RUNNER.md rule 8). If the model does not creat
 ## TC-ST-20 Notifications: reminder interval and permission
 
 Purpose: the reminder interval takes one of the preset values or a number from 5 to 1440 minutes. It keeps its value after a restart.
-**Source:** `apps/desktop/src/ui/views/settings/NotificationsSection.tsx`; `apps/desktop/src-tauri/src/notifications.rs` (interval 240 minutes and notifications off by default). No section of `docs/settings.md` covers notifications.
+**Source:** `apps/desktop/src/ui/views/settings/NotificationsSection.tsx`; `apps/desktop/src-tauri/src/notifications.rs` (interval 240 minutes and notifications off by default). `docs/settings.md` "Notifications".
 **Real agent:** none. Cost: low.
 **Preconditions:** Setup sections 5 and 6 done. The start values are the defaults: notifications disabled and the interval 240 minutes. The desktop app keeps these values in `decision-notifications.json`, not in the daemon data folder, so setup section 9 does not reset them. If they differ from the defaults, set them back first. This is the Reset of the previous run.
 
@@ -792,19 +792,19 @@ Purpose: the reminder interval takes one of the preset values or a number from 5
 **Expected:**
 
 - Step 1: the status line reads "Notifications: disabled · Permission: `<value>` · Decisions needing attention: `<number>`". The permission value depends on macOS. Record it in `ENVIRONMENT.md`. **Reminder interval** shows `240 minutes`. **Enable notifications** is shown. The group **Local reminder actions** is not shown.
-- Step 2: no message shows after the save. See Known limitations. After the page is opened again, **Reminder interval** shows `60 minutes`. The value is read back from the native notifications state.
-- Step 3: after each save, the select shows the chosen value. After `Off` is saved and the page is opened again, the select shows `Off` and the custom field is not shown.
-- Step 4: the alert "Enter a whole number from 5 to 1440 minutes." shows. The typed `4` stays in the field. The setting does not change.
+- Step 2: the button shows a spinner and "Saving…" shows beside it. Then "Saved. Reminders repeat every hour." shows and clears after a few seconds. The line under the select reads "Saved: every hour." After the page is opened again, **Reminder interval** shows `60 minutes`. The value is read back from the native notifications state.
+- Step 3: after each save, the select shows the chosen value and the result reads "Saved. Reminders repeat every 2 hours.", "Saved. Reminders repeat every 4 hours." and "Saved. Reminders are off." After `Off` is saved and the page is opened again, the select shows `Off` and the custom field is not shown.
+- Step 4: before the click, the hint "Enter a whole number from 5 to 1440 minutes." shows under the field and the field is marked invalid. After the click, the same text is an alert tied to the field, and the field has focus. The typed `4` stays in the field. The line under the select reads "Not saved yet. Saved: every 4 hours." The setting does not change.
 - Step 5: the same alert shows for `1441`.
-- Step 6: `5` and `1440` save with no alert.
+- Step 6: `5` and `1440` save with the result "Saved. Reminders repeat every 5 minutes." and "Saved. Reminders repeat every 24 hours.", and no alert.
 - Step 7: after the restart, **Reminder interval** shows `60 minutes`.
-- Step 8: after **Enable notifications** and an allow, the status line reads "Notifications: enabled · Permission: granted · Decisions needing attention: `<number>`". The button now reads **Disable notifications**. After the click, the status line reads "Notifications: disabled" again.
+- Step 8: after **Enable notifications** and an allow, the status line reads "Notifications: enabled · Permission: granted · Decisions needing attention: `<number>`". The button now reads **Disable notifications**. After the click, the status line reads "Notifications: disabled" again. Beside the buttons, "Notifications enabled." and then "Notifications disabled. Your reminder interval is kept." show. If macOS refuses, an alert says to allow notifications in System Settings > Notifications, with a **Retry** button.
 
 **Reset:** Choose `240 minutes`. Click **Save reminder interval**. If notifications are enabled, click **Disable notifications**. Expected: the select shows `240 minutes`. The status line reads "Notifications: disabled".
 
 **Known limitations:**
 
-- A successful **Save reminder interval** shows no message. Only an error shows an alert. Record what you see. Do not count "no message" as a fail.
+- A save failure needs the notification state file to be read-only. It is not run in this test. If you force it, the alert shows "Unable to save notification settings." with **Retry**, and the select keeps your value.
 - The denied permission state, with the status "Permission: denied" and the button **Retry permission**, depends on the macOS prompt. It is not run in this test. Record it if it appears.
 - **Acknowledge reminders** and **Defer reminders 60 minutes** appear only when a decision is waiting. A waiting decision needs a task run (TC-Q-01, medium). Those two buttons are not checked here.
 - The source of the number in "Decisions needing attention" is not confirmed. Record the number. Do not check it against Review & Decisions.

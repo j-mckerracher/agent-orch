@@ -6,6 +6,7 @@ import { asDaemonError } from "../../../daemon/errors";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import { PULL_REFRESH_COOLDOWN_MS } from "../../../sources/surfaces/pulls";
 import type { PullItem } from "../../../sources/surfaces/types";
+import { type Action, type Outcome, useAction } from "../../action";
 import { useGate, useServices, useSurface } from "../../services";
 import { useRetained } from "../workspace/useRetained";
 import { checksSummary, pullsErrorText } from "./pullsModel";
@@ -25,7 +26,8 @@ export interface PullsModel {
   busy: string | null;
   /** Tasks whose pull request was read a moment ago: the daemon allows one fresh read per task every 10 seconds. */
   cooling: ReadonlySet<string>;
-  announcement: string;
+  /** The last refresh: pending, then what the daemon read or why it failed. Render it with ActionStatus. */
+  action: Action;
   refresh: (pull: PullItem) => Promise<void>;
 }
 
@@ -39,9 +41,11 @@ export function usePulls(): PullsModel {
   // Read from the negotiated list, not `gate.can`, so the section does not flicker while the connection restarts.
   const supported = !live || gate.connection.capabilities.includes("landing");
   const [nonce, setNonce] = useState(0);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [key, setKey] = useState<string | null>(null);
   const [cooling, setCooling] = useState<ReadonlySet<string>>(new Set());
-  const [announcement, setAnnouncement] = useState("");
+  const action = useAction();
+  // Busy lasts as long as the action is pending, which includes its minimum visible time, so a fast answer still shows a spinner.
+  const busy = action.pending ? key : null;
   const [fresh, setFresh] = useState<{ base: unknown; rows: Readonly<Record<string, PullItem>> } | null>(null);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(
@@ -65,7 +69,7 @@ export function usePulls(): PullsModel {
   const refresh = useCallback(
     async (pull: PullItem) => {
       if (busy !== null) return;
-      setBusy(pull.taskId);
+      setKey(pull.taskId);
       // The daemon allows one fresh read per task every 10 seconds, so the button waits as long, whatever the answer.
       setCooling((current) => new Set(current).add(pull.taskId));
       const timer = setTimeout(() => {
@@ -77,18 +81,21 @@ export function usePulls(): PullsModel {
         });
       }, PULL_REFRESH_COOLDOWN_MS);
       timers.current.add(timer);
-      try {
-        const row = await source.refresh(pull.taskId);
-        setFresh((current) => ({ base: result, rows: { ...(current !== null && current.base === result ? current.rows : {}), [row.taskId]: row } }));
-        setAnnouncement(`Read pull request ${row.number} again: ${checksSummary(row)}.`);
-        setNonce((value) => value + 1);
-      } catch (error) {
-        setAnnouncement(pullsErrorText(asDaemonError(error)));
-      } finally {
-        setBusy(null);
-      }
+      await action.run("Reading the pull request…", async (): Promise<Outcome> => {
+        try {
+          const row = await source.refresh(pull.taskId);
+          setFresh((current) => ({
+            base: result,
+            rows: { ...(current !== null && current.base === result ? current.rows : {}), [row.taskId]: row },
+          }));
+          setNonce((value) => value + 1);
+          return { kind: "saved", text: `Read pull request ${row.number} again: ${checksSummary(row)}.` };
+        } catch (error) {
+          throw new Error(pullsErrorText(asDaemonError(error)));
+        }
+      });
     },
-    [busy, result, source],
+    [busy, result, source, action.run],
   );
 
   const rows =
@@ -103,7 +110,7 @@ export function usePulls(): PullsModel {
     fixture: !live,
     busy,
     cooling,
-    announcement,
+    action,
     refresh,
   };
 }

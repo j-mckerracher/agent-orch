@@ -7,6 +7,7 @@ import type { Provenance, SourceResult, Sources } from "../sources/types";
 import type { SurfaceResult, SurfaceSources } from "../sources/surfaces/types";
 import type { DraftsStore } from "./drafts";
 import type { RouterStore } from "./router";
+import type { DecisionNotificationsClient } from "../native/decisionNotifications";
 
 export interface Services {
   connection: ConnectionManager;
@@ -18,6 +19,8 @@ export interface Services {
   drafts: DraftsStore;
   /** False in explicit fixture demo mode: no connector, sample data only. */
   bridgeBound: boolean;
+  /** The desktop host's reminder settings. A test passes a stub, as it does for `surfaces`. */
+  notifications: DecisionNotificationsClient;
 }
 
 const ServicesContext = createContext<Services | null>(null);

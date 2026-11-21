@@ -102,6 +102,11 @@ function parseSnapshot(value: unknown): DecisionNotificationSnapshot {
   };
 }
 
+/** The host rejects with a plain sentence the person can act on; anything else (a parse failure) gets the fixed text. */
+function reasonOf(error: unknown, fallback: string): string {
+  return typeof error === "string" && error.length > 0 && error.length <= 240 ? error : fallback;
+}
+
 function isNativeHost(): boolean {
   return typeof window !== "undefined" && insideTauri(window);
 }
@@ -121,8 +126,8 @@ export function createDecisionNotificationsClient(): DecisionNotificationsClient
       if (!isNativeHost()) return PREVIEW_SNAPSHOT;
       try {
         return parseSnapshot(await invoke<unknown>("decision_notifications_set", { settings }));
-      } catch {
-        throw new Error("Notification settings could not be saved.");
+      } catch (error) {
+        throw new Error(reasonOf(error, "Notification settings could not be saved."));
       }
     },
     async notice(action) {
@@ -131,8 +136,8 @@ export function createDecisionNotificationsClient(): DecisionNotificationsClient
       try {
         const notice = { action: action.action, minutes: action.action === "defer" ? action.minutes : null };
         return parseSnapshot(await invoke<unknown>("decision_notifications_notice", { notice }));
-      } catch {
-        throw new Error("Notification action could not be applied.");
+      } catch (error) {
+        throw new Error(reasonOf(error, "Notification action could not be applied."));
       }
     },
     async listen(onSnapshot, onError) {

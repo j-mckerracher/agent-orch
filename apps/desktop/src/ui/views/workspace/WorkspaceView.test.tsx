@@ -528,7 +528,10 @@ describe("workspace view, live (daemon-derived) mode", () => {
     expect(screen.getByText(/Sending is disabled\./)).toHaveTextContent(/still working/);
     const reads = fake.callsTo("conversations.get").length;
     await waitFor(() => expect(fake.callsTo("conversations.get").length).toBeGreaterThan(reads), { timeout: 3000 });
-    await user.click(screen.getByRole("button", { name: "Cancel reply" }));
+    // Two presses before the first answers: the second is ignored, so one cancel is sent.
+    const cancelButton = screen.getByRole("button", { name: "Cancel reply" });
+    fireEvent.click(cancelButton);
+    fireEvent.click(cancelButton);
     await waitFor(() => expect(fake.callsTo("conversations.cancel")).toHaveLength(1));
     const cancelParams = fake.callsTo("conversations.cancel")[0]!.params as Record<string, unknown>;
     expect(cancelParams.turn_id).toBe(convo.turn?.id);
@@ -1538,6 +1541,91 @@ describe("workspace view, history actions", () => {
     expect(await screen.findByText("Coordinator history cleared. The deleted messages and replies cannot be recovered.")).toBeInTheDocument();
     await waitFor(() => expect(within(log).queryByText("hello")).toBeNull());
     expect(box).toHaveValue("still here");
+  });
+
+  it("a failed clear says so in an alert, and Retry clears again", async () => {
+    const fake = liveDaemon();
+    let cleared = false;
+    const note = {
+      sequence: 1,
+      id: "c-1",
+      project_id: ALPHA,
+      kind: "message",
+      author: "user",
+      body: "hello",
+      validation: null,
+      created_at: "2026-11-01T10:00:00Z",
+    };
+    fake.stub("coordinator.get", () => ({
+      project_id: ALPHA,
+      entries: cleared ? [] : [note],
+      more: false,
+      next_after_sequence: cleared ? 0 : 1,
+      clear_generation: cleared ? 1 : 0,
+    }));
+    fake.stub("coordinator.clear", () => {
+      cleared = true;
+      return { project_id: ALPHA, cleared: true, entries_deleted: 1, clear_generation: 1 };
+    });
+    fake.failNext("coordinator.clear", { code: -32000, message: "the daemon is busy" });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    const log = await screen.findByRole("log", { name: "Conversation with alpha coordinator" });
+    expect(await within(log).findByText("hello")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Conversation actions for alpha coordinator" }));
+    await user.click(screen.getByRole("menuitem", { name: "Clear history…" }));
+    await user.click(screen.getByRole("button", { name: "Clear history permanently" }));
+    const failure = await screen.findByText(/Clearing the history failed\./);
+    expect(failure.closest('[role="alert"]')).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("Coordinator history cleared. The deleted messages and replies cannot be recovered.")).toBeInTheDocument();
+    expect(fake.callsTo("coordinator.clear")).toHaveLength(2);
+  });
+
+  it("a refused remove says so in an alert, and Retry removes the coordinator", async () => {
+    const fake = liveDaemon();
+    fake.projects = [
+      { id: ALPHA, coordinator_active: true },
+      { id: BETA, coordinator_active: true },
+    ];
+    fake.stub("coordinator.remove", () => {
+      fake.projects = fake.projects.map((p) => (p.id === ALPHA ? { ...p, coordinator_active: false } : p));
+      return { project_id: ALPHA, changed: true, removed: true, entries_deleted: 1, clear_generation: 1 };
+    });
+    fake.failNext("coordinator.remove", { code: -32000, message: "the daemon is busy" });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: "Talking to: alpha coordinator", level: 2 });
+    await user.click(screen.getByRole("button", { name: "Conversation actions for alpha coordinator" }));
+    await user.click(screen.getByRole("menuitem", { name: "Remove coordinator…" }));
+    await user.click(screen.getByRole("button", { name: "Remove coordinator permanently" }));
+    const failure = await screen.findByText(/Removing the coordinator failed\./);
+    expect(failure.closest('[role="alert"]')).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText(/Coordinator removed\. Its conversation was deleted/)).toBeInTheDocument();
+    expect(fake.callsTo("coordinator.remove")).toHaveLength(2);
+  });
+
+  it("a refused cancel says so in an alert, and Retry cancels the reply", async () => {
+    const fake = liveDaemon();
+    stubConversation(fake, "running");
+    fake.failNext("conversations.cancel", { code: -32000, message: "the daemon is busy" });
+    const services = track(build({ fake }));
+    const { user } = await mountView(services, false);
+    await waitLive(services);
+    await screen.findByRole("heading", { name: /alpha coordinator/ });
+    await pickTarget(user, /Global orchestrator/);
+    await user.type(await screen.findByRole("textbox", { name: "Message Global orchestrator" }), "slow");
+    await user.click(screen.getByRole("button", { name: "Send message to Global orchestrator" }));
+    await screen.findByText(/Waiting for the orchestrator.s reply…/);
+    await user.click(screen.getByRole("button", { name: "Cancel reply" }));
+    const failure = await screen.findByText(/Canceling the reply failed\./);
+    expect(failure.closest('[role="alert"]')).not.toBeNull();
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText(/Canceled the reply/)).toBeInTheDocument();
+    expect(fake.callsTo("conversations.cancel")).toHaveLength(2);
   });
 
   it("in fixture mode, clearing is simulated, labeled as placeholder data, and reaches no daemon", async () => {

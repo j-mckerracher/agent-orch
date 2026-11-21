@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import type { DaemonError } from "../../../daemon/errors";
 import type { ActionProposal, Decision } from "../../../sources/surfaces/types";
 import type { Route } from "../../router";
@@ -65,6 +65,14 @@ export function ActionCard({
   const messageId = useId();
   const articleRef = useRef<HTMLElement>(null);
   const wasDeciding = useRef(false);
+  // Which button was pressed: that one shows the spinner, while the card's other decision stays off.
+  const [sent, setSent] = useState<Decision | null>(null);
+  const approving = deciding && sent === "approve";
+  const rejecting = deciding && sent === "reject";
+  const decide = (decision: Decision) => {
+    setSent(decision);
+    onDecide(decision);
+  };
   const view = viewOf(proposal, parent, { canDecide, connected, approver, deciding, names });
   const phrase = actionPhrase(proposal, names);
   const link = view.state === "executed" ? openWorkstreamId(proposal, parent, scope) : null;
@@ -121,15 +129,20 @@ export function ActionCard({
       </dl>
       {!restingMessage && messageNotice}
       {notice !== null && <Notice tone="info">{notice}</Notice>}
-      {error !== null && <Notice tone="bad">{requestErrorText(error, parent)}</Notice>}
+      {error !== null && (
+        <Notice tone="bad" role="alert">
+          {requestErrorText(error, parent)}
+        </Notice>
+      )}
       {view.state === "pending" && (
         <div className="ws-action-buttons">
           <Button
             variant={view.approve.variant}
             aria-label={`Approve: ${phrase}`}
             aria-describedby={view.approve.enabled ? undefined : messageId}
-            disabled={!view.approve.enabled}
-            onClick={() => onDecide("approve")}
+            pending={approving}
+            disabled={!view.approve.enabled && !approving}
+            onClick={() => decide("approve")}
           >
             Approve
           </Button>
@@ -137,8 +150,9 @@ export function ActionCard({
             variant="secondary"
             aria-label={`Reject: ${phrase}`}
             aria-describedby={view.reject.enabled ? undefined : messageId}
-            disabled={!view.reject.enabled}
-            onClick={() => onDecide("reject")}
+            pending={rejecting}
+            disabled={!view.reject.enabled && !rejecting}
+            onClick={() => decide("reject")}
           >
             Reject
           </Button>

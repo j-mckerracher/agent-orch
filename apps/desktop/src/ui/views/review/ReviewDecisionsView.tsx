@@ -19,6 +19,7 @@ import {
 } from "../../../review/sources";
 import type { ReviewState } from "../../../review/useReview";
 import { useWorkstreamOf } from "../../../review/workstreamOf";
+import { ActionStatus } from "../../action";
 import { useServices, useStore } from "../../services";
 import type { AttemptsLoader } from "./Attempts";
 import { HoldControl } from "./HoldControl";
@@ -102,8 +103,14 @@ export function ReviewDecisionsView({
           session={session}
           workstreamOf={workstreamOf}
           hold={(state: ReviewState) =>
-            holds.supported && state.approval?.state.state === "requested" ? (
-              <HoldControl taskId={state.approval.action.task_id} holds={holds} onStart={() => undefined} />
+            holds.supported ? (
+              <>
+                {state.approval?.state.state === "requested" && (
+                  <HoldControl taskId={state.approval.action.task_id} holds={holds} onStart={() => undefined} />
+                )}
+                {/* Outside the condition above: the result of a hold stays beside the control, whatever the approval does next. */}
+                <ActionStatus action={holds.action} />
+              </>
             ) : null
           }
           record={(state: ReviewState) => <SixFactsRecord state={state} loadAttempts={loadAttempts} />}

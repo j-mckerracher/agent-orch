@@ -359,7 +359,8 @@
   gap: 8px;
 }
 
-.settings-notification-controls label {
+.settings-notification-controls label,
+.settings-notification-field {
   display: grid;
   gap: 3px;
 }

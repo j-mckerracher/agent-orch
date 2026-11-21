@@ -31,6 +31,7 @@ export function NewTaskDialog({ projectId, inPlace, onClose }: { projectId: stri
   const set = (patch: Parameters<typeof drafts.patchSubmit>[1]) => drafts.patchSubmit(projectId, patch);
 
   const submit = async () => {
+    if (busy) return;
     setFailure(null);
     const built = buildSubmission(projectId, inPlace ? { ...draft, delivery: "ReportOnly" } : draft, permissionOnWire);
     if (!built.ok) {
@@ -56,8 +57,10 @@ export function NewTaskDialog({ projectId, inPlace, onClose }: { projectId: stri
       onClose={onClose}
       footer={
         <>
-          <Button onClick={onClose}>Cancel</Button>
-          <Button type="submit" form={formId} variant="primary" disabled={!gate.can("tasks") || busy}>
+          <Button onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" form={formId} variant="primary" pending={busy} disabled={!gate.can("tasks")}>
             Create task
           </Button>
         </>

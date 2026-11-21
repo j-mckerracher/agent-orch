@@ -1,8 +1,9 @@
 /** Monitoring state for the Workspace view: mode, paused scopes and unseen counts, read every 5 seconds (DPES-1105 Phase 3). */
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import { notOk, observation } from "../../../sources/surfaces/result";
 import type { LiveConversationTarget, MonitoringMode, MonitoringState } from "../../../sources/surfaces/types";
+import { CLEAR_MS } from "../../action";
 import { useGate, useServices, useSurface } from "../../services";
 import { FIXTURE_MONITORING_TEXT } from "./monitoringModel";
 import { useRetained } from "./useRetained";
@@ -35,6 +36,8 @@ export function useMonitoring(): MonitoringModel {
   const [pending, setPending] = useState<MonitoringMode | null>(null);
   const [error, setError] = useState<DaemonError | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const noteTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(noteTimer.current), []);
 
   const loaded = useSurface(
     () =>
@@ -54,9 +57,15 @@ export function useMonitoring(): MonitoringModel {
       setPending(mode);
       setError(null);
       setNote(null);
+      clearTimeout(noteTimer.current);
       try {
         const receipt = await source.set(mode);
         if (receipt.simulated) setNote(FIXTURE_MONITORING_TEXT);
+        else {
+          // A saved change says so, then clears like any minor confirmation; the fixture note stays, as a disclosure.
+          setNote(`Monitoring set to ${mode}.`);
+          noteTimer.current = setTimeout(() => setNote(null), CLEAR_MS);
+        }
         setNonce((value) => value + 1);
         return true;
       } catch (thrown) {

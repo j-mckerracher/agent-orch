@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { APPROVER_REQUIRED_NOTICE } from "../daemon/errors";
 import type { Approval } from "../daemon/types";
+import { ActionStatus, useAction } from "../ui/action";
 import { Button } from "../ui/theme";
-import type { ChangeRequestHistory, ChangeRequestReceipt, ChangeRequestSource } from "./sources";
+import type { ChangeRequestHistory, ChangeRequestSource } from "./sources";
 
 /**
  * D8: Request changes and feedback. These pieces only talk to the injected ChangeRequestSource; they have no
@@ -10,15 +11,13 @@ import type { ChangeRequestHistory, ChangeRequestReceipt, ChangeRequestSource } 
  */
 export function useChangeRequests(source: ChangeRequestSource, approval: Approval | null) {
   const [history, setHistory] = useState<ChangeRequestHistory | null>(null);
-  const [receipt, setReceipt] = useState<ChangeRequestReceipt | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const action = useAction();
+  const { clear } = action;
   const taskId = approval?.action.task_id ?? null;
 
   useEffect(() => {
     setHistory(null);
-    setReceipt(null);
-    setError(null);
+    clear();
     if (!taskId) return;
     let cancelled = false;
     source.loadHistory(taskId).then(
@@ -28,32 +27,34 @@ export function useChangeRequests(source: ChangeRequestSource, approval: Approva
     return () => {
       cancelled = true;
     };
-  }, [source, taskId]);
+  }, [source, taskId, clear]);
 
-  /** Resolves true when the request was sent. */
+  /** Resolves true when the request was sent. A refusal keeps the feedback typed, so Retry sends the same text. */
   async function submit(feedback: string): Promise<boolean> {
     if (!approval) return false;
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await source.submit({
-        taskId: approval.action.task_id,
-        approvalId: approval.id,
-        candidateCommit: approval.action.candidate_commit,
-        feedback,
-      });
-      setReceipt(result);
-      setHistory(await source.loadHistory(approval.action.task_id));
-      return true;
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Request changes failed.");
-      return false;
-    } finally {
-      setBusy(false);
-    }
+    let sent = false;
+    await action.run("Sending…", async () => {
+      const result = await source
+        .submit({
+          taskId: approval.action.task_id,
+          approvalId: approval.id,
+          candidateCommit: approval.action.candidate_commit,
+          feedback,
+        })
+        .catch((e: unknown) => {
+          throw new Error(`Your feedback was not sent. ${e instanceof Error && e.message ? e.message : "Try again."}`);
+        });
+      sent = true;
+      // The history is read after the send; if that read fails, the history says so and the send still counts.
+      void source.loadHistory(approval.action.task_id).then(setHistory, (e: unknown) =>
+        setHistory({ state: "error", reason: e instanceof Error ? e.message : "failed" }),
+      );
+      return { kind: "saved", text: `Receipt ${result.requestId}: ${result.resultingState}. ${source.labels.receiptNote}`.trim() };
+    });
+    return sent;
   }
 
-  return { history, receipt, error, busy, submit };
+  return { history, action, submit };
 }
 
 export type ChangeRequests = ReturnType<typeof useChangeRequests>;
@@ -71,7 +72,7 @@ export function RequestChangesForm({
   approver?: boolean;
 }) {
   const [feedback, setFeedback] = useState("");
-  const { receipt, error, busy } = requests;
+  const { action } = requests;
   return (
     <section aria-label="Request changes" className="rv-panel">
       {!approver && (
@@ -85,19 +86,15 @@ export function RequestChangesForm({
       </label>
       <div>
         <Button
-          disabled={!approval || busy || !approver || feedback.trim() === ""}
+          pending={action.pending}
+          disabled={!approval || !approver || feedback.trim() === ""}
           aria-describedby={approver ? undefined : "change-request-approver-reason"}
           onClick={() => void requests.submit(feedback).then((sent) => sent && setFeedback(""))}
         >
           {source.labels.submitAction}
         </Button>
+        <ActionStatus action={action} />
       </div>
-      {error && <p role="alert">{error}</p>}
-      {receipt && (
-        <p role="status">
-          Receipt {receipt.requestId}: {receipt.resultingState}. {source.labels.receiptNote}
-        </p>
-      )}
     </section>
   );
 }

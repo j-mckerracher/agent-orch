@@ -78,10 +78,11 @@ export function TaskDetail({ initial, live, onBack }: { initial: WorkRow; live: 
           {actions.items.length > 0 && (
             <ActionMenu label="Actions" trigger={<>Actions <span aria-hidden="true">▾</span></>} items={actions.items} />
           )}
+          {/* Outside the menu's condition: the last item can leave the menu while its result is still shown. */}
+          {actions.statuses}
         </div>
         <p className="ws-subtle">{taskSubtitle(row, true)}</p>
       </header>
-      {actions.notices}
 
       {sessions.length > 1 && (
         <div className="agents-filter">
@@ -317,10 +318,10 @@ function Feed({
           </tbody>
         </table>
       )}
-      {timeline.error && <p role="status">The last feed refresh failed: {timeline.error.message}</p>}
+      {timeline.error && <p role="alert">The last feed refresh failed: {timeline.error.message}</p>}
       {timeline.more && (
-        <Button disabled={timeline.loadingMore} onClick={() => void data.loadTimeline(taskId, sessionId, "more")}>
-          {timeline.loadingMore ? "Loading…" : "Load more events"}
+        <Button pending={timeline.loadingMore} onClick={() => void data.loadTimeline(taskId, sessionId, "more")}>
+          Load more events
         </Button>
       )}
     </>

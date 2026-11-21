@@ -156,7 +156,7 @@ describe("orchestrator action cards over the daemon stub", () => {
     const release = gateResolve(services);
 
     await user.click(await screen.findByRole("button", { name: "Approve: create workstream Post-MVP work" }));
-    expect(screen.getByRole("button", { name: "Approve: create workstream Post-MVP work" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Approve: create workstream Post-MVP work" })).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("button", { name: "Reject: create workstream Post-MVP work" })).toBeDisabled();
     expect(screen.getByText("Sending your decision…")).toBeInTheDocument();
     expect(pillOf(cardNamed("Proposed: Create workstream"))).toHaveTextContent("Pending approval");
@@ -345,8 +345,8 @@ describe("orchestrator action cards over the daemon stub", () => {
     fake.failNext("actions.resolve", { code: -32022, message: "proposal is not pending" });
     const card = await screen.findByRole("article", { name: "Proposed: Create workstream" });
     await user.click(within(card).getByRole("button", { name: "Approve: create workstream Post-MVP work" }));
-    // The card shows the reason; the polite region announces it too.
-    expect(await within(card).findByText("This proposal was already decided. Showing the daemon's current state.")).toBeInTheDocument();
+    // The card shows the reason as an alert beside its buttons.
+    expect(await within(card).findByRole("alert")).toHaveTextContent("This proposal was already decided. Showing the daemon's current state.");
     await waitFor(() => expect(fake.callsTo("conversations.get").length).toBeGreaterThan(reads));
 
     fake.failNext("actions.resolve", { code: -32021, message: "proposal not found" });
@@ -520,7 +520,7 @@ describe("orchestrator action cards over the daemon stub", () => {
     const approve = "Approve: create task Add unit tests for the retry module. Run them locally.";
 
     await user.click(await screen.findByRole("button", { name: approve }));
-    expect(screen.getByRole("button", { name: approve })).toBeDisabled();
+    expect(screen.getByRole("button", { name: approve })).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("button", { name: /^Reject: create task/ })).toBeDisabled();
     expect(screen.getByText("Sending your decision…")).toBeInTheDocument();
     expect(fake.callsTo("actions.resolve")).toHaveLength(0);

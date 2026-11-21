@@ -78,10 +78,24 @@ export function Badge({ tone = "neutral", className, children, ...rest }: BadgeP
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "danger" | "quiet";
+  /**
+   * The action is running: a spinner replaces the label (the width stays), and clicks are ignored. The button is not
+   * `disabled`, so a person on the keyboard keeps focus on it; disable the other controls instead.
+   */
+  pending?: boolean;
 }
 
-export function Button({ variant = "secondary", type = "button", className, ...rest }: ButtonProps) {
-  return <button type={type} className={cx("ui-btn", `ui-btn-${variant}`, className)} {...rest} />;
+export function Button({ variant = "secondary", type = "button", className, pending, onClick, ...rest }: ButtonProps) {
+  return (
+    <button
+      type={type}
+      className={cx("ui-btn", `ui-btn-${variant}`, className)}
+      aria-busy={pending || undefined}
+      aria-disabled={pending || undefined}
+      onClick={pending ? undefined : onClick}
+      {...rest}
+    />
+  );
 }
 
 /* Panel --------------------------------------------------------------------------------- */
@@ -213,6 +227,11 @@ export function CopyButton({ text, label = "Copy message", className }: CopyButt
       >
         <CopyIcon state={state} />
       </button>
+      {state !== "idle" && (
+        <span className="ui-copy-result" aria-hidden="true">
+          {COPY_RESULT[state]}
+        </span>
+      )}
       <span className="ui-visually-hidden" aria-live="polite" aria-atomic="true">
         {COPY_RESULT[state]}
       </span>

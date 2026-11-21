@@ -226,10 +226,15 @@ export function ProjectDefaultsSection({ projectId, loaded }: { projectId: strin
         <div className="ps-form-footer">
           <SaveButton label="Save project defaults" reason={reason} saving={saving} tried={tried} reasonId={ids.reason} />
           <div role="status" aria-live="polite" aria-label="Project defaults save result">
+            {saving && <p className="ui-action-pending">Saving…</p>}
             {result?.kind === "saved" && <p>{SAVED_TEXT}</p>}
             {result?.kind === "fixture" && <p>{FIXTURE_SAVE_TEXT}</p>}
-            {result?.kind === "failed" && <Notice tone="bad">{result.message}</Notice>}
           </div>
+          {result?.kind === "failed" && (
+            <Notice tone="bad" role="alert">
+              {result.message}
+            </Notice>
+          )}
         </div>
       </form>
     </section>

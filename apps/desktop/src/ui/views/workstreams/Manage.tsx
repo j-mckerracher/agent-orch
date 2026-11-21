@@ -3,74 +3,59 @@
  * through the D9 source. Each write quotes the revision the operator last read, so a stale
  * edit is a daemon conflict that the runner answers by reloading, never by overwriting.
  */
-import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import type { AppData } from "../../../daemon/appData";
 import { asDaemonError, type DaemonError } from "../../../daemon/errors";
 import type { GateState, WorkstreamGate, WorkstreamObjective } from "../../../sources/surfaces/types";
 import { canArchive, stateLabel } from "../../format";
+import { ActionStatus, useAction, type Action, type Outcome } from "../../action";
+import { useLastingAction } from "../../lastingAction";
 import { useGate, useServices, useStore } from "../../services";
 import { Button, Pill } from "../../theme";
 import { Dialog } from "../../Dialog";
 import { ActionMenu, type MenuItem } from "./ActionMenu";
-import { ErrorNotice, Notice } from "../../widgets";
+import { failureText } from "../../widgets";
 import { reloadWorkstreams, taskLabelOf, type WsGroup, type WsTask } from "./model";
 
 export type Run = <T>(action: string, send: () => Promise<T>) => Promise<T | null>;
 
-interface Outcome {
-  action: string;
-  error: DaemonError | null;
-  reloaded: boolean;
+/** The shared failure text, then the daemon's own message, then what was re-read after a stale or vanished record. */
+function writeFailureText(action: string, failure: DaemonError, reloaded: boolean): string {
+  const detail = failure.message ? ` (${failure.message})` : "";
+  const reread = reloaded ? " The workstream data was reloaded from the daemon." : "";
+  return `${failureText(action, failure)}${detail}${reread}`;
 }
 
-/** Serializes mutations: one in flight at a time, with the outcome shown until the next one. */
-export function useMutationRunner(): { run: Run; busy: boolean; outcome: Outcome | null; clear: () => void } {
-  const [busy, setBusy] = useState(false);
-  const [outcome, setOutcome] = useState<Outcome | null>(null);
+/**
+ * One control group's daemon writes, shown by the group's own Action. A success re-reads the workstream data; a stale
+ * or vanished record is re-read too, and the failure says so. Resolves to the write's value, or null when it failed.
+ */
+export function useGroupRunner(action: Action): Run {
   const { connected } = useGate();
   const wasConnected = useRef(connected);
-  // A failure banner describes a past attempt; once the connection is back it is no longer current.
+  // A failure from before a lost connection is no longer current once the connection is back.
   useEffect(() => {
-    if (connected && !wasConnected.current) setOutcome((current) => (current?.error ? null : current));
+    const failed = action.state.phase === "done" && action.state.outcome.kind === "failed";
+    if (connected && !wasConnected.current && failed) action.clear();
     wasConnected.current = connected;
   }, [connected]);
-  const run: Run = async (action, send) => {
-    setBusy(true);
-    setOutcome(null);
-    try {
-      const result = await send();
+  return async <T,>(text: string, send: () => Promise<T>): Promise<T | null> => {
+    let value: T | null = null;
+    await action.run(`${text}…`, async (): Promise<Outcome> => {
+      try {
+        value = await send();
+      } catch (error) {
+        const failure = asDaemonError(error);
+        // A stale or vanished record is re-read so the operator sees the daemon's current state.
+        const reloaded = failure.kind === "conflict" || failure.kind === "not-found";
+        if (reloaded) reloadWorkstreams();
+        throw new Error(writeFailureText(text, failure, reloaded));
+      }
       reloadWorkstreams();
-      setOutcome({ action, error: null, reloaded: true });
-      return result;
-    } catch (error) {
-      const failure = asDaemonError(error);
-      // A stale or vanished record is re-read so the operator sees the daemon's current state.
-      const reloaded = failure.kind === "conflict" || failure.kind === "not-found";
-      if (reloaded) reloadWorkstreams();
-      setOutcome({ action, error: failure, reloaded });
-      return null;
-    } finally {
-      setBusy(false);
-    }
+      return { kind: "saved", text: `${text}: recorded by the daemon.` };
+    });
+    return value;
   };
-  return { run, busy, outcome, clear: () => setOutcome(null) };
-}
-
-export function OutcomeNotice({ outcome }: { outcome: Outcome | null }) {
-  if (outcome === null) return null;
-  if (outcome.error === null) {
-    return (
-      <Notice tone="ok" role="status">
-        {outcome.action}: recorded by the daemon.
-      </Notice>
-    );
-  }
-  return (
-    <>
-      <ErrorNotice error={outcome.error} action={outcome.action} />
-      {outcome.reloaded && <p className="ws-subtle">The workstream data was reloaded from the daemon.</p>}
-    </>
-  );
 }
 
 const GATE_TARGETS: Record<GateState, GateState[]> = {
@@ -94,21 +79,27 @@ function GateRow({
   objective,
   gate,
   tasks,
-  controls,
+  locked,
 }: {
   objective: WorkstreamObjective;
   gate: WorkstreamGate;
   tasks: WsTask[];
-  controls: Controls;
+  locked: string | null;
 }) {
   const { surfaces } = useServices();
-  const [target, setTarget] = useState<GateState>(GATE_TARGETS[gate.state][0]);
+  // Its own action: the row is keyed by gate id, so the result survives the gate's state changing under it.
+  const action = useAction();
+  const run = useGroupRunner(action);
+  const options = GATE_TARGETS[gate.state];
+  const [picked, setPicked] = useState<GateState | null>(null);
+  const target = picked !== null && options.includes(picked) ? picked : options[0]!;
   const [evidence, setEvidence] = useState("");
   const evidenceAllowed = target !== "pending";
+  const off = action.pending || locked !== null;
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const evidenceTaskId = evidenceAllowed && evidence !== "" ? evidence : undefined;
-    void controls.run(`Set gate "${gate.label}" to ${target}`, () =>
+    void run(`Set gate "${gate.label}" to ${target}`, () =>
       surfaces.workstreams.setGate({ id: objective.id, revision: objective.revision }, gate.id, target, evidenceTaskId),
     );
   };
@@ -119,12 +110,8 @@ function GateRow({
       <form className="ws-inline-form" onSubmit={submit} aria-label={`Change gate ${gate.label}`}>
         <label>
           <span className="ws-sr">New state of gate {gate.label}</span>
-          <select
-            value={target}
-            disabled={controls.busy || controls.locked !== null}
-            onChange={(event) => setTarget(event.target.value as GateState)}
-          >
-            {GATE_TARGETS[gate.state].map((state) => (
+          <select value={target} disabled={off} onChange={(event) => setPicked(event.target.value as GateState)}>
+            {options.map((state) => (
               <option key={state} value={state}>
                 Mark {state}
               </option>
@@ -135,7 +122,7 @@ function GateRow({
           <span className="ws-sr">Evidence task for gate {gate.label}</span>
           <select
             value={evidenceAllowed ? evidence : ""}
-            disabled={controls.busy || controls.locked !== null || !evidenceAllowed}
+            disabled={off || !evidenceAllowed}
             onChange={(event) => setEvidence(event.target.value)}
           >
             <option value="">No evidence task</option>
@@ -146,10 +133,11 @@ function GateRow({
             ))}
           </select>
         </label>
-        <Button type="submit" disabled={controls.busy || controls.locked !== null}>
+        <Button type="submit" pending={action.pending} disabled={locked !== null}>
           Apply to {gate.label}
         </Button>
       </form>
+      <ActionStatus action={action} />
     </li>
   );
 }
@@ -187,7 +175,7 @@ function ReviseForm({ objective, controls }: { objective: WorkstreamObjective; c
         Add acceptance gate
         <input type="text" value={gate} disabled={controls.busy || controls.locked !== null} onChange={(e) => setGate(e.target.value)} />
       </label>
-      <Button type="submit" disabled={!changed || controls.busy || controls.locked !== null}>
+      <Button type="submit" pending={controls.busy} disabled={!changed || controls.locked !== null}>
         Revise objective
       </Button>
     </form>
@@ -197,12 +185,16 @@ function ReviseForm({ objective, controls }: { objective: WorkstreamObjective; c
 export function ObjectiveCard({
   objective,
   tasks,
-  controls,
+  locked,
 }: {
   objective: WorkstreamObjective;
   tasks: WsTask[];
-  controls: Controls;
+  locked: string | null;
 }) {
+  // The card's revise form remounts on every revision, so its result is held here, above it.
+  const revise = useAction();
+  const run = useGroupRunner(revise);
+  const controls: Controls = { run, busy: revise.pending, locked };
   const verified = objective.gates.filter((gate) => gate.state === "verified").length;
   return (
     <section className="ws-objective-card" aria-label={`Objective ${objective.title}`} data-testid="ws-objective">
@@ -217,7 +209,7 @@ export function ObjectiveCard({
       {objective.gates.length > 0 && (
         <ul className="ws-gates" aria-label={`Acceptance gates of ${objective.title}`}>
           {objective.gates.map((gate) => (
-            <GateRow key={`${gate.id}:${gate.state}`} objective={objective} gate={gate} tasks={tasks} controls={controls} />
+            <GateRow key={gate.id} objective={objective} gate={gate} tasks={tasks} locked={locked} />
           ))}
         </ul>
       )}
@@ -226,12 +218,15 @@ export function ObjectiveCard({
         {/* Remounts on every new revision so the fields always start from the daemon's values. */}
         <ReviseForm key={`${objective.id}@${objective.revision}`} objective={objective} controls={controls} />
       </details>
+      <ActionStatus action={revise} />
     </section>
   );
 }
 
-export function AddObjectiveForm({ group, controls }: { group: WsGroup; controls: Controls }) {
+export function AddObjectiveForm({ group, locked }: { group: WsGroup; locked: string | null }) {
   const { surfaces } = useServices();
+  const action = useAction();
+  const run = useGroupRunner(action);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [gates, setGates] = useState("");
@@ -239,7 +234,7 @@ export function AddObjectiveForm({ group, controls }: { group: WsGroup; controls
     event.preventDefault();
     if (title.trim() === "") return;
     const list = gates.split("\n").map((line) => line.trim()).filter((line) => line !== "");
-    const done = await controls.run(`Add objective "${title.trim()}"`, () =>
+    const done = await run(`Add objective "${title.trim()}"`, () =>
       surfaces.workstreams.addObjective(group.id, {
         title: title.trim(),
         ...(description.trim() !== "" ? { description: description.trim() } : {}),
@@ -252,7 +247,7 @@ export function AddObjectiveForm({ group, controls }: { group: WsGroup; controls
       setGates("");
     }
   };
-  const off = controls.busy || controls.locked !== null;
+  const off = action.pending || locked !== null;
   return (
     <form className="ws-form" onSubmit={submit} aria-label="Add objective">
       <label>
@@ -267,9 +262,10 @@ export function AddObjectiveForm({ group, controls }: { group: WsGroup; controls
         Acceptance gates, one per line
         <textarea value={gates} rows={2} disabled={off} onChange={(e) => setGates(e.target.value)} />
       </label>
-      <Button type="submit" disabled={off || title.trim() === ""}>
+      <Button type="submit" pending={action.pending} disabled={locked !== null || title.trim() === ""}>
         Add objective
       </Button>
+      <ActionStatus action={action} />
     </form>
   );
 }
@@ -277,31 +273,43 @@ export function AddObjectiveForm({ group, controls }: { group: WsGroup; controls
 /**
  * The detail header's Actions menu. Suspend and the list order are advisory (the scheduler ignores
  * both); archive is terminal and confirmed in a dialog. `fixtureReason` disables every item on placeholder data.
+ * Suspend and Prioritize are minor and clear themselves; Archive stays until the next change.
  */
 export function WorkstreamActions({
   group,
   first,
-  controls,
+  locked,
   fixtureReason,
 }: {
   group: WsGroup;
   first: boolean;
-  controls: Controls;
+  locked: string | null;
   fixtureReason: string | null;
 }) {
   const { surfaces } = useServices();
   const [confirming, setConfirming] = useState(false);
-  const reason = fixtureReason ?? controls.locked ?? (controls.busy ? "Another change is still being recorded." : null);
+  const minor = useAction();
+  const archive = useLastingAction();
+  const runMinor = useGroupRunner(minor);
+  const runArchive = useGroupRunner(archive);
+  const busy = minor.pending || archive.pending;
+  const reason = fixtureReason ?? locked ?? (busy ? "Another change is still being recorded." : null);
   const target = { id: group.id, revision: group.revision };
-  const change = (action: string, state: "active" | "suspended" | "archived") =>
-    void controls.run(action, () => surfaces.workstreams.update(target, { state }));
   const items: MenuItem[] = [
     group.state === "suspended"
-      ? { label: "Resume workstream", onSelect: () => change("Resume workstream", "active"), reason }
-      : { label: "Suspend workstream", onSelect: () => change("Suspend workstream", "suspended"), reason },
+      ? {
+          label: "Resume workstream",
+          onSelect: () => void runMinor("Resume workstream", () => surfaces.workstreams.update(target, { state: "active" })),
+          reason,
+        }
+      : {
+          label: "Suspend workstream",
+          onSelect: () => void runMinor("Suspend workstream", () => surfaces.workstreams.update(target, { state: "suspended" })),
+          reason,
+        },
     {
       label: "Prioritize",
-      onSelect: () => void controls.run(`Prioritize "${group.title}"`, () => surfaces.workstreams.prioritize(group.id)),
+      onSelect: () => void runMinor(`Prioritize "${group.title}"`, () => surfaces.workstreams.prioritize(group.id)),
       reason: reason ?? (first ? `"${group.title}" is already first.` : null),
     },
     { label: "Archive workstream", onSelect: () => setConfirming(true), reason },
@@ -309,6 +317,9 @@ export function WorkstreamActions({
   return (
     <>
       <ActionMenu label="Workstream actions" trigger={<>Actions <span aria-hidden="true">⌄</span></>} items={items} />
+      {/* Beside the trigger, outside the menu: the menu closes when an item is chosen. */}
+      <ActionStatus action={minor} />
+      <ActionStatus action={archive} />
       {confirming && (
         <Dialog
           title={`Archive "${group.title}"?`}
@@ -320,7 +331,7 @@ export function WorkstreamActions({
                 variant="danger"
                 onClick={() => {
                   setConfirming(false);
-                  change("Archive workstream", "archived");
+                  void runArchive("Archive workstream", () => surfaces.workstreams.update(target, { state: "archived" }));
                 }}
               >
                 Confirm archive (cannot be undone)
@@ -339,64 +350,74 @@ export function LinkTaskForm({
   group,
   unlinked,
   unlinkedKnown,
-  controls,
+  locked,
 }: {
   group: WsGroup;
   unlinked: WsTask[];
   unlinkedKnown: boolean;
-  controls: Controls;
+  locked: string | null;
 }) {
   const { surfaces } = useServices();
+  const action = useAction();
+  const run = useGroupRunner(action);
   const [taskId, setTaskId] = useState("");
   const [objectiveId, setObjectiveId] = useState("");
   const objectives = group.objectives.status === "ok" ? group.objectives.value : [];
-  const off = controls.busy || controls.locked !== null;
+  const off = action.pending || locked !== null;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (taskId === "") return;
-    const done = await controls.run(`Link task ${taskId}`, () =>
+    const done = await run(`Link task ${taskId}`, () =>
       surfaces.workstreams.linkTask(group.id, taskId, objectiveId === "" ? undefined : objectiveId),
     );
     if (done) setTaskId("");
   };
+  // The result sits outside these branches: linking the last unlinked task swaps the form for a note.
+  let content: ReactNode;
   if (!unlinkedKnown) {
-    return (
+    content = (
       <p className="ws-subtle" data-testid="ws-unlinked-unknown">
         Tasks outside every workstream are unknown: a workstream could not be read, and its tasks would look unlinked.
       </p>
     );
-  }
-  if (unlinked.length === 0) {
-    return <p className="ws-subtle">Every daemon task is already in a workstream, so there is nothing to link.</p>;
+  } else if (unlinked.length === 0) {
+    content = <p className="ws-subtle">Every daemon task is already in a workstream, so there is nothing to link.</p>;
+  } else {
+    content = (
+      <form className="ws-inline-form" onSubmit={submit} aria-label="Link task">
+        <label>
+          Task to link
+          <select value={taskId} disabled={off} onChange={(e) => setTaskId(e.target.value)}>
+            <option value="">Choose a task</option>
+            {unlinked.map((task) => (
+              <option key={task.id} value={task.id}>
+                {taskLabelOf(task)} ({task.projectId.split(/[\\/]/).pop()})
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          Under objective
+          <select value={objectiveId} disabled={off} onChange={(e) => setObjectiveId(e.target.value)}>
+            <option value="">Workstream only</option>
+            {objectives.map((objective) => (
+              <option key={objective.id} value={objective.id}>
+                {objective.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <Button type="submit" pending={action.pending} disabled={locked !== null || taskId === ""}>
+          Link task
+        </Button>
+      </form>
+    );
   }
   return (
-    <form className="ws-inline-form" onSubmit={submit} aria-label="Link task">
-      <label>
-        Task to link
-        <select value={taskId} disabled={off} onChange={(e) => setTaskId(e.target.value)}>
-          <option value="">Choose a task</option>
-          {unlinked.map((task) => (
-            <option key={task.id} value={task.id}>
-              {taskLabelOf(task)} ({task.projectId.split(/[\\/]/).pop()})
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Under objective
-        <select value={objectiveId} disabled={off} onChange={(e) => setObjectiveId(e.target.value)}>
-          <option value="">Workstream only</option>
-          {objectives.map((objective) => (
-            <option key={objective.id} value={objective.id}>
-              {objective.title}
-            </option>
-          ))}
-        </select>
-      </label>
-      <Button type="submit" disabled={off || taskId === ""}>
-        Link task
-      </Button>
-    </form>
+    <>
+      {content}
+      <ActionStatus action={action} />
+    </>
   );
 }
 
@@ -461,13 +482,15 @@ export function ArchiveTaskButton({ task, controls }: { task: WsTask; controls: 
 
 /**
  * The list header's "⋯" menu. Archive finished archives every finished task, linked or not, after a
- * confirmation. The workstream-lifecycle actions live on the detail screen, not here.
+ * confirmation. The workstream-lifecycle actions live on the detail screen, not here. The caller owns the
+ * actions, so their results stay in the header when this menu remounts.
  */
-export function ListMenu({ run, busy, live, onRefresh }: { run: Run; busy: boolean; live: boolean; onRefresh: () => void }) {
+export function ListMenu({ controls, live, onRefresh }: { controls: Controls; live: boolean; onRefresh: () => void }) {
   const { data, router } = useServices();
   const gate = useGate();
   const { tasks, archiveUnsupported } = useStore(data);
   const [confirming, setConfirming] = useState(false);
+  const { run, busy } = controls;
   const finished = (tasks.data ?? []).filter((task) => canArchive(task.state)).map((task) => task.contract.id);
   const busyReason = busy ? "Another change is still being recorded." : null;
   const items: MenuItem[] = [{ label: "Manage projects", onSelect: () => router.navigate({ name: "projects" }) }];

@@ -1,12 +1,13 @@
 /** S5: the project's Coordinator tab. The conversation first; related tasks and decisions one click deeper. */
 import { useState } from "react";
-import { asDaemonError, type DaemonError } from "../daemon/errors";
+import { asDaemonError } from "../daemon/errors";
 import type { CoordinatorMessage, ProposedTask, SimulatedReceipt } from "../sources/types";
 import { pendingApprovals } from "./format";
+import { ActionStatus, useAction } from "./action";
 import { QueueWaitNote, useQueueWaits } from "./QueueWaitNote";
 import { useGate, useServices, useSource, useStore } from "./services";
 import { Button, Disclosure } from "./theme";
-import { ErrorNotice, LoadableRegion, Notice, SimulatedReceipts, SourceSection, StateText } from "./widgets";
+import { LoadableRegion, Notice, SimulatedReceipts, SourceSection, StateText, failureText } from "./widgets";
 
 export function Coordinator({ projectId }: { projectId: string }) {
   const { data, router, drafts, sources } = useServices();
@@ -23,29 +24,27 @@ export function Coordinator({ projectId }: { projectId: string }) {
   const [replies, setReplies] = useState<CoordinatorMessage[]>([]);
   const [proposals, setProposals] = useState<ProposedTask[]>([]);
   const [receipts, setReceipts] = useState<SimulatedReceipt[]>([]);
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
-  const [failure, setFailure] = useState<DaemonError | null>(null);
+  // One action per button: each shows its own spinner and result, and the other button waits while one runs.
+  const message = useAction();
+  const proposal = useAction();
 
-  const submit = async (what: "message" | "proposal") => {
+  const submit = (what: "message" | "proposal") => {
     const call = what === "message" ? sources.coordinator.send : sources.coordinator.propose;
     if (!call) return;
-    setBusy(true);
-    setStatus(null);
-    setFailure(null);
-    try {
-      await call.call(sources.coordinator, projectId, draft);
-      setStatus(
-        what === "message"
-          ? "Message recorded. Nothing acts on it automatically."
-          : "Proposal validated and recorded. No task was created.",
-      );
+    const action = what === "message" ? message : proposal;
+    const label = what === "message" ? "Sending the message" : "Validating the proposal";
+    void action.run(`${label}…`, async () => {
+      try {
+        await call.call(sources.coordinator, projectId, draft);
+      } catch (error) {
+        return { kind: "failed", text: failureText(label, asDaemonError(error)) };
+      }
       setNonce((n) => n + 1);
-    } catch (error) {
-      setFailure(asDaemonError(error));
-    } finally {
-      setBusy(false);
-    }
+      return {
+        kind: "saved",
+        text: what === "message" ? "Message recorded. Nothing acts on it automatically." : "Proposal validated and recorded. No task was created.",
+      };
+    });
   };
 
   const own = (tasks.data ?? []).filter((task) => task.contract.project_id === projectId);
@@ -102,30 +101,34 @@ export function Coordinator({ projectId }: { projectId: string }) {
       <section aria-label="Objective composer" className="ps-section ps-composer">
         <label>
           {real ? "Message or proposal JSON" : "Draft objective"}
-          <textarea value={draft} onChange={(event) => drafts.setCoordinator(projectId, event.target.value)} />
+          <textarea
+            value={draft}
+            onChange={(event) => {
+              drafts.setCoordinator(projectId, event.target.value);
+              message.clear();
+              proposal.clear();
+            }}
+          />
         </label>
         {real ? (
           <div>
             <div className="ps-actions">
               <Button
                 variant="primary"
-                disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
-                onClick={() => void submit("message")}
+                pending={message.pending}
+                disabled={proposal.pending || !gate.can("coordinator") || draft.trim() === ""}
+                onClick={() => submit("message")}
               >
                 Send message
               </Button>
               <Button
-                disabled={busy || !gate.can("coordinator") || draft.trim() === ""}
-                onClick={() => void submit("proposal")}
+                pending={proposal.pending}
+                disabled={message.pending || !gate.can("coordinator") || draft.trim() === ""}
+                onClick={() => submit("proposal")}
               >
                 Validate proposal
               </Button>
             </div>
-            {status && <p role="status">{status}</p>}
-            {failure && <ErrorNotice error={failure} action="Contacting the coordinator" />}
-            {failure?.indeterminate && (
-              <p role="status">The outcome is unknown. Submitting the same text again reuses the same request key.</p>
-            )}
           </div>
         ) : (
           <div>
@@ -154,6 +157,9 @@ export function Coordinator({ projectId }: { projectId: string }) {
             <SimulatedReceipts label="Simulated receipts" receipts={receipts} />
           </div>
         )}
+        {/* Outside the conditional: a live change of the service must not drop a submitted result. */}
+        <ActionStatus action={message} />
+        <ActionStatus action={proposal} />
       </section>
 
       <Disclosure summary="Related tasks and decisions" count={`${own.length} tasks, ${pending.length} pending`}>

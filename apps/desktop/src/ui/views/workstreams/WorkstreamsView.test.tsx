@@ -617,7 +617,9 @@ describe("live mutations", () => {
     await screen.findAllByTestId("ws-gate");
     await user.selectOptions(screen.getByLabelText("Evidence task for gate CLI wired"), "a2");
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
+    expect(screen.getByRole("button", { name: "Apply to CLI wired" })).toHaveAttribute("aria-busy", "true");
     await waitFor(() => expect(screen.getAllByTestId("ws-gate")[1]).toHaveTextContent("evidence: a2"));
+    expect(await screen.findByText(/Set gate "CLI wired" to verified: recorded by the daemon/)).toBeInTheDocument();
     expect(paramsOf(fake, "workstreams.set_gate")[0]).toMatchObject({
       objective_id: "obj-a",
       expected_revision: 3,
@@ -644,7 +646,9 @@ describe("live mutations", () => {
     await user.selectOptions(within(form).getByLabelText("Task to link"), "c1");
     await user.selectOptions(within(form).getByLabelText("Under objective"), "obj-a");
     await user.click(within(form).getByRole("button", { name: "Link task" }));
+    expect(within(form).getByRole("button", { name: "Link task" })).toHaveAttribute("aria-busy", "true");
     await waitFor(() => expect(screen.getAllByTestId("task-row")).toHaveLength(3));
+    expect(await screen.findByText(/Link task c1: recorded by the daemon/)).toBeInTheDocument();
     expect(paramsOf(fake, "workstreams.link_task")[0]).toMatchObject({ workstream_id: "ws-a", task_id: "c1", objective_id: "obj-a" });
     await backToList(user);
     expect(screen.queryByTestId("ws-unlinked")).not.toBeInTheDocument();
@@ -908,8 +912,9 @@ describe("live mutations", () => {
     await waitFor(() => expect(screen.getByTestId("ws-status")).toHaveTextContent("Suspended"));
     expect(paramsOf(fake, "workstreams.update")[0]).toMatchObject({ workstream_id: "ws-a", expected_revision: 2, state: "suspended" });
     expect(within(screen.getByTestId("ws-technical")).getByText(/Suspend is advisory/)).toBeInTheDocument();
+    // The confirmation sits beside the Actions menu that was used, so it is read there, before leaving the detail.
+    expect(await screen.findByText(/Suspend workstream: recorded by the daemon/)).toBeInTheDocument();
     await backToList(user);
-    expect(screen.getByText(/Suspend workstream: recorded by the daemon/)).toBeInTheDocument();
     await openTab(user, "Suspended 1");
     expect(within(screen.getByRole("tabpanel")).getAllByTestId("ws-row").map(titleOf)).toEqual(["Alpha stream"]);
     expect(within(screen.getByRole("tabpanel")).getByTestId("ws-row")).toHaveTextContent("Suspended");
@@ -955,7 +960,7 @@ describe("live mutations", () => {
     state.objectives[0]!.revision = 9;
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
     expect(await screen.findByRole("alert")).toHaveTextContent(/stale revision/i);
-    expect(screen.getByText("The workstream data was reloaded from the daemon.")).toBeInTheDocument();
+    expect(within(screen.getByTestId("workstreams-view")).getByRole("alert")).toHaveTextContent("The workstream data was reloaded from the daemon.");
     await waitFor(() => expect(screen.getAllByTestId("ws-objective")[0]).toHaveTextContent("Revision 9"));
     expect(state.applied).toEqual([]);
   });
@@ -978,6 +983,40 @@ describe("live mutations", () => {
     ).toBeInTheDocument();
   });
 
+  it("gives Refresh a pending state and a result of its own, beside the More actions menu", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("ws-row");
+    await chooseAction(user, "More actions", "Refresh");
+    expect(await screen.findByText(/Refreshing workstreams/)).toBeInTheDocument();
+    expect(await screen.findByText(/Workstreams refreshed\./)).toBeInTheDocument();
+  });
+
+  it("answers a failed Refresh with an alert that says why and offers Retry", async () => {
+    const fake = daemon();
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("ws-row");
+    fake.failNext("workstreams.list", { code: -32603, message: "boom" });
+    await chooseAction(user, "More actions", "Refresh");
+    const alert = await within(screen.getByTestId("workstreams-view")).findByRole("alert");
+    expect(alert).toHaveTextContent(/Refresh failed/);
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("keeps a refused archive of finished tasks beside the menu, with its reason and Retry", async () => {
+    const fake = daemon((f) => {
+      f.tasks.push(mkTask("a3", A, { state: "Failed" }));
+    });
+    const { user } = await mount(fake);
+    await screen.findAllByTestId("ws-row");
+    fake.failNext("tasks.archive", { code: -32011, message: "task is not finished" });
+    await chooseAction(user, "More actions", "Archive finished (2)");
+    await user.click(screen.getByRole("button", { name: "Confirm archive" }));
+    const alert = await within(screen.getByTestId("workstreams-view")).findByRole("alert");
+    expect(alert).toHaveTextContent(/Archive 2 finished tasks failed/);
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
   it("has a Refresh control that re-reads the daemon, so another client's edit shows without an own action", async () => {
     const fake = daemon();
     const { user } = await mount(fake);
@@ -989,20 +1028,20 @@ describe("live mutations", () => {
     expect(fake.callsTo("workstreams.list").length).toBeGreaterThan(before);
   });
 
-  it("clears a failure banner when the operator refreshes, and its advice names a control that exists", async () => {
+  it("keeps a failed change with the objective it belongs to, so leaving the workstream drops it", async () => {
     const fake = daemon();
     const { user } = await mountOpen(fake);
     await openTab(user, "Objectives");
     await screen.findAllByTestId("ws-gate");
     streams.get(fake)!.objectives[0]!.revision = 9;
     await user.click(screen.getByRole("button", { name: "Apply to CLI wired" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent(/Refresh to see the current state/);
-    // Refresh lives in the list screen's "More actions" menu; the notice follows the operator there.
+    const view = within(screen.getByTestId("workstreams-view"));
+    expect(await view.findByRole("alert")).toHaveTextContent(/Refresh to see the current state/);
+    // The alert belongs to the objective's controls. The list has none of them, so the alert does not follow the operator there.
     await backToList(user);
-    expect(screen.getByRole("alert")).toHaveTextContent(/Refresh to see the current state/);
+    expect(view.queryByRole("alert")).not.toBeInTheDocument();
     await chooseAction(user, "More actions", "Refresh");
-    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
-    expect(screen.queryByText("The workstream data was reloaded from the daemon.")).not.toBeInTheDocument();
+    expect(await screen.findByText(/Workstreams refreshed\./)).toBeInTheDocument();
   });
 
   it("clears a failure banner once the connection recovers", async () => {

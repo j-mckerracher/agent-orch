@@ -46,7 +46,8 @@ export function TaskConversation({ taskId, state, sessionId, running, agent }: P
           <Markdown text={open.question} />
         </Bubble>
       )}
-      {announcement !== "" && (
+      {/* A refused answer is shown as an alert beside the reply box, not here. */}
+      {announcement !== "" && !reply.answerFailed && (
         <div className="ws-state">
           <p role="status">{announcement}</p>
         </div>

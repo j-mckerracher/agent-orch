@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -7,6 +7,7 @@ import {
   historyActionReason,
   type ConversationActionsProps,
 } from "./ConversationActions";
+import { DaemonError } from "../../../daemon/errors";
 import { ConversationTargetPicker } from "./ConversationTargetPicker";
 import { GLOBAL_TARGET, type TargetOption } from "./targets";
 
@@ -196,7 +197,39 @@ describe("clear history confirmation", () => {
     await u.click(screen.getByRole("menuitem", { name: "Clear history…" }));
     await u.click(screen.getByRole("button", { name: "Clear history permanently" }));
     expect(props.onClear).toHaveBeenCalledTimes(1);
-    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("holds the confirm button pending, and keeps the dialog open, until the clear ends", async () => {
+    const u = user();
+    let finish = (): void => {};
+    const props = actions({
+      onClear: vi.fn(() => new Promise<void>((resolve) => (finish = () => resolve()))),
+    });
+    await openMenu(u);
+    await u.click(screen.getByRole("menuitem", { name: "Clear history…" }));
+    await u.click(screen.getByRole("button", { name: "Clear history permanently" }));
+    expect(screen.getByRole("button", { name: "Clear history permanently" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    finish();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(props.onClear).toHaveBeenCalledTimes(1);
+  });
+
+  it("holds the remove confirm pending until the removal ends", async () => {
+    const u = user();
+    let finish = (): void => {};
+    const props = actions({
+      onRemove: vi.fn(() => new Promise<void>((resolve) => (finish = () => resolve()))),
+    });
+    await openMenu(u);
+    await u.click(screen.getByRole("menuitem", { name: "Remove coordinator…" }));
+    await u.click(screen.getByRole("button", { name: "Remove coordinator permanently" }));
+    expect(screen.getByRole("button", { name: "Remove coordinator permanently" })).toHaveAttribute("aria-busy", "true");
+    finish();
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(props.onRemove).toHaveBeenCalledTimes(1);
   });
 
   it("keeps Tab and Shift+Tab inside the dialog", async () => {
@@ -275,8 +308,21 @@ describe("add coordinator dialog", () => {
         onClose={vi.fn()}
       />,
     );
-    expect(screen.getByRole("button", { name: "Add auth coordinator" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Add auth coordinator" })).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("button", { name: "Add auth coordinator" })).toHaveTextContent("Adding…");
+  });
+
+  it("shows a failed add inside the dialog as an alert, since the dialog covers the page", () => {
+    render(
+      <AddCoordinatorDialog
+        projects={[{ id: "auth", label: "auth coordinator" }]}
+        busyId={null}
+        error={new DaemonError("timeout", "the daemon did not answer")}
+        onAdd={vi.fn()}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Adding the coordinator failed.");
   });
 });
 

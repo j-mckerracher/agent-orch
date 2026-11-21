@@ -338,7 +338,9 @@ describe("S4 task and session detail", () => {
     const status = await screen.findByRole("region", { name: "Queue status" });
     await within(status).findByText(/restart gate/);
     fake.queue.dispatch_blocked = false;
+    fake.delayNext("queue.snapshot", 150);
     await user.click(within(status).getByRole("button", { name: "Refresh queue status" }));
+    expect(within(status).getByRole("button", { name: "Refresh queue status" })).toHaveAttribute("aria-busy", "true");
     expect(await within(status).findByText(/scheduler reports no blocker/)).toBeInTheDocument();
     fake.tasks[0]!.state = "Running";
     fake.emit(mkEvent(1, "t-q", null, "ExecutionStarted"));
@@ -379,6 +381,7 @@ describe("S4 task and session detail", () => {
     fake.failNext("queue.snapshot", { code: -32603, message: "queue read failed" }, 1);
     await user.click(within(status).getByRole("button", { name: "Refresh queue status" }));
     expect(await within(status).findByText(/Queue status unavailable:/)).toHaveTextContent("queue read failed");
+    expect(within(status).getByRole("alert")).toHaveTextContent("Queue status unavailable:");
     expect(status).not.toHaveTextContent("restart gate");
     await user.click(within(status).getByRole("button", { name: "Refresh queue status" }));
     await within(status).findByText(/restart gate/);
@@ -491,9 +494,23 @@ describe("S4 task and session detail", () => {
     fake.stub("tasks.retry", (params: Record<string, unknown>) => mkTask(String(params.task_id), REPO));
     const { user } = await mount(fake, { route: taskRoute("t-f"), daemonSources: true });
     await user.click(await screen.findByRole("button", { name: "Retry" }));
+    expect(screen.getByRole("button", { name: "Retry" })).toHaveAttribute("aria-busy", "true");
     expect(await screen.findByText("The retry request was accepted by the daemon.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
     expect(fake.callsTo("tasks.retry")).toHaveLength(1);
+  });
+
+  it("reports a failed retry as an alert beside the header, with Retry", async () => {
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-f", REPO, { state: "Failed" }));
+    fake.failNext("tasks.retry", { code: -32603, message: "store error" });
+    fake.stub("tasks.retry", (params: Record<string, unknown>) => mkTask(String(params.task_id), REPO));
+    const { user } = await mount(fake, { route: taskRoute("t-f"), daemonSources: true });
+    await user.click(await screen.findByRole("button", { name: "Retry" }));
+    const alert = (await screen.findByText(/Retrying the task failed/)).closest('[role="alert"]') as HTMLElement;
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    expect(await screen.findByText("The retry request was accepted by the daemon.")).toBeInTheDocument();
+    expect(fake.callsTo("tasks.retry")).toHaveLength(2);
   });
 
   it("has no primary action for a finished task and keeps Archive in the actions menu", async () => {
@@ -561,7 +578,9 @@ describe("S4 task and session detail", () => {
     await screen.findByTestId("task-state");
     fake.failNext("tasks.cancel", { code: -32011, message: "task already terminal" });
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(await screen.findByText(/Canceling the task failed/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveAttribute("aria-busy", "true");
+    const alert = (await screen.findByText(/Canceling the task failed/)).closest('[role="alert"]') as HTMLElement;
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeInTheDocument();
     expect(screen.queryByText(/Cancel request acknowledged/)).not.toBeInTheDocument();
   });
 
@@ -597,6 +616,7 @@ describe("S4 task and session detail", () => {
     await screen.findByTestId("task-state");
     fake.failNext("tasks.archive", { code: -32603, message: "store error" });
     await archiveFromMenu(user);
+    expect(screen.getByText("Archiving the task…")).toBeInTheDocument();
     expect(await screen.findByText(/Archiving the task failed/)).toBeInTheDocument();
     expect(screen.queryByText(/Archived\. The task leaves/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
@@ -623,6 +643,19 @@ describe("S4 task and session detail", () => {
     expect(screen.queryByRole("button", { name: "Discard changes" })).not.toBeInTheDocument();
     await archiveFromMenu(user);
     expect(await screen.findByText(/Archived\. The task leaves the task lists; its history is kept\./)).toBeInTheDocument();
+  });
+
+  it("marks Confirm discard busy and reports a failed discard beside the header", async () => {
+    const fake = seeded();
+    const { user } = await mount(fake, { route: taskRoute("t-d") });
+    await screen.findByTestId("task-state");
+    fake.failNext("tasks.discard", { code: -32603, message: "store error" });
+    await user.click(screen.getByRole("button", { name: "Task actions" }));
+    await user.click(screen.getByRole("menuitem", { name: "Discard changes" }));
+    await user.click(screen.getByRole("button", { name: "Confirm discard" }));
+    expect(screen.getByRole("button", { name: "Confirm discard" })).toHaveAttribute("aria-busy", "true");
+    expect(await screen.findByText(/Discarding the changes failed/)).toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("offers Discard changes from the actions menu for a finished task, behind a confirmation", async () => {

@@ -81,6 +81,18 @@ describe("Settings > Agents inventory", () => {
     await waitFor(() => expect(fake.callsTo("agents.capabilities").length).toBeGreaterThan(1));
   });
 
+  it("Retry on an unreadable inventory says it is loading again until the read answers", async () => {
+    const fake = new FakeDaemon();
+    fake.stub("agents.capabilities", [CODEX]);
+    fake.failNext("agents.capabilities", { code: -32603, message: "probe failed" }, 5);
+    const user = await settings(fake);
+    const section = within(await screen.findByTestId("agents-inventory"));
+    expect(await section.findByRole("alert")).toHaveTextContent("Adapter inventory could not be loaded");
+    fake.delayNext("agents.capabilities", 200, 10);
+    await user.click(section.getByRole("button", { name: "Retry" }));
+    expect(await section.findByRole("status")).toHaveTextContent("Loading Adapter inventory…");
+  });
+
   it("says when the daemon reports no adapters, never an idle-worker count", async () => {
     const fake = new FakeDaemon();
     fake.stub("agents.capabilities", []);

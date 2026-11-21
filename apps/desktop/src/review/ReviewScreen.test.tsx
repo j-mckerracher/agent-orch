@@ -337,9 +337,10 @@ describe("Accept / Reject", () => {
         return { ...approval(), state: { state: "approved", by: { kind: "user", id: "u" } }, id: String(p.approval_id) };
       });
       await userEvent.click(accept());
-      await screen.findByText(new RegExp(`Decision failed \\(${kind}\\)`));
+      await screen.findByText(/Decision failed\./);
+      expect(screen.getByText(/Decision failed\./).closest("[role=alert]")).not.toBeNull();
       expect(accept().disabled).toBe(true);
-      if (kind === "timeout") expect(screen.getByText(/may or may not have applied/)).toBeTruthy();
+      if (kind === "timeout") expect(screen.getByText(/The outcome is unknown/)).toBeTruthy();
       await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
       await waitFor(() => expect(accept().disabled).toBe(false));
       await userEvent.click(accept());
@@ -348,6 +349,47 @@ describe("Accept / Reject", () => {
       expect(keys).toEqual(["key-1", "key-1"]);
     },
   );
+});
+
+describe("Busy and result feedback", () => {
+  it("Accept is busy while the daemon answers, and says so beside the decision", async () => {
+    const { client } = setup();
+    await ready();
+    client.setHandler("approvals.resolve", () => new Promise(() => undefined));
+    await userEvent.click(accept());
+    expect(accept()).toHaveAttribute("aria-busy", "true");
+    expect(reject()).toBeDisabled();
+    expect(await screen.findByText(/Decision: waiting for the daemon/)).toBeTruthy();
+  });
+
+  it("Refresh is busy while it reads the candidate again, and then says it was refreshed", async () => {
+    setup();
+    await ready();
+    const refresh = screen.getByRole("button", { name: "Refresh" });
+    await userEvent.click(refresh);
+    expect(refresh).toHaveAttribute("aria-busy", "true");
+    expect(await screen.findByText("Candidate refreshed from the daemon.")).toBeTruthy();
+  });
+
+  it("a Refresh the daemon refuses says why nothing was refreshed, and offers Retry", async () => {
+    const { client } = setup();
+    await ready();
+    client.setHandler("approvals.list", () => fail("timeout"));
+    await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    const alert = (await screen.findByText(/so nothing was refreshed/)).closest("[role=alert]") as HTMLElement;
+    expect(within(alert).getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("Request delivery is busy while the daemon answers", async () => {
+    const { client } = setup();
+    await ready();
+    await userEvent.click(accept());
+    await waitFor(() => expect(deliver().disabled).toBe(false));
+    client.setHandler("delivery.request", () => new Promise(() => undefined));
+    await userEvent.click(deliver());
+    expect(deliver()).toHaveAttribute("aria-busy", "true");
+    expect(await screen.findByText(/Delivery request: waiting for the daemon/)).toBeTruthy();
+  });
 });
 
 describe("Delivery", () => {
@@ -531,7 +573,7 @@ describe("self-originated approval events (M5-02 `approval.<decision>` durable e
     await ready();
     client.setHandler("approvals.resolve", () => fail("timeout"));
     await userEvent.click(accept());
-    await screen.findByText(/Decision failed \(timeout\)/);
+    await screen.findByText(/Decision failed\./);
     act(() => client.emit(approvalEvent("approval-1")));
     await screen.findByText(/Stale review/);
   });
@@ -576,7 +618,7 @@ describe("self-originated delivery events (`delivery.<outcome>` durable events)"
     await userEvent.click(accept());
     await waitFor(() => expect(deliver().disabled).toBe(false));
     await userEvent.click(deliver());
-    await screen.findByText(/Delivery request failed \(timeout\)/);
+    await screen.findByText(/Delivery request failed\./);
     act(() => client.emit(deliveryEvent()));
     await screen.findByText(/Stale review/);
   });
@@ -616,7 +658,8 @@ describe("request integrity", () => {
       button.click();
       button.click();
     });
-    await waitFor(() => expect(accept().disabled).toBe(true));
+    // The pressed button stays focusable (aria-disabled, not disabled), and shows its own spinner.
+    await waitFor(() => expect(accept()).toHaveAttribute("aria-busy", "true"));
     await userEvent.click(reject());
     release();
     await screen.findByText(/receipt from daemon/);

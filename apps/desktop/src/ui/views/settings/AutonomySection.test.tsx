@@ -84,23 +84,48 @@ describe("Autonomy switches", () => {
     const { fake, services } = await connected(ALL);
     renderSettingsPage(services, "autonomy");
     const box = await toggle(label);
+    const row = box.closest<HTMLElement>(".settings-switch")!;
     const was = (box as HTMLInputElement).checked;
     await user.click(box);
-    await waitFor(() => expect(screen.getByRole("status", { name: `${label} result` })).toHaveTextContent("Saved"));
+    await waitFor(() => expect(within(row).getByRole("status")).toHaveTextContent("Saved"));
     const calls = fake.callsTo("settings.set");
     expect(calls).toHaveLength(1);
     expect(calls[0]!.params).toEqual({ idempotency_key: expect.any(String), ...sent });
     expect(screen.getByRole("switch", { name: label })).toHaveProperty("checked", !was);
   });
 
-  it("autonomy_puts_a_refused_switch_back_and_says_so", async () => {
+  it("autonomy_puts_a_refused_switch_back_in_an_alert_and_retries", async () => {
     const user = userEvent.setup();
     const { fake, services } = await connected(ALL);
     fake.failNext("settings.set", { code: -32602, message: "invalid params" });
     renderSettingsPage(services, "autonomy");
-    await user.click(await toggle(AUTONOMOUS_LABEL));
-    await waitFor(() => expect(screen.getByRole("status", { name: `${AUTONOMOUS_LABEL} result` })).toHaveTextContent("The daemon refused these values."));
+    const row = (await toggle(AUTONOMOUS_LABEL)).closest<HTMLElement>(".settings-switch")!;
+    await user.click(within(row).getByRole("switch"));
+    const alert = await within(row).findByRole("alert");
+    expect(alert).toHaveTextContent("The daemon refused these values.");
     expect(screen.getByRole("switch", { name: AUTONOMOUS_LABEL })).toBeChecked();
+    await user.click(within(alert).getByRole("button", { name: "Retry" }));
+    await waitFor(() => expect(within(row).getByRole("status")).toHaveTextContent("Saved."));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("switch", { name: AUTONOMOUS_LABEL })).not.toBeChecked();
+  });
+
+  it("autonomy_shows_saving_and_refuses_a_second_flip_with_a_reason_while_the_first_is_saved", async () => {
+    const user = userEvent.setup();
+    const { fake, services } = await connected(ALL);
+    fake.delayNext("settings.set", 200);
+    renderSettingsPage(services, "autonomy");
+    const box = await toggle(AUTONOMOUS_LABEL);
+    const row = box.closest<HTMLElement>(".settings-switch")!;
+    await user.click(box);
+    expect(box).toHaveAttribute("aria-busy", "true");
+    expect(within(row).getByText("Saving…")).toBeInTheDocument();
+    await user.click(box);
+    expect(within(row).getByText("Still saving the last change. Change it again when this finishes.")).toBeInTheDocument();
+    expect(fake.callsTo("settings.set")).toHaveLength(1);
+    await waitFor(() => expect(within(row).getByRole("status")).toHaveTextContent("Saved."));
+    expect(box).not.toHaveAttribute("aria-busy");
+    expect(box).not.toBeChecked();
   });
 
   it("autonomy_locks_the_switches_for_a_non_approver_and_says_why", async () => {
@@ -116,8 +141,8 @@ describe("Autonomy switches", () => {
     const box = await toggle(AUTONOMOUS_LABEL);
     expect(box).toBeChecked();
     await user.click(box);
-    const result = screen.getByRole("status", { name: `${AUTONOMOUS_LABEL} result` });
-    await waitFor(() => expect(within(result).getByText("Fixture data: nothing was saved.")).toBeInTheDocument());
+    const row = box.closest<HTMLElement>(".settings-switch")!;
+    await waitFor(() => expect(within(row).getByText("Fixture data: nothing was saved.")).toBeInTheDocument());
     expect(screen.getByRole("switch", { name: AUTONOMOUS_LABEL })).toBeChecked();
   });
 });
