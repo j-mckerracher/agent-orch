@@ -7,6 +7,7 @@ Install MCAO from a prebuilt installer. To build it yourself, see [Build from so
 - Supported platforms: macOS on Apple Silicon (arm64 only) and Windows x64.
 - Install and sign in to the agent CLIs you want to use: `codex`, `claude`, `copilot`.
 - MCAO finds the CLIs on `PATH`. To use another location, see [Configuration](configuration.md#agent-programs).
+- To receive [updates in the app](#update-the-app), install the GitHub CLI (`gh`) and sign in with an account that can read this repository.
 
 ## Download
 
@@ -17,6 +18,16 @@ Get the installers from the [releases page](https://github.com/mc-innersource/mo
 ```sh
 unzip MCAO-<version>-macos-arm64-unsigned.zip
 mv MCAO.app /Applications/
+```
+
+To download and install from the command line instead, use `gh`. A download made this way is not quarantined, so macOS opens it without the [first-launch prompt](#macos).
+
+```sh
+gh release download v<version> --repo mc-innersource/motif-mcao \
+  --pattern 'MCAO-<version>-macos-arm64-unsigned.zip' --pattern SHA256SUMS
+shasum -a 256 -c SHA256SUMS --ignore-missing
+ditto -x -k MCAO-<version>-macos-arm64-unsigned.zip .
+ditto MCAO.app /Applications/MCAO.app
 ```
 
 ## Install on Windows
@@ -52,6 +63,20 @@ shasum -a 256 <file>
 # Windows
 Get-FileHash <file>
 ```
+
+## Update the app
+
+Version 0.1.38 is the first release that can update itself. Install it, or a later release, by hand once. Earlier builds contain no update key and never offer an update.
+
+From then on the app checks GitHub Releases when it starts and every 30 minutes while its window is visible. To check at once, click **Check for updates**. When a newer release exists, the app shows **Install and restart**. The app downloads the update, checks its signature against the key built into the app, replaces itself, and restarts.
+
+Updates need:
+
+- The GitHub CLI (`gh`) on `PATH`. MCAO uses it to find and download updates.
+- A `gh` login that can read `mc-innersource/motif-mcao`. Run `gh auth login --hostname github.com`.
+- No running agent work. If work is still running, the app shows "Work is still running". Finish it, then try again.
+
+The app stays quiet when a background check fails, for example when `gh` is missing. **Check for updates** shows the error.
 
 ## Next step
 
