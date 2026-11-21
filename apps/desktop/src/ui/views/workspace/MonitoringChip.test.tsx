@@ -27,6 +27,23 @@ function mount(value: MonitoringModel, canChange = true) {
 }
 
 describe("MonitoringChip", () => {
+  it.each([
+    ["on", "on"],
+    ["quiet", "quiet"],
+    ["away", "away"],
+    ["off", "off"],
+    ["from-the-future", "unknown"],
+  ])("monitoring_chip_dot_tone_for_mode_%s_is_%s", (mode, tone) => {
+    const { button } = mount(model({ state: { ...STATE, mode } }));
+    expect(button().querySelector(".ws-monitoring-dot")).toHaveAttribute("data-tone", tone);
+  });
+
+  it("monitoring_chip_dot_turns_paused_when_a_limit_pauses_this_target", () => {
+    const paused = [{ target: { kind: "global" as const }, reason: "hourly", until: null }];
+    const { button } = mount(model({ state: { ...STATE, paused } }));
+    expect(button().querySelector(".ws-monitoring-dot")).toHaveAttribute("data-tone", "paused");
+  });
+
   it("monitoring_chip_renders_the_mode_and_opens_a_menu_of_four_radios_with_one_checked", async () => {
     const { user, button } = mount(model());
     expect(button()).toHaveTextContent("Monitoring: on");
