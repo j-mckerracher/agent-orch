@@ -375,8 +375,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
         </ServicesProvider>,
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
-      const modes = screen.getByRole("button", { name: /Chat mode:/ });
-      expect(modes).toHaveAttribute("aria-label", "Chat mode: Auto · Standard");
+      const modes = await screen.findByRole("button", { name: "Chat mode: Auto · Standard" }, { timeout: 15000 });
       const box = screen.getByRole("textbox", { name: "Message Global orchestrator" });
       const sendButton = () => screen.getByRole("button", { name: "Send message to Global orchestrator" });
 
@@ -384,7 +383,9 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       await waitFor(() => expect((sendButton() as HTMLButtonElement).disabled).toBe(false), { timeout: 15000 });
       await userEvent.click(sendButton());
       expect(await screen.findByText("fake reply to: at auto", undefined, { timeout: 20000 })).toBeTruthy();
-      expect(readFileSync(log, "utf8")).toContain('"--sandbox", "workspace-write", "--approve-for-me"');
+      // Codex rejects --sandbox together with --approve-for-me, so Auto passes only the latter.
+      expect(readFileSync(log, "utf8")).toContain('"--approve-for-me"');
+      expect(readFileSync(log, "utf8")).not.toContain('"--sandbox"');
 
       await userEvent.click(modes);
       await userEvent.click(within(screen.getByRole("group", { name: "Permission" })).getByRole("radio", { name: /^Read only/ }));
@@ -475,7 +476,7 @@ describe("Workspace conversation with a launchable agent (deterministic fake)", 
       );
       await screen.findByRole("heading", { name: "Talking to: Global orchestrator" }, { timeout: 15000 });
       // Action proposals ride on the reply of a mode that allows them. Read only does, as Restricted did (DPES-1105).
-      await userEvent.click(screen.getByRole("button", { name: /Chat mode:/ }));
+      await userEvent.click(await screen.findByRole("button", { name: "Chat mode: Auto · Standard" }, { timeout: 15000 }));
       await userEvent.click(within(screen.getByRole("group", { name: "Permission" })).getByRole("radio", { name: /^Read only/ }));
       // user-event reads "[[" as a literal "[".
       await userEvent.type(screen.getByRole("textbox", { name: "Message Global orchestrator" }), "[[fake:script] plan the post-MVP work");
