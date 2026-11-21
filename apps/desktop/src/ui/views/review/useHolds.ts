@@ -48,8 +48,10 @@ export function useHolds(): HoldsModel {
   // Read from the negotiated list, not `gate.can`, so the tab does not flicker while the connection restarts.
   const supported = !live || gate.connection.capabilities.includes("holds");
   const [nonce, setNonce] = useState(0);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [key, setKey] = useState<string | null>(null);
   const action = useAction();
+  // Busy lasts as long as the action is pending, which includes its minimum visible time, so a fast answer still shows a spinner.
+  const busy = action.pending ? key : null;
   const [local, setLocal] = useState<{ base: unknown; items: HoldItem[] } | null>(null);
 
   const loaded = useSurface(
@@ -75,10 +77,9 @@ export function useHolds(): HoldsModel {
         ? APPROVER_REQUIRED_NOTICE
         : null;
 
-  // Busy is set inside the action, so it clears with it: a change that the action refuses never leaves it set.
   const change = useCallback(
     async (
-      key: string,
+      id: string,
       operation: "hold" | "release",
       send: () => Promise<HoldReceipt>,
       apply: (receipt: HoldReceipt) => HoldItem[],
@@ -87,7 +88,7 @@ export function useHolds(): HoldsModel {
       if (busy !== null) return false;
       let confirmed = false;
       await action.run(operation === "hold" ? "Holding…" : "Releasing…", async (): Promise<Outcome> => {
-        setBusy(key);
+        setKey(id);
         try {
           const receipt = await send();
           setLocal({ base: result, items: apply(receipt) });
@@ -97,7 +98,6 @@ export function useHolds(): HoldsModel {
         } catch (error) {
           throw new Error(holdErrorText(asDaemonError(error), operation));
         } finally {
-          setBusy(null);
           // The nav count leaves out held decisions: read the holds now rather than at the next 30 second tick.
           void data.refreshHolds();
         }

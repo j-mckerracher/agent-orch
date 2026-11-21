@@ -1,4 +1,4 @@
-import { act, renderHook } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { DaemonError } from "../../../daemon/errors";
@@ -32,6 +32,7 @@ describe("useHolds", () => {
     vi.spyOn(services.surfaces.holds, "set").mockRejectedValue(refused);
     const wrapper = ({ children }: { children: ReactNode }) => <ServicesProvider services={services}>{children}</ServicesProvider>;
     const { result } = renderHook(() => useHolds(), { wrapper });
+    await waitFor(() => expect(result.current.loading).toBe(false));
     const before = result.current.items;
 
     await act(async () => {

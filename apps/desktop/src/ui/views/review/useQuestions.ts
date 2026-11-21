@@ -61,8 +61,10 @@ export function useQuestions(enabled = true): QuestionsModel {
   // A caller that cannot yet use the list (the task window, before its reply box is on) reads nothing.
   const active = enabled && supported;
   const [nonce, setNonce] = useState(0);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [key, setKey] = useState<string | null>(null);
   const action = useAction();
+  // Busy lasts as long as the action is pending, which includes its minimum visible time, so a fast answer still shows a spinner.
+  const busy = action.pending ? key : null;
 
   const loaded = useSurface(
     () =>
@@ -88,7 +90,7 @@ export function useQuestions(enabled = true): QuestionsModel {
       if (busy !== null) return false;
       let confirmed = false;
       await action.run(operation === "answer" ? "Sending answer…" : "Deferring…", async (): Promise<Outcome> => {
-        setBusy(id);
+        setKey(id);
         try {
           const receipt = await send();
           setNonce((value) => value + 1);
@@ -96,8 +98,6 @@ export function useQuestions(enabled = true): QuestionsModel {
           return receipt.simulated ? { kind: "fixture", text: `${done} ${FIXTURE_HOLD_NOTICE}` } : { kind: "saved", text: done };
         } catch (error) {
           throw new Error(questionErrorText(asDaemonError(error), operation));
-        } finally {
-          setBusy(null);
         }
       });
       return confirmed;

@@ -41,9 +41,11 @@ export function usePulls(): PullsModel {
   // Read from the negotiated list, not `gate.can`, so the section does not flicker while the connection restarts.
   const supported = !live || gate.connection.capabilities.includes("landing");
   const [nonce, setNonce] = useState(0);
-  const [busy, setBusy] = useState<string | null>(null);
+  const [key, setKey] = useState<string | null>(null);
   const [cooling, setCooling] = useState<ReadonlySet<string>>(new Set());
   const action = useAction();
+  // Busy lasts as long as the action is pending, which includes its minimum visible time, so a fast answer still shows a spinner.
+  const busy = action.pending ? key : null;
   const [fresh, setFresh] = useState<{ base: unknown; rows: Readonly<Record<string, PullItem>> } | null>(null);
   const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
   useEffect(
@@ -67,7 +69,7 @@ export function usePulls(): PullsModel {
   const refresh = useCallback(
     async (pull: PullItem) => {
       if (busy !== null) return;
-      setBusy(pull.taskId);
+      setKey(pull.taskId);
       // The daemon allows one fresh read per task every 10 seconds, so the button waits as long, whatever the answer.
       setCooling((current) => new Set(current).add(pull.taskId));
       const timer = setTimeout(() => {
@@ -90,8 +92,6 @@ export function usePulls(): PullsModel {
           return { kind: "saved", text: `Read pull request ${row.number} again: ${checksSummary(row)}.` };
         } catch (error) {
           throw new Error(pullsErrorText(asDaemonError(error)));
-        } finally {
-          setBusy(null);
         }
       });
     },
