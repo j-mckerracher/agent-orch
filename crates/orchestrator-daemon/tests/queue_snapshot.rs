@@ -13,6 +13,9 @@
 //! tasks, one queued task waiting on the global cap, and the same task states
 //! `tasks.list` reports at the same event sequence.
 
+#[path = "support/seed.rs"]
+mod seed;
+
 use orchestrator_ipc::{Capability, Client, IpcError};
 use serde_json::{json, Value};
 use std::fs;
@@ -56,7 +59,7 @@ fn main() {
 fn agent(dir: &Path) {
     use std::io::Write;
     if std::env::args().skip(1).eq(["exec", "--help"]) {
-        println!("  --json\n  --sandbox <MODE>\n  --approve-for-me\n  --ignore-user-config\n  -c <KEY=VALUE>");
+        println!("  --json\n  --sandbox <MODE>\n  --approve-for-me\n  --add-dir <DIR>\n  --ignore-user-config\n  -c <KEY=VALUE>");
         return;
     }
     if std::env::args().any(|arg| arg == "--version") {
@@ -257,6 +260,7 @@ fn scenario(base: &Path) {
         data: data.clone(),
         daemon_log: daemon_log.clone(),
     });
+    seed::install_pstack_plugin(&base.join("no-home"));
     let mut daemon = Daemon(
         Command::new(env!("CARGO_BIN_EXE_orchestrator-daemon"))
             .arg("--data-dir")

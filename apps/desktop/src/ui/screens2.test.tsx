@@ -855,16 +855,39 @@ describe("S4 task and session detail", () => {
   });
 
   it.each([
-    ["t-r", /Live steering is not available yet/],
-    ["t-d", /This task is finished\. The agent cannot be messaged\./],
-  ])("disables the reply box for %s and says why", async (taskId, reason) => {
+    ["t-q", "Sent. The agent reads it when it starts."],
+    ["t-d", "Sent. The agent picks the task back up shortly."],
+  ])("sends a message to %s and says what happens next", async (taskId, notice) => {
     const fake = seeded();
-    await mount(fake, { route: taskRoute(taskId) });
+    fake.stub("decisions.list", { questions: [] });
+    const { user } = await mount(fake, { route: taskRoute(taskId), daemonSources: true });
+    const box = await replyBox();
+    await waitFor(() => expect(box).toBeEnabled());
+    await user.type(box, "Check it");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByText(notice)).toBeInTheDocument();
+    expect(fake.messages).toEqual([{ task_id: taskId, text: "Check it" }]);
+  });
+
+  it("disables the reply box while the agent is working, and says why", async () => {
+    const fake = seeded();
+    await mount(fake, { route: taskRoute("t-r") });
     const box = await replyBox();
     expect(box).toBeDisabled();
     expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
-    expect(screen.getByText(reason)).toBeInTheDocument();
-    expect(box).toHaveAccessibleDescription(reason);
+    expect(screen.getByText(/Live steering is not available yet/)).toBeInTheDocument();
+    expect(box).toHaveAccessibleDescription(/Live steering is not available yet/);
+    expect(fake.callsTo("tasks.message")).toHaveLength(0);
+  });
+
+  it("disables the reply box while the agent's work is being verified, and says why", async () => {
+    const fake = seeded();
+    fake.tasks.push(mkTask("t-v", REPO, { state: "Verifying" }));
+    await mount(fake, { route: taskRoute("t-v") });
+    const box = await replyBox();
+    expect(box).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+    expect(screen.getByText(/The agent's work is being verified\. You can reply when verification finishes\./)).toBeInTheDocument();
     expect(fake.callsTo("tasks.message")).toHaveLength(0);
   });
 
@@ -904,7 +927,7 @@ describe("S4 task and session detail", () => {
     await user.click(screen.getByRole("button", { name: "Send message" }));
     expect(
       await screen.findByText(
-        "The task is no longer waiting, is waiting on a question, or already has the most messages it can hold. Nothing was changed.",
+        "The agent is busy, is waiting on a question, cannot be resumed (it has no saved session, or its permission level does not allow resuming), or already has the most messages it can hold. Nothing was changed.",
       ),
     ).toBeInTheDocument();
     expect(box).toHaveValue("One more thing");

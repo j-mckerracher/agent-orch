@@ -87,7 +87,7 @@ Installed versions: Claude Code 2.1.311, Codex CLI 0.169.0, GitHub Copilot CLI 1
 
 ### `task.message`
 
-- **19. Only a waiting task takes a message.** The plan also allows queueing one for a running task until its next exit. That needs the exit path to choose between verifying and resuming, so it is left out; `task.revise` remains the way to change a running task. Live steering is DPES-1133's.
+- **19. Only a waiting task takes a message.** *(Superseded for the user's own messages by "DPES-1106: the user's message to any task that is not busy", below. The orchestrator's `task.message` still reaches a waiting task only.)* The plan also allows queueing one for a running task until its next exit. That needs the exit path to choose between verifying and resuming, so it is left out; `task.revise` remains the way to change a running task. Live steering is DPES-1133's.
 - **20. It is a normal proposal and is not grantable.** As `decision.ask` in phase 3, until phase 5 classifies authority. It is on the "left out" list of `standing_grant.rs`. Its proposal subject is `task.message:<task id>`, so a newer message replaces a pending older one. A waiting task holds at most two undelivered orchestrator messages; a third is `conflict`. The user's own messages have a count of their own (DPES-1106, below).
 - **21. The preamble cap was raised from 3 KiB to 4 KiB.** `task.message (task_id, text; a waiting task only)` did not fit in 3,072 bytes. `MAX_INSTRUCTIONS_BYTES` is now 4,096 with its compile-time asserts and the routing test updated. The prompt budget (30,000 UTF-16 units) still bounds the whole command line.
 
@@ -385,6 +385,23 @@ Branch `feat/DPES-1106_task-window-agent-conversation`, built on `main`. Phase 4
 - **5. The worker resumes at once.** The handler wakes the scheduler, as `decisions.answer` does.
 - **Not in this phase.** Live steering of a running worker (DPES-1133). The conversation pane does not echo a sent message. The daemon's 4,096-byte limit counts bytes, while a textarea counts characters.
 - **Not verified locally.** The daemon and store tests run in CI only. `cargo check --workspace --tests` and `cargo fmt --check` (apart from one existing diff in `orchestrator-core/tests/scheduler.rs`) were run.
+
+## DPES-1106: the user's message to any task that is not busy
+
+Branch `fix/DPES-1106_message-any-state`. The task window turned the reply box off unless the task was waiting. The user must always be able to talk to an agent, except while it is busy.
+
+- **1. Busy is Running or Verifying.** A running worker cannot be steered (DPES-1133). A verifying task has no agent process, but its outcome is pending, so a message would have to choose between verifying and resuming, the conflict decision 19 names. Both stay `conflict`. Every other state takes the user's message.
+- **2. A finished task reopens into `Waiting` under a new attempt.** Succeeded, Failed, VerificationFailed and Cancelled take `TaskEvent::FollowUpRequested` (migration 0075, `task.rs`). The terminal attempt is never touched. The new attempt has `continues_attempt_id` set to the newest attempt, so `resume_target` reads the agent session from the chain, and the existing path resumes it (`tasks_ready_to_resume`, `prepare_resume`, `begin_resume`). The scheduler caps, delivered-once replies and the supervisor are unchanged.
+  - This breaks the old rule that Succeeded and Cancelled accept no events. The rule now reads "accept only a user follow-up".
+  - Alternative: send the task back through `Queued`. `launch()` makes a fresh branch, lease and session, which is retry, not a resume.
+- **3. Only the user reopens.** The orchestrator's `task.message` stays "a waiting task only" (`NotWaiting`). Reopening finished work on its own is a separate authority change.
+- **4. The follow-up keeps the first attempt's status file.** The agent was told one path. A new attempt number would make the daemon read a different file and, at Restricted, grant a different `--add-dir`. So `status_attempt_number` follows the chain, and `last_status_line` counts across it. The 200-line cap of a status file is shared by the whole chain.
+- **5. A follow-up is not a retry.** `retry_task_inner` counts attempts without `continues_attempt_id`, so follow-ups never use up `max_retries` or `max_repairs`.
+- **6. Refused up front, not at the resume.** A resume that cannot run calls `fail_waiting_task`, which would turn a Succeeded task into Failed. `tasks.message` refuses first, with `conflict`: the agent cannot resume at its permission level (Codex at Auto or Extended), no run reported an agent session, or (when the slot was returned) the Claude transcript is gone. The RPC error carries no reason text, so the app's conflict copy lists the causes. A fault found later (for example the slot is unhealthy) fails the follow-up attempt and the task lands in `Failed`, as for any waiting task.
+- **7. A returned slot is leased again, and the transcript moves.** After an archive or a merged pull request the slot may belong to another task. `attempts.fresh_workspace` records this, and `prepare_resume` leases a new slot on the task's branch (or a new branch at `HEAD` if a merge deleted it), keeping the first `base_commit`. `claude --resume` finds a session only from the folder it ran in, so the transcript file is **moved** (not copied, so it takes no disk) from `<config>/projects/<folder>/<id>.jsonl` to the new folder's name. `<folder>` is the path with each character outside `[A-Za-z0-9]` replaced by `-`. Codex and Copilot resume by id and need no move. A reopened task is shown in the lists again (`archived_at` is cleared).
+  - Not verified live: the folder-name rule is Claude's own and may change. `session_transcript.rs` holds it in one function with a test, and the daemon refuses the message when the file is not where it expects.
+- **8. A task that has not started keeps the message for its launch.** Created and Queued have no attempt, so `task_messages.attempt_id` is now nullable, only for a user's `message` row. `prepare()` adds the undelivered messages to the end of the first brief under "The user also wrote, before you started", and marks them delivered once the session is recorded.
+- **Not in this change.** Live steering (DPES-1133). Reason text in the RPC error. A message to a task whose Claude transcript was deleted by the user: it is refused.
 
 ## Integration
 

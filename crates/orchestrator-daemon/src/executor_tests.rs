@@ -4117,6 +4117,153 @@ fn a_user_message_resumes_a_waiting_task_under_the_users_heading() {
 }
 
 #[test]
+fn a_user_message_to_a_finished_task_resumes_its_session_under_a_new_attempt() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(
+        &fixture,
+        &first,
+        &resumed,
+        &["blocked the fixture database is down"],
+    );
+    let api = fixture.api(&program);
+    let task_id = fixture.submit_restricted(&api, "follow-up-1", 0);
+    wait_state(&api, &task_id, "Waiting");
+    api.dispatch(
+        "tasks.message",
+        json!({"task_id": task_id, "text": "Use the scratch database.", "idempotency_key": "reply-1"}),
+    )
+    .unwrap();
+    wait_state(&api, &task_id, "Succeeded");
+    fs::remove_file(&resumed).unwrap();
+
+    api.dispatch(
+        "tasks.message",
+        json!({"task_id": task_id, "text": "Now add a test for it.", "idempotency_key": "reply-2"}),
+    )
+    .unwrap();
+    let again = wait_state(&api, &task_id, "Succeeded");
+    assert_eq!(again["attempts"].as_array().unwrap().len(), 2, "{again}");
+    let resumed_argv = fs::read_to_string(&resumed).unwrap();
+    assert!(
+        resumed_argv.contains("You finished this task earlier"),
+        "{resumed_argv}"
+    );
+    assert!(
+        resumed_argv.contains("Message: Now add a test for it."),
+        "{resumed_argv}"
+    );
+    assert!(!resumed_argv.contains("scratch database"), "{resumed_argv}");
+    // The same agent thread continues, and the status file stays the first attempt's.
+    assert!(resumed_argv.lines().any(|line| line == FIXTURE_THREAD));
+    assert!(
+        resumed_argv.contains(
+            &worker_status::status_dir(&fixture.data(), &task_id, 1)
+                .display()
+                .to_string()
+        ),
+        "{resumed_argv}"
+    );
+    api.shutdown();
+}
+
+#[test]
+fn a_message_to_an_archived_task_continues_it_in_a_new_slot_on_the_same_branch() {
+    let fixture = Fixture::new();
+    let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));
+    let program = status_agent(
+        &fixture,
+        &first,
+        &resumed,
+        &["blocked the fixture database is down"],
+    );
+    let api = fixture.api(&program);
+    let task_id = fixture.submit_restricted(&api, "archived-follow-up", 0);
+    wait_state(&api, &task_id, "Waiting");
+    api.dispatch(
+        "tasks.message",
+        json!({"task_id": task_id, "text": "Use the scratch database.", "idempotency_key": "reply-1"}),
+    )
+    .unwrap();
+    wait_state(&api, &task_id, "Succeeded");
+    fs::remove_file(&resumed).unwrap();
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    let before = store.workspaces_for_task(&task_id).unwrap();
+    assert_eq!(before.len(), 1);
+    // Archiving returns the slot to the pool.
+    api.dispatch(
+        "tasks.discard",
+        json!({"task_id": task_id, "idempotency_key": "discard-1"}),
+    )
+    .unwrap();
+    api.dispatch(
+        "tasks.archive",
+        json!({"task_ids": [task_id], "idempotency_key": "archive-1"}),
+    )
+    .unwrap();
+
+    api.dispatch(
+        "tasks.message",
+        json!({"task_id": task_id, "text": "One more thing.", "idempotency_key": "reply-2"}),
+    )
+    .unwrap();
+    wait_state(&api, &task_id, "Succeeded");
+    let workspaces = store.workspaces_for_task(&task_id).unwrap();
+    assert_eq!(workspaces.len(), 2, "{workspaces:?}");
+    assert_eq!(workspaces[1].branch, before[0].branch);
+    assert_eq!(workspaces[1].base_commit, before[0].base_commit);
+    assert!(Path::new(&workspaces[1].path).is_dir());
+    let resumed_argv = fs::read_to_string(&resumed).unwrap();
+    assert!(
+        resumed_argv.contains("Message: One more thing."),
+        "{resumed_argv}"
+    );
+    assert!(resumed_argv.lines().any(|line| line == FIXTURE_THREAD));
+    // Messaging unarchived it.
+    assert!(!store.archived_task_ids().unwrap().contains(&task_id));
+    api.shutdown();
+}
+
+#[test]
+fn a_message_sent_before_a_task_starts_goes_with_its_first_instructions() {
+    let fixture = Fixture::new();
+    let (hold, argv) = (fixture.marker("release"), fixture.marker("late-argv"));
+    // The first task waits for `release`, so the second stays unstarted behind its dependency.
+    let program = fixture.script(
+        "early-agent",
+        &format!(
+            "case \"$*\" in *'objective of late'*)\n\
+             printf '%s\\n' \"$@\" > '{argv}.tmp' && mv '{argv}.tmp' '{argv}';; \
+             *) while [ ! -e '{hold}' ]; do sleep 0.1; done;;\nesac\n\
+             echo done > agent-output.txt\n{THREAD_STARTED}{TURN_COMPLETED}",
+            argv = argv.display(),
+            hold = hold.display()
+        ),
+    );
+    let api = fixture.api(&program);
+    let first = fixture.submit(&api, "early-first", 0);
+    let late = fixture.submit_full(&api, "late", "codex", 0, &[first.as_str()]);
+    assert_ne!(task(&api, &late)["state"], "Running");
+    api.dispatch(
+        "tasks.message",
+        json!({"task_id": late, "text": "Prefer the scratch database.", "idempotency_key": "early-1"}),
+    )
+    .unwrap();
+    fs::write(&hold, "").unwrap();
+    wait_state(&api, &late, "Succeeded");
+    let launched = fs::read_to_string(&argv).unwrap();
+    assert!(
+        launched.contains(
+            "## The user also wrote, before you started\nMessage: Prefer the scratch database."
+        ),
+        "{launched}"
+    );
+    let store = SqliteStore::new(&fixture.data().join("store.sqlite")).unwrap();
+    assert!(store.pending_replies(&late).unwrap().is_empty());
+    api.shutdown();
+}
+
+#[test]
 fn a_waiting_task_is_cancelled_without_an_owner() {
     let fixture = Fixture::new();
     let (first, resumed) = (fixture.marker("first-argv"), fixture.marker("resumed-argv"));

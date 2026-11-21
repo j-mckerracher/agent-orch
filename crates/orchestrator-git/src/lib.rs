@@ -39,6 +39,6 @@ pub use git::{slot_git_command, AGENT_EMAIL, AGENT_NAME, TASK_GIT_GUARD_ENV};
 pub use repository::Repository;
 pub use treehouse::{Released, Treehouse};
 pub use worktree::{
-    create_task_worktree, release_task_worktree, slot_attached_to, slot_git_dirs, SlotDirs,
-    TaskWorktree,
+    create_task_worktree, release_task_worktree, reopen_task_worktree, slot_attached_to,
+    slot_git_dirs, SlotDirs, TaskWorktree,
 };

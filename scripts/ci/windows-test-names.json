@@ -909,7 +909,21 @@
    "api::wake::tests::a_quiet_turn_hides_its_thinking_and_tool_entries_with_its_reply",
    "a_finished_tool_turn_keeps_redacted_tool_rows_and_no_snapshot",
    "a_timeout_mid_tool_fails_the_turn_and_leaves_the_tool_unfinished",
-   "tool_rows_and_the_live_snapshot_show_while_a_turn_runs_and_cancel_stays_prompt"
+   "tool_rows_and_the_live_snapshot_show_while_a_turn_runs_and_cancel_stays_prompt",
+   "api::actions_phase4_tests::a_revise_keeps_the_level_of_the_task_it_revises",
+   "api::actions_task_tests::a_submitted_task_takes_the_task_default_unless_the_request_names_a_level",
+   "executor::worker_environment::tests::a_directory_that_is_not_a_git_slot_is_unhealthy",
+   "executor::worker_environment::tests::a_named_file_is_an_absolute_path_with_an_extension",
+   "executor::worker_environment::tests::a_named_input_that_is_not_a_file_is_missing",
+   "executor::worker_environment::tests::only_implementation_work_is_refused_without_a_shell",
+   "executor::worker_environment::tests::the_shell_each_level_gives_matches_its_launch_flags",
+   "task_view::tests::an_implement_task_at_extended_says_its_shell_reads_git_only",
+   "task_view::tests::an_implement_task_with_a_checked_shell_gets_no_notice",
+   "task_view::tests::an_implement_task_without_a_shell_gets_a_lacked_tools_notice",
+   "task_view::tests::every_task_names_its_level_and_a_restricted_one_is_not_implicit",
+   "api::authority_tests::tasks_message_reopens_a_finished_task_unless_its_agent_cannot_resume",
+   "executor::session_transcript::tests::folder_names_match_claudes_own",
+   "executor::session_transcript::tests::follow_moves_the_transcript_once_and_other_agents_need_none"
   ],
   "tauri": [
    "forwards_frames_and_closing_a_window_leaves_the_daemon_running",
@@ -1563,7 +1577,11 @@
    "the_start_cap_stores_one_marker_and_drops_later_starts",
    "session_tool_cap_marks_once_and_thinking_cap_counts_only_thinking",
    "thinking_tools_and_reply_keep_sequence_order",
-   "tool_entries_survive_reopen_and_clear"
+   "tool_entries_survive_reopen_and_clear",
+   "a_finished_task_that_never_reported_a_session_cannot_be_continued",
+   "a_busy_task_takes_no_message_and_one_not_started_queues_it_for_the_launch",
+   "a_user_message_reopens_a_finished_task_under_an_attempt_that_continues_its_session",
+   "migration_0075_applies_to_a_0074_database_and_keeps_every_message"
   ],
   "diagnostics": [
    "field_values_are_redacted_and_credential_named_fields_are_masked",

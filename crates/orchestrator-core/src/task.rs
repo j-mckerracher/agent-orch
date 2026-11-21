@@ -12,10 +12,13 @@
 //!   of the state change and its audit event must be one transaction
 //!   (enforced by `orchestrator-store`, not here — this crate has no I/O).
 //! - Irreversible states ([`TaskState::Succeeded`],
-//!   [`TaskState::Cancelled`]) accept no events. Quiescent-failure states
+//!   [`TaskState::Cancelled`]) accept only [`TaskEvent::FollowUpRequested`],
+//!   the user's own message. Quiescent-failure states
 //!   ([`TaskState::Failed`], [`TaskState::VerificationFailed`]) accept only
 //!   [`TaskEvent::RetryRequested`], which re-queues the task with a fresh
-//!   [`Attempt`]; the failed attempt is preserved, never erased. There is no
+//!   [`Attempt`], and [`TaskEvent::FollowUpRequested`]; the failed attempt is
+//!   preserved, never erased. A follow-up parks the task in `Waiting` under a
+//!   new attempt that continues the old agent session. There is no
 //!   path from any state back to `Running` except `Queued -> Running` and
 //!   `Waiting -> Running`, which continues the same attempt in a new session,
 //!   and no transition mutates a recorded attempt.
@@ -111,6 +114,10 @@ pub enum TaskEvent {
     /// Origin: engine (scheduler), when an answer or a message for a waiting
     /// task is delivered by resuming the same agent session.
     ResumeStarted,
+    /// Origin: the user, by messaging a finished task. Legal from `Succeeded`,
+    /// `Failed`, `VerificationFailed` or `Cancelled`. The task parks in
+    /// `Waiting` under a new attempt; the message resumes the old session.
+    FollowUpRequested,
 }
 
 /// Why a task is [`TaskState::Waiting`].
@@ -156,6 +163,8 @@ pub enum AuditEvent {
     WorkerBlocked,
     /// `Waiting -> Running` on [`TaskEvent::ResumeStarted`].
     ExecutionResumed,
+    /// `Succeeded | Failed | VerificationFailed | Cancelled -> Waiting` on [`TaskEvent::FollowUpRequested`].
+    FollowUpQueued,
 }
 
 /// Result of a rejected transition.
@@ -286,6 +295,31 @@ const MOVE: &[(TaskState, TaskEvent, TaskState, AuditEvent)] = &[
         TaskEvent::ExecutionFailed,
         TaskState::Failed,
         AuditEvent::ExecutionFailed,
+    ),
+    // The user's message to a finished task parks it for a resume.
+    (
+        TaskState::Succeeded,
+        TaskEvent::FollowUpRequested,
+        TaskState::Waiting,
+        AuditEvent::FollowUpQueued,
+    ),
+    (
+        TaskState::Failed,
+        TaskEvent::FollowUpRequested,
+        TaskState::Waiting,
+        AuditEvent::FollowUpQueued,
+    ),
+    (
+        TaskState::VerificationFailed,
+        TaskEvent::FollowUpRequested,
+        TaskState::Waiting,
+        AuditEvent::FollowUpQueued,
+    ),
+    (
+        TaskState::Cancelled,
+        TaskEvent::FollowUpRequested,
+        TaskState::Waiting,
+        AuditEvent::FollowUpQueued,
     ),
 ];
 
@@ -494,7 +528,7 @@ mod tests {
         ]
     }
 
-    fn all_events() -> [TaskEvent; 12] {
+    fn all_events() -> [TaskEvent; 13] {
         [
             TaskEvent::Admit,
             TaskEvent::ExecutionStarted,
@@ -512,6 +546,7 @@ mod tests {
                 reason: WaitReason::Blocker,
             },
             TaskEvent::ResumeStarted,
+            TaskEvent::FollowUpRequested,
         ]
     }
 
@@ -627,6 +662,9 @@ mod tests {
                 continue;
             }
             for event in all_events() {
+                if event == TaskEvent::FollowUpRequested {
+                    continue;
+                }
                 assert!(
                     matches!(
                         transition(state, event),
@@ -647,7 +685,10 @@ mod tests {
         for state in [TaskState::Failed, TaskState::VerificationFailed] {
             assert!(!state.is_terminal());
             for event in all_events() {
-                if event == TaskEvent::RetryRequested {
+                if matches!(
+                    event,
+                    TaskEvent::RetryRequested | TaskEvent::FollowUpRequested
+                ) {
                     continue;
                 }
                 assert!(
@@ -661,6 +702,31 @@ mod tests {
             assert!(
                 transition(state, TaskEvent::CancelRequested).is_err(),
                 "quiescent {state:?} accepted cancel"
+            );
+        }
+    }
+
+    #[test]
+    fn a_follow_up_parks_only_a_finished_task() {
+        for state in all_states() {
+            let finished = matches!(
+                state,
+                TaskState::Succeeded
+                    | TaskState::Failed
+                    | TaskState::VerificationFailed
+                    | TaskState::Cancelled
+            );
+            assert_eq!(
+                transition(state, TaskEvent::FollowUpRequested),
+                if finished {
+                    Ok((TaskState::Waiting, AuditEvent::FollowUpQueued))
+                } else {
+                    Err(TransitionError::Illegal {
+                        from: state,
+                        event: TaskEvent::FollowUpRequested,
+                    })
+                },
+                "{state:?}"
             );
         }
     }
