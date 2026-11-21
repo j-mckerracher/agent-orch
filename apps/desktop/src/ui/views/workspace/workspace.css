@@ -2,10 +2,14 @@
 .ws-root {
   display: flex;
   flex-direction: column;
-  min-height: 440px;
   height: 100%;
   min-width: 0;
   color: var(--ink);
+}
+
+/* The workspace fits its column and the log is the only scroller, so a short window shrinks the log instead of scrolling the composer. */
+.ws-root .ws-log {
+  min-height: 0;
 }
 
 .ws-visually-hidden {
