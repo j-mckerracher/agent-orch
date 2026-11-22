@@ -5,6 +5,22 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.41](https://github.com/mc-innersource/motif-mcao/compare/v0.1.40...v0.1.41) (2026-11-22)
+
+
+### Bug Fixes
+
+* **agents:** DPES-1180 - Fail a Copilot session that violated the protocol at exit ([a2685ae](https://github.com/mc-innersource/motif-mcao/commit/a2685ae1ceba0219394d4a1d6ff6a76e602408ee))
+* **desktop:** DPES-1106 - Swap macOS app Contents when parent directory is read-only ([670eb72](https://github.com/mc-innersource/motif-mcao/commit/670eb728101cd76b8ac0fa7bf7a5c4b781a188eb))
+* **desktop:** DPES-1106 - Swap macOS app Contents when parent directory is read-only ([f7ea18a](https://github.com/mc-innersource/motif-mcao/commit/f7ea18a47367f157bc678328b474310b38523237))
+
+
+### Tests
+
+* **agents:** DPES-1180 - Add a shared interactive-session contract suite ([5a6bd2d](https://github.com/mc-innersource/motif-mcao/commit/5a6bd2d54508833b98c429566972f82419c027fe))
+* **agents:** DPES-1180 - Add contract tests for the interactive adapters ([d0adc38](https://github.com/mc-innersource/motif-mcao/commit/d0adc385ec7494c1e96f25ea46a6b4b8ebc554fa))
+* **agents:** DPES-1180 - Pin the macOS workspace counts for the contract tests ([aa703f2](https://github.com/mc-innersource/motif-mcao/commit/aa703f2e65208381801d1c603c9cfb897cb5327c))
+
 ## [0.1.40](https://github.com/mc-innersource/motif-mcao/compare/v0.1.39...v0.1.40) (2026-11-22)
 
 
