@@ -93,6 +93,12 @@ pub enum AgentEvent {
         approval_id: Uuid,
         description: String,
     },
+    /// The agent proposed a plan that requires caller approval via `respond_approval`.
+    /// `plan` is the full plan text and is never empty (adapters emit nothing for an empty plan).
+    PlanProposed {
+        approval_id: Uuid,
+        plan: String,
+    },
     TurnFinished {
         outcome: TurnOutcome,
     },
@@ -101,6 +107,16 @@ pub enum AgentEvent {
     },
     ProtocolError {
         message: String,
+    },
+}
+
+/// The caller's answer to an `ApprovalRequested` or `PlanProposed` event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApprovalDecision {
+    Approve,
+    /// `reason` is passed to the agent as the denial message.
+    Deny {
+        reason: String,
     },
 }
 
@@ -175,4 +191,20 @@ pub trait AgentHandle: Send {
     /// Consume the stream until the process has exited and return the
     /// terminal outcome.
     async fn wait(&mut self) -> Result<AgentExit>;
+}
+
+#[async_trait]
+pub trait InteractiveAgentHandle: AgentHandle {
+    /// Send one follow-up user prompt on the live session.
+    /// Returns `Err(AgentError::Protocol(_))` if the child already exited or a turn is still running.
+    async fn send_turn(&mut self, prompt: &str) -> Result<()>;
+
+    /// Answer the event whose id is `approval_id`.
+    /// Returns `Err(AgentError::Protocol(_))` if the id was never issued or was already answered.
+    /// An id is answerable exactly once.
+    async fn respond_approval(
+        &mut self,
+        approval_id: Uuid,
+        decision: ApprovalDecision,
+    ) -> Result<()>;
 }
