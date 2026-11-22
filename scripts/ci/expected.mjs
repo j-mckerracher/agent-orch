@@ -197,7 +197,8 @@ export const MACOS = {
   // Interactive-session contract (DPES-1180) adds 2 portable tests in orchestrator-agents (interactive_contract): 1100 becomes 1102.
   // Claude Code stream-json adapter (DPES-1181) adds 11 portable tests in orchestrator-agents (claude_code_stream_adapter): 1102 becomes 1113.
   // Copilot ACP adapter (DPES-1182) adds 10 portable tests in orchestrator-agents (copilot_acp_adapter): 1113 becomes 1123.
-  workspace: { passed: 1123, ignored: 1 },
+  // Codex app-server adapter (DPES-1183) adds 12 portable tests and one ignored live test in orchestrator-agents (codex_app_server_adapter): 1123 becomes 1135, ignored 1 becomes 3.
+  workspace: { passed: 1135, ignored: 3 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
   // Worker environment (DPES-1126) adds 5 orchestrator-git tests, one of them Unix-only (a hook the agent pointed git at): 105 becomes 110 (CI run 44783088646).

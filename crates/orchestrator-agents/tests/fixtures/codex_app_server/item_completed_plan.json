@@ -1,0 +1,13 @@
+{
+  "method": "item/completed",
+  "params": {
+    "completedAtMs": 1790000000002,
+    "item": {
+      "id": "item-plan-1",
+      "text": "Plan: add the adapter, then the tests.",
+      "type": "plan"
+    },
+    "threadId": "01a1ffc6-ddd8-78c3-bb7a-f654fa3eaf1c",
+    "turnId": "turn-1"
+  }
+}

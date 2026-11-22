@@ -1,0 +1,7 @@
+{
+  "method": "turn/completed",
+  "params": {
+    "threadId": "01a1ffc6-ddd8-78c3-bb7a-f654fa3eaf1c",
+    "turn": {"id": "turn-1", "status": "completed", "error": null, "items": []}
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "id": 8,
+  "method": "item/fileChange/requestApproval",
+  "params": {
+    "itemId": "item-fc-1",
+    "reason": "write the adapter file",
+    "startedAtMs": 1790000000001,
+    "threadId": "01a1ffc6-ddd8-78c3-bb7a-f654fa3eaf1c",
+    "turnId": "turn-1"
+  }
+}
