@@ -2,7 +2,8 @@
 //!
 //! Runs with its working directory set to the test's temp directory. It records its argv to
 //! `argv.txt`, prints each line of `script.jsonl` to stdout, then logs each stdin line to
-//! `stdin.log` until stdin closes. Compiled with rustc by the test, like the conformance harness.
+//! `stdin.log` until stdin closes, then exits with the status in `exit_code` (default 0). Compiled with
+//! rustc by the test, like the conformance harness.
 
 use std::io::{self, BufRead, Write};
 
@@ -22,4 +23,12 @@ fn main() {
         writeln!(log, "{line}").expect("log stdin line");
         log.flush().expect("flush stdin log");
     }
+    std::process::exit(exit_code());
+}
+
+fn exit_code() -> i32 {
+    std::fs::read_to_string("exit_code")
+        .ok()
+        .and_then(|text| text.trim().parse().ok())
+        .unwrap_or(0)
 }
