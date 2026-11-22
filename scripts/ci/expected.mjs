@@ -200,7 +200,8 @@ export const MACOS = {
   // Codex app-server adapter (DPES-1183) adds 12 portable tests and one ignored live test in orchestrator-agents (codex_app_server_adapter): 1123 becomes 1135, ignored 1 becomes 2 (CI run 44990858083, measured on macOS).
   workspace: { passed: 1135, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
-  tauri: { passed: 71, sequence: [71, 0, 0] },
+  // DPES-1106 macOS read-only parent Contents swap adds 2 macOS-only updater tests: 71 becomes 73.
+  tauri: { passed: 73, sequence: [73, 0, 0] },
   // Worker environment (DPES-1126) adds 5 orchestrator-git tests, one of them Unix-only (a hook the agent pointed git at): 105 becomes 110 (CI run 44783088646).
   gitLib: { passed: 110, sequence: [110] },
   cliCleanupSafety: { passed: 4, sequence: [4] },

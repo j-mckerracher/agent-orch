@@ -75,6 +75,7 @@ Updates need:
 - The GitHub CLI (`gh`) on `PATH`. MCAO uses it to find and download updates.
 - A `gh` login that can read `mc-innersource/motif-mcao`. Run `gh auth login --hostname github.com`.
 - No running agent work. If work is still running, the app shows "Work is still running". Finish it, then try again.
+- Write permission on the installed `MCAO.app` bundle on macOS (the parent `/Applications` folder can be read-only). If `MCAO.app` itself is owned by another user, move it to `~/Applications` or install the update manually.
 
 The app stays quiet when a background check fails, for example when `gh` is missing. **Check for updates** shows the error.
 

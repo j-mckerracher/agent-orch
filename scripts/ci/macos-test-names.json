@@ -1148,7 +1148,9 @@
    "updates::tests::versions_must_be_bare_semver_exactly_as_written",
    "updates::tests::the_subprocess_runner_sanitizes_the_environment_and_bounds_output_and_time",
    "updates::tests::an_idle_daemon_is_stopped_and_its_lock_taken",
-   "updates::tests::a_busy_daemon_is_left_running_and_reported_busy"
+   "updates::tests::a_busy_daemon_is_left_running_and_reported_busy",
+   "updates::tests::macos_install_uses_contents_swap_when_parent_is_read_only_and_bundle_is_writable",
+   "updates::tests::install_macos_contents_swaps_inside_a_read_only_parent_and_rejects_bad_archives"
   ],
   "git-lib": [
    "identity_failure_fails_acquisition_with_the_os_error_and_keeps_the_artifact",

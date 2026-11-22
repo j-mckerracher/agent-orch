@@ -21,6 +21,7 @@ const ERROR_KINDS = [
   "verification_failed",
   "daemon_busy",
   "daemon_unavailable",
+  "not_writable",
   "install_failed",
   "busy",
 ] as const;
@@ -36,6 +37,8 @@ const ERROR_TEXT: Record<UpdateErrorKind, string> = {
   verification_failed: "The update did not pass verification, so nothing was installed.",
   daemon_busy: "Work is still running. Finish it, then try the update again.",
   daemon_unavailable: "The background service could not confirm it is safe to update. Try again in a moment.",
+  not_writable:
+    "MCAO does not have permission to update this copy. Move MCAO.app to ~/Applications or install the update manually.",
   install_failed: "The update could not be installed. Try again.",
   busy: "Another update check or install is already running. Try again in a moment.",
   unknown: "The update failed. Try again.",
