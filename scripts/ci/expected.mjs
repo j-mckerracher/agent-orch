@@ -195,7 +195,8 @@ export const MACOS = {
   // Worker environment (DPES-1126) adds 11 tests outside daemon, store and ipc: 1078 becomes 1089 (CI run 44783088646,
   // measured on macOS).
   // Interactive-session contract (DPES-1180) adds 2 portable tests in orchestrator-agents (interactive_contract): 1100 becomes 1102.
-  workspace: { passed: 1102, ignored: 1 },
+  // Codex app-server adapter (DPES-1183) adds 12 portable tests and one ignored live test in orchestrator-agents (codex_app_server_adapter): 1102 becomes 1114, ignored 1 becomes 2.
+  workspace: { passed: 1114, ignored: 2 },
   // DPES-1105 approver credential (CI run 44023050296, measured on macOS): 20 passed.
   tauri: { passed: 71, sequence: [71, 0, 0] },
   // Worker environment (DPES-1126) adds 5 orchestrator-git tests, one of them Unix-only (a hook the agent pointed git at): 105 becomes 110 (CI run 44783088646).

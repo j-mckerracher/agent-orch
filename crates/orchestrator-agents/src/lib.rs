@@ -11,6 +11,7 @@ pub mod catalog;
 pub mod claude_code_adapter;
 pub mod cli_compat;
 pub mod codex_adapter;
+pub mod codex_app_server_adapter;
 pub mod codex_parser;
 pub mod contract;
 pub mod copilot_adapter;
@@ -35,6 +36,7 @@ pub use catalog::{
 };
 pub use claude_code_adapter::ClaudeCodeAdapter;
 pub use codex_adapter::CodexAdapter;
+pub use codex_app_server_adapter::{CodexAppServerAdapter, CodexAppServerHandle};
 pub use codex_parser::{Parser, ProtocolViolation};
 pub use contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,

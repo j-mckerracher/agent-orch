@@ -1,0 +1,13 @@
+{
+  "id": 7,
+  "method": "item/commandExecution/requestApproval",
+  "params": {
+    "command": "cargo test -p orchestrator-agents",
+    "cwd": "/Users/example/project",
+    "itemId": "item-cmd-1",
+    "reason": "run the test suite",
+    "startedAtMs": 1790000000000,
+    "threadId": "01a1ffc6-ddd8-78c3-bb7a-f654fa3eaf1c",
+    "turnId": "turn-1"
+  }
+}

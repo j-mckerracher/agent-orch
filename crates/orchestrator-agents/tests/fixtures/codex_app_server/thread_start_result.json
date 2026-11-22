@@ -1,0 +1,7 @@
+{
+  "approvalPolicy": "on-request",
+  "cwd": "/Users/example/project",
+  "model": "gpt-6-luna",
+  "sandbox": {"type": "readOnly", "networkAccess": false},
+  "thread": {"id": "01a1ffc6-ddd8-78c3-bb7a-f654fa3eaf1c"}
+}
