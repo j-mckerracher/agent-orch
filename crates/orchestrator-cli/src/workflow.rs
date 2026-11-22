@@ -990,8 +990,13 @@ async fn monitor_agent(
             Ok(Some(AgentEvent::ToolFinished { success, .. })) => {
                 println!("tool finished: {success}")
             }
-            Ok(Some(AgentEvent::ApprovalRequested { description, .. })) => {
-                println!("approval requested: {description}")
+            Ok(Some(
+                AgentEvent::ApprovalRequested {
+                    description: text, ..
+                }
+                | AgentEvent::PlanProposed { plan: text, .. },
+            )) => {
+                println!("approval requested: {text}")
             }
             Ok(Some(AgentEvent::TurnFinished { outcome })) => println!("turn: {outcome:?}"),
             Ok(Some(AgentEvent::ProtocolError { message })) => {

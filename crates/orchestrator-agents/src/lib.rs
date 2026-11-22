@@ -38,7 +38,7 @@ pub use codex_adapter::CodexAdapter;
 pub use codex_parser::{Parser, ProtocolViolation};
 pub use contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
-    AgentLaunchRequest, Result, TurnOutcome,
+    AgentLaunchRequest, ApprovalDecision, InteractiveAgentHandle, Result, TurnOutcome,
 };
 pub use copilot_adapter::{
     CopilotAdapter, CopilotRun, COPILOT_AGENT, PINNED_VERSION as COPILOT_PINNED_VERSION,
