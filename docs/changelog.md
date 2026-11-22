@@ -5,6 +5,49 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.39](https://github.com/mc-innersource/motif-mcao/compare/v0.1.38...v0.1.39) (2026-11-21)
+
+
+### Features
+
+* **daemon:** DPES-1105 - Check every chat mode option against its CLI ([4a72eee](https://github.com/mc-innersource/motif-mcao/commit/4a72eee3cf7e1c578ed307025f9a95ca0057668b))
+* **daemon:** DPES-1105 - Resolve chat modes to each CLI's native flags ([e6549bf](https://github.com/mc-innersource/motif-mcao/commit/e6549bf522bbe55ef249fca74feee43cf85647e4))
+* **daemon:** DPES-1105 - Send chat modes and record the resolved mode per turn ([3918aa2](https://github.com/mc-innersource/motif-mcao/commit/3918aa286c06fc3eca14ebf267ada455d4ddad2e))
+* **desktop:** DPES-1105 - Add a per-provider chat mode dropdown to the composer ([9392e77](https://github.com/mc-innersource/motif-mcao/commit/9392e77d548b66a1c54c64df97ee2d7f354f1039))
+* **desktop:** DPES-1105 - Add the chat mode dropdown and a shared Full confirmation ([f953285](https://github.com/mc-innersource/motif-mcao/commit/f95328560da6737757f54e80588530e9726787c2))
+* **desktop:** DPES-1105 - Put the chat mode in the composer in place of the permission level ([92e91e5](https://github.com/mc-innersource/motif-mcao/commit/92e91e5547343b16e84a3ee7debe9bbaa0a6d5f8))
+* **desktop:** DPES-1105 - Read chat modes from the catalog and send them with a message ([f303f55](https://github.com/mc-innersource/motif-mcao/commit/f303f555abf1fa037676117ec8e840becc09bf0f))
+
+
+### Bug Fixes
+
+* **desktop:** DPES-1105 - Color the monitoring chip dot by mode ([5cc9d17](https://github.com/mc-innersource/motif-mcao/commit/5cc9d172dad9f4be9305933e421190d007c4c400))
+* **desktop:** DPES-1105 - Color the monitoring chip dot by mode ([cca6934](https://github.com/mc-innersource/motif-mcao/commit/cca693434c76d3011dcac59c8073a3878c467f8c))
+* **desktop:** DPES-1105 - Keep the workspace composer pinned in short windows ([8e6ee7c](https://github.com/mc-innersource/motif-mcao/commit/8e6ee7c37edffe085e989877551b75b1388e3aea))
+* **desktop:** DPES-1105 - Keep the workspace composer pinned in short windows ([1f1de98](https://github.com/mc-innersource/motif-mcao/commit/1f1de98e828cd1490efc327e08f32743fc66c384))
+* **desktop:** DPES-1105 - Make New workstream create a workstream ([2e96157](https://github.com/mc-innersource/motif-mcao/commit/2e96157fd27d4e1673df929295017878d831b847))
+* **desktop:** DPES-1105 - Make New workstream create a workstream ([c7246e8](https://github.com/mc-innersource/motif-mcao/commit/c7246e8a7a26afa75e603a748e92319d969aa09d))
+
+
+### Documentation
+
+* **design:** DPES-1105 - Document chat modes, their argv, and the wire contract ([b88f263](https://github.com/mc-innersource/motif-mcao/commit/b88f263e6f4d7da57ccfdbec314ed448b73e7f4b))
+* **design:** DPES-1105 - Match the chat Auto argv and the autopilot exception ([c6b9089](https://github.com/mc-innersource/motif-mcao/commit/c6b90894585ddfcb6ca8d6c9ca2464b2fcbd5f82))
+* **install:** DPES-1106 - Document in-app updates and installing with gh ([f2f6e82](https://github.com/mc-innersource/motif-mcao/commit/f2f6e822ed0a25f0fe4e244aff9bce31399918cf))
+* **install:** DPES-1106 - Document in-app updates and installing with gh ([e4ee292](https://github.com/mc-innersource/motif-mcao/commit/e4ee292add7da2b13727d58a61d4ef9916c301dc))
+
+
+### Tests
+
+* **daemon:** DPES-1105 - Assert the daemon advertises chat modes ([b777ab5](https://github.com/mc-innersource/motif-mcao/commit/b777ab5dad92db42d4da992395d02611c3066304))
+* **daemon:** DPES-1105 - Check mode option ids and Copilot hard limits ([16a8283](https://github.com/mc-innersource/motif-mcao/commit/16a828364c6bcfdb8b5b62236ed346af078f4e53))
+* **desktop:** DPES-1105 - Wait for the chat mode label in the real-daemon e2e tests ([bcfb201](https://github.com/mc-innersource/motif-mcao/commit/bcfb2019b9234508d947db1f87c9d83c53d3052d))
+
+
+### Build
+
+* **ci:** DPES-1105 - Sync the expected test counts for the chat mode tests ([e020674](https://github.com/mc-innersource/motif-mcao/commit/e020674e7c13e83d3948953d97403c0241dc0135))
+
 ## [0.1.38](https://github.com/mc-innersource/motif-mcao/compare/v0.1.37...v0.1.38) (2026-11-21)
 
 
