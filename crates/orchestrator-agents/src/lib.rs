@@ -9,6 +9,7 @@
 
 pub mod catalog;
 pub mod claude_code_adapter;
+pub mod claude_code_stream_adapter;
 pub mod cli_compat;
 pub mod codex_adapter;
 pub mod codex_parser;
@@ -34,6 +35,7 @@ pub use catalog::{
     SelectionReason,
 };
 pub use claude_code_adapter::ClaudeCodeAdapter;
+pub use claude_code_stream_adapter::{ClaudeCodeStreamAdapter, ClaudeCodeStreamHandle};
 pub use codex_adapter::CodexAdapter;
 pub use codex_parser::{Parser, ProtocolViolation};
 pub use contract::{
