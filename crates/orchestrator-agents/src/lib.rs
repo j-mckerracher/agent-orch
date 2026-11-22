@@ -13,6 +13,7 @@ pub mod cli_compat;
 pub mod codex_adapter;
 pub mod codex_parser;
 pub mod contract;
+pub mod copilot_acp_adapter;
 pub mod copilot_adapter;
 mod copilot_models;
 pub mod copilot_parser;
@@ -40,6 +41,7 @@ pub use contract::{
     AgentAdapter, AgentCapabilities, AgentError, AgentEvent, AgentExit, AgentHandle, AgentKind,
     AgentLaunchRequest, ApprovalDecision, InteractiveAgentHandle, Result, TurnOutcome,
 };
+pub use copilot_acp_adapter::{CopilotAcpAdapter, CopilotAcpHandle};
 pub use copilot_adapter::{
     CopilotAdapter, CopilotRun, COPILOT_AGENT, PINNED_VERSION as COPILOT_PINNED_VERSION,
 };
