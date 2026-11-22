@@ -1,0 +1,1 @@
+{"type":"control_request","request_id":"b1f0c2d3-5a6b-4c7d-8e9f-0a1b2c3d4e5f","request":{"subtype":"can_use_tool","tool_name":"Bash","display_name":"Bash","input":{"command":"ls -la"},"tool_use_id":"toolu_01B"}}
