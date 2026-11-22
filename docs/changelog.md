@@ -5,6 +5,25 @@
 Release-please writes each release's section from the conventional commit subjects that reach `main`.
 Do not edit a generated section by hand. See [RELEASE.md](RELEASE.md#changelog).
 
+## [0.1.40](https://github.com/mc-innersource/motif-mcao/compare/v0.1.39...v0.1.40) (2026-11-22)
+
+
+### Features
+
+* **agents:** DPES-1180 - Add interactive-session contract to orchestrator-agents ([66cc39f](https://github.com/mc-innersource/motif-mcao/commit/66cc39fb30ec70afe9847c733acee715518efefb))
+* **agents:** DPES-1181 - Add Claude Code stream-json interactive adapter ([4f25c38](https://github.com/mc-innersource/motif-mcao/commit/4f25c389c7e2cea66ca23a2f26f13b66e64b3d2c))
+* **agents:** DPES-1181 - Add Claude Code stream-json interactive adapter ([02c4fe7](https://github.com/mc-innersource/motif-mcao/commit/02c4fe715d235625eb54f4e15d60fb9fe2063333))
+* **agents:** DPES-1182 - Add the Copilot ACP interactive adapter ([4888d59](https://github.com/mc-innersource/motif-mcao/commit/4888d59d2a45d091baa59394a56edacfe29e5879))
+* **agents:** DPES-1182 - Add the Copilot ACP interactive adapter ([93cb522](https://github.com/mc-innersource/motif-mcao/commit/93cb522a96ef217f0458130145dde8d54c11cebb))
+* **agents:** DPES-1183 - Add Codex app-server interactive adapter ([845484e](https://github.com/mc-innersource/motif-mcao/commit/845484e3a7d3c30289fcc019999411881e292381))
+* **agents:** DPES-1183 - Add Codex app-server interactive adapter ([06bb218](https://github.com/mc-innersource/motif-mcao/commit/06bb2188f1d7b880b9401ff819286b2b566a70b7))
+
+
+### Bug Fixes
+
+* **ci:** DPES-1183 - Correct the macOS workspace ignored-test expectation to 2 ([31add04](https://github.com/mc-innersource/motif-mcao/commit/31add042fddff70dbfe581d8905a696a2b929729))
+* **ci:** DPES-1183 - Correct the macOS workspace ignored-test expectation to 2 ([fc97f64](https://github.com/mc-innersource/motif-mcao/commit/fc97f641dbbe805bf3d14f776c4c3ebb3d7a6a0a))
+
 ## [0.1.39](https://github.com/mc-innersource/motif-mcao/compare/v0.1.38...v0.1.39) (2026-11-21)
 
 
