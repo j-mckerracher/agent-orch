@@ -479,6 +479,7 @@ fn results_and_errors_serialize_to_the_shapes_the_ui_reads() {
         (UpdateError::VerificationFailed, "verification_failed"),
         (UpdateError::DaemonBusy, "daemon_busy"),
         (UpdateError::DaemonUnavailable, "daemon_unavailable"),
+        (UpdateError::NotWritable, "not_writable"),
         (UpdateError::InstallFailed, "install_failed"),
         (UpdateError::Busy, "busy"),
     ] {
@@ -772,4 +773,119 @@ fn only_an_installed_mcao_app_bundle_is_replaceable() {
     let dir = TempDir::new().unwrap();
     assert!(effective_write_access(dir.path()));
     assert!(!effective_write_access(Path::new("/System/Library")));
+}
+
+#[cfg(target_os = "macos")]
+fn macos_archive(entries: &[(&str, &[u8])]) -> Vec<u8> {
+    use flate2::write::GzEncoder;
+    use flate2::Compression;
+    let encoder = GzEncoder::new(Vec::new(), Compression::default());
+    let mut builder = tar::Builder::new(encoder);
+    for (path, data) in entries {
+        let mut header = tar::Header::new_gnu();
+        if path.ends_with('/') {
+            header.set_entry_type(tar::EntryType::Directory);
+            header.set_size(0);
+            header.set_mode(0o755);
+        } else {
+            header.set_entry_type(tar::EntryType::Regular);
+            header.set_size(data.len() as u64);
+            header.set_mode(0o755);
+        }
+        header.set_cksum();
+        builder.append_data(&mut header, path, *data).unwrap();
+    }
+    builder.into_inner().unwrap().finish().unwrap()
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn macos_install_uses_contents_swap_when_parent_is_read_only_and_bundle_is_writable() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = TempDir::new().unwrap();
+    let parent = root.path().join("Applications");
+    let bundle = parent.join("MCAO.app");
+    let contents = bundle.join("Contents");
+    let exe = contents.join("MacOS").join("MCAO");
+    std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+    std::fs::write(&exe, b"bin").unwrap();
+
+    assert_eq!(macos_install_for(&exe), Ok(MacosInstall::ReplaceBundle));
+
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let plan_ro_parent = macos_install_for(&exe);
+
+    std::fs::set_permissions(&contents, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let plan_ro_contents = macos_install_for(&exe);
+
+    std::fs::set_permissions(&contents, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&bundle, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let plan_ro_bundle = macos_install_for(&exe);
+
+    std::fs::set_permissions(&bundle, std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(plan_ro_parent, Ok(MacosInstall::ReplaceContents(bundle)));
+    assert_eq!(plan_ro_contents, Err(UpdateError::NotWritable));
+    assert_eq!(plan_ro_bundle, Err(UpdateError::NotWritable));
+}
+
+#[cfg(target_os = "macos")]
+#[test]
+fn install_macos_contents_swaps_inside_a_read_only_parent_and_rejects_bad_archives() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = TempDir::new().unwrap();
+    let parent = root.path().join("Applications");
+    let bundle = parent.join("MCAO.app");
+    let contents = bundle.join("Contents");
+    std::fs::create_dir_all(contents.join("MacOS")).unwrap();
+    std::fs::write(contents.join("Info.plist"), b"old-plist").unwrap();
+    std::fs::write(contents.join("MacOS/MCAO"), b"old-bin").unwrap();
+    std::fs::write(contents.join("old-only.txt"), b"stale").unwrap();
+
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+    let good = macos_archive(&[
+        ("MCAO.app/", b""),
+        ("MCAO.app/Contents/", b""),
+        ("MCAO.app/Contents/Info.plist", b"new-plist"),
+        ("MCAO.app/Contents/MacOS/", b""),
+        ("MCAO.app/Contents/MacOS/MCAO", b"new-bin"),
+        ("MCAO.app/Contents/Resources/", b""),
+        ("MCAO.app/Contents/Resources/asset.txt", b"new-asset"),
+    ]);
+    let ok = install_macos_contents(&bundle, &good);
+
+    let outside = macos_archive(&[
+        ("MCAO.app/Contents/Info.plist", b"x"),
+        ("MCAO.app/Contents/MacOS/MCAO", b"x"),
+        ("MCAO.app/Extra.txt", b"x"),
+    ]);
+    let missing_bin = macos_archive(&[("MCAO.app/Contents/Info.plist", b"x")]);
+    let wrong_root = macos_archive(&[
+        ("Other.app/Contents/Info.plist", b"x"),
+        ("Other.app/Contents/MacOS/MCAO", b"x"),
+    ]);
+
+    let empty_err = install_macos_contents(&bundle, b"");
+    let outside_err = install_macos_contents(&bundle, &outside);
+    let missing_err = install_macos_contents(&bundle, &missing_bin);
+    let wrong_root_err = install_macos_contents(&bundle, &wrong_root);
+
+    let plist = std::fs::read(contents.join("Info.plist")).unwrap();
+    let bin = std::fs::read(contents.join("MacOS/MCAO")).unwrap();
+    let asset = std::fs::read(contents.join("Resources/asset.txt")).unwrap();
+    let stale_exists = contents.join("old-only.txt").exists();
+
+    std::fs::set_permissions(&parent, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(ok, Ok(()));
+    assert_eq!(empty_err, Err(UpdateError::InstallFailed));
+    assert_eq!(outside_err, Err(UpdateError::InstallFailed));
+    assert_eq!(missing_err, Err(UpdateError::InstallFailed));
+    assert_eq!(wrong_root_err, Err(UpdateError::InstallFailed));
+    assert_eq!(plist, b"new-plist");
+    assert_eq!(bin, b"new-bin");
+    assert_eq!(asset, b"new-asset");
+    assert!(!stale_exists);
 }

@@ -98,6 +98,7 @@ pub enum UpdateError {
     VerificationFailed,
     DaemonBusy,
     DaemonUnavailable,
+    NotWritable,
     InstallFailed,
     Busy,
 }
@@ -511,7 +512,7 @@ pub async fn desktop_update_install(
         _ => return Err(UpdateError::OfferChanged),
     };
     #[cfg(target_os = "macos")]
-    bundle_is_writable()?;
+    let macos_install = macos_install_plan()?;
     let bytes = fetch_asset(
         &GhCli,
         resolved.payload_id,
@@ -528,7 +529,14 @@ pub async fn desktop_update_install(
         .map_err(|_| UpdateError::VerificationFailed)?;
     let bridge = bridge.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        stop_daemon_and_install(&app, &bridge, update, &bytes)
+        stop_daemon_and_install(
+            &app,
+            &bridge,
+            update,
+            &bytes,
+            #[cfg(target_os = "macos")]
+            macos_install,
+        )
     })
     .await
     .map_err(|_| UpdateError::InstallFailed)?
@@ -546,6 +554,7 @@ fn stop_daemon_and_install(
     bridge: &Bridge,
     update: Update,
     bytes: &[u8],
+    #[cfg(target_os = "macos")] macos_install: MacosInstall,
 ) -> Result<(), UpdateError> {
     let data_dir = launch::data_dir().ok_or(UpdateError::DaemonUnavailable)?;
     let guard = bridge.begin_install().map_err(|_| UpdateError::Busy)?;
@@ -553,6 +562,15 @@ fn stop_daemon_and_install(
         lock: acquire_idle_daemon_lock(&data_dir, IDLE_WAIT)?,
         _bridge_closed: guard,
     };
+    #[cfg(target_os = "macos")]
+    match macos_install {
+        MacosInstall::ReplaceBundle => update
+            .restart_after_install(true)
+            .install(bytes)
+            .map_err(|_| UpdateError::InstallFailed)?,
+        MacosInstall::ReplaceContents(bundle) => install_macos_contents(&bundle, bytes)?,
+    }
+    #[cfg(not(target_os = "macos"))]
     // On Windows the installer takes over and the process exits inside `install`.
     update
         .restart_after_install(true)
@@ -622,18 +640,170 @@ fn acquire_idle_daemon_lock(
     }
 }
 
-/// Tauri swaps the bundle with a privileged helper when it cannot write to it;
-/// refuse that path, and anything that is not an installed `MCAO.app`.
 #[cfg(target_os = "macos")]
-fn bundle_is_writable() -> Result<(), UpdateError> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum MacosInstall {
+    ReplaceBundle,
+    ReplaceContents(PathBuf),
+}
+
+/// Tauri swaps the bundle with a privileged helper when it cannot write to the
+/// parent directory; refuse that path, and anything that is not an installed
+/// `MCAO.app`. When the bundle and its `Contents` are writable inside a
+/// read-only parent (such as `/Applications` for a standard macOS user), swap
+/// `Contents` in place instead.
+#[cfg(target_os = "macos")]
+fn macos_install_plan() -> Result<MacosInstall, UpdateError> {
     let exe = std::env::current_exe().map_err(|_| UpdateError::InstallFailed)?;
-    let bundle = macos_bundle(&exe).ok_or(UpdateError::InstallFailed)?;
+    macos_install_for(&exe)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_install_for(exe: &Path) -> Result<MacosInstall, UpdateError> {
+    let bundle = macos_bundle(exe).ok_or(UpdateError::InstallFailed)?;
     let parent = bundle.parent().ok_or(UpdateError::InstallFailed)?;
-    if effective_write_access(bundle) && effective_write_access(parent) {
-        Ok(())
-    } else {
-        Err(UpdateError::InstallFailed)
+    let bundle_meta = std::fs::symlink_metadata(bundle).map_err(|_| UpdateError::InstallFailed)?;
+    if !bundle_meta.file_type().is_dir() {
+        return Err(UpdateError::InstallFailed);
     }
+    if !effective_write_access(bundle) {
+        return Err(UpdateError::NotWritable);
+    }
+    if effective_write_access(parent) {
+        return Ok(MacosInstall::ReplaceBundle);
+    }
+    let contents = bundle.join("Contents");
+    let contents_is_dir = std::fs::symlink_metadata(&contents)
+        .map(|meta| meta.file_type().is_dir())
+        .unwrap_or(false);
+    // Moving or swapping `Contents` across parents updates its `..` entry, so
+    // macOS requires write permission on `Contents` itself as well as `bundle`.
+    if contents_is_dir && effective_write_access(&contents) {
+        Ok(MacosInstall::ReplaceContents(bundle.to_path_buf()))
+    } else {
+        Err(UpdateError::NotWritable)
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn install_macos_contents(bundle: &Path, archive_bytes: &[u8]) -> Result<(), UpdateError> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::path::Component;
+
+    let temp_dir = std::env::temp_dir();
+    let same_dev = std::fs::metadata(&temp_dir).ok().map(|meta| meta.dev())
+        == std::fs::metadata(bundle).ok().map(|meta| meta.dev());
+    let stage_parent = if same_dev && effective_write_access(&temp_dir) {
+        temp_dir.as_path()
+    } else {
+        bundle
+    };
+    let staging = tempfile::Builder::new()
+        .prefix(".mcao-update-")
+        .tempdir_in(stage_parent)
+        .map_err(|_| UpdateError::InstallFailed)?;
+
+    let gz = flate2::read::GzDecoder::new(archive_bytes);
+    let mut archive = tar::Archive::new(gz);
+    let entries = archive.entries().map_err(|_| UpdateError::InstallFailed)?;
+    for entry in entries {
+        let mut entry = entry.map_err(|_| UpdateError::InstallFailed)?;
+        let entry_type = entry.header().entry_type();
+        if !matches!(
+            entry_type,
+            tar::EntryType::Regular | tar::EntryType::Directory
+        ) {
+            return Err(UpdateError::InstallFailed);
+        }
+        let raw_path = entry.path().map_err(|_| UpdateError::InstallFailed)?;
+        let mut parts = Vec::new();
+        for component in raw_path.components() {
+            match component {
+                Component::CurDir => continue,
+                Component::Normal(part) => parts.push(part.to_os_string()),
+                _ => return Err(UpdateError::InstallFailed),
+            }
+        }
+        if parts.first().and_then(|part| part.to_str()) != Some("MCAO.app") {
+            return Err(UpdateError::InstallFailed);
+        }
+        if parts.len() == 1 {
+            if entry_type != tar::EntryType::Directory {
+                return Err(UpdateError::InstallFailed);
+            }
+            continue;
+        }
+        if parts[1].to_str() != Some("Contents") {
+            return Err(UpdateError::InstallFailed);
+        }
+        let mut dest = staging.path().to_path_buf();
+        for part in &parts[1..] {
+            dest.push(part);
+        }
+        if entry_type == tar::EntryType::Directory {
+            std::fs::create_dir_all(&dest).map_err(|_| UpdateError::InstallFailed)?;
+        } else {
+            if let Some(parent) = dest.parent() {
+                std::fs::create_dir_all(parent).map_err(|_| UpdateError::InstallFailed)?;
+            }
+            if dest.exists() {
+                return Err(UpdateError::InstallFailed);
+            }
+            entry
+                .unpack(&dest)
+                .map_err(|_| UpdateError::InstallFailed)?;
+        }
+    }
+
+    let staged_contents = staging.path().join("Contents");
+    if !staged_contents.join("MacOS/MCAO").is_file()
+        || !staged_contents.join("Info.plist").is_file()
+    {
+        return Err(UpdateError::InstallFailed);
+    }
+    std::fs::set_permissions(&staged_contents, std::fs::Permissions::from_mode(0o755))
+        .map_err(|_| UpdateError::InstallFailed)?;
+
+    let live_contents = bundle.join("Contents");
+    swap_contents(&staged_contents, &live_contents)?;
+    // Touch the bundle so LaunchServices refreshes cached Info.plist metadata on relaunch.
+    let _ = std::process::Command::new("/usr/bin/touch")
+        .arg(bundle)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn swap_contents(staged: &Path, live: &Path) -> Result<(), UpdateError> {
+    use std::os::unix::ffi::OsStrExt;
+    let from = std::ffi::CString::new(staged.as_os_str().as_bytes())
+        .map_err(|_| UpdateError::InstallFailed)?;
+    let to = std::ffi::CString::new(live.as_os_str().as_bytes())
+        .map_err(|_| UpdateError::InstallFailed)?;
+    // SAFETY: `from` and `to` are valid NUL-terminated paths that outlive the call.
+    if unsafe { libc::renamex_np(from.as_ptr(), to.as_ptr(), libc::RENAME_SWAP) } == 0 {
+        return Ok(());
+    }
+    let error = std::io::Error::last_os_error();
+    if !matches!(
+        error.raw_os_error(),
+        Some(libc::ENOSYS | libc::ENOTSUP | libc::EINVAL)
+    ) {
+        return Err(UpdateError::InstallFailed);
+    }
+    let backup = staged
+        .parent()
+        .ok_or(UpdateError::InstallFailed)?
+        .join("Contents.old");
+    std::fs::rename(live, &backup).map_err(|_| UpdateError::InstallFailed)?;
+    if std::fs::rename(staged, live).is_err() {
+        let _ = std::fs::rename(&backup, live);
+        return Err(UpdateError::InstallFailed);
+    }
+    Ok(())
 }
 
 #[cfg(target_os = "macos")]

@@ -167,6 +167,10 @@ describe("DesktopUpdates", () => {
       "Can't check GitHub Releases. Verify your connection and run gh auth login --hostname github.com if needed.",
     ],
     ["download_failed", "The update could not be downloaded. Try again."],
+    [
+      "not_writable",
+      "MCAO does not have permission to update this copy. Move MCAO.app to ~/Applications or install the update manually.",
+    ],
     ["something_new", "The update failed. Try again."],
   ])("shows %s from a manual check as a non-blocking alert", async (kind, text) => {
     invoke.mockImplementation(async (command: string) => {
