@@ -324,3 +324,44 @@ async fn empty_plan_is_a_protocol_error_and_writes_nothing() {
     };
     assert_eq!(stdin_lines(dir.path()).len(), 1, "only the init frame");
 }
+
+#[tokio::test]
+async fn blank_stdout_lines_produce_no_events() {
+    let (_dir, mut handle) = session(&format!("\n   \n{INIT}\n\n{RESULT_SUCCESS}\n")).await;
+    assert_eq!(
+        next(&mut handle).await,
+        AgentEvent::SessionStarted {
+            session_id: Uuid::parse_str(SESSION_ID).expect("session uuid"),
+        }
+    );
+    handle.send_turn("go").await.expect("send_turn");
+    assert_eq!(
+        next(&mut handle).await,
+        AgentEvent::TurnFinished {
+            outcome: TurnOutcome::Success,
+        }
+    );
+    handle.wait().await.expect("wait");
+}
+
+#[tokio::test]
+async fn empty_deny_reason_writes_an_empty_message() {
+    let (dir, mut handle) = session(&format!("{INIT}{EXIT_PLAN_MODE}")).await;
+    next(&mut handle).await;
+    let AgentEvent::PlanProposed { approval_id, .. } = next(&mut handle).await else {
+        panic!("expected PlanProposed");
+    };
+    handle
+        .respond_approval(approval_id, deny(""))
+        .await
+        .expect("empty deny accepted");
+    handle.wait().await.expect("wait");
+
+    let lines = stdin_lines(dir.path());
+    assert_eq!(lines.len(), 2, "init then one deny: {lines:?}");
+    assert!(
+        lines[1].ends_with(r#""response":{"behavior":"deny","message":""}}}"#),
+        "{}",
+        lines[1]
+    );
+}

@@ -147,6 +147,8 @@ pub struct CopilotAcpHandle {
     /// Issued approval id to the JSON-RPC id of the server's permission request.
     pending_permissions: HashMap<Uuid, i64>,
     events: VecDeque<AgentEvent>,
+    /// First protocol violation. A violated session fails at exit, even after a completed turn.
+    violation: Option<String>,
     turn_outcome: Option<TurnOutcome>,
     cancelled: bool,
     exited: bool,
@@ -164,6 +166,7 @@ impl CopilotAcpHandle {
             prompt_id: None,
             pending_permissions: HashMap::new(),
             events: VecDeque::new(),
+            violation: None,
             turn_outcome: None,
             cancelled: false,
             exited: false,
@@ -269,9 +272,8 @@ impl CopilotAcpHandle {
 
     fn approval_request(&mut self, message: &Value) -> AgentEvent {
         let Some(jsonrpc_id) = message.get("id").and_then(Value::as_i64) else {
-            return AgentEvent::ProtocolError {
-                message: "session/request_permission without an integer id".to_owned(),
-            };
+            return self
+                .protocol_violation("session/request_permission without an integer id".to_owned());
         };
         let tool_call = &message["params"]["toolCall"];
         let approval_id = Uuid::new_v4();
@@ -306,6 +308,11 @@ impl CopilotAcpHandle {
         Some(AgentEvent::TurnFinished { outcome })
     }
 
+    fn protocol_violation(&mut self, message: String) -> AgentEvent {
+        self.violation.get_or_insert_with(|| message.clone());
+        AgentEvent::ProtocolError { message }
+    }
+
     fn outcome(&self) -> AgentExit {
         if self.cancelled {
             return AgentExit::Cancelled {
@@ -317,6 +324,13 @@ impl CopilotAcpHandle {
             (Some(code), _) if code != 0 => AgentExit::Failed {
                 code: Some(code),
                 reason: Some(format!("copilot --acp exited with code {code}")),
+            },
+            _ if self.violation.is_some() => AgentExit::Failed {
+                code: self.code,
+                reason: self
+                    .violation
+                    .as_ref()
+                    .map(|violation| format!("protocol violation: {violation}")),
             },
             (_, Some(TurnOutcome::Failure)) => AgentExit::Failed {
                 code: self.code,
@@ -356,9 +370,9 @@ impl AgentHandle for CopilotAcpHandle {
                 Some(SupervisionEvent::StdoutLine(line)) => {
                     let event = match serde_json::from_str::<Value>(&line) {
                         Ok(message) => self.translate(message),
-                        Err(error) => Some(AgentEvent::ProtocolError {
-                            message: format!("malformed JSON: {error}"),
-                        }),
+                        Err(error) => {
+                            Some(self.protocol_violation(format!("malformed JSON: {error}")))
+                        }
                     };
                     if let Some(event) = event {
                         return Ok(Some(event));

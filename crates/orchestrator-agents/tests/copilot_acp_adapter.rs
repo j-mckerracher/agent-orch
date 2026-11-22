@@ -3,31 +3,15 @@
 //! stdin line to `stdin.log`, and exits when stdin closes.
 
 use orchestrator_agents::{
-    AgentError, AgentEvent, AgentHandle, AgentLaunchRequest, ApprovalDecision, CopilotAcpAdapter,
-    CopilotAcpHandle, InteractiveAgentHandle, TurnOutcome,
+    AgentError, AgentEvent, AgentExit, AgentHandle, AgentLaunchRequest, ApprovalDecision,
+    CopilotAcpAdapter, CopilotAcpHandle, InteractiveAgentHandle, TurnOutcome,
 };
 use serde_json::{json, Value};
 use std::path::PathBuf;
 use std::sync::LazyLock;
 use uuid::Uuid;
 
-const FAKE_SOURCE: &str = r##"
-use std::io::{BufRead, Write};
-
-fn main() {
-    let script = std::fs::read_to_string("script.txt").expect("script.txt");
-    let mut out = std::io::stdout().lock();
-    for line in script.lines() {
-        writeln!(out, "{line}").expect("stdout line");
-    }
-    out.flush().expect("flush");
-    drop(out);
-    let mut log = std::fs::File::create("stdin.log").expect("stdin.log");
-    for line in std::io::stdin().lock().lines() {
-        writeln!(log, "{}", line.expect("stdin line")).expect("log line");
-    }
-}
-"##;
+const FAKE_SOURCE: &str = include_str!("fixtures/copilot_acp/fake_copilot.rs");
 
 static FAKE: LazyLock<tempfile::TempDir> = LazyLock::new(|| {
     let dir = tempfile::tempdir().expect("fake child directory");
@@ -370,4 +354,50 @@ async fn prompt_error_response_finishes_turn_as_failure() {
         }
     );
     finish(handle, &dir).await;
+}
+
+#[tokio::test]
+async fn malformed_initialize_response_fails_spawn_with_a_protocol_error() {
+    let dir = workdir(&["not json"]);
+    assert!(matches!(
+        spawn(&dir, None).await,
+        Err(AgentError::Protocol(_))
+    ));
+}
+
+#[tokio::test]
+async fn session_new_result_without_a_session_id_fails_spawn() {
+    let dir = workdir(&[
+        INITIALIZE,
+        r#"{"jsonrpc":"2.0","id":2,"result":{"modes":{"availableModes":[]}}}"#,
+    ]);
+    assert!(matches!(
+        spawn(&dir, None).await,
+        Err(AgentError::Protocol(_))
+    ));
+}
+
+#[tokio::test]
+async fn permission_request_without_an_integer_id_fails_the_exit_after_a_completed_turn() {
+    let dir = workdir(&[
+        INITIALIZE,
+        SESSION_NEW,
+        SET_CONFIG_ACK,
+        r#"{"jsonrpc":"2.0","method":"session/request_permission","params":{"toolCall":{"toolCallId":"toolu_02","kind":"edit","title":"Edit file"}}}"#,
+        r#"{"jsonrpc":"2.0","id":4,"result":{"stopReason":"end_turn"}}"#,
+    ]);
+    let mut handle = spawn(&dir, None).await.expect("spawn");
+    started(&mut handle).await;
+    handle.send_turn("edit").await.expect("send_turn");
+    assert!(matches!(
+        expect_event(&mut handle).await,
+        AgentEvent::ProtocolError { .. }
+    ));
+    assert_eq!(
+        expect_event(&mut handle).await,
+        AgentEvent::TurnFinished {
+            outcome: TurnOutcome::Success,
+        }
+    );
+    assert!(matches!(handle.wait().await, Ok(AgentExit::Failed { .. })));
 }
