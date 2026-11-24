@@ -83,6 +83,8 @@ async fn read(program: &Path, limit: Duration) -> Option<Vec<ModelOption>> {
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command.spawn().ok()?;

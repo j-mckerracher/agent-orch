@@ -30,6 +30,8 @@ The message shows a failure reason. These are the common ones:
 
 The picker lists agents the daemon can launch. Check that the CLI (`codex`, `claude`, or `copilot`) is on `PATH` for the process that started the app. Or point MCAO at it with `AGENT_ORCH_CODEX_PROGRAM`, `AGENT_ORCH_CLAUDE_PROGRAM`, or `AGENT_ORCH_COPILOT_PROGRAM`.
 
+On Windows, background catalog probes run without opening a console window.
+
 ## A task stays queued
 
 The scheduler runs at most two tasks at once, and two per project. New tasks also wait while the machine is over a [load limit](settings.md#machine-load-limits). Raise a limit to 100 to turn that check off.

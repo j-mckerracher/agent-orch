@@ -509,6 +509,8 @@ async fn capture(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000);
     #[cfg(unix)]
     command.process_group(0);
     let mut child = command
@@ -1392,6 +1394,26 @@ pub fn pi_catalog() -> AgentCatalog {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[tokio::test]
+    async fn catalog_probe_has_no_console() {
+        let result = capture(
+            Path::new("powershell.exe"),
+            &[
+                "-NoProfile",
+                "-NonInteractive",
+                "-Command",
+                "Add-Type -Name Native -Namespace Test -MemberDefinition '[DllImport(\"kernel32.dll\")] public static extern System.IntPtr GetConsoleWindow();'; [Test.Native]::GetConsoleWindow().ToInt64()",
+            ],
+            &std::env::temp_dir(),
+            Duration::from_secs(15),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.code, Some(0), "{result:?}");
+        assert_eq!(String::from_utf8_lossy(&result.stdout).trim(), "0");
+    }
 
     /// The option a chat turn at `level` runs with for `agent`, legacy-mapped.
     fn chat(agent: &str, level: PermissionLevel) -> ResolvedMode {
